@@ -16,6 +16,7 @@ interface Profile {
   company_website: string | null;
   bio: string | null;
   specialties: string[] | null;
+  avatar_url: string | null;
 }
 
 interface AuthContextType {

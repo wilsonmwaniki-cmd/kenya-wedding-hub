@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, X, Plus, Copy, ExternalLink } from 'lucide-react';
+import AvatarUpload from '@/components/AvatarUpload';
 
 export default function ProfileSettings() {
   const { profile, updateProfile } = useAuth();
@@ -124,6 +125,12 @@ export default function ProfileSettings() {
             <CardDescription>Your name and contact information</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isPlanner && (
+              <div className="space-y-2">
+                <Label>Profile Photo / Logo</Label>
+                <AvatarUpload />
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Full Name</Label>
               <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />

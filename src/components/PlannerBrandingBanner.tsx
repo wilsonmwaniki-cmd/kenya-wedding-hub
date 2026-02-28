@@ -1,6 +1,7 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { Building2, Mail, Phone, Globe } from 'lucide-react';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 export default function PlannerBrandingBanner() {
   const { profile } = useAuth();
@@ -14,7 +15,12 @@ export default function PlannerBrandingBanner() {
   return (
     <div className="rounded-lg border border-border bg-card px-4 py-3 mb-6 flex flex-wrap items-center gap-x-6 gap-y-2">
       <div className="flex items-center gap-2">
-        <Building2 className="h-4 w-4 text-primary" />
+        <Avatar className="h-7 w-7">
+          {profile.avatar_url ? <AvatarImage src={profile.avatar_url} alt="" /> : null}
+          <AvatarFallback className="text-xs bg-primary/10 text-primary">
+            <Building2 className="h-3.5 w-3.5" />
+          </AvatarFallback>
+        </Avatar>
         <span className="text-sm font-medium text-foreground">{profile.company_name || profile.full_name}</span>
       </div>
       {profile.company_email && (
