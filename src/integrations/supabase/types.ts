@@ -17,6 +17,7 @@ export type Database = {
       budget_categories: {
         Row: {
           allocated: number
+          client_id: string | null
           created_at: string
           id: string
           name: string
@@ -25,6 +26,7 @@ export type Database = {
         }
         Insert: {
           allocated?: number
+          client_id?: string | null
           created_at?: string
           id?: string
           name: string
@@ -33,16 +35,26 @@ export type Database = {
         }
         Update: {
           allocated?: number
+          client_id?: string | null
           created_at?: string
           id?: string
           name?: string
           spent?: number
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "budget_categories_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       guests: {
         Row: {
+          client_id: string | null
           created_at: string
           email: string | null
           id: string
@@ -55,6 +67,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          client_id?: string | null
           created_at?: string
           email?: string | null
           id?: string
@@ -67,6 +80,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          client_id?: string | null
           created_at?: string
           email?: string | null
           id?: string
@@ -77,6 +91,56 @@ export type Database = {
           rsvp_status?: string | null
           table_number?: number | null
           user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guests_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      planner_clients: {
+        Row: {
+          client_name: string
+          created_at: string
+          email: string | null
+          id: string
+          notes: string | null
+          partner_name: string | null
+          phone: string | null
+          planner_user_id: string
+          updated_at: string
+          wedding_date: string | null
+          wedding_location: string | null
+        }
+        Insert: {
+          client_name: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          notes?: string | null
+          partner_name?: string | null
+          phone?: string | null
+          planner_user_id: string
+          updated_at?: string
+          wedding_date?: string | null
+          wedding_location?: string | null
+        }
+        Update: {
+          client_name?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          notes?: string | null
+          partner_name?: string | null
+          phone?: string | null
+          planner_user_id?: string
+          updated_at?: string
+          wedding_date?: string | null
+          wedding_location?: string | null
         }
         Relationships: []
       }
@@ -119,6 +183,7 @@ export type Database = {
       tasks: {
         Row: {
           category: string | null
+          client_id: string | null
           completed: boolean
           created_at: string
           description: string | null
@@ -129,6 +194,7 @@ export type Database = {
         }
         Insert: {
           category?: string | null
+          client_id?: string | null
           completed?: boolean
           created_at?: string
           description?: string | null
@@ -139,6 +205,7 @@ export type Database = {
         }
         Update: {
           category?: string | null
+          client_id?: string | null
           completed?: boolean
           created_at?: string
           description?: string | null
@@ -147,7 +214,15 @@ export type Database = {
           title?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tasks_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -170,6 +245,7 @@ export type Database = {
       vendors: {
         Row: {
           category: string
+          client_id: string | null
           created_at: string
           email: string | null
           id: string
@@ -182,6 +258,7 @@ export type Database = {
         }
         Insert: {
           category: string
+          client_id?: string | null
           created_at?: string
           email?: string | null
           id?: string
@@ -194,6 +271,7 @@ export type Database = {
         }
         Update: {
           category?: string
+          client_id?: string | null
           created_at?: string
           email?: string | null
           id?: string
@@ -204,7 +282,15 @@ export type Database = {
           status?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vendors_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
