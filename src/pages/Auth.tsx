@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Heart, Loader2 } from 'lucide-react';
+import { Heart, Loader2, Users, Briefcase } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Auth() {
@@ -13,6 +13,7 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState<'couple' | 'planner'>('couple');
   const [submitting, setSubmitting] = useState(false);
   const { signIn, signUp, user, loading } = useAuth();
   const { toast } = useToast();
@@ -32,7 +33,7 @@ export default function Auth() {
     setSubmitting(true);
     try {
       if (isSignUp) {
-        await signUp(email, password, fullName);
+        await signUp(email, password, fullName, role);
         toast({ title: 'Account created!', description: 'Check your email to confirm your account.' });
       } else {
         await signIn(email, password);
@@ -60,10 +61,43 @@ export default function Auth() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" required />
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" required />
+                </div>
+                <div className="space-y-2">
+                  <Label>Account Type</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRole('couple')}
+                      className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-colors ${
+                        role === 'couple'
+                          ? 'border-primary bg-primary/5 text-primary'
+                          : 'border-border text-muted-foreground hover:border-primary/50'
+                      }`}
+                    >
+                      <Users className="h-6 w-6" />
+                      <span className="text-sm font-medium">Couple</span>
+                      <span className="text-xs text-center">Plan your own wedding</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRole('planner')}
+                      className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-colors ${
+                        role === 'planner'
+                          ? 'border-primary bg-primary/5 text-primary'
+                          : 'border-border text-muted-foreground hover:border-primary/50'
+                      }`}
+                    >
+                      <Briefcase className="h-6 w-6" />
+                      <span className="text-sm font-medium">Planner</span>
+                      <span className="text-xs text-center">Manage multiple clients</span>
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
