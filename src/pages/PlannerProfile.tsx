@@ -5,11 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Heart, Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle } from 'lucide-react';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 interface PlannerData {
   id: string;
   full_name: string | null;
   company_name: string | null;
+  avatar_url: string | null;
   company_email: string | null;
   company_phone: string | null;
   company_website: string | null;
@@ -28,7 +30,7 @@ export default function PlannerProfile() {
     const load = async () => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, company_name, company_email, company_phone, company_website, bio, specialties')
+        .select('id, full_name, company_name, company_email, company_phone, company_website, bio, specialties, avatar_url')
         .eq('id', id)
         .eq('role', 'planner' as any)
         .single();
@@ -77,9 +79,12 @@ export default function PlannerProfile() {
       <main className="max-w-3xl mx-auto px-6 py-10 space-y-6">
         {/* Profile Header */}
         <div className="flex items-start gap-5">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
-            <UserCircle className="h-10 w-10" />
-          </div>
+          <Avatar className="h-16 w-16 border-2 border-border shrink-0">
+            {planner.avatar_url ? <AvatarImage src={planner.avatar_url} alt="Planner photo" /> : null}
+            <AvatarFallback className="text-xl bg-primary/10 text-primary">
+              {planner.full_name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || <UserCircle className="h-8 w-8" />}
+            </AvatarFallback>
+          </Avatar>
           <div>
             <h1 className="font-display text-2xl font-bold text-foreground">
               {planner.company_name || planner.full_name || 'Wedding Planner'}
