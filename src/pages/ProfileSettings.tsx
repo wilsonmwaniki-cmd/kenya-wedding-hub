@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Plus } from 'lucide-react';
+import { Loader2, X, Plus, Copy, ExternalLink } from 'lucide-react';
 
 export default function ProfileSettings() {
   const { profile, updateProfile } = useAuth();
@@ -85,6 +85,13 @@ export default function ProfileSettings() {
     setForm(f => ({ ...f, specialties: f.specialties.filter(x => x !== s) }));
   };
 
+  const profileUrl = profile ? `${window.location.origin}/planner/${profile.id}` : '';
+
+  const copyProfileLink = () => {
+    navigator.clipboard.writeText(profileUrl);
+    toast({ title: 'Link copied!', description: 'Share this link with potential clients.' });
+  };
+
   return (
     <div className="space-y-6 max-w-xl">
       <div>
@@ -93,6 +100,21 @@ export default function ProfileSettings() {
           {isPlanner ? 'Manage your planner profile & company details' : 'Manage your wedding profile'}
         </p>
       </div>
+
+      {isPlanner && (
+        <Card className="shadow-card border-primary/20 bg-primary/5">
+          <CardContent className="flex items-center gap-3 py-4">
+            <ExternalLink className="h-4 w-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground">Public Profile</p>
+              <p className="text-xs text-muted-foreground truncate">{profileUrl}</p>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={copyProfileLink}>
+              <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Link
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* Personal Details */}

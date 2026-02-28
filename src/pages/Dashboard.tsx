@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Wallet, CheckSquare, Users, Store, Calendar, Heart, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
 
 interface DashboardStats {
   totalBudget: number;
@@ -77,6 +78,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      <PlannerBrandingBanner />
       <div>
         <h1 className="font-display text-3xl font-bold text-foreground">
           {displayName ? `Hello, ${displayName}` : 'Your Dashboard'}
