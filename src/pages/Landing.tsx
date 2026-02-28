@@ -21,6 +21,9 @@ export default function Landing() {
           <span className="font-display text-xl font-bold text-foreground">WeddingPlan Kenya</span>
         </div>
         <div className="flex items-center gap-3">
+          <Link to="/planners">
+            <Button variant="ghost" size="sm">Find a Planner</Button>
+          </Link>
           <Link to="/auth">
             <Button variant="ghost" size="sm">Sign In</Button>
           </Link>

@@ -19,6 +19,7 @@ import AiChat from "./pages/AiChat";
 import ProfileSettings from "./pages/ProfileSettings";
 import NotFound from "./pages/NotFound";
 import PlannerProfile from "./pages/PlannerProfile";
+import PlannerDirectory from "./pages/PlannerDirectory";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +42,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<Auth />} />
+              <Route path="/planners" element={<PlannerDirectory />} />
               <Route path="/planner/:id" element={<PlannerProfile />} />
               <Route path="/clients" element={<ProtectedPage><PlannerDashboard /></ProtectedPage>} />
               <Route path="/dashboard" element={<ProtectedPage><Dashboard /></ProtectedPage>} />
