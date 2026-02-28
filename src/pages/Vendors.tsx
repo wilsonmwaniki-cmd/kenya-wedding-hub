@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,8 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Phone, Mail, Store } from 'lucide-react';
+import { Plus, Trash2, Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 interface Vendor {
   id: string;
@@ -24,34 +26,36 @@ interface Vendor {
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
-const statusColors: Record<string, string> = {
-  contacted: 'bg-warning/10 text-warning border-warning/20',
-  booked: 'bg-success/10 text-success border-success/20',
-  rejected: 'bg-destructive/10 text-destructive border-destructive/20',
-};
-
 export default function Vendors() {
   const { user } = useAuth();
+  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: '', category: 'Venue', phone: '', price: '' });
 
+  useEffect(() => {
+    if (isPlanner && !selectedClient) navigate('/clients');
+  }, [isPlanner, selectedClient, navigate]);
+
   const load = async () => {
-    if (!user) return;
-    const { data } = await supabase.from('vendors').select('*').eq('user_id', user.id).order('created_at');
+    if (!dataFilterKey || !dataFilterValue) return;
+    const { data } = await supabase.from('vendors').select('*').eq(dataFilterKey, dataFilterValue).order('created_at');
     if (data) setVendors(data.map(d => ({ ...d, price: d.price ? Number(d.price) : null })));
   };
 
-  useEffect(() => { load(); }, [user]);
+  useEffect(() => { load(); }, [user, selectedClient]);
 
   const addVendor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    const { error } = await supabase.from('vendors').insert({
+    const insert: any = {
       user_id: user.id, name: form.name, category: form.category,
       phone: form.phone || null, price: form.price ? parseFloat(form.price) : null, status: 'contacted',
-    });
+    };
+    if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+    const { error } = await supabase.from('vendors').insert(insert);
     if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
     setForm({ name: '', category: 'Venue', phone: '', price: '' }); setOpen(false); load();
   };
@@ -65,6 +69,8 @@ export default function Vendors() {
     await supabase.from('vendors').delete().eq('id', id);
     load();
   };
+
+  if (isPlanner && !selectedClient) return null;
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Progress } from '@/components/ui/progress';
 import { Plus, Trash2, Wallet } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 interface BudgetCategory {
   id: string;
@@ -19,26 +21,34 @@ interface BudgetCategory {
 
 export default function Budget() {
   const { user } = useAuth();
+  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [allocated, setAllocated] = useState('');
 
+  useEffect(() => {
+    if (isPlanner && !selectedClient) navigate('/clients');
+  }, [isPlanner, selectedClient, navigate]);
+
   const load = async () => {
-    if (!user) return;
-    const { data } = await supabase.from('budget_categories').select('*').eq('user_id', user.id).order('created_at');
+    if (!dataFilterKey || !dataFilterValue) return;
+    const { data } = await supabase.from('budget_categories').select('*').eq(dataFilterKey, dataFilterValue).order('created_at');
     if (data) setCategories(data.map(d => ({ ...d, allocated: Number(d.allocated), spent: Number(d.spent) })));
   };
 
-  useEffect(() => { load(); }, [user]);
+  useEffect(() => { load(); }, [user, selectedClient]);
 
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    const { error } = await supabase.from('budget_categories').insert({
+    const insert: any = {
       user_id: user.id, name, allocated: parseFloat(allocated) || 0, spent: 0,
-    });
+    };
+    if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+    const { error } = await supabase.from('budget_categories').insert(insert);
     if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
     setName(''); setAllocated(''); setOpen(false); load();
   };
@@ -51,12 +61,14 @@ export default function Budget() {
   const totalAllocated = categories.reduce((s, c) => s + c.allocated, 0);
   const totalSpent = categories.reduce((s, c) => s + c.spent, 0);
 
+  if (isPlanner && !selectedClient) return null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-foreground">Budget</h1>
-          <p className="text-muted-foreground">Track your wedding expenses by category</p>
+          <p className="text-muted-foreground">Track wedding expenses by category</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
@@ -79,7 +91,6 @@ export default function Budget() {
         </Dialog>
       </div>
 
-      {/* Summary */}
       <Card className="shadow-card">
         <CardContent className="flex items-center gap-6 py-5">
           <Wallet className="h-10 w-10 text-primary" />
@@ -93,7 +104,6 @@ export default function Budget() {
         </CardContent>
       </Card>
 
-      {/* Categories */}
       <div className="grid gap-4 sm:grid-cols-2">
         {categories.map(c => {
           const pct = c.allocated ? Math.min((c.spent / c.allocated) * 100, 100) : 0;
