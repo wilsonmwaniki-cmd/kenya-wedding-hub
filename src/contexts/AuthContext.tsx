@@ -10,6 +10,12 @@ interface Profile {
   wedding_date: string | null;
   wedding_location: string | null;
   role: 'couple' | 'planner';
+  company_name: string | null;
+  company_email: string | null;
+  company_phone: string | null;
+  company_website: string | null;
+  bio: string | null;
+  specialties: string[] | null;
 }
 
 interface AuthContextType {

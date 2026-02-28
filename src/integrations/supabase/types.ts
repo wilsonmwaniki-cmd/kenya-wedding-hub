@@ -146,33 +146,51 @@ export type Database = {
       }
       profiles: {
         Row: {
+          bio: string | null
+          company_email: string | null
+          company_name: string | null
+          company_phone: string | null
+          company_website: string | null
           created_at: string
           full_name: string | null
           id: string
           partner_name: string | null
           role: Database["public"]["Enums"]["app_role"]
+          specialties: string[] | null
           updated_at: string
           user_id: string
           wedding_date: string | null
           wedding_location: string | null
         }
         Insert: {
+          bio?: string | null
+          company_email?: string | null
+          company_name?: string | null
+          company_phone?: string | null
+          company_website?: string | null
           created_at?: string
           full_name?: string | null
           id?: string
           partner_name?: string | null
           role?: Database["public"]["Enums"]["app_role"]
+          specialties?: string[] | null
           updated_at?: string
           user_id: string
           wedding_date?: string | null
           wedding_location?: string | null
         }
         Update: {
+          bio?: string | null
+          company_email?: string | null
+          company_name?: string | null
+          company_phone?: string | null
+          company_website?: string | null
           created_at?: string
           full_name?: string | null
           id?: string
           partner_name?: string | null
           role?: Database["public"]["Enums"]["app_role"]
+          specialties?: string[] | null
           updated_at?: string
           user_id?: string
           wedding_date?: string | null
