@@ -15,7 +15,7 @@ export default function Auth() {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<'couple' | 'planner'>('couple');
   const [submitting, setSubmitting] = useState(false);
-  const { signIn, signUp, user, loading } = useAuth();
+  const { signIn, signUp, user, profile, loading } = useAuth();
   const { toast } = useToast();
 
   if (loading) {
@@ -26,7 +26,7 @@ export default function Auth() {
     );
   }
 
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user) return <Navigate to={profile?.role === 'planner' ? '/clients' : '/dashboard'} replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

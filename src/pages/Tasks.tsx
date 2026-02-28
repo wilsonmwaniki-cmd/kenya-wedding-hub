@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Plus, Trash2, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 interface Task {
   id: string;
@@ -21,26 +23,32 @@ interface Task {
 
 export default function Tasks() {
   const { user } = useAuth();
+  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
 
+  useEffect(() => {
+    if (isPlanner && !selectedClient) navigate('/clients');
+  }, [isPlanner, selectedClient, navigate]);
+
   const load = async () => {
-    if (!user) return;
-    const { data } = await supabase.from('tasks').select('*').eq('user_id', user.id).order('due_date', { ascending: true, nullsFirst: false });
+    if (!dataFilterKey || !dataFilterValue) return;
+    const { data } = await supabase.from('tasks').select('*').eq(dataFilterKey, dataFilterValue).order('due_date', { ascending: true, nullsFirst: false });
     if (data) setTasks(data as Task[]);
   };
 
-  useEffect(() => { load(); }, [user]);
+  useEffect(() => { load(); }, [user, selectedClient]);
 
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    const { error } = await supabase.from('tasks').insert({
-      user_id: user.id, title, due_date: dueDate || null,
-    });
+    const insert: any = { user_id: user.id, title, due_date: dueDate || null };
+    if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+    const { error } = await supabase.from('tasks').insert(insert);
     if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
     setTitle(''); setDueDate(''); setOpen(false); load();
   };
@@ -57,6 +65,8 @@ export default function Tasks() {
 
   const pending = tasks.filter(t => !t.completed);
   const done = tasks.filter(t => t.completed);
+
+  if (isPlanner && !selectedClient) return null;
 
   return (
     <div className="space-y-6">

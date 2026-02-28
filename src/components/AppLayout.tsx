@@ -1,14 +1,27 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlanner } from '@/contexts/PlannerContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Heart
+  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
-const navItems = [
+const coupleNavItems = [
+  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/budget', label: 'Budget', icon: Wallet },
+  { path: '/tasks', label: 'Tasks', icon: CheckSquare },
+  { path: '/guests', label: 'Guests', icon: Users },
+  { path: '/vendors', label: 'Vendors', icon: Store },
+  { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
+  { path: '/settings', label: 'Settings', icon: Settings },
+];
+
+const plannerNavItems = [
+  { path: '/clients', label: 'My Clients', icon: Briefcase },
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
@@ -23,6 +36,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, profile } = useAuth();
+  const { isPlanner, selectedClient, selectClient } = usePlanner();
+
+  const navItems = isPlanner ? plannerNavItems : coupleNavItems;
+
+  // For planners, disable planning pages if no client selected (except /clients and /settings)
+  const needsClient = isPlanner && !selectedClient;
+  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/vendors'];
 
   const handleSignOut = async () => {
     await signOut();
@@ -67,16 +87,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
+          {/* Planner client indicator */}
+          {isPlanner && selectedClient && (
+            <div className="border-b border-sidebar-border px-4 py-3">
+              <button
+                onClick={() => { selectClient(null); navigate('/clients'); }}
+                className="flex items-center gap-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors w-full"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                Back to clients
+              </button>
+              <p className="text-sm font-medium text-sidebar-primary mt-1 truncate">
+                {selectedClient.client_name}{selectedClient.partner_name ? ` & ${selectedClient.partner_name}` : ''}
+              </p>
+            </div>
+          )}
+
           <nav className="flex-1 space-y-1 px-3 py-4">
             {navItems.map((item) => {
               const isActive = location.pathname === item.path;
+              const disabled = needsClient && planningPaths.includes(item.path);
               return (
                 <Link
                   key={item.path}
-                  to={item.path}
-                  onClick={() => setSidebarOpen(false)}
+                  to={disabled ? '#' : item.path}
+                  onClick={(e) => {
+                    if (disabled) { e.preventDefault(); return; }
+                    setSidebarOpen(false);
+                  }}
                   className={`
                     flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
+                    ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
                     ${isActive
                       ? 'bg-sidebar-accent text-sidebar-primary'
                       : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
@@ -112,6 +153,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Heart className="h-5 w-5 text-primary" fill="currentColor" />
             <span className="font-display text-base font-semibold">WeddingPlan</span>
           </div>
+          {isPlanner && selectedClient && (
+            <Badge variant="outline" className="ml-auto text-xs truncate max-w-[120px]">
+              {selectedClient.client_name}
+            </Badge>
+          )}
         </header>
         <div className="flex-1 p-6 lg:p-8">
           {children}

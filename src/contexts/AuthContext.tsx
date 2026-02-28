@@ -32,12 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    if (data) setProfile(data as Profile);
+    const [profileRes, roleRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('user_id', userId).single(),
+      supabase.from('user_roles').select('role').eq('user_id', userId).single(),
+    ]);
+    if (profileRes.data) {
+      const role = (roleRes.data?.role as 'couple' | 'planner') || 'couple';
+      setProfile({ ...profileRes.data, role } as Profile);
+    }
   };
 
   useEffect(() => {

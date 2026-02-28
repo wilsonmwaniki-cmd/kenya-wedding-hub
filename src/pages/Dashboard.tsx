@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Wallet, CheckSquare, Users, Store, Calendar, Heart } from 'lucide-react';
+import { Wallet, CheckSquare, Users, Store, Calendar, Heart, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 interface DashboardStats {
   totalBudget: number;
@@ -17,19 +19,29 @@ interface DashboardStats {
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
+  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>({
     totalBudget: 0, totalSpent: 0, totalTasks: 0, completedTasks: 0,
     totalGuests: 0, confirmedGuests: 0, totalVendors: 0,
   });
 
+  // Redirect planners without a selected client
   useEffect(() => {
-    if (!user) return;
+    if (isPlanner && !selectedClient) {
+      navigate('/clients');
+    }
+  }, [isPlanner, selectedClient, navigate]);
+
+  useEffect(() => {
+    if (!user || !dataFilterKey || !dataFilterValue) return;
+
     const load = async () => {
       const [budget, tasks, guests, vendors] = await Promise.all([
-        supabase.from('budget_categories').select('allocated, spent').eq('user_id', user.id),
-        supabase.from('tasks').select('completed').eq('user_id', user.id),
-        supabase.from('guests').select('rsvp_status').eq('user_id', user.id),
-        supabase.from('vendors').select('id').eq('user_id', user.id),
+        supabase.from('budget_categories').select('allocated, spent').eq(dataFilterKey, dataFilterValue),
+        supabase.from('tasks').select('completed').eq(dataFilterKey, dataFilterValue),
+        supabase.from('guests').select('rsvp_status').eq(dataFilterKey, dataFilterValue),
+        supabase.from('vendors').select('id').eq(dataFilterKey, dataFilterValue),
       ]);
       setStats({
         totalBudget: budget.data?.reduce((s, b) => s + Number(b.allocated), 0) ?? 0,
@@ -42,9 +54,16 @@ export default function Dashboard() {
       });
     };
     load();
-  }, [user]);
+  }, [user, selectedClient, dataFilterKey, dataFilterValue]);
 
-  const weddingDate = profile?.wedding_date ? new Date(profile.wedding_date) : null;
+  const displayName = isPlanner && selectedClient
+    ? selectedClient.client_name
+    : profile?.full_name?.split(' ')[0];
+
+  const weddingDate = isPlanner && selectedClient
+    ? (selectedClient.wedding_date ? new Date(selectedClient.wedding_date) : null)
+    : (profile?.wedding_date ? new Date(profile.wedding_date) : null);
+
   const daysUntil = weddingDate ? Math.max(0, Math.ceil((weddingDate.getTime() - Date.now()) / 86400000)) : null;
 
   const statCards = [
@@ -54,33 +73,28 @@ export default function Dashboard() {
     { label: 'Vendors', value: `${stats.totalVendors} booked`, icon: Store, color: 'text-primary' },
   ];
 
+  if (isPlanner && !selectedClient) return null;
+
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div>
         <h1 className="font-display text-3xl font-bold text-foreground">
-          {profile?.full_name ? `Hello, ${profile.full_name.split(' ')[0]}` : 'Your Dashboard'}
+          {displayName ? `Hello, ${displayName}` : 'Your Dashboard'}
         </h1>
         {daysUntil !== null && (
           <p className="mt-1 flex items-center gap-2 text-muted-foreground">
             <Calendar className="h-4 w-4" />
-            {daysUntil === 0 ? "Today's the day! 🎉" : `${daysUntil} days until your wedding`}
+            {daysUntil === 0 ? "Today's the day! 🎉" : `${daysUntil} days until the wedding`}
           </p>
         )}
         {!weddingDate && (
-          <p className="mt-1 text-muted-foreground">Set your wedding date in settings to see a countdown!</p>
+          <p className="mt-1 text-muted-foreground">Set a wedding date to see a countdown!</p>
         )}
       </div>
 
-      {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((s, i) => (
-          <motion.div
-            key={s.label}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.08 }}
-          >
+          <motion.div key={s.label} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
             <Card className="shadow-card">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">{s.label}</CardTitle>
@@ -94,7 +108,6 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Quick tip */}
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="flex items-start gap-4 py-5">
           <Heart className="mt-0.5 h-5 w-5 text-primary shrink-0" />

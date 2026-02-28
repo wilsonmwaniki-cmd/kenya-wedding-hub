@@ -21,8 +21,9 @@ interface PlannerContextType {
   selectClient: (client: PlannerClient | null) => void;
   loadClients: () => Promise<void>;
   isPlanner: boolean;
-  /** Returns the filter params for queries — either user_id for couples or client_id for planners */
-  getDataFilter: () => { key: string; value: string } | null;
+  /** Returns filter info for queries */
+  dataFilterKey: 'user_id' | 'client_id' | null;
+  dataFilterValue: string | null;
 }
 
 const PlannerContext = createContext<PlannerContextType | undefined>(undefined);
@@ -53,23 +54,22 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     }
   }, [isPlanner, user]);
 
-  const selectClient = (client: PlannerClient | null) => {
-    setSelectedClient(client);
-  };
+  const selectClient = (client: PlannerClient | null) => setSelectedClient(client);
 
-  const getDataFilter = () => {
-    if (!user) return null;
+  let dataFilterKey: 'user_id' | 'client_id' | null = null;
+  let dataFilterValue: string | null = null;
+  if (user) {
     if (isPlanner && selectedClient) {
-      return { key: 'client_id', value: selectedClient.id };
+      dataFilterKey = 'client_id';
+      dataFilterValue = selectedClient.id;
+    } else if (!isPlanner) {
+      dataFilterKey = 'user_id';
+      dataFilterValue = user.id;
     }
-    if (!isPlanner) {
-      return { key: 'user_id', value: user.id };
-    }
-    return null;
-  };
+  }
 
   return (
-    <PlannerContext.Provider value={{ clients, selectedClient, selectClient, loadClients, isPlanner, getDataFilter }}>
+    <PlannerContext.Provider value={{ clients, selectedClient, selectClient, loadClients, isPlanner, dataFilterKey, dataFilterValue }}>
       {children}
     </PlannerContext.Provider>
   );

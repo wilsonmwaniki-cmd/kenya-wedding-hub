@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,9 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 interface Guest {
   id: string;
@@ -21,14 +22,10 @@ interface Guest {
   plus_one: boolean | null;
 }
 
-const rsvpColors: Record<string, string> = {
-  confirmed: 'bg-success/10 text-success border-success/20',
-  pending: 'bg-warning/10 text-warning border-warning/20',
-  declined: 'bg-destructive/10 text-destructive border-destructive/20',
-};
-
 export default function Guests() {
   const { user } = useAuth();
+  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [guests, setGuests] = useState<Guest[]>([]);
   const [open, setOpen] = useState(false);
@@ -36,20 +33,24 @@ export default function Guests() {
   const [phone, setPhone] = useState('');
   const [rsvp, setRsvp] = useState('pending');
 
+  useEffect(() => {
+    if (isPlanner && !selectedClient) navigate('/clients');
+  }, [isPlanner, selectedClient, navigate]);
+
   const load = async () => {
-    if (!user) return;
-    const { data } = await supabase.from('guests').select('*').eq('user_id', user.id).order('name');
+    if (!dataFilterKey || !dataFilterValue) return;
+    const { data } = await supabase.from('guests').select('*').eq(dataFilterKey, dataFilterValue).order('name');
     if (data) setGuests(data as Guest[]);
   };
 
-  useEffect(() => { load(); }, [user]);
+  useEffect(() => { load(); }, [user, selectedClient]);
 
   const addGuest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    const { error } = await supabase.from('guests').insert({
-      user_id: user.id, name, phone: phone || null, rsvp_status: rsvp,
-    });
+    const insert: any = { user_id: user.id, name, phone: phone || null, rsvp_status: rsvp };
+    if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+    const { error } = await supabase.from('guests').insert(insert);
     if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
     setName(''); setPhone(''); setRsvp('pending'); setOpen(false); load();
   };
@@ -65,6 +66,8 @@ export default function Guests() {
   };
 
   const confirmed = guests.filter(g => g.rsvp_status === 'confirmed').length;
+
+  if (isPlanner && !selectedClient) return null;
 
   return (
     <div className="space-y-6">
