@@ -1,0 +1,152 @@
+import { useEffect, useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Heart, Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle } from 'lucide-react';
+
+interface PlannerData {
+  id: string;
+  full_name: string | null;
+  company_name: string | null;
+  company_email: string | null;
+  company_phone: string | null;
+  company_website: string | null;
+  bio: string | null;
+  specialties: string[] | null;
+}
+
+export default function PlannerProfile() {
+  const { id } = useParams<{ id: string }>();
+  const [planner, setPlanner] = useState<PlannerData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!id) return;
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, company_name, company_email, company_phone, company_website, bio, specialties')
+        .eq('id', id)
+        .eq('role', 'planner' as any)
+        .single();
+      if (error || !data) {
+        setNotFound(true);
+      } else {
+        setPlanner(data as PlannerData);
+      }
+      setLoading(false);
+    };
+    load();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (notFound || !planner) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background gap-4">
+        <p className="text-muted-foreground">Planner profile not found.</p>
+        <Link to="/">
+          <Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2" />Back to Home</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b border-border bg-card">
+        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-2">
+          <Heart className="h-5 w-5 text-primary" fill="currentColor" />
+          <span className="font-display text-base font-semibold text-foreground">WeddingPlan</span>
+          <Link to="/" className="ml-auto text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Home
+          </Link>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto px-6 py-10 space-y-6">
+        {/* Profile Header */}
+        <div className="flex items-start gap-5">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
+            <UserCircle className="h-10 w-10" />
+          </div>
+          <div>
+            <h1 className="font-display text-2xl font-bold text-foreground">
+              {planner.company_name || planner.full_name || 'Wedding Planner'}
+            </h1>
+            {planner.company_name && planner.full_name && (
+              <p className="text-muted-foreground">{planner.full_name}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Contact Card */}
+        {(planner.company_email || planner.company_phone || planner.company_website) && (
+          <Card className="shadow-card">
+            <CardHeader>
+              <CardTitle className="font-display text-base">Contact</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {planner.company_email && (
+                <a href={`mailto:${planner.company_email}`} className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  <Mail className="h-4 w-4 text-primary" />
+                  {planner.company_email}
+                </a>
+              )}
+              {planner.company_phone && (
+                <a href={`tel:${planner.company_phone}`} className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  <Phone className="h-4 w-4 text-primary" />
+                  {planner.company_phone}
+                </a>
+              )}
+              {planner.company_website && (
+                <a href={planner.company_website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  <Globe className="h-4 w-4 text-primary" />
+                  {planner.company_website.replace(/^https?:\/\//, '')}
+                </a>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Bio */}
+        {planner.bio && (
+          <Card className="shadow-card">
+            <CardHeader>
+              <CardTitle className="font-display text-base">About</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground whitespace-pre-line">{planner.bio}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Specialties */}
+        {planner.specialties && planner.specialties.length > 0 && (
+          <Card className="shadow-card">
+            <CardHeader>
+              <CardTitle className="font-display text-base">Specialties</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {planner.specialties.map(s => (
+                  <Badge key={s} variant="secondary">{s}</Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </main>
+    </div>
+  );
+}
