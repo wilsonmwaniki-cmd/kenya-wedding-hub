@@ -330,6 +330,7 @@ export type Database = {
           price: number | null
           status: string | null
           user_id: string
+          vendor_listing_id: string | null
         }
         Insert: {
           category: string
@@ -343,6 +344,7 @@ export type Database = {
           price?: number | null
           status?: string | null
           user_id: string
+          vendor_listing_id?: string | null
         }
         Update: {
           category?: string
@@ -356,6 +358,7 @@ export type Database = {
           price?: number | null
           status?: string | null
           user_id?: string
+          vendor_listing_id?: string | null
         }
         Relationships: [
           {
@@ -363,6 +366,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendors_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
             referencedColumns: ["id"]
           },
         ]

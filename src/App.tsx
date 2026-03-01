@@ -17,6 +17,7 @@ import Guests from "./pages/Guests";
 import Vendors from "./pages/Vendors";
 import VendorDirectory from "./pages/VendorDirectory";
 import VendorSettings from "./pages/VendorSettings";
+import VendorDashboard from "./pages/VendorDashboard";
 import AiChat from "./pages/AiChat";
 import ProfileSettings from "./pages/ProfileSettings";
 import NotFound from "./pages/NotFound";
@@ -53,6 +54,7 @@ const App = () => (
               <Route path="/tasks" element={<ProtectedPage><Tasks /></ProtectedPage>} />
               <Route path="/guests" element={<ProtectedPage><Guests /></ProtectedPage>} />
               <Route path="/vendors" element={<ProtectedPage><Vendors /></ProtectedPage>} />
+              <Route path="/vendor-dashboard" element={<ProtectedPage><VendorDashboard /></ProtectedPage>} />
               <Route path="/vendor-settings" element={<ProtectedPage><VendorSettings /></ProtectedPage>} />
               <Route path="/ai-chat" element={<ProtectedPage><AiChat /></ProtectedPage>} />
               <Route path="/settings" element={<ProtectedPage><ProfileSettings /></ProtectedPage>} />
