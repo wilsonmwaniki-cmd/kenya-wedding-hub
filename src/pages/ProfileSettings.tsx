@@ -17,6 +17,7 @@ export default function ProfileSettings() {
   const [newSpecialty, setNewSpecialty] = useState('');
 
   const isPlanner = profile?.role === 'planner';
+  const isVendor = profile?.role === 'vendor';
 
   const [form, setForm] = useState({
     full_name: '',
@@ -98,7 +99,7 @@ export default function ProfileSettings() {
       <div>
         <h1 className="font-display text-3xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground">
-          {isPlanner ? 'Manage your planner profile & company details' : 'Manage your wedding profile'}
+          {isPlanner ? 'Manage your planner profile & company details' : isVendor ? 'Manage your account settings' : 'Manage your wedding profile'}
         </p>
       </div>
 
@@ -213,7 +214,7 @@ export default function ProfileSettings() {
               </CardContent>
             </Card>
           </>
-        ) : (
+        ) : !isVendor ? (
           /* Couple: Wedding Details */
           <Card className="shadow-card">
             <CardHeader>
@@ -234,7 +235,7 @@ export default function ProfileSettings() {
               </div>
             </CardContent>
           </Card>
-        )}
+        ) : null}
 
         <Button type="submit" disabled={saving} className="w-full">
           {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}

@@ -277,6 +277,10 @@ export type Database = {
           logo_url: string | null
           phone: string | null
           services: string[] | null
+          social_facebook: string | null
+          social_instagram: string | null
+          social_tiktok: string | null
+          social_twitter: string | null
           updated_at: string
           user_id: string
           website: string | null
@@ -294,6 +298,10 @@ export type Database = {
           logo_url?: string | null
           phone?: string | null
           services?: string[] | null
+          social_facebook?: string | null
+          social_instagram?: string | null
+          social_tiktok?: string | null
+          social_twitter?: string | null
           updated_at?: string
           user_id: string
           website?: string | null
@@ -311,6 +319,10 @@ export type Database = {
           logo_url?: string | null
           phone?: string | null
           services?: string[] | null
+          social_facebook?: string | null
+          social_instagram?: string | null
+          social_tiktok?: string | null
+          social_twitter?: string | null
           updated_at?: string
           user_id?: string
           website?: string | null

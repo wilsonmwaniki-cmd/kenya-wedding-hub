@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle2, Clock, Store, X } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook } from 'lucide-react';
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -25,6 +25,10 @@ interface VendorListing {
   services: string[];
   is_approved: boolean;
   is_verified: boolean;
+  social_instagram: string | null;
+  social_facebook: string | null;
+  social_tiktok: string | null;
+  social_twitter: string | null;
 }
 
 export default function VendorSettings() {
@@ -42,6 +46,10 @@ export default function VendorSettings() {
     website: '',
     location: '',
     services: [] as string[],
+    social_instagram: '',
+    social_facebook: '',
+    social_tiktok: '',
+    social_twitter: '',
   });
   const [newService, setNewService] = useState('');
 
@@ -64,6 +72,10 @@ export default function VendorSettings() {
           website: data.website || '',
           location: data.location || '',
           services: (data.services as string[]) || [],
+          social_instagram: (data as any).social_instagram || '',
+          social_facebook: (data as any).social_facebook || '',
+          social_tiktok: (data as any).social_tiktok || '',
+          social_twitter: (data as any).social_twitter || '',
         });
       }
       setLoading(false);
@@ -86,6 +98,10 @@ export default function VendorSettings() {
       website: form.website || null,
       location: form.location || null,
       services: form.services,
+      social_instagram: form.social_instagram || null,
+      social_facebook: form.social_facebook || null,
+      social_tiktok: form.social_tiktok || null,
+      social_twitter: form.social_twitter || null,
     };
 
     let error;
@@ -248,6 +264,32 @@ export default function VendorSettings() {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Social Media */}
+            <div className="border-t border-border pt-4 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground mb-1">Social Media</h3>
+                <p className="text-xs text-muted-foreground">Link your accounts so clients can find you online.</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5"><Instagram className="h-3.5 w-3.5" /> Instagram</Label>
+                  <Input value={form.social_instagram} onChange={(e) => setForm((f) => ({ ...f, social_instagram: e.target.value }))} placeholder="https://instagram.com/yourbusiness" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5"><Facebook className="h-3.5 w-3.5" /> Facebook</Label>
+                  <Input value={form.social_facebook} onChange={(e) => setForm((f) => ({ ...f, social_facebook: e.target.value }))} placeholder="https://facebook.com/yourbusiness" />
+                </div>
+                <div className="space-y-2">
+                  <Label>TikTok</Label>
+                  <Input value={form.social_tiktok} onChange={(e) => setForm((f) => ({ ...f, social_tiktok: e.target.value }))} placeholder="https://tiktok.com/@yourbusiness" />
+                </div>
+                <div className="space-y-2">
+                  <Label>X (Twitter)</Label>
+                  <Input value={form.social_twitter} onChange={(e) => setForm((f) => ({ ...f, social_twitter: e.target.value }))} placeholder="https://x.com/yourbusiness" />
+                </div>
+              </div>
             </div>
 
             <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
