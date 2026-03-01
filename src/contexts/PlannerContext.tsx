@@ -36,6 +36,7 @@ interface PlannerContextType {
   /** For couples: info about their linked planner */
   linkedPlanner: LinkedPlannerInfo | null;
   loadLinkedPlanner: () => Promise<void>;
+  unlinkPlanner: () => Promise<void>;
 }
 
 const PlannerContext = createContext<PlannerContextType | undefined>(undefined);
@@ -103,6 +104,22 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
 
   const selectClient = (client: PlannerClient | null) => setSelectedClient(client);
 
+  const unlinkPlanner = async () => {
+    if (!user || !linkedPlanner) return;
+    // Clear linked_user_id on the planner_clients record
+    await supabase
+      .from('planner_clients')
+      .update({ linked_user_id: null })
+      .eq('id', linkedPlanner.clientRecordId);
+    // Also update the link request status
+    await supabase
+      .from('planner_link_requests')
+      .delete()
+      .eq('couple_user_id', user.id)
+      .eq('planner_user_id', linkedPlanner.plannerUserId);
+    setLinkedPlanner(null);
+  };
+
   // Build filters
   let dataFilterKey: 'user_id' | 'client_id' | null = null;
   let dataFilterValue: string | null = null;
@@ -134,7 +151,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     <PlannerContext.Provider value={{
       clients, selectedClient, selectClient, loadClients, isPlanner,
       dataFilterKey, dataFilterValue, dataOrFilter,
-      linkedPlanner, loadLinkedPlanner,
+      linkedPlanner, loadLinkedPlanner, unlinkPlanner,
     }}>
       {children}
     </PlannerContext.Provider>
