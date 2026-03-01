@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Heart, Loader2, Users, Briefcase } from 'lucide-react';
+import { Heart, Loader2, Users, Briefcase, Store } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Auth() {
@@ -13,7 +13,7 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'couple' | 'planner'>('couple');
+  const [role, setRole] = useState<'couple' | 'planner' | 'vendor'>('couple');
   const [submitting, setSubmitting] = useState(false);
   const { signIn, signUp, user, profile, loading } = useAuth();
   const { toast } = useToast();
@@ -26,7 +26,7 @@ export default function Auth() {
     );
   }
 
-  if (user) return <Navigate to={profile?.role === 'planner' ? '/clients' : '/dashboard'} replace />;
+  if (user) return <Navigate to={profile?.role === 'planner' ? '/clients' : profile?.role === 'vendor' ? '/vendor-settings' : '/dashboard'} replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,32 +68,45 @@ export default function Auth() {
                 </div>
                 <div className="space-y-2">
                   <Label>Account Type</Label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => setRole('couple')}
-                      className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-colors ${
+                      className={`flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors ${
                         role === 'couple'
                           ? 'border-primary bg-primary/5 text-primary'
                           : 'border-border text-muted-foreground hover:border-primary/50'
                       }`}
                     >
-                      <Users className="h-6 w-6" />
+                      <Users className="h-5 w-5" />
                       <span className="text-sm font-medium">Couple</span>
-                      <span className="text-xs text-center">Plan your own wedding</span>
+                      <span className="text-[10px] text-center leading-tight">Plan your wedding</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setRole('planner')}
-                      className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-colors ${
+                      className={`flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors ${
                         role === 'planner'
                           ? 'border-primary bg-primary/5 text-primary'
                           : 'border-border text-muted-foreground hover:border-primary/50'
                       }`}
                     >
-                      <Briefcase className="h-6 w-6" />
+                      <Briefcase className="h-5 w-5" />
                       <span className="text-sm font-medium">Planner</span>
-                      <span className="text-xs text-center">Manage multiple clients</span>
+                      <span className="text-[10px] text-center leading-tight">Manage clients</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRole('vendor')}
+                      className={`flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors ${
+                        role === 'vendor'
+                          ? 'border-primary bg-primary/5 text-primary'
+                          : 'border-border text-muted-foreground hover:border-primary/50'
+                      }`}
+                    >
+                      <Store className="h-5 w-5" />
+                      <span className="text-sm font-medium">Vendor</span>
+                      <span className="text-[10px] text-center leading-tight">List your business</span>
                     </button>
                   </div>
                 </div>

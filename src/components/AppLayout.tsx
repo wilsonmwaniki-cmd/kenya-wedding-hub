@@ -31,6 +31,11 @@ const plannerNavItems = [
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
+const vendorNavItems = [
+  { path: '/vendor-settings', label: 'My Listing', icon: Store },
+  { path: '/settings', label: 'Settings', icon: Settings },
+];
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
@@ -38,7 +43,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { signOut, profile } = useAuth();
   const { isPlanner, selectedClient, selectClient } = usePlanner();
 
-  const navItems = isPlanner ? plannerNavItems : coupleNavItems;
+  const isVendor = profile?.role === 'vendor';
+  const navItems = isVendor ? vendorNavItems : isPlanner ? plannerNavItems : coupleNavItems;
 
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !selectedClient;

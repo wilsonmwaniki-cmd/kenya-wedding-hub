@@ -15,6 +15,8 @@ import Budget from "./pages/Budget";
 import Tasks from "./pages/Tasks";
 import Guests from "./pages/Guests";
 import Vendors from "./pages/Vendors";
+import VendorDirectory from "./pages/VendorDirectory";
+import VendorSettings from "./pages/VendorSettings";
 import AiChat from "./pages/AiChat";
 import ProfileSettings from "./pages/ProfileSettings";
 import NotFound from "./pages/NotFound";
@@ -43,6 +45,7 @@ const App = () => (
               <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/planners" element={<PlannerDirectory />} />
+              <Route path="/vendors-directory" element={<VendorDirectory />} />
               <Route path="/planner/:id" element={<PlannerProfile />} />
               <Route path="/clients" element={<ProtectedPage><PlannerDashboard /></ProtectedPage>} />
               <Route path="/dashboard" element={<ProtectedPage><Dashboard /></ProtectedPage>} />
@@ -50,6 +53,7 @@ const App = () => (
               <Route path="/tasks" element={<ProtectedPage><Tasks /></ProtectedPage>} />
               <Route path="/guests" element={<ProtectedPage><Guests /></ProtectedPage>} />
               <Route path="/vendors" element={<ProtectedPage><Vendors /></ProtectedPage>} />
+              <Route path="/vendor-settings" element={<ProtectedPage><VendorSettings /></ProtectedPage>} />
               <Route path="/ai-chat" element={<ProtectedPage><AiChat /></ProtectedPage>} />
               <Route path="/settings" element={<ProtectedPage><ProfileSettings /></ProtectedPage>} />
               <Route path="*" element={<NotFound />} />
