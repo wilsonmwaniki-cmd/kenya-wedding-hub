@@ -38,15 +38,13 @@ const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Fl
 
 export default function Vendors() {
   const { user } = useAuth();
-  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'directory' | 'custom'>('directory');
   const [form, setForm] = useState({ name: '', category: 'Venue', phone: '', price: '' });
-
-  // Directory search state
   const [dirSearch, setDirSearch] = useState('');
   const [dirResults, setDirResults] = useState<DirectoryVendor[]>([]);
   const [dirLoading, setDirLoading] = useState(false);
@@ -56,14 +54,13 @@ export default function Vendors() {
   }, [isPlanner, selectedClient, navigate]);
 
   const load = async () => {
-    if (!dataFilterKey || !dataFilterValue) return;
-    const { data } = await supabase.from('vendors').select('*').eq(dataFilterKey, dataFilterValue).order('created_at');
+    if (!dataOrFilter) return;
+    const { data } = await supabase.from('vendors').select('*').or(dataOrFilter).order('created_at');
     if (data) setVendors(data.map(d => ({ ...d, price: d.price ? Number(d.price) : null })));
   };
 
-  useEffect(() => { load(); }, [user, selectedClient]);
+  useEffect(() => { load(); }, [user, selectedClient, dataOrFilter]);
 
-  // Search directory vendors
   const searchDirectory = async (q: string) => {
     setDirSearch(q);
     if (q.trim().length < 2) { setDirResults([]); return; }
@@ -81,22 +78,14 @@ export default function Vendors() {
   const addFromDirectory = async (dv: DirectoryVendor) => {
     if (!user) return;
     const insert: any = {
-      user_id: user.id,
-      name: dv.business_name,
-      category: dv.category,
-      phone: dv.phone || null,
-      price: null,
-      status: 'contacted',
-      vendor_listing_id: dv.id,
+      user_id: user.id, name: dv.business_name, category: dv.category,
+      phone: dv.phone || null, price: null, status: 'contacted', vendor_listing_id: dv.id,
     };
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
     const { error } = await supabase.from('vendors').insert(insert);
     if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
     toast({ title: 'Added!', description: `${dv.business_name} added to your vendors.` });
-    setOpen(false);
-    setDirSearch('');
-    setDirResults([]);
-    load();
+    setOpen(false); setDirSearch(''); setDirResults([]); load();
   };
 
   const addVendor = async (e: React.FormEvent) => {
@@ -137,44 +126,22 @@ export default function Vendors() {
           </DialogTrigger>
           <DialogContent className="max-w-lg">
             <DialogHeader><DialogTitle className="font-display">Add Vendor</DialogTitle></DialogHeader>
-
-            {/* Mode tabs */}
             <div className="flex gap-2 border-b border-border pb-3">
-              <Button
-                variant={mode === 'directory' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setMode('directory')}
-                className="gap-1"
-              >
+              <Button variant={mode === 'directory' ? 'default' : 'outline'} size="sm" onClick={() => setMode('directory')} className="gap-1">
                 <Search className="h-3.5 w-3.5" /> From Directory
               </Button>
-              <Button
-                variant={mode === 'custom' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setMode('custom')}
-                className="gap-1"
-              >
+              <Button variant={mode === 'custom' ? 'default' : 'outline'} size="sm" onClick={() => setMode('custom')} className="gap-1">
                 <Plus className="h-3.5 w-3.5" /> Add Custom
               </Button>
             </div>
-
             {mode === 'directory' ? (
               <div className="space-y-3">
-                <Input
-                  placeholder="Search verified vendors…"
-                  value={dirSearch}
-                  onChange={(e) => searchDirectory(e.target.value)}
-                  autoFocus
-                />
+                <Input placeholder="Search verified vendors…" value={dirSearch} onChange={(e) => searchDirectory(e.target.value)} autoFocus />
                 {dirLoading && <p className="text-sm text-muted-foreground">Searching…</p>}
                 {dirResults.length > 0 ? (
                   <div className="max-h-60 overflow-y-auto space-y-2">
                     {dirResults.map((dv) => (
-                      <button
-                        key={dv.id}
-                        onClick={() => addFromDirectory(dv)}
-                        className="flex w-full items-center gap-3 rounded-lg border border-border p-3 text-left hover:bg-accent/50 transition-colors"
-                      >
+                      <button key={dv.id} onClick={() => addFromDirectory(dv)} className="flex w-full items-center gap-3 rounded-lg border border-border p-3 text-left hover:bg-accent/50 transition-colors">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-sm text-foreground truncate">{dv.business_name}</span>

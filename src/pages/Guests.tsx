@@ -24,7 +24,7 @@ interface Guest {
 
 export default function Guests() {
   const { user } = useAuth();
-  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -38,12 +38,12 @@ export default function Guests() {
   }, [isPlanner, selectedClient, navigate]);
 
   const load = async () => {
-    if (!dataFilterKey || !dataFilterValue) return;
-    const { data } = await supabase.from('guests').select('*').eq(dataFilterKey, dataFilterValue).order('name');
+    if (!dataOrFilter) return;
+    const { data } = await supabase.from('guests').select('*').or(dataOrFilter).order('name');
     if (data) setGuests(data as Guest[]);
   };
 
-  useEffect(() => { load(); }, [user, selectedClient]);
+  useEffect(() => { load(); }, [user, selectedClient, dataOrFilter]);
 
   const addGuest = async (e: React.FormEvent) => {
     e.preventDefault();

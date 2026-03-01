@@ -13,6 +13,13 @@ export interface PlannerClient {
   phone: string | null;
   notes: string | null;
   created_at: string;
+  linked_user_id: string | null;
+}
+
+interface LinkedPlannerInfo {
+  clientRecordId: string;
+  plannerUserId: string;
+  plannerName: string | null;
 }
 
 interface PlannerContextType {
@@ -24,6 +31,11 @@ interface PlannerContextType {
   /** Returns filter info for queries */
   dataFilterKey: 'user_id' | 'client_id' | null;
   dataFilterValue: string | null;
+  /** OR filter string for .or() queries — supports shared workspace */
+  dataOrFilter: string | null;
+  /** For couples: info about their linked planner */
+  linkedPlanner: LinkedPlannerInfo | null;
+  loadLinkedPlanner: () => Promise<void>;
 }
 
 const PlannerContext = createContext<PlannerContextType | undefined>(undefined);
@@ -32,8 +44,10 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const { user, profile } = useAuth();
   const [clients, setClients] = useState<PlannerClient[]>([]);
   const [selectedClient, setSelectedClient] = useState<PlannerClient | null>(null);
+  const [linkedPlanner, setLinkedPlanner] = useState<LinkedPlannerInfo | null>(null);
 
   const isPlanner = profile?.role === 'planner';
+  const isCouple = profile?.role === 'couple';
 
   const loadClients = async () => {
     if (!user || !isPlanner) return;
@@ -45,6 +59,31 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     if (data) setClients(data as PlannerClient[]);
   };
 
+  const loadLinkedPlanner = async () => {
+    if (!user || !isCouple) { setLinkedPlanner(null); return; }
+    const { data } = await supabase
+      .from('planner_clients')
+      .select('id, planner_user_id')
+      .eq('linked_user_id', user.id)
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      // Fetch planner name
+      const { data: plannerProfile } = await supabase
+        .from('profiles')
+        .select('full_name, company_name')
+        .eq('user_id', data.planner_user_id)
+        .single();
+      setLinkedPlanner({
+        clientRecordId: data.id,
+        plannerUserId: data.planner_user_id,
+        plannerName: plannerProfile?.company_name || plannerProfile?.full_name || null,
+      });
+    } else {
+      setLinkedPlanner(null);
+    }
+  };
+
   useEffect(() => {
     if (isPlanner && user) {
       loadClients();
@@ -54,22 +93,49 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     }
   }, [isPlanner, user]);
 
+  useEffect(() => {
+    if (isCouple && user) {
+      loadLinkedPlanner();
+    } else {
+      setLinkedPlanner(null);
+    }
+  }, [isCouple, user]);
+
   const selectClient = (client: PlannerClient | null) => setSelectedClient(client);
 
+  // Build filters
   let dataFilterKey: 'user_id' | 'client_id' | null = null;
   let dataFilterValue: string | null = null;
+  let dataOrFilter: string | null = null;
+
   if (user) {
     if (isPlanner && selectedClient) {
       dataFilterKey = 'client_id';
       dataFilterValue = selectedClient.id;
+      // If linked, also show couple's own data
+      if (selectedClient.linked_user_id) {
+        dataOrFilter = `client_id.eq.${selectedClient.id},user_id.eq.${selectedClient.linked_user_id}`;
+      } else {
+        dataOrFilter = `client_id.eq.${selectedClient.id}`;
+      }
     } else if (!isPlanner) {
       dataFilterKey = 'user_id';
       dataFilterValue = user.id;
+      // If linked to a planner, also show planner-created data
+      if (linkedPlanner) {
+        dataOrFilter = `user_id.eq.${user.id},client_id.eq.${linkedPlanner.clientRecordId}`;
+      } else {
+        dataOrFilter = `user_id.eq.${user.id}`;
+      }
     }
   }
 
   return (
-    <PlannerContext.Provider value={{ clients, selectedClient, selectClient, loadClients, isPlanner, dataFilterKey, dataFilterValue }}>
+    <PlannerContext.Provider value={{
+      clients, selectedClient, selectClient, loadClients, isPlanner,
+      dataFilterKey, dataFilterValue, dataOrFilter,
+      linkedPlanner, loadLinkedPlanner,
+    }}>
       {children}
     </PlannerContext.Provider>
   );
