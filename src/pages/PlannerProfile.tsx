@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Heart, Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle } from 'lucide-react';
+import { Heart, Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, LinkIcon, CheckCircle2, Clock } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { useToast } from '@/hooks/use-toast';
 
 interface PlannerData {
   id: string;
+  user_id: string;
   full_name: string | null;
   company_name: string | null;
   avatar_url: string | null;
@@ -21,16 +24,22 @@ interface PlannerData {
 
 export default function PlannerProfile() {
   const { id } = useParams<{ id: string }>();
+  const { user, profile } = useAuth();
+  const { toast } = useToast();
   const [planner, setPlanner] = useState<PlannerData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [requestStatus, setRequestStatus] = useState<string | null>(null); // null, 'pending', 'approved'
+  const [sending, setSending] = useState(false);
+
+  const isCouple = profile?.role === 'couple';
 
   useEffect(() => {
     if (!id) return;
     const load = async () => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, company_name, company_email, company_phone, company_website, bio, specialties, avatar_url')
+        .select('id, user_id, full_name, company_name, company_email, company_phone, company_website, bio, specialties, avatar_url')
         .eq('id', id)
         .eq('role', 'planner' as any)
         .single();
@@ -38,11 +47,37 @@ export default function PlannerProfile() {
         setNotFound(true);
       } else {
         setPlanner(data as PlannerData);
+        // Check existing link request
+        if (user) {
+          const { data: req } = await supabase
+            .from('planner_link_requests')
+            .select('status')
+            .eq('couple_user_id', user.id)
+            .eq('planner_user_id', data.user_id)
+            .maybeSingle();
+          if (req) setRequestStatus(req.status);
+        }
       }
       setLoading(false);
     };
     load();
-  }, [id]);
+  }, [id, user]);
+
+  const sendRequest = async () => {
+    if (!user || !planner) return;
+    setSending(true);
+    const { error } = await supabase.from('planner_link_requests').insert({
+      couple_user_id: user.id,
+      planner_user_id: planner.user_id,
+    });
+    setSending(false);
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setRequestStatus('pending');
+    toast({ title: 'Request sent!', description: 'Your planner will review your request.' });
+  };
 
   if (loading) {
     return (
@@ -65,7 +100,6 @@ export default function PlannerProfile() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-2">
           <Heart className="h-5 w-5 text-primary" fill="currentColor" />
@@ -85,7 +119,7 @@ export default function PlannerProfile() {
               {planner.full_name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || <UserCircle className="h-8 w-8" />}
             </AvatarFallback>
           </Avatar>
-          <div>
+          <div className="flex-1">
             <h1 className="font-display text-2xl font-bold text-foreground">
               {planner.company_name || planner.full_name || 'Wedding Planner'}
             </h1>
@@ -94,6 +128,42 @@ export default function PlannerProfile() {
             )}
           </div>
         </div>
+
+        {/* Link Request Button for Couples */}
+        {isCouple && user && (
+          <Card className="shadow-card border-primary/20">
+            <CardContent className="flex items-center gap-4 py-4">
+              {requestStatus === 'approved' ? (
+                <>
+                  <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-medium text-card-foreground">You're linked with this planner</p>
+                    <p className="text-sm text-muted-foreground">Your wedding progress is shared.</p>
+                  </div>
+                </>
+              ) : requestStatus === 'pending' ? (
+                <>
+                  <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-medium text-card-foreground">Link request pending</p>
+                    <p className="text-sm text-muted-foreground">Waiting for the planner to accept.</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <LinkIcon className="h-5 w-5 text-primary shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-medium text-card-foreground">Work with this planner</p>
+                    <p className="text-sm text-muted-foreground">Link your account to share wedding progress.</p>
+                  </div>
+                  <Button onClick={sendRequest} disabled={sending} size="sm">
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Request Link'}
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Contact Card */}
         {(planner.company_email || planner.company_phone || planner.company_website) && (
@@ -124,7 +194,6 @@ export default function PlannerProfile() {
           </Card>
         )}
 
-        {/* Bio */}
         {planner.bio && (
           <Card className="shadow-card">
             <CardHeader>
@@ -136,7 +205,6 @@ export default function PlannerProfile() {
           </Card>
         )}
 
-        {/* Specialties */}
         {planner.specialties && planner.specialties.length > 0 && (
           <Card className="shadow-card">
             <CardHeader>

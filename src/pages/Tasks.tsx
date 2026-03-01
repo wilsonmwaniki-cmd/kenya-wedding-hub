@@ -23,7 +23,7 @@ interface Task {
 
 export default function Tasks() {
   const { user } = useAuth();
-  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -36,12 +36,12 @@ export default function Tasks() {
   }, [isPlanner, selectedClient, navigate]);
 
   const load = async () => {
-    if (!dataFilterKey || !dataFilterValue) return;
-    const { data } = await supabase.from('tasks').select('*').eq(dataFilterKey, dataFilterValue).order('due_date', { ascending: true, nullsFirst: false });
+    if (!dataOrFilter) return;
+    const { data } = await supabase.from('tasks').select('*').or(dataOrFilter).order('due_date', { ascending: true, nullsFirst: false });
     if (data) setTasks(data as Task[]);
   };
 
-  useEffect(() => { load(); }, [user, selectedClient]);
+  useEffect(() => { load(); }, [user, selectedClient, dataOrFilter]);
 
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();

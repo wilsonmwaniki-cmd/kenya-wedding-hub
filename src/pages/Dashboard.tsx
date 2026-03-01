@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Wallet, CheckSquare, Users, Store, Calendar, Heart, AlertCircle } from 'lucide-react';
+import { Wallet, CheckSquare, Users, Store, Calendar, Heart, LinkIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
@@ -20,14 +20,13 @@ interface DashboardStats {
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
-  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter, linkedPlanner } = usePlanner();
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>({
     totalBudget: 0, totalSpent: 0, totalTasks: 0, completedTasks: 0,
     totalGuests: 0, confirmedGuests: 0, totalVendors: 0,
   });
 
-  // Redirect planners without a selected client
   useEffect(() => {
     if (isPlanner && !selectedClient) {
       navigate('/clients');
@@ -35,14 +34,14 @@ export default function Dashboard() {
   }, [isPlanner, selectedClient, navigate]);
 
   useEffect(() => {
-    if (!user || !dataFilterKey || !dataFilterValue) return;
+    if (!user || !dataOrFilter) return;
 
     const load = async () => {
       const [budget, tasks, guests, vendors] = await Promise.all([
-        supabase.from('budget_categories').select('allocated, spent').eq(dataFilterKey, dataFilterValue),
-        supabase.from('tasks').select('completed').eq(dataFilterKey, dataFilterValue),
-        supabase.from('guests').select('rsvp_status').eq(dataFilterKey, dataFilterValue),
-        supabase.from('vendors').select('id').eq(dataFilterKey, dataFilterValue),
+        supabase.from('budget_categories').select('allocated, spent').or(dataOrFilter),
+        supabase.from('tasks').select('completed').or(dataOrFilter),
+        supabase.from('guests').select('rsvp_status').or(dataOrFilter),
+        supabase.from('vendors').select('id').or(dataOrFilter),
       ]);
       setStats({
         totalBudget: budget.data?.reduce((s, b) => s + Number(b.allocated), 0) ?? 0,
@@ -55,7 +54,7 @@ export default function Dashboard() {
       });
     };
     load();
-  }, [user, selectedClient, dataFilterKey, dataFilterValue]);
+  }, [user, selectedClient, dataOrFilter]);
 
   const displayName = isPlanner && selectedClient
     ? selectedClient.client_name
@@ -93,6 +92,21 @@ export default function Dashboard() {
           <p className="mt-1 text-muted-foreground">Set a wedding date to see a countdown!</p>
         )}
       </div>
+
+      {/* Linked planner info for couples */}
+      {linkedPlanner && !isPlanner && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="flex items-center gap-3 py-4">
+            <LinkIcon className="h-5 w-5 text-primary shrink-0" />
+            <div>
+              <p className="font-medium text-card-foreground text-sm">
+                Linked with {linkedPlanner.plannerName || 'your planner'}
+              </p>
+              <p className="text-xs text-muted-foreground">Your progress is shared — both of you can add and track items.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((s, i) => (

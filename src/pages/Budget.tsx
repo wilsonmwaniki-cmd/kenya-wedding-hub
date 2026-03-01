@@ -21,7 +21,7 @@ interface BudgetCategory {
 
 export default function Budget() {
   const { user } = useAuth();
-  const { isPlanner, selectedClient, dataFilterKey, dataFilterValue } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
@@ -34,12 +34,12 @@ export default function Budget() {
   }, [isPlanner, selectedClient, navigate]);
 
   const load = async () => {
-    if (!dataFilterKey || !dataFilterValue) return;
-    const { data } = await supabase.from('budget_categories').select('*').eq(dataFilterKey, dataFilterValue).order('created_at');
+    if (!dataOrFilter) return;
+    const { data } = await supabase.from('budget_categories').select('*').or(dataOrFilter).order('created_at');
     if (data) setCategories(data.map(d => ({ ...d, allocated: Number(d.allocated), spent: Number(d.spent) })));
   };
 
-  useEffect(() => { load(); }, [user, selectedClient]);
+  useEffect(() => { load(); }, [user, selectedClient, dataOrFilter]);
 
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault();

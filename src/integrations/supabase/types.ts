@@ -108,6 +108,7 @@ export type Database = {
           created_at: string
           email: string | null
           id: string
+          linked_user_id: string | null
           notes: string | null
           partner_name: string | null
           phone: string | null
@@ -121,6 +122,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          linked_user_id?: string | null
           notes?: string | null
           partner_name?: string | null
           phone?: string | null
@@ -134,6 +136,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          linked_user_id?: string | null
           notes?: string | null
           partner_name?: string | null
           phone?: string | null
@@ -141,6 +144,33 @@ export type Database = {
           updated_at?: string
           wedding_date?: string | null
           wedding_location?: string | null
+        }
+        Relationships: []
+      }
+      planner_link_requests: {
+        Row: {
+          couple_user_id: string
+          created_at: string
+          id: string
+          planner_user_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          couple_user_id: string
+          created_at?: string
+          id?: string
+          planner_user_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          couple_user_id?: string
+          created_at?: string
+          id?: string
+          planner_user_id?: string
+          status?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -399,6 +429,11 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_linked_couple_of: { Args: { _client_id: string }; Returns: boolean }
+      is_linked_planner_of: {
+        Args: { _data_user_id: string }
         Returns: boolean
       }
     }
