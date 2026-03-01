@@ -1,7 +1,12 @@
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, Navigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import heroImage from '@/assets/hero-wedding.jpg';
 
 const features = [
@@ -11,7 +16,127 @@ const features = [
   { icon: MessageSquare, title: 'AI Assistant', desc: 'Get instant help with Kenyan wedding planning tips and advice.' },
 ];
 
+function InlineAuthForm() {
+  const [isSignUp, setIsSignUp] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState<'couple' | 'planner' | 'vendor'>('couple');
+  const [submitting, setSubmitting] = useState(false);
+  const { signIn, signUp } = useAuth();
+  const { toast } = useToast();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      if (isSignUp) {
+        await signUp(email, password, fullName, role);
+        toast({ title: 'Account created!', description: 'Check your email to confirm your account.' });
+      } else {
+        await signIn(email, password);
+      }
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const roles = [
+    { value: 'couple' as const, icon: Users, label: 'Couple', sub: 'Plan your wedding' },
+    { value: 'planner' as const, icon: Briefcase, label: 'Planner', sub: 'Manage clients' },
+    { value: 'vendor' as const, icon: Store, label: 'Vendor', sub: 'List your business' },
+  ];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, delay: 0.3 }}
+      className="w-full max-w-sm rounded-2xl border border-border/50 bg-card/95 p-6 shadow-warm backdrop-blur-sm"
+    >
+      <div className="mb-4 text-center">
+        <h3 className="font-display text-lg font-semibold text-card-foreground">
+          {isSignUp ? 'Create Your Account' : 'Welcome Back'}
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {isSignUp ? 'Start planning your dream wedding' : 'Sign in to continue'}
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {isSignUp && (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="hero-name" className="text-xs">Full Name</Label>
+              <Input id="hero-name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" required className="h-9 text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Account Type</Label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {roles.map((r) => (
+                  <button
+                    key={r.value}
+                    type="button"
+                    onClick={() => setRole(r.value)}
+                    className={`flex flex-col items-center gap-1 rounded-lg border-2 p-2 transition-colors ${
+                      role === r.value
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-border text-muted-foreground hover:border-primary/50'
+                    }`}
+                  >
+                    <r.icon className="h-4 w-4" />
+                    <span className="text-xs font-medium">{r.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+        <div className="space-y-1.5">
+          <Label htmlFor="hero-email" className="text-xs">Email</Label>
+          <Input id="hero-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required className="h-9 text-sm" />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="hero-password" className="text-xs">Password</Label>
+          <Input id="hero-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} className="h-9 text-sm" />
+        </div>
+        <Button type="submit" className="w-full gap-2" size="sm" disabled={submitting}>
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {isSignUp ? 'Get Started' : 'Sign In'}
+          {!submitting && <ArrowRight className="h-4 w-4" />}
+        </Button>
+      </form>
+
+      <div className="mt-3 text-center">
+        <button
+          type="button"
+          onClick={() => setIsSignUp(!isSignUp)}
+          className="text-xs text-muted-foreground hover:text-primary transition-colors"
+        >
+          {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function Landing() {
+  const { user, profile, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to={profile?.role === 'planner' ? '/clients' : profile?.role === 'vendor' ? '/vendor-settings' : '/dashboard'} replace />;
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Nav */}
@@ -27,12 +152,6 @@ export default function Landing() {
           <Link to="/vendors-directory">
             <Button variant="ghost" size="sm">Vendor Directory</Button>
           </Link>
-          <Link to="/auth">
-            <Button variant="ghost" size="sm">Sign In</Button>
-          </Link>
-          <Link to="/auth">
-            <Button size="sm">Get Started</Button>
-          </Link>
         </div>
       </nav>
 
@@ -42,35 +161,31 @@ export default function Landing() {
           <img src={heroImage} alt="Kenyan wedding couple" className="h-full w-full object-cover" />
           <div className="absolute inset-0 bg-gradient-hero" />
         </div>
-        <div className="relative mx-auto max-w-5xl px-6 py-28 lg:py-40 text-center">
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="font-display text-4xl font-bold leading-tight text-primary-foreground sm:text-5xl lg:text-6xl"
-          >
-            Plan Your Dream<br />Kenyan Wedding
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="mx-auto mt-6 max-w-xl text-lg text-primary-foreground/80"
-          >
-            From budgets to guest lists, manage every detail of your wedding day with one beautiful platform.
-          </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            className="mt-8 flex items-center justify-center gap-4"
-          >
-            <Link to="/auth">
-              <Button size="lg" className="gap-2 font-body">
-                Start Planning <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
-          </motion.div>
+        <div className="relative mx-auto max-w-6xl px-6 py-20 lg:py-32">
+          <div className="flex flex-col items-center gap-10 lg:flex-row lg:items-center lg:justify-between">
+            {/* Left: copy */}
+            <div className="max-w-lg text-center lg:text-left">
+              <motion.h1
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6 }}
+                className="font-display text-4xl font-bold leading-tight text-primary-foreground sm:text-5xl lg:text-6xl"
+              >
+                Plan Your Dream<br />Kenyan Wedding
+              </motion.h1>
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                className="mt-6 text-lg text-primary-foreground/80"
+              >
+                From budgets to guest lists, manage every detail of your wedding day with one beautiful platform.
+              </motion.p>
+            </div>
+
+            {/* Right: auth form */}
+            <InlineAuthForm />
+          </div>
         </div>
       </section>
 
