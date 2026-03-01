@@ -87,6 +87,7 @@ export default function Vendors() {
       phone: dv.phone || null,
       price: null,
       status: 'contacted',
+      vendor_listing_id: dv.id,
     };
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
     const { error } = await supabase.from('vendors').insert(insert);
