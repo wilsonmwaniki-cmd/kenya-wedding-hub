@@ -263,6 +263,60 @@ export type Database = {
         }
         Relationships: []
       }
+      vendor_listings: {
+        Row: {
+          business_name: string
+          category: string
+          created_at: string
+          description: string | null
+          email: string | null
+          id: string
+          is_approved: boolean
+          is_verified: boolean
+          location: string | null
+          logo_url: string | null
+          phone: string | null
+          services: string[] | null
+          updated_at: string
+          user_id: string
+          website: string | null
+        }
+        Insert: {
+          business_name: string
+          category: string
+          created_at?: string
+          description?: string | null
+          email?: string | null
+          id?: string
+          is_approved?: boolean
+          is_verified?: boolean
+          location?: string | null
+          logo_url?: string | null
+          phone?: string | null
+          services?: string[] | null
+          updated_at?: string
+          user_id: string
+          website?: string | null
+        }
+        Update: {
+          business_name?: string
+          category?: string
+          created_at?: string
+          description?: string | null
+          email?: string | null
+          id?: string
+          is_approved?: boolean
+          is_verified?: boolean
+          location?: string | null
+          logo_url?: string | null
+          phone?: string | null
+          services?: string[] | null
+          updated_at?: string
+          user_id?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
       vendors: {
         Row: {
           category: string
@@ -327,7 +381,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "couple" | "planner"
+      app_role: "couple" | "planner" | "vendor"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -455,7 +509,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["couple", "planner"],
+      app_role: ["couple", "planner", "vendor"],
     },
   },
 } as const

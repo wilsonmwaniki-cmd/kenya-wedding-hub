@@ -24,6 +24,9 @@ export default function Landing() {
           <Link to="/planners">
             <Button variant="ghost" size="sm">Find a Planner</Button>
           </Link>
+          <Link to="/vendors-directory">
+            <Button variant="ghost" size="sm">Vendor Directory</Button>
+          </Link>
           <Link to="/auth">
             <Button variant="ghost" size="sm">Sign In</Button>
           </Link>
