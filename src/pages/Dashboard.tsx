@@ -3,10 +3,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Wallet, CheckSquare, Users, Store, Calendar, Heart, LinkIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Wallet, CheckSquare, Users, Store, Calendar, Heart, LinkIcon, Unlink } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
+import { useToast } from '@/hooks/use-toast';
 
 interface DashboardStats {
   totalBudget: number;
@@ -20,8 +22,9 @@ interface DashboardStats {
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
-  const { isPlanner, selectedClient, dataOrFilter, linkedPlanner } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner } = usePlanner();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [stats, setStats] = useState<DashboardStats>({
     totalBudget: 0, totalSpent: 0, totalTasks: 0, completedTasks: 0,
     totalGuests: 0, confirmedGuests: 0, totalVendors: 0,
@@ -98,12 +101,23 @@ export default function Dashboard() {
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="flex items-center gap-3 py-4">
             <LinkIcon className="h-5 w-5 text-primary shrink-0" />
-            <div>
+            <div className="flex-1">
               <p className="font-medium text-card-foreground text-sm">
                 Linked with {linkedPlanner.plannerName || 'your planner'}
               </p>
               <p className="text-xs text-muted-foreground">Your progress is shared — both of you can add and track items.</p>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive gap-1.5 shrink-0"
+              onClick={async () => {
+                await unlinkPlanner();
+                toast({ title: 'Unlinked', description: 'You are no longer linked with this planner.' });
+              }}
+            >
+              <Unlink className="h-3.5 w-3.5" /> Unlink
+            </Button>
           </CardContent>
         </Card>
       )}
