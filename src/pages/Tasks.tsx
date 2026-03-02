@@ -8,9 +8,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Trash2, Calendar } from 'lucide-react';
+import { Plus, Trash2, Calendar, CalendarPlus, UserCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 
 interface Task {
   id: string;
@@ -19,6 +20,7 @@ interface Task {
   due_date: string | null;
   completed: boolean;
   category: string | null;
+  assigned_to: string | null;
 }
 
 export default function Tasks() {
@@ -30,6 +32,7 @@ export default function Tasks() {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
 
   useEffect(() => {
     if (isPlanner && !selectedClient) navigate('/clients');
@@ -46,11 +49,11 @@ export default function Tasks() {
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    const insert: any = { user_id: user.id, title, due_date: dueDate || null };
+    const insert: any = { user_id: user.id, title, due_date: dueDate || null, assigned_to: assignedTo || null };
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
     const { error } = await supabase.from('tasks').insert(insert);
     if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    setTitle(''); setDueDate(''); setOpen(false); load();
+    setTitle(''); setDueDate(''); setAssignedTo(''); setOpen(false); load();
   };
 
   const toggleTask = async (id: string, completed: boolean) => {
@@ -67,6 +70,43 @@ export default function Tasks() {
   const done = tasks.filter(t => t.completed);
 
   if (isPlanner && !selectedClient) return null;
+
+  const TaskCard = ({ t, isDone }: { t: Task; isDone: boolean }) => (
+    <Card key={t.id} className={`shadow-card ${isDone ? 'opacity-60' : ''}`}>
+      <CardContent className="flex items-center gap-3 py-3">
+        <Checkbox checked={isDone} onCheckedChange={() => toggleTask(t.id, t.completed)} />
+        <div className="flex-1 min-w-0">
+          <p className={`font-medium text-card-foreground truncate ${isDone ? 'line-through text-muted-foreground' : ''}`}>{t.title}</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+            {t.due_date && (
+              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Calendar className="h-3 w-3" /> {new Date(t.due_date).toLocaleDateString()}
+              </p>
+            )}
+            {t.assigned_to && (
+              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                <UserCircle className="h-3 w-3" /> {t.assigned_to}
+              </p>
+            )}
+          </div>
+        </div>
+        {t.due_date && (
+          <a
+            href={buildGoogleCalendarUrl({ title: t.title, date: t.due_date, description: t.assigned_to ? `Assigned to: ${t.assigned_to}` : undefined })}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground hover:text-primary transition-colors"
+            title="Add to Google Calendar"
+          >
+            <CalendarPlus className="h-4 w-4" />
+          </a>
+        )}
+        <button onClick={() => deleteTask(t.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="space-y-6">
@@ -90,6 +130,10 @@ export default function Tasks() {
                 <Label>Due Date (optional)</Label>
                 <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
               </div>
+              <div className="space-y-2">
+                <Label>Assign To (optional)</Label>
+                <Input value={assignedTo} onChange={e => setAssignedTo(e.target.value)} placeholder="e.g. Couple, Florist, DJ" />
+              </div>
               <Button type="submit" className="w-full">Add Task</Button>
             </form>
           </DialogContent>
@@ -97,38 +141,11 @@ export default function Tasks() {
       </div>
 
       <div className="space-y-2">
-        {pending.map(t => (
-          <Card key={t.id} className="shadow-card">
-            <CardContent className="flex items-center gap-3 py-3">
-              <Checkbox checked={false} onCheckedChange={() => toggleTask(t.id, t.completed)} />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-card-foreground truncate">{t.title}</p>
-                {t.due_date && (
-                  <p className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
-                    <Calendar className="h-3 w-3" /> {new Date(t.due_date).toLocaleDateString()}
-                  </p>
-                )}
-              </div>
-              <button onClick={() => deleteTask(t.id)} className="text-muted-foreground hover:text-destructive transition-colors">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </CardContent>
-          </Card>
-        ))}
+        {pending.map(t => <TaskCard key={t.id} t={t} isDone={false} />)}
         {done.length > 0 && (
           <>
             <p className="text-sm font-medium text-muted-foreground pt-4">Completed</p>
-            {done.map(t => (
-              <Card key={t.id} className="shadow-card opacity-60">
-                <CardContent className="flex items-center gap-3 py-3">
-                  <Checkbox checked onCheckedChange={() => toggleTask(t.id, t.completed)} />
-                  <p className="flex-1 line-through text-muted-foreground truncate">{t.title}</p>
-                  <button onClick={() => deleteTask(t.id)} className="text-muted-foreground hover:text-destructive transition-colors">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </CardContent>
-              </Card>
-            ))}
+            {done.map(t => <TaskCard key={t.id} t={t} isDone={true} />)}
           </>
         )}
         {tasks.length === 0 && (

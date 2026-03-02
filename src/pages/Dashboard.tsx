@@ -4,11 +4,12 @@ import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Wallet, CheckSquare, Users, Store, Calendar, Heart, LinkIcon, Unlink } from 'lucide-react';
+import { Wallet, CheckSquare, Users, Store, Calendar, Heart, LinkIcon, Unlink, CalendarPlus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
 import { useToast } from '@/hooks/use-toast';
+import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 
 interface DashboardStats {
   totalBudget: number;
@@ -85,11 +86,23 @@ export default function Dashboard() {
         <h1 className="font-display text-3xl font-bold text-foreground">
           {displayName ? `Hello, ${displayName}` : 'Your Dashboard'}
         </h1>
-        {daysUntil !== null && (
-          <p className="mt-1 flex items-center gap-2 text-muted-foreground">
+        {daysUntil !== null && weddingDate && (
+          <div className="mt-1 flex items-center gap-2 text-muted-foreground">
             <Calendar className="h-4 w-4" />
-            {daysUntil === 0 ? "Today's the day! 🎉" : `${daysUntil} days until the wedding`}
-          </p>
+            <span>{daysUntil === 0 ? "Today's the day! 🎉" : `${daysUntil} days until the wedding`}</span>
+            <a
+              href={buildGoogleCalendarUrl({
+                title: `${displayName || 'Our'} Wedding`,
+                date: weddingDate.toISOString().slice(0, 10),
+                location: isPlanner && selectedClient ? selectedClient.wedding_location : profile?.wedding_location,
+              })}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <CalendarPlus className="h-3.5 w-3.5" /> Add to Calendar
+            </a>
+          </div>
         )}
         {!weddingDate && (
           <p className="mt-1 text-muted-foreground">Set a wedding date to see a countdown!</p>
