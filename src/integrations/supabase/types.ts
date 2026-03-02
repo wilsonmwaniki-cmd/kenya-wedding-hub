@@ -233,6 +233,7 @@ export type Database = {
       }
       tasks: {
         Row: {
+          assigned_to: string | null
           category: string | null
           client_id: string | null
           completed: boolean
@@ -244,6 +245,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          assigned_to?: string | null
           category?: string | null
           client_id?: string | null
           completed?: boolean
@@ -255,6 +257,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          assigned_to?: string | null
           category?: string | null
           client_id?: string | null
           completed?: boolean
