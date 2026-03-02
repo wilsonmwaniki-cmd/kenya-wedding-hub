@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Plus, Trash2, Users, Upload, Download, FileSpreadsheet } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { useRef } from 'react';
@@ -44,9 +44,19 @@ export default function Guests() {
     setUploading(true);
     try {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(data);
+      const sheet = workbook.worksheets[0];
+      if (!sheet) { toast({ title: 'Empty file', description: 'No worksheets found.', variant: 'destructive' }); return; }
+      const headers: string[] = [];
+      sheet.getRow(1).eachCell((cell, colNumber) => { headers[colNumber - 1] = String(cell.value || ''); });
+      const rows: Record<string, any>[] = [];
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        const obj: Record<string, any> = {};
+        row.eachCell((cell, colNumber) => { obj[headers[colNumber - 1]] = cell.value; });
+        rows.push(obj);
+      });
 
       if (rows.length === 0) {
         toast({ title: 'Empty file', description: 'No rows found in the spreadsheet.', variant: 'destructive' });
@@ -87,14 +97,17 @@ export default function Guests() {
     }
   };
 
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['Name', 'Email', 'Phone', 'RSVP', 'Meal Preference', 'Plus One'],
-      ['Jane Doe', 'jane@example.com', '+254700000000', 'pending', 'Vegetarian', 'No'],
-    ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Guests');
-    XLSX.writeFile(wb, 'guest-list-template.xlsx');
+  const downloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Guests');
+    ws.addRow(['Name', 'Email', 'Phone', 'RSVP', 'Meal Preference', 'Plus One']);
+    ws.addRow(['Jane Doe', 'jane@example.com', '+254700000000', 'pending', 'Vegetarian', 'No']);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'guest-list-template.xlsx'; a.click();
+    URL.revokeObjectURL(url);
   };
 
   useEffect(() => {
