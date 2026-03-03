@@ -140,6 +140,74 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "add_vendor",
+      description: "Add a new vendor to the user's wedding vendor list",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Vendor/business name" },
+          category: { type: "string", description: "Vendor category (e.g. Photography, Catering, DJ, Florist, Venue, Decor)" },
+          email: { type: "string", description: "Vendor email (optional)" },
+          phone: { type: "string", description: "Vendor phone (optional)" },
+          price: { type: "number", description: "Quoted price in KES (optional)" },
+          notes: { type: "string", description: "Any notes about this vendor (optional)" },
+          status: { type: "string", enum: ["contacted", "confirmed", "declined", "pending"], description: "Vendor status (default: contacted)" },
+        },
+        required: ["name", "category"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_vendor_status",
+      description: "Update a vendor's status by name (fuzzy match)",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Vendor name (fuzzy match)" },
+          status: { type: "string", enum: ["contacted", "confirmed", "declined", "pending"], description: "New status" },
+        },
+        required: ["name", "status"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_vendor_price",
+      description: "Update a vendor's price by name (fuzzy match)",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Vendor name (fuzzy match)" },
+          price: { type: "number", description: "New price in KES" },
+        },
+        required: ["name", "price"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remove_vendor",
+      description: "Remove a vendor by name (fuzzy match)",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Vendor name (fuzzy match)" },
+        },
+        required: ["name"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Fuzzy match: case-insensitive contains
@@ -222,6 +290,39 @@ async function executeTool(
         if (!guest) return `Could not find a guest matching "${args.name}"`;
         await supabase.from("guests").delete().eq("id", guest.id);
         return `🗑️ Guest "${guest.name}" removed from the guest list`;
+      }
+      case "add_vendor": {
+        const insert: any = { user_id: userId, name: args.name, category: args.category };
+        if (args.email) insert.email = args.email;
+        if (args.phone) insert.phone = args.phone;
+        if (args.price !== undefined) insert.price = args.price;
+        if (args.notes) insert.notes = args.notes;
+        if (args.status) insert.status = args.status;
+        if (clientId) insert.client_id = clientId;
+        const { error } = await supabase.from("vendors").insert(insert);
+        if (error) return `Error adding vendor: ${error.message}`;
+        return `✅ Vendor "${args.name}" (${args.category}) added${args.price ? ` — KES ${Number(args.price).toLocaleString()}` : ""}`;
+      }
+      case "update_vendor_status": {
+        const { data: vlist } = await supabase.from("vendors").select("id, name").eq("user_id", userId);
+        const v = fuzzyFind(vlist || [], "name", args.name);
+        if (!v) return `Could not find a vendor matching "${args.name}"`;
+        await supabase.from("vendors").update({ status: args.status }).eq("id", v.id);
+        return `✅ ${v.name}'s status updated to "${args.status}"`;
+      }
+      case "update_vendor_price": {
+        const { data: vlist } = await supabase.from("vendors").select("id, name").eq("user_id", userId);
+        const v = fuzzyFind(vlist || [], "name", args.name);
+        if (!v) return `Could not find a vendor matching "${args.name}"`;
+        await supabase.from("vendors").update({ price: args.price }).eq("id", v.id);
+        return `✅ ${v.name}'s price updated to KES ${Number(args.price).toLocaleString()}`;
+      }
+      case "remove_vendor": {
+        const { data: vlist } = await supabase.from("vendors").select("id, name").eq("user_id", userId);
+        const v = fuzzyFind(vlist || [], "name", args.name);
+        if (!v) return `Could not find a vendor matching "${args.name}"`;
+        await supabase.from("vendors").delete().eq("id", v.id);
+        return `🗑️ Vendor "${v.name}" removed`;
       }
       default:
         return `Unknown tool: ${name}`;
