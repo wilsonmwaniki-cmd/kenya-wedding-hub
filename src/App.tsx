@@ -23,6 +23,7 @@ import ProfileSettings from "./pages/ProfileSettings";
 import NotFound from "./pages/NotFound";
 import PlannerProfile from "./pages/PlannerProfile";
 import PlannerDirectory from "./pages/PlannerDirectory";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +46,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/auth" element={<Auth />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/planners" element={<PlannerDirectory />} />
               <Route path="/vendors-directory" element={<VendorDirectory />} />
               <Route path="/planner/:id" element={<PlannerProfile />} />
