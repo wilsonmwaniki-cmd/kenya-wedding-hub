@@ -95,7 +95,7 @@ function InlineAuthForm() {
             Send Reset Link
           </Button>
           <div className="text-center">
-            <button type="button" onClick={() => setIsForgot(false)} className="text-xs text-muted-foreground hover:text-primary transition-colors">
+            <button type="button" onClick={() => { setIsForgot(false); setIsSignUp(false); }} className="text-xs text-muted-foreground hover:text-primary transition-colors">
               Back to Sign In
             </button>
           </div>
