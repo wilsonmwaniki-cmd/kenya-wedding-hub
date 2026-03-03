@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -18,6 +19,7 @@ const features = [
 
 function InlineAuthForm() {
   const [isSignUp, setIsSignUp] = useState(true);
+  const [isForgot, setIsForgot] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -25,6 +27,23 @@ function InlineAuthForm() {
   const [submitting, setSubmitting] = useState(false);
   const { signIn, signUp } = useAuth();
   const { toast } = useToast();
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast({ title: 'Reset link sent!', description: 'Check your email for the password reset link.' });
+      setIsForgot(false);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,14 +77,32 @@ function InlineAuthForm() {
     >
       <div className="mb-4 text-center">
         <h3 className="font-display text-lg font-semibold text-card-foreground">
-          {isSignUp ? 'Create Your Account' : 'Welcome Back'}
+          {isForgot ? 'Forgot Password' : isSignUp ? 'Create Your Account' : 'Welcome Back'}
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          {isSignUp ? 'Start planning your dream wedding' : 'Sign in to continue'}
+          {isForgot ? 'Enter your email to receive a reset link' : isSignUp ? 'Start planning your dream wedding' : 'Sign in to continue'}
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
+      {isForgot ? (
+        <form onSubmit={handleForgotPassword} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="hero-email" className="text-xs">Email</Label>
+            <Input id="hero-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required className="h-9 text-sm" />
+          </div>
+          <Button type="submit" className="w-full gap-2" size="sm" disabled={submitting}>
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Send Reset Link
+          </Button>
+          <div className="text-center">
+            <button type="button" onClick={() => setIsForgot(false)} className="text-xs text-muted-foreground hover:text-primary transition-colors">
+              Back to Sign In
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <form onSubmit={handleSubmit} className="space-y-3">
         {isSignUp && (
           <>
             <div className="space-y-1.5">
@@ -99,7 +136,14 @@ function InlineAuthForm() {
           <Input id="hero-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required className="h-9 text-sm" />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="hero-password" className="text-xs">Password</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="hero-password" className="text-xs">Password</Label>
+            {!isSignUp && (
+              <button type="button" onClick={() => setIsForgot(true)} className="text-[10px] text-muted-foreground hover:text-primary transition-colors">
+                Forgot password?
+              </button>
+            )}
+          </div>
           <Input id="hero-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} className="h-9 text-sm" />
         </div>
         <Button type="submit" className="w-full gap-2" size="sm" disabled={submitting}>
@@ -118,6 +162,8 @@ function InlineAuthForm() {
           {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
         </button>
       </div>
+        </>
+      )}
     </motion.div>
   );
 }
