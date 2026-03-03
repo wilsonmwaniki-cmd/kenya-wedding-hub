@@ -17,20 +17,37 @@ export default function ResetPassword() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Listen for the PASSWORD_RECOVERY event which fires when the user clicks the reset link
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
+    // Check if already authenticated (recovery event may have fired before mount)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
         setReady(true);
       }
     });
 
-    // Also check if the URL hash contains recovery type (in case event already fired)
+    // Listen for the PASSWORD_RECOVERY event
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+        setReady(true);
+      }
+    });
+
+    // Also check URL hash/params for recovery indicators
     const hash = window.location.hash;
-    if (hash.includes('type=recovery')) {
+    const search = window.location.search;
+    if (hash.includes('type=recovery') || search.includes('type=recovery')) {
       setReady(true);
     }
 
-    return () => subscription.unsubscribe();
+    // Timeout fallback - if still not ready after 5s, check session again
+    const timeout = setTimeout(async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) setReady(true);
+    }, 3000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
