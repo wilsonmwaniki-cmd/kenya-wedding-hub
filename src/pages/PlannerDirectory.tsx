@@ -26,9 +26,8 @@ export default function PlannerDirectory() {
   useEffect(() => {
     const load = async () => {
       const { data } = await supabase
-        .from('profiles')
-        .select('id, full_name, company_name, avatar_url, bio, specialties')
-        .eq('role', 'planner' as any);
+        .from('public_planner_profiles')
+        .select('id, full_name, company_name, avatar_url, bio, specialties');
       setPlanners((data as PlannerItem[]) || []);
       setLoading(false);
     };
