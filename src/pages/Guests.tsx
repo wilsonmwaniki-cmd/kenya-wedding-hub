@@ -9,7 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Trash2, Users, Upload, Download, Mail, Send, Loader2 } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { Plus, Trash2, Users, Upload, Download, Mail, Send, Loader2, Eye, EyeOff } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ExcelJS from 'exceljs';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -32,17 +35,23 @@ export default function Guests() {
   const { toast } = useToast();
   const [guests, setGuests] = useState<Guest[]>([]);
   const [open, setOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteGuest, setInviteGuest] = useState<Guest | null>(null);
-  const [inviteMessage, setInviteMessage] = useState('');
-  const [sendingInvite, setSendingInvite] = useState(false);
-  const [sendingBulk, setSendingBulk] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeGuest, setComposeGuest] = useState<Guest | null>(null); // null = bulk mode
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [rsvp, setRsvp] = useState('pending');
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Compose state (Mail Mellow patterns)
+  const [composeSubject, setComposeSubject] = useState('');
+  const [contentText, setContentText] = useState('');
+  const [contentHtml, setContentHtml] = useState('');
+  const [composeMode, setComposeMode] = useState<'text' | 'html'>('text');
+  const [showPreview, setShowPreview] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [progress, setProgress] = useState({ sent: 0, failed: 0, total: 0 });
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -148,79 +157,72 @@ export default function Guests() {
     load();
   };
 
-  const sendInvite = async (guest: Guest, message?: string) => {
-    setSendingInvite(true);
-    try {
-      const coupleName = profile?.full_name && profile?.partner_name
-        ? `${profile.full_name} & ${profile.partner_name}`
-        : profile?.full_name || undefined;
+  const coupleName = profile?.full_name && profile?.partner_name
+    ? `${profile.full_name} & ${profile.partner_name}`
+    : profile?.full_name || '';
 
-      const { data, error } = await supabase.functions.invoke('send-guest-invite', {
-        body: {
-          guestName: guest.name,
-          guestEmail: guest.email,
-          coupleName,
-          weddingDate: profile?.wedding_date,
-          weddingLocation: profile?.wedding_location,
-          message: message || undefined,
-        },
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      toast({ title: 'Invite sent!', description: `Invitation sent to ${guest.email}` });
-      setInviteOpen(false);
-      setInviteMessage('');
-    } catch (err: any) {
-      toast({ title: 'Failed to send', description: err.message || 'Could not send invite', variant: 'destructive' });
-    } finally {
-      setSendingInvite(false);
-    }
+  const openCompose = (guest?: Guest) => {
+    setComposeGuest(guest || null);
+    setComposeSubject('');
+    setContentText('');
+    setContentHtml('');
+    setComposeMode('text');
+    setShowPreview(false);
+    setProgress({ sent: 0, failed: 0, total: 0 });
+    setComposeOpen(true);
   };
 
-  const sendBulkInvites = async () => {
-    const guestsWithEmail = guests.filter(g => g.email && g.rsvp_status === 'pending');
-    if (guestsWithEmail.length === 0) {
-      toast({ title: 'No guests to invite', description: 'No pending guests with email addresses found.', variant: 'destructive' });
-      return;
-    }
-    setSendingBulk(true);
+  const sendInviteToGuest = async (guest: Guest) => {
+    const { data, error } = await supabase.functions.invoke('send-guest-invite', {
+      body: {
+        guestName: guest.name,
+        guestEmail: guest.email,
+        coupleName: coupleName || undefined,
+        weddingDate: profile?.wedding_date,
+        weddingLocation: profile?.wedding_location,
+        subject: composeSubject.trim() || undefined,
+        contentText: contentText.trim() || undefined,
+        contentHtml: composeMode === 'html' && contentHtml.trim() ? contentHtml : undefined,
+      },
+    });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    return data;
+  };
+
+  const handleSend = async () => {
+    setSending(true);
+    const targets = composeGuest
+      ? [composeGuest]
+      : guests.filter(g => g.email && g.rsvp_status === 'pending');
+
+    setProgress({ sent: 0, failed: 0, total: targets.length });
+
     let sent = 0;
     let failed = 0;
-    for (const guest of guestsWithEmail) {
+
+    for (const guest of targets) {
       try {
-        const coupleName = profile?.full_name && profile?.partner_name
-          ? `${profile.full_name} & ${profile.partner_name}`
-          : profile?.full_name || undefined;
-
-        const { data, error } = await supabase.functions.invoke('send-guest-invite', {
-          body: {
-            guestName: guest.name,
-            guestEmail: guest.email,
-            coupleName,
-            weddingDate: profile?.wedding_date,
-            weddingLocation: profile?.wedding_location,
-          },
-        });
-        if (error || data?.error) { failed++; } else { sent++; }
-      } catch { failed++; }
+        await sendInviteToGuest(guest);
+        sent++;
+      } catch {
+        failed++;
+      }
+      setProgress({ sent, failed, total: targets.length });
     }
-    setSendingBulk(false);
-    toast({
-      title: 'Bulk invites complete',
-      description: `${sent} sent, ${failed} failed out of ${guestsWithEmail.length} guests.`,
-    });
-  };
 
-  const openInviteDialog = (guest: Guest) => {
-    setInviteGuest(guest);
-    setInviteMessage('');
-    setInviteOpen(true);
+    setSending(false);
+    toast({
+      title: sent > 0 ? 'Invites sent!' : 'Send failed',
+      description: `Sent: ${sent}, Failed: ${failed}${targets.length > 1 ? ` of ${targets.length}` : ''}`,
+      variant: failed === targets.length ? 'destructive' : undefined,
+    });
+
+    if (sent > 0) setComposeOpen(false);
   };
 
   const confirmed = guests.filter(g => g.rsvp_status === 'confirmed').length;
-  const pendingWithEmail = guests.filter(g => g.email && g.rsvp_status === 'pending').length;
+  const pendingWithEmail = guests.filter(g => g.email && g.rsvp_status === 'pending');
 
   if (isPlanner && !selectedClient) return null;
 
@@ -232,35 +234,16 @@ export default function Guests() {
           <p className="text-muted-foreground">{guests.length} guests · {confirmed} confirmed</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept=".xlsx,.xls,.csv"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
+          <input type="file" ref={fileInputRef} accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="hidden" />
           <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
             <Download className="h-4 w-4" /> Template
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="gap-2"
-          >
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="gap-2">
             <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}
           </Button>
-          {pendingWithEmail > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={sendBulkInvites}
-              disabled={sendingBulk}
-              className="gap-2"
-            >
-              {sendingBulk ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {sendingBulk ? 'Sending...' : `Invite All (${pendingWithEmail})`}
+          {pendingWithEmail.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => openCompose()} className="gap-2">
+              <Send className="h-4 w-4" /> Invite All ({pendingWithEmail.length})
             </Button>
           )}
           <Dialog open={open} onOpenChange={setOpen}>
@@ -300,35 +283,150 @@ export default function Guests() {
         </div>
       </div>
 
-      {/* Invite dialog */}
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle className="font-display">Send Invite to {inviteGuest?.name}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              An invitation email will be sent to <strong>{inviteGuest?.email}</strong> with your wedding details.
-            </p>
+      {/* Compose Invite Dialog — Mail Mellow style */}
+      <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {composeGuest ? `Send Invite to ${composeGuest.name}` : `Compose Bulk Invite (${pendingWithEmail.length} guests)`}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5">
+            {/* Subject */}
             <div className="space-y-2">
-              <Label>Personal message (optional)</Label>
-              <Textarea
-                value={inviteMessage}
-                onChange={e => setInviteMessage(e.target.value)}
-                placeholder="We'd love for you to join us on our special day..."
-                rows={3}
+              <Label>Subject Line (optional)</Label>
+              <Input
+                value={composeSubject}
+                onChange={e => setComposeSubject(e.target.value)}
+                placeholder={`You're Invited${coupleName ? ` — ${coupleName}'s Wedding` : ' to Our Wedding'}!`}
               />
+              <p className="text-xs text-muted-foreground">Leave blank to use the default wedding invite subject.</p>
             </div>
+
+            {/* Message format — text/html toggle */}
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <div className="flex items-center justify-between gap-3">
+                <Label>Message Format</Label>
+                <Tabs value={composeMode} onValueChange={(v) => setComposeMode(v as 'text' | 'html')}>
+                  <TabsList>
+                    <TabsTrigger value="text">Text</TabsTrigger>
+                    <TabsTrigger value="html">HTML</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">
+                  {composeMode === 'text' ? 'Personal message (added to the default template)' : 'Plain text fallback'}
+                </Label>
+                <Textarea
+                  value={contentText}
+                  onChange={e => setContentText(e.target.value)}
+                  placeholder="We'd love for you to join us on our special day..."
+                  rows={4}
+                  className="resize-none"
+                />
+              </div>
+
+              <AnimatePresence>
+                {composeMode === 'html' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-2 overflow-hidden"
+                  >
+                    <Label className="text-xs text-muted-foreground">Custom HTML (replaces default template)</Label>
+                    <Textarea
+                      value={contentHtml}
+                      onChange={e => setContentHtml(e.target.value)}
+                      placeholder="<h1>You're Invited!</h1><p>We would love for you to celebrate with us...</p>"
+                      rows={6}
+                      className="resize-none font-mono text-xs"
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Preview */}
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowPreview(!showPreview)}
+                className="gap-2"
+              >
+                {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showPreview ? 'Hide Preview' : 'Preview'}
+              </Button>
+            </div>
+
+            <AnimatePresence>
+              {showPreview && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden rounded-xl border border-border p-5"
+                >
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">Email Preview</p>
+                  <h3 className="text-lg font-semibold text-foreground">
+                    {composeSubject || `You're Invited${coupleName ? ` — ${coupleName}'s Wedding` : ' to Our Wedding'}!`}
+                  </h3>
+                  <div className="mt-3 border-t border-border pt-4">
+                    {composeMode === 'html' && contentHtml.trim() ? (
+                      <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: contentHtml }} />
+                    ) : (
+                      <div className="space-y-3 text-sm text-foreground">
+                        <p>Dear <strong>{composeGuest?.name || '{Guest Name}'}</strong>,</p>
+                        <p>We are delighted to invite you to celebrate our wedding{coupleName ? ` — ${coupleName}` : ''}.</p>
+                        {profile?.wedding_date && <p>📅 <strong>Date:</strong> {new Date(profile.wedding_date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+                        {profile?.wedding_location && <p>📍 <strong>Venue:</strong> {profile.wedding_location}</p>}
+                        {contentText && (
+                          <p className="border-l-2 border-primary pl-3 italic text-muted-foreground">{contentText}</p>
+                        )}
+                        <p>We would be honoured to have you join us on our special day.</p>
+                        <p>With love and warm regards ❤️</p>
+                      </div>
+                    )}
+                  </div>
+                  {!composeGuest && (
+                    <p className="mt-4 text-xs text-muted-foreground">
+                      Sending to: {pendingWithEmail.length} pending guests with email addresses
+                    </p>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Progress bar during sending */}
+            {sending && progress.total > 1 && (
+              <div className="space-y-2">
+                <Progress value={((progress.sent + progress.failed) / progress.total) * 100} />
+                <p className="text-xs text-muted-foreground text-center">
+                  Sending {progress.sent + progress.failed}/{progress.total}... ({progress.sent} sent, {progress.failed} failed)
+                </p>
+              </div>
+            )}
+
             <Button
               className="w-full gap-2"
-              onClick={() => inviteGuest && sendInvite(inviteGuest, inviteMessage)}
-              disabled={sendingInvite}
+              onClick={handleSend}
+              disabled={sending}
             >
-              {sendingInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {sendingInvite ? 'Sending...' : 'Send Invitation'}
+              {sending ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Sending {progress.sent}/{progress.total}...</>
+              ) : (
+                <><Send className="h-4 w-4" /> {composeGuest ? 'Send Invitation' : `Send to ${pendingWithEmail.length} Guests`}</>
+              )}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
+      {/* Guest list */}
       <div className="space-y-2">
         {guests.map(g => (
           <Card key={g.id} className="shadow-card">
@@ -340,20 +438,12 @@ export default function Guests() {
                 {g.phone && !g.email && <p className="text-xs text-muted-foreground">{g.phone}</p>}
               </div>
               {g.email && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => openInviteDialog(g)}
-                  title="Send invite"
-                >
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openCompose(g)} title="Send invite">
                   <Mail className="h-4 w-4" />
                 </Button>
               )}
               <Select value={g.rsvp_status || 'pending'} onValueChange={(v) => updateRsvp(g.id, v)}>
-                <SelectTrigger className="w-28 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
