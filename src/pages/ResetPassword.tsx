@@ -25,8 +25,11 @@ export default function ResetPassword() {
       const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
 
       const code = searchParams.get('code');
+      const tokenHash = searchParams.get('token_hash') || hashParams.get('token_hash');
       const typeInQuery = searchParams.get('type');
       const typeInHash = hashParams.get('type');
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
       const errorInQuery = searchParams.get('error') || searchParams.get('error_description');
       const errorInHash = hashParams.get('error') || hashParams.get('error_description');
 
@@ -36,9 +39,33 @@ export default function ResetPassword() {
         return;
       }
 
-      // PKCE/code flow: exchange code for a session first.
+      // Fallback 1: If tokens are present in hash, set session explicitly.
+      if (accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (!error) {
+          if (!cancelled) setStatus('ready');
+          return;
+        }
+      }
+
+      // Fallback 2: PKCE/code flow.
       if (code && (typeInQuery === 'recovery' || typeInHash === 'recovery')) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          if (!cancelled) setStatus('invalid');
+          return;
+        }
+      }
+
+      // Fallback 3: token_hash-based recovery flow.
+      if (tokenHash && (typeInQuery === 'recovery' || typeInHash === 'recovery')) {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'recovery',
+        });
         if (error) {
           if (!cancelled) setStatus('invalid');
           return;
