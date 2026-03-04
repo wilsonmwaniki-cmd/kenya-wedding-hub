@@ -1,0 +1,1 @@
+ALTER TABLE public.planner_link_requests ADD COLUMN message text;

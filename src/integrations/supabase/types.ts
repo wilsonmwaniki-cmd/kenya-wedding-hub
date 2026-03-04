@@ -152,6 +152,7 @@ export type Database = {
           couple_user_id: string
           created_at: string
           id: string
+          message: string | null
           planner_user_id: string
           status: string
           updated_at: string
@@ -160,6 +161,7 @@ export type Database = {
           couple_user_id: string
           created_at?: string
           id?: string
+          message?: string | null
           planner_user_id: string
           status?: string
           updated_at?: string
@@ -168,6 +170,7 @@ export type Database = {
           couple_user_id?: string
           created_at?: string
           id?: string
+          message?: string | null
           planner_user_id?: string
           status?: string
           updated_at?: string
