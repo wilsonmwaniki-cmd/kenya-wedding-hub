@@ -627,22 +627,48 @@ export default function Timeline() {
               {shareLinks.length > 0 && (
                 <div>
                   <Label className="text-xs uppercase tracking-wide text-muted-foreground">Individual Links</Label>
-                  <div className="space-y-2 mt-1.5">
+                  <div className="space-y-3 mt-1.5">
                     {shareLinks.map(sl => {
                       const link = `${baseUrl}/timeline/share/${sl.share_token}`;
+                      const roleMeta = getVendorRole(sl.vendor_role);
                       const waText = encodeURIComponent(`Hi ${sl.assignee_name}! Here's your timeline for "${selectedTimeline.title}":\n${link}`);
                       return (
-                        <div key={sl.id} className="flex items-center gap-2">
-                          <Badge variant="outline" className="shrink-0">{sl.assignee_name}</Badge>
-                          <Input readOnly value={link} className="text-xs flex-1" />
-                          <Button size="icon" variant="outline" className="shrink-0" onClick={() => copyToClipboard(link)}>
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="outline" className="shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50" asChild>
-                            <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer">
-                              <MessageCircle className="h-4 w-4" />
-                            </a>
-                          </Button>
+                        <div key={sl.id} className="rounded-lg border border-border p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="shrink-0 gap-1">
+                              {roleMeta && <span>{roleMeta.icon}</span>}
+                              {sl.assignee_name}
+                            </Badge>
+                            {roleMeta && (
+                              <span className="text-xs text-muted-foreground">{roleMeta.label}</span>
+                            )}
+                            <div className="flex-1" />
+                            <select
+                              className="text-xs border border-input rounded-md px-2 py-1 bg-background"
+                              value={sl.vendor_role || ''}
+                              onChange={async (e) => {
+                                const role = e.target.value || null;
+                                await supabase.from('timeline_share_links').update({ vendor_role: role } as any).eq('id', sl.id);
+                                loadShareLinks(selectedTimeline.id);
+                              }}
+                            >
+                              <option value="">Set role…</option>
+                              {VENDOR_ROLES.map(r => (
+                                <option key={r.value} value={r.value}>{r.icon} {r.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Input readOnly value={link} className="text-xs flex-1" />
+                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8" onClick={() => copyToClipboard(link)}>
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50" asChild>
+                              <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer">
+                                <MessageCircle className="h-3.5 w-3.5" />
+                              </a>
+                            </Button>
+                          </div>
                         </div>
                       );
                     })}
