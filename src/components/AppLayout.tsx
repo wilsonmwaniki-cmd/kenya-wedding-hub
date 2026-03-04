@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
@@ -43,9 +44,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { signOut, profile } = useAuth();
   const { isPlanner, selectedClient, selectClient } = usePlanner();
+  const { vendorRequestCount, plannerRequestCount } = useNotifications();
 
   const isVendor = profile?.role === 'vendor';
   const navItems = isVendor ? vendorNavItems : isPlanner ? plannerNavItems : coupleNavItems;
+
+  // Map paths to badge counts
+  const badgeCounts: Record<string, number> = {};
+  if (isVendor) {
+    badgeCounts['/vendor-dashboard'] = vendorRequestCount;
+  }
+  if (isPlanner) {
+    badgeCounts['/clients'] = plannerRequestCount;
+  }
 
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !selectedClient;
@@ -132,7 +143,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   `}
                 >
                   <item.icon className="h-4.5 w-4.5" />
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {(badgeCounts[item.path] || 0) > 0 && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                      {badgeCounts[item.path]}
+                    </span>
+                  )}
                 </Link>
               );
             })}

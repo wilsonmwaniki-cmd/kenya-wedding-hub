@@ -1,0 +1,2 @@
+ALTER PUBLICATION supabase_realtime ADD TABLE public.vendor_connection_requests;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.planner_link_requests;
