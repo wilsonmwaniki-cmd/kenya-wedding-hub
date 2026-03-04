@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PlannerProvider } from "@/contexts/PlannerContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Landing from "./pages/Landing";
@@ -43,25 +44,27 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <PlannerProvider>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/planners" element={<PlannerDirectory />} />
-              <Route path="/vendors-directory" element={<VendorDirectory />} />
-              <Route path="/planner/:id" element={<PlannerProfile />} />
-              <Route path="/clients" element={<ProtectedPage><PlannerDashboard /></ProtectedPage>} />
-              <Route path="/dashboard" element={<ProtectedPage><Dashboard /></ProtectedPage>} />
-              <Route path="/budget" element={<ProtectedPage><Budget /></ProtectedPage>} />
-              <Route path="/tasks" element={<ProtectedPage><Tasks /></ProtectedPage>} />
-              <Route path="/guests" element={<ProtectedPage><Guests /></ProtectedPage>} />
-              <Route path="/vendors" element={<ProtectedPage><Vendors /></ProtectedPage>} />
-              <Route path="/vendor-dashboard" element={<ProtectedPage><VendorDashboard /></ProtectedPage>} />
-              <Route path="/vendor-settings" element={<ProtectedPage><VendorSettings /></ProtectedPage>} />
-              <Route path="/ai-chat" element={<ProtectedPage><AiChat /></ProtectedPage>} />
-              <Route path="/settings" element={<ProtectedPage><ProfileSettings /></ProtectedPage>} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <NotificationProvider>
+              <Routes>
+                <Route path="/" element={<Landing />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/planners" element={<PlannerDirectory />} />
+                <Route path="/vendors-directory" element={<VendorDirectory />} />
+                <Route path="/planner/:id" element={<PlannerProfile />} />
+                <Route path="/clients" element={<ProtectedPage><PlannerDashboard /></ProtectedPage>} />
+                <Route path="/dashboard" element={<ProtectedPage><Dashboard /></ProtectedPage>} />
+                <Route path="/budget" element={<ProtectedPage><Budget /></ProtectedPage>} />
+                <Route path="/tasks" element={<ProtectedPage><Tasks /></ProtectedPage>} />
+                <Route path="/guests" element={<ProtectedPage><Guests /></ProtectedPage>} />
+                <Route path="/vendors" element={<ProtectedPage><Vendors /></ProtectedPage>} />
+                <Route path="/vendor-dashboard" element={<ProtectedPage><VendorDashboard /></ProtectedPage>} />
+                <Route path="/vendor-settings" element={<ProtectedPage><VendorSettings /></ProtectedPage>} />
+                <Route path="/ai-chat" element={<ProtectedPage><AiChat /></ProtectedPage>} />
+                <Route path="/settings" element={<ProtectedPage><ProfileSettings /></ProtectedPage>} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </NotificationProvider>
           </PlannerProvider>
         </AuthProvider>
       </BrowserRouter>
