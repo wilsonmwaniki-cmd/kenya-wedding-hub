@@ -27,9 +27,15 @@ import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
-function ProtectedPage({ children }: { children: React.ReactNode }) {
+function ProtectedPage({
+  children,
+  allowedRoles,
+}: {
+  children: React.ReactNode;
+  allowedRoles?: Array<'couple' | 'planner' | 'vendor'>;
+}) {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute allowedRoles={allowedRoles}>
       <AppLayout>{children}</AppLayout>
     </ProtectedRoute>
   );
@@ -50,16 +56,16 @@ const App = () => (
               <Route path="/planners" element={<PlannerDirectory />} />
               <Route path="/vendors-directory" element={<VendorDirectory />} />
               <Route path="/planner/:id" element={<PlannerProfile />} />
-              <Route path="/clients" element={<ProtectedPage><PlannerDashboard /></ProtectedPage>} />
-              <Route path="/dashboard" element={<ProtectedPage><Dashboard /></ProtectedPage>} />
-              <Route path="/budget" element={<ProtectedPage><Budget /></ProtectedPage>} />
-              <Route path="/tasks" element={<ProtectedPage><Tasks /></ProtectedPage>} />
-              <Route path="/guests" element={<ProtectedPage><Guests /></ProtectedPage>} />
-              <Route path="/vendors" element={<ProtectedPage><Vendors /></ProtectedPage>} />
-              <Route path="/vendor-dashboard" element={<ProtectedPage><VendorDashboard /></ProtectedPage>} />
-              <Route path="/vendor-settings" element={<ProtectedPage><VendorSettings /></ProtectedPage>} />
-              <Route path="/ai-chat" element={<ProtectedPage><AiChat /></ProtectedPage>} />
-              <Route path="/settings" element={<ProtectedPage><ProfileSettings /></ProtectedPage>} />
+              <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
+              <Route path="/dashboard" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Dashboard /></ProtectedPage>} />
+              <Route path="/budget" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Budget /></ProtectedPage>} />
+              <Route path="/tasks" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Tasks /></ProtectedPage>} />
+              <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Guests /></ProtectedPage>} />
+              <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
+              <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
+              <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
+              <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner']}><AiChat /></ProtectedPage>} />
+              <Route path="/settings" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><ProfileSettings /></ProtectedPage>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </PlannerProvider>

@@ -364,13 +364,12 @@ serve(async (req) => {
     const { messages } = await req.json();
 
     // Fetch user's wedding data in parallel for context
-    const [profileRes, tasksRes, budgetRes, guestsRes, vendorsRes, roleRes] = await Promise.all([
+    const [profileRes, tasksRes, budgetRes, guestsRes, vendorsRes] = await Promise.all([
       supabase.from("profiles").select("*").eq("user_id", user.id).single(),
       supabase.from("tasks").select("*").eq("user_id", user.id).order("due_date", { ascending: true, nullsFirst: false }).limit(50),
       supabase.from("budget_categories").select("*").eq("user_id", user.id),
       supabase.from("guests").select("*").eq("user_id", user.id).limit(100),
       supabase.from("vendors").select("*").eq("user_id", user.id),
-      supabase.from("user_roles").select("role").eq("user_id", user.id).single(),
     ]);
 
     const profile = profileRes.data;
@@ -378,7 +377,7 @@ serve(async (req) => {
     const budget = budgetRes.data || [];
     const guests = guestsRes.data || [];
     const vendors = vendorsRes.data || [];
-    const role = roleRes.data?.role || "couple";
+    const role = profile?.role || "couple";
 
     const today = new Date().toISOString().slice(0, 10);
     const pendingTasks = tasksList.filter((t: any) => !t.completed);
