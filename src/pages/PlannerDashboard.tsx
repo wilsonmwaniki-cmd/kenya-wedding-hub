@@ -12,6 +12,7 @@ import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircl
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import MyConnections from '@/components/MyConnections';
 
 interface LinkRequest {
   id: string;
@@ -154,6 +155,9 @@ export default function PlannerDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Planner's vendor connections */}
+      <MyConnections />
 
       <div className="flex items-center justify-between">
         <div>
