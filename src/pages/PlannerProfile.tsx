@@ -71,11 +71,11 @@ export default function PlannerProfile() {
   const sendRequest = async () => {
     if (!user || !planner) return;
     setSending(true);
-    const { error } = await supabase.from('planner_link_requests').insert({
+    const { data: inserted, error } = await supabase.from('planner_link_requests').insert({
       couple_user_id: user.id,
       planner_user_id: planner.user_id,
       message: message.trim() || null,
-    });
+    }).select('id').single();
     setSending(false);
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -85,7 +85,7 @@ export default function PlannerProfile() {
     setDialogOpen(false);
     setMessage('');
     toast({ title: 'Interest sent! ✨', description: 'Your planner will review your request.' });
-    // Send email notification (fire-and-forget)
+    // Send email notification with action links (fire-and-forget)
     if (planner.company_email) {
       supabase.functions.invoke('send-connection-notification', {
         body: {
@@ -94,6 +94,7 @@ export default function PlannerProfile() {
           requesterName: profile?.full_name || 'A couple',
           message: message.trim() || null,
           type: 'planner',
+          requestId: inserted?.id || null,
         },
       }).catch(() => {});
     }
