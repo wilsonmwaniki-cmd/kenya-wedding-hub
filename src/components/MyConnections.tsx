@@ -3,7 +3,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { LinkIcon, Sparkles, Clock, CheckCircle2, XCircle, Store, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Sparkles, Clock, CheckCircle2, XCircle, Store, Users, X, Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 interface PlannerConnection {
   type: 'planner';
@@ -34,8 +36,10 @@ const statusConfig: Record<string, { label: string; icon: typeof Clock; classNam
 
 export default function MyConnections() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cancelling, setCancelling] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -112,6 +116,19 @@ export default function MyConnections() {
 
   if (loading || connections.length === 0) return null;
 
+  const cancelRequest = async (conn: Connection) => {
+    setCancelling(conn.id);
+    const table = conn.type === 'planner' ? 'planner_link_requests' : 'vendor_connection_requests';
+    const { error } = await supabase.from(table).delete().eq('id', conn.id);
+    setCancelling(null);
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setConnections(prev => prev.filter(c => c.id !== conn.id));
+    toast({ title: 'Request cancelled' });
+  };
+
   return (
     <Card className="shadow-card">
       <CardHeader>
@@ -141,9 +158,26 @@ export default function MyConnections() {
                   </Badge>
                 </div>
               </div>
-              <div className={`flex items-center gap-1 text-xs shrink-0 ${config.className}`}>
-                <StatusIcon className="h-3.5 w-3.5" />
-                {config.label}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className={`flex items-center gap-1 text-xs ${config.className}`}>
+                  <StatusIcon className="h-3.5 w-3.5" />
+                  {config.label}
+                </div>
+                {conn.status === 'pending' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => cancelRequest(conn)}
+                    disabled={cancelling === conn.id}
+                  >
+                    {cancelling === conn.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <X className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
           );
