@@ -77,6 +77,11 @@ export default function Timeline() {
   const [newDate, setNewDate] = useState('');
   const [newIsTemplate, setNewIsTemplate] = useState(false);
   const [fromTemplateId, setFromTemplateId] = useState<string | null>(null);
+  const [ceremonyCenterTime, setCeremonyCenterTime] = useState('11:00');
+  const [applyTemplateOpen, setApplyTemplateOpen] = useState(false);
+  const [selectedTemplateForApply, setSelectedTemplateForApply] = useState<Timeline | null>(null);
+  const [templatePreviewEvents, setTemplatePreviewEvents] = useState<TimelineEvent[]>([]);
+  const [applyLoading, setApplyLoading] = useState(false);
 
   // Event editing
   const [editingEvent, setEditingEvent] = useState<TimelineEvent | null>(null);
@@ -150,6 +155,79 @@ export default function Timeline() {
     return Array.from(set).sort();
   }, [events]);
 
+  // Open "Apply Template" wizard
+  const openApplyTemplate = async (template: Timeline) => {
+    setSelectedTemplateForApply(template);
+    setNewTitle(`${template.title}`);
+    setNewDate('');
+    setCeremonyCenterTime('11:00');
+    // Load template events for preview & anchor detection
+    const { data } = await supabase
+      .from('timeline_events')
+      .select('*')
+      .eq('timeline_id', template.id)
+      .order('event_time', { ascending: true });
+    setTemplatePreviewEvents((data as TimelineEvent[]) || []);
+    setApplyTemplateOpen(true);
+  };
+
+  // Calculate time offset and create instance from template
+  const handleApplyTemplate = async () => {
+    if (!user || !selectedTemplateForApply || !newTitle.trim() || !newDate) return;
+    setApplyLoading(true);
+
+    // Find the ceremony anchor event (first "ceremony" category, or first event)
+    const anchorEvent = templatePreviewEvents.find(e => e.category === 'ceremony') || templatePreviewEvents[0];
+    if (!anchorEvent) { setApplyLoading(false); return; }
+
+    const [anchorH, anchorM] = anchorEvent.event_time.split(':').map(Number);
+    const [targetH, targetM] = ceremonyCenterTime.split(':').map(Number);
+    const offsetMin = (targetH * 60 + targetM) - (anchorH * 60 + anchorM);
+
+    // Create the new timeline instance
+    const payload: any = {
+      user_id: user.id,
+      title: newTitle.trim(),
+      is_template: false,
+      timeline_date: newDate,
+      client_id: isPlanner && selectedClient ? selectedClient.id : null,
+    };
+    const { data: newTimeline, error } = await supabase.from('timelines').insert(payload).select().single();
+    if (error || !newTimeline) {
+      toast({ title: 'Error', description: error?.message || 'Failed to create timeline', variant: 'destructive' });
+      setApplyLoading(false);
+      return;
+    }
+
+    // Copy events with time offset applied
+    if (templatePreviewEvents.length > 0) {
+      const copies = templatePreviewEvents.map(te => {
+        const [h, m] = te.event_time.split(':').map(Number);
+        const totalMin = Math.max(0, Math.min(23 * 60 + 59, h * 60 + m + offsetMin));
+        const newH = String(Math.floor(totalMin / 60)).padStart(2, '0');
+        const newM = String(totalMin % 60).padStart(2, '0');
+        return {
+          timeline_id: (newTimeline as any).id,
+          event_time: `${newH}:${newM}:00`,
+          title: te.title,
+          description: te.description,
+          assigned_people: te.assigned_people,
+          sort_order: te.sort_order,
+          category: te.category,
+        };
+      });
+      await supabase.from('timeline_events').insert(copies);
+    }
+
+    toast({ title: 'Timeline created from template!' });
+    setApplyTemplateOpen(false);
+    setSelectedTemplateForApply(null);
+    setTemplatePreviewEvents([]);
+    setApplyLoading(false);
+    loadTimelines();
+    selectTimeline(newTimeline as Timeline);
+  };
+
   // Create timeline
   const handleCreate = async () => {
     if (!user || !newTitle.trim()) return;
@@ -178,6 +256,7 @@ export default function Timeline() {
           description: te.description,
           assigned_people: te.assigned_people,
           sort_order: te.sort_order,
+          category: te.category,
         }));
         await supabase.from('timeline_events').insert(copies);
       }
@@ -693,13 +772,10 @@ export default function Timeline() {
                           variant="outline" size="sm" className="text-xs gap-1"
                           onClick={e => {
                             e.stopPropagation();
-                            setNewIsTemplate(false);
-                            setFromTemplateId(t.id);
-                            setNewTitle(`${t.title} — Copy`);
-                            setCreateOpen(true);
+                            openApplyTemplate(t);
                           }}
                         >
-                          <Copy className="h-3 w-3" /> Use Template
+                          <Copy className="h-3 w-3" /> Apply Template
                         </Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); deleteTimeline(t.id); }}>
                           <Trash2 className="h-3.5 w-3.5" />
@@ -748,6 +824,82 @@ export default function Timeline() {
             )}
             <Button className="w-full" onClick={handleCreate} disabled={!newTitle.trim()}>
               <Check className="h-4 w-4 mr-1.5" /> Create
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Apply Template dialog */}
+      <Dialog open={applyTemplateOpen} onOpenChange={setApplyTemplateOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" /> Apply Template
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            {selectedTemplateForApply && (
+              <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Template</p>
+                <p className="font-semibold text-foreground">{selectedTemplateForApply.title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{templatePreviewEvents.length} events</p>
+              </div>
+            )}
+            <div>
+              <Label>Timeline Name</Label>
+              <Input placeholder="e.g. Sarah & James Wedding" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Wedding Date</Label>
+                <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />
+              </div>
+              <div>
+                <Label>Ceremony Start Time</Label>
+                <Input type="time" value={ceremonyCenterTime} onChange={e => setCeremonyCenterTime(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Preview of recalculated times */}
+            {templatePreviewEvents.length > 0 && newDate && (
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Preview (auto-calculated)</p>
+                <div className="rounded-lg border border-border bg-muted/20 max-h-48 overflow-y-auto">
+                  {(() => {
+                    const anchor = templatePreviewEvents.find(e => e.category === 'ceremony') || templatePreviewEvents[0];
+                    const [aH, aM] = anchor.event_time.split(':').map(Number);
+                    const [tH, tM] = ceremonyCenterTime.split(':').map(Number);
+                    const offset = (tH * 60 + tM) - (aH * 60 + aM);
+                    return templatePreviewEvents.map((ev, i) => {
+                      const [h, m] = ev.event_time.split(':').map(Number);
+                      const total = Math.max(0, Math.min(23 * 60 + 59, h * 60 + m + offset));
+                      const nH = String(Math.floor(total / 60)).padStart(2, '0');
+                      const nM = String(total % 60).padStart(2, '0');
+                      const catMeta = getCategoryMeta(ev.category);
+                      return (
+                        <div key={i} className="flex items-center gap-3 px-3 py-2 border-b border-border last:border-b-0">
+                          <span className="text-sm font-mono font-semibold text-primary w-16 shrink-0">
+                            {formatTime(`${nH}:${nM}`)}
+                          </span>
+                          <span className="text-sm text-foreground flex-1">{ev.title}</span>
+                          {catMeta && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${catMeta.color}`}>
+                              {catMeta.label}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Times are offset based on the first <strong>Ceremony</strong> event in the template
+                </p>
+              </div>
+            )}
+
+            <Button className="w-full" onClick={handleApplyTemplate} disabled={!newTitle.trim() || !newDate || applyLoading}>
+              <Check className="h-4 w-4 mr-1.5" /> {applyLoading ? 'Creating…' : 'Create Wedding Timeline'}
             </Button>
           </div>
         </DialogContent>
