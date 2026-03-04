@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, Trash2, Edit2, Copy, Link2, Users, ArrowLeft,
-  Calendar, FileText, ChevronRight, Share2, X, Check
+  Calendar, FileText, ChevronRight, Share2, X, Check, Timer
 } from 'lucide-react';
 
 interface Timeline {
@@ -73,6 +73,10 @@ export default function Timeline() {
 
   // Share dialog
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+
+  // Shift dialog
+  const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
+  const [shiftMinutes, setShiftMinutes] = useState(30);
 
   const baseUrl = window.location.origin;
 
@@ -237,6 +241,24 @@ export default function Timeline() {
     toast({ title: 'Link copied!' });
   };
 
+  const shiftAllEvents = async (direction: 'forward' | 'backward') => {
+    if (!selectedTimeline || events.length === 0) return;
+    const delta = direction === 'forward' ? shiftMinutes : -shiftMinutes;
+    const updates = events.map(ev => {
+      const [h, m] = ev.event_time.split(':').map(Number);
+      const totalMin = Math.max(0, Math.min(23 * 60 + 59, h * 60 + m + delta));
+      const newH = String(Math.floor(totalMin / 60)).padStart(2, '0');
+      const newM = String(totalMin % 60).padStart(2, '0');
+      return { id: ev.id, event_time: `${newH}:${newM}:00` };
+    });
+    for (const u of updates) {
+      await supabase.from('timeline_events').update({ event_time: u.event_time }).eq('id', u.id);
+    }
+    loadEvents(selectedTimeline.id);
+    setShiftDialogOpen(false);
+    toast({ title: `Shifted all events ${shiftMinutes} min ${direction}` });
+  };
+
   const templates = timelines.filter(t => t.is_template);
   const instances = timelines.filter(t => !t.is_template);
 
@@ -268,6 +290,11 @@ export default function Timeline() {
               </p>
             )}
           </div>
+          {events.length > 0 && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShiftDialogOpen(true)}>
+              <Timer className="h-4 w-4" /> Shift All
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShareDialogOpen(true)}>
             <Share2 className="h-4 w-4" /> Share
           </Button>
@@ -416,6 +443,32 @@ export default function Timeline() {
                   Add events with assigned people to generate individual share links
                 </p>
               )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Shift dialog */}
+        <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
+          <DialogContent className="max-w-xs">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Timer className="h-5 w-5" /> Shift All Events
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div>
+                <Label>Minutes</Label>
+                <Input type="number" min={1} max={480} value={shiftMinutes} onChange={e => setShiftMinutes(Math.max(1, parseInt(e.target.value) || 1))} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" className="gap-1.5" onClick={() => shiftAllEvents('backward')}>
+                  − {shiftMinutes} min
+                </Button>
+                <Button className="gap-1.5" onClick={() => shiftAllEvents('forward')}>
+                  + {shiftMinutes} min
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground text-center">All events will be shifted. Times are clamped to 00:00–23:59.</p>
             </div>
           </DialogContent>
         </Dialog>
