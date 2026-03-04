@@ -18,6 +18,7 @@ interface LinkRequest {
   couple_user_id: string;
   status: string;
   created_at: string;
+  message?: string | null;
   couple_name?: string;
   couple_email?: string;
 }
@@ -130,17 +131,24 @@ export default function PlannerDashboard() {
           </CardHeader>
           <CardContent className="space-y-3">
             {linkRequests.map(req => (
-              <div key={req.id} className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
-                <div className="flex-1">
+              <div key={req.id} className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
+                <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm text-card-foreground">{req.couple_name}</p>
                   <p className="text-xs text-muted-foreground">Wants to link their wedding account</p>
+                  {req.message && (
+                    <p className="mt-1.5 text-xs text-muted-foreground italic border-l-2 border-primary/30 pl-2">
+                      "{req.message}"
+                    </p>
+                  )}
                 </div>
-                <Button size="sm" variant="outline" onClick={() => rejectRequest(req)} className="gap-1">
-                  <XCircle className="h-3.5 w-3.5" /> Decline
-                </Button>
-                <Button size="sm" onClick={() => approveRequest(req)} className="gap-1">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                </Button>
+                <div className="flex gap-2 shrink-0 pt-0.5">
+                  <Button size="sm" variant="outline" onClick={() => rejectRequest(req)} className="gap-1">
+                    <XCircle className="h-3.5 w-3.5" /> Decline
+                  </Button>
+                  <Button size="sm" onClick={() => approveRequest(req)} className="gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>
