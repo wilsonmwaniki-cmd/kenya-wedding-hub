@@ -38,11 +38,11 @@ export default function VendorInterestButton({
 
   const handleSendInterest = async () => {
     setSubmitting(true);
-    const { error } = await supabase.from('vendor_connection_requests' as any).insert({
+    const { data: inserted, error } = await supabase.from('vendor_connection_requests' as any).insert({
       requester_user_id: user.id,
       vendor_listing_id: vendorListingId,
       message: message.trim() || null,
-    } as any);
+    } as any).select('id').single();
 
     if (error) {
       if (error.code === '23505') {
@@ -55,7 +55,7 @@ export default function VendorInterestButton({
       setStatus('pending');
       toast({ title: 'Interest sent! ✨', description: `${vendorName} will review your request.` });
       onStatusChange?.();
-      // Send email notification (fire-and-forget)
+      // Send email notification with action links (fire-and-forget)
       if (vendorEmail) {
         supabase.functions.invoke('send-connection-notification', {
           body: {
@@ -64,6 +64,7 @@ export default function VendorInterestButton({
             requesterName: profile?.full_name || 'A couple',
             message: message.trim() || null,
             type: 'vendor',
+            requestId: (inserted as any)?.id || null,
           },
         }).catch(() => {});
       }
