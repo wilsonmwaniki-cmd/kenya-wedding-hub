@@ -329,23 +329,29 @@ export type Database = {
         Row: {
           assignee_name: string
           created_at: string
+          email: string | null
           id: string
           share_token: string
           timeline_id: string
+          vendor_role: string | null
         }
         Insert: {
           assignee_name: string
           created_at?: string
+          email?: string | null
           id?: string
           share_token?: string
           timeline_id: string
+          vendor_role?: string | null
         }
         Update: {
           assignee_name?: string
           created_at?: string
+          email?: string | null
           id?: string
           share_token?: string
           timeline_id?: string
+          vendor_role?: string | null
         }
         Relationships: [
           {
