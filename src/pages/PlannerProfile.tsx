@@ -5,8 +5,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Heart, Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, LinkIcon, CheckCircle2, Clock } from 'lucide-react';
+import { Heart, Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, CheckCircle2, Clock, Sparkles } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 
 interface PlannerData {
@@ -29,8 +32,10 @@ export default function PlannerProfile() {
   const [planner, setPlanner] = useState<PlannerData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [requestStatus, setRequestStatus] = useState<string | null>(null); // null, 'pending', 'approved'
+  const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [message, setMessage] = useState('');
 
   const isCouple = profile?.role === 'couple';
 
@@ -69,6 +74,7 @@ export default function PlannerProfile() {
     const { error } = await supabase.from('planner_link_requests').insert({
       couple_user_id: user.id,
       planner_user_id: planner.user_id,
+      message: message.trim() || null,
     });
     setSending(false);
     if (error) {
@@ -76,7 +82,9 @@ export default function PlannerProfile() {
       return;
     }
     setRequestStatus('pending');
-    toast({ title: 'Request sent!', description: 'Your planner will review your request.' });
+    setDialogOpen(false);
+    setMessage('');
+    toast({ title: 'Interest sent! ✨', description: 'Your planner will review your request.' });
   };
 
   if (loading) {
@@ -145,25 +153,53 @@ export default function PlannerProfile() {
                 <>
                   <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div className="flex-1">
-                    <p className="font-medium text-card-foreground">Link request pending</p>
+                    <p className="font-medium text-card-foreground">Interest pending</p>
                     <p className="text-sm text-muted-foreground">Waiting for the planner to accept.</p>
                   </div>
                 </>
               ) : (
                 <>
-                  <LinkIcon className="h-5 w-5 text-primary shrink-0" />
+                  <Sparkles className="h-5 w-5 text-primary shrink-0" />
                   <div className="flex-1">
                     <p className="font-medium text-card-foreground">Work with this planner</p>
-                    <p className="text-sm text-muted-foreground">Link your account to share wedding progress.</p>
+                    <p className="text-sm text-muted-foreground">Send a connection request to share your wedding progress.</p>
                   </div>
-                  <Button onClick={sendRequest} disabled={sending} size="sm">
-                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Request Link'}
+                  <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" /> Interested
                   </Button>
                 </>
               )}
             </CardContent>
           </Card>
         )}
+
+        {/* Interest Dialog */}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="font-display">Connect with {planner.company_name || planner.full_name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Send a connection request. Once accepted, your wedding progress will be shared with this planner.
+              </p>
+              <div className="space-y-2">
+                <Label>Message (optional)</Label>
+                <Textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Hi! We're planning our wedding and would love your help…"
+                  maxLength={500}
+                  rows={3}
+                />
+              </div>
+              <Button onClick={sendRequest} disabled={sending} className="w-full gap-2">
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Send Interest
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Contact Card */}
         {(planner.company_email || planner.company_phone || planner.company_website) && (
