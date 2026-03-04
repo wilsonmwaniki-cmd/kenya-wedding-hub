@@ -6,7 +6,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft
+  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +17,7 @@ const coupleNavItems = [
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
   { path: '/vendors', label: 'Vendors', icon: Store },
+  { path: '/timeline', label: 'Timeline', icon: Clock },
   { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -28,6 +29,7 @@ const plannerNavItems = [
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
   { path: '/vendors', label: 'Vendors', icon: Store },
+  { path: '/timeline', label: 'Timeline', icon: Clock },
   { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -60,7 +62,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !selectedClient;
-  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/vendors'];
+  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/vendors', '/timeline'];
 
   const handleSignOut = async () => {
     await signOut();

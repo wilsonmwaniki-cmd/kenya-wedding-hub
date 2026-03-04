@@ -281,6 +281,123 @@ export type Database = {
           },
         ]
       }
+      timeline_events: {
+        Row: {
+          assigned_people: string[]
+          created_at: string
+          description: string | null
+          event_time: string
+          id: string
+          sort_order: number
+          timeline_id: string
+          title: string
+        }
+        Insert: {
+          assigned_people?: string[]
+          created_at?: string
+          description?: string | null
+          event_time: string
+          id?: string
+          sort_order?: number
+          timeline_id: string
+          title: string
+        }
+        Update: {
+          assigned_people?: string[]
+          created_at?: string
+          description?: string | null
+          event_time?: string
+          id?: string
+          sort_order?: number
+          timeline_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timeline_events_timeline_id_fkey"
+            columns: ["timeline_id"]
+            isOneToOne: false
+            referencedRelation: "timelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      timeline_share_links: {
+        Row: {
+          assignee_name: string
+          created_at: string
+          id: string
+          share_token: string
+          timeline_id: string
+        }
+        Insert: {
+          assignee_name: string
+          created_at?: string
+          id?: string
+          share_token?: string
+          timeline_id: string
+        }
+        Update: {
+          assignee_name?: string
+          created_at?: string
+          id?: string
+          share_token?: string
+          timeline_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timeline_share_links_timeline_id_fkey"
+            columns: ["timeline_id"]
+            isOneToOne: false
+            referencedRelation: "timelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      timelines: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          id: string
+          is_template: boolean
+          share_token: string
+          timeline_date: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          is_template?: boolean
+          share_token?: string
+          timeline_date?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          is_template?: boolean
+          share_token?: string
+          timeline_date?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timelines_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -507,6 +624,8 @@ export type Database = {
       }
     }
     Functions: {
+      get_assignee_timeline: { Args: { _share_token: string }; Returns: Json }
+      get_shared_timeline: { Args: { _share_token: string }; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -519,6 +638,7 @@ export type Database = {
         Args: { _data_user_id: string }
         Returns: boolean
       }
+      owns_timeline: { Args: { _timeline_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "couple" | "planner" | "vendor"
