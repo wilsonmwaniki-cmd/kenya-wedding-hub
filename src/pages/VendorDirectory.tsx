@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Heart, Search, Loader2, Store, ArrowLeft, CheckCircle2, MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
+import VendorInterestButton from '@/components/VendorInterestButton';
 
 const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -27,10 +29,12 @@ interface VendorListing {
 }
 
 export default function VendorDirectory() {
+  const { user } = useAuth();
   const [vendors, setVendors] = useState<VendorListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
+  const [requestStatuses, setRequestStatuses] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -44,6 +48,23 @@ export default function VendorDirectory() {
     };
     load();
   }, []);
+
+  // Load existing request statuses for logged-in user
+  useEffect(() => {
+    if (!user) return;
+    const loadStatuses = async () => {
+      const { data } = await supabase
+        .from('vendor_connection_requests' as any)
+        .select('vendor_listing_id, status')
+        .eq('requester_user_id', user.id);
+      if (data) {
+        const map: Record<string, string> = {};
+        (data as any[]).forEach((r: any) => { map[r.vendor_listing_id] = r.status; });
+        setRequestStatuses(map);
+      }
+    };
+    loadStatuses();
+  }, [user]);
 
   const filtered = vendors.filter((v) => {
     if (category !== 'All' && v.category !== category) return false;
@@ -70,9 +91,11 @@ export default function VendorDirectory() {
               <ArrowLeft className="h-4 w-4" /> Home
             </Button>
           </Link>
-          <Link to="/auth">
-            <Button size="sm">Sign In</Button>
-          </Link>
+          {!user && (
+            <Link to="/auth">
+              <Button size="sm">Sign In</Button>
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -181,6 +204,16 @@ export default function VendorDirectory() {
                       <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
                         <CheckCircle2 className="h-3 w-3" /> Verified Vendor
                       </span>
+                    )}
+                    {/* Interest button for logged-in couples/planners */}
+                    {user && (
+                      <div className="mt-4">
+                        <VendorInterestButton
+                          vendorListingId={v.id}
+                          vendorName={v.business_name}
+                          existingStatus={requestStatuses[v.id] || null}
+                        />
+                      </div>
                     )}
                   </CardContent>
                 </Card>
