@@ -136,3 +136,27 @@
     box-shadow: 0 1px 3px hsl(20 25% 12% / 0.06), 0 6px 16px hsl(20 25% 12% / 0.04);
   }
 }
+
+@media print {
+  /* Hide app chrome */
+  aside, header, .print\:hidden { display: none !important; }
+  
+  /* Full width content */
+  main { padding: 0 !important; }
+  main > div { padding: 0 !important; }
+  
+  /* Clean cards */
+  .shadow-sm, .shadow-card, .shadow-md { box-shadow: none !important; }
+  [class*="border-l-2"] { border-color: hsl(var(--foreground) / 0.3) !important; }
+  
+  /* Hide interactive elements */
+  [draggable="true"] { cursor: default !important; }
+  .group-hover\:opacity-100 { display: none !important; }
+  [class*="cursor-grab"] { display: none !important; }
+  
+  /* Typography */
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  
+  /* Page break control */
+  .space-y-1 > * { break-inside: avoid; }
+}
