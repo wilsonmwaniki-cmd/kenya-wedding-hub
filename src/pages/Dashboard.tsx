@@ -8,6 +8,7 @@ import { Wallet, CheckSquare, Users, Store, Calendar, Heart, LinkIcon, Unlink, C
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
+import MyConnections from '@/components/MyConnections';
 import { useToast } from '@/hooks/use-toast';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 
@@ -150,6 +151,9 @@ export default function Dashboard() {
           </motion.div>
         ))}
       </div>
+
+      {/* My Connections — couples only */}
+      {!isPlanner && <MyConnections />}
 
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="flex items-start gap-4 py-5">
