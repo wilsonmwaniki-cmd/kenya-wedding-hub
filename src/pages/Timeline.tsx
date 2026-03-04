@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, Trash2, Edit2, Copy, Link2, Users, ArrowLeft,
-  Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical
+  Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle
 } from 'lucide-react';
 
 interface Timeline {
@@ -438,6 +438,11 @@ export default function Timeline() {
                   <Button size="icon" variant="outline" onClick={() => copyToClipboard(`${baseUrl}/timeline/share/${selectedTimeline.share_token}`)}>
                     <Copy className="h-4 w-4" />
                   </Button>
+                  <Button size="icon" variant="outline" className="shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50" asChild>
+                    <a href={`https://wa.me/?text=${encodeURIComponent(`Here's the wedding timeline for "${selectedTimeline.title}":\n${baseUrl}/timeline/share/${selectedTimeline.share_token}`)}`} target="_blank" rel="noopener noreferrer">
+                      <MessageCircle className="h-4 w-4" />
+                    </a>
+                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Anyone with this link sees the full timeline</p>
               </div>
@@ -447,15 +452,24 @@ export default function Timeline() {
                 <div>
                   <Label className="text-xs uppercase tracking-wide text-muted-foreground">Individual Links</Label>
                   <div className="space-y-2 mt-1.5">
-                    {shareLinks.map(sl => (
-                      <div key={sl.id} className="flex items-center gap-2">
-                        <Badge variant="outline" className="shrink-0">{sl.assignee_name}</Badge>
-                        <Input readOnly value={`${baseUrl}/timeline/share/${sl.share_token}`} className="text-xs flex-1" />
-                        <Button size="icon" variant="outline" className="shrink-0" onClick={() => copyToClipboard(`${baseUrl}/timeline/share/${sl.share_token}`)}>
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
+                    {shareLinks.map(sl => {
+                      const link = `${baseUrl}/timeline/share/${sl.share_token}`;
+                      const waText = encodeURIComponent(`Hi ${sl.assignee_name}! Here's your timeline for "${selectedTimeline.title}":\n${link}`);
+                      return (
+                        <div key={sl.id} className="flex items-center gap-2">
+                          <Badge variant="outline" className="shrink-0">{sl.assignee_name}</Badge>
+                          <Input readOnly value={link} className="text-xs flex-1" />
+                          <Button size="icon" variant="outline" className="shrink-0" onClick={() => copyToClipboard(link)}>
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button size="icon" variant="outline" className="shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50" asChild>
+                            <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer">
+                              <MessageCircle className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        </div>
+                      );
+                    })}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">Each person only sees events assigned to them</p>
                 </div>
