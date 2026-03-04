@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, Trash2, Edit2, Copy, Link2, Users, ArrowLeft,
-  Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle
+  Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle, Printer
 } from 'lucide-react';
 
 interface Timeline {
@@ -296,7 +296,7 @@ export default function Timeline() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => { setSelectedTimeline(null); setEvents([]); }}>
+          <Button variant="ghost" size="icon" className="print:hidden" onClick={() => { setSelectedTimeline(null); setEvents([]); }}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex-1">
@@ -312,14 +312,19 @@ export default function Timeline() {
             )}
           </div>
           {events.length > 0 && (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShiftDialogOpen(true)}>
-              <Timer className="h-4 w-4" /> Shift All
-            </Button>
+            <>
+              <Button variant="outline" size="sm" className="gap-1.5 print:hidden" onClick={() => window.print()}>
+                <Printer className="h-4 w-4" /> Print
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5 print:hidden" onClick={() => setShiftDialogOpen(true)}>
+                <Timer className="h-4 w-4" /> Shift All
+              </Button>
+            </>
           )}
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShareDialogOpen(true)}>
+          <Button variant="outline" size="sm" className="gap-1.5 print:hidden" onClick={() => setShareDialogOpen(true)}>
             <Share2 className="h-4 w-4" /> Share
           </Button>
-          <Button size="sm" className="gap-1.5" onClick={openNewEvent}>
+          <Button size="sm" className="gap-1.5 print:hidden" onClick={openNewEvent}>
             <Plus className="h-4 w-4" /> Add Event
           </Button>
         </div>
