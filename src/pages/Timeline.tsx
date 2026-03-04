@@ -17,6 +17,25 @@ import {
   Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle, Printer
 } from 'lucide-react';
 
+const VENDOR_ROLES = [
+  { value: 'photographer', label: 'Photographer', icon: '📸' },
+  { value: 'videographer', label: 'Videographer', icon: '🎬' },
+  { value: 'mc', label: 'MC / Host', icon: '🎤' },
+  { value: 'makeup', label: 'Makeup Artist', icon: '💄' },
+  { value: 'hair', label: 'Hair Stylist', icon: '💇' },
+  { value: 'dj', label: 'DJ', icon: '🎵' },
+  { value: 'florist', label: 'Florist', icon: '💐' },
+  { value: 'caterer', label: 'Caterer', icon: '🍽️' },
+  { value: 'decorator', label: 'Decorator', icon: '✨' },
+  { value: 'planner', label: 'Planner', icon: '📋' },
+  { value: 'transport', label: 'Transport', icon: '🚗' },
+  { value: 'officiant', label: 'Officiant', icon: '💍' },
+  { value: 'other', label: 'Other', icon: '👤' },
+] as const;
+
+const getVendorRole = (role: string | null) =>
+  VENDOR_ROLES.find(r => r.value === role) || null;
+
 const EVENT_CATEGORIES = [
   { value: 'prep', label: 'Prep', color: 'bg-blue-100 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
   { value: 'ceremony', label: 'Ceremony', color: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
@@ -58,6 +77,8 @@ interface ShareLink {
   timeline_id: string;
   assignee_name: string;
   share_token: string;
+  vendor_role: string | null;
+  email: string | null;
 }
 
 export default function Timeline() {
@@ -606,22 +627,64 @@ export default function Timeline() {
               {shareLinks.length > 0 && (
                 <div>
                   <Label className="text-xs uppercase tracking-wide text-muted-foreground">Individual Links</Label>
-                  <div className="space-y-2 mt-1.5">
+                  <div className="space-y-3 mt-1.5">
                     {shareLinks.map(sl => {
                       const link = `${baseUrl}/timeline/share/${sl.share_token}`;
+                      const roleMeta = getVendorRole(sl.vendor_role);
                       const waText = encodeURIComponent(`Hi ${sl.assignee_name}! Here's your timeline for "${selectedTimeline.title}":\n${link}`);
                       return (
-                        <div key={sl.id} className="flex items-center gap-2">
-                          <Badge variant="outline" className="shrink-0">{sl.assignee_name}</Badge>
-                          <Input readOnly value={link} className="text-xs flex-1" />
-                          <Button size="icon" variant="outline" className="shrink-0" onClick={() => copyToClipboard(link)}>
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                          <Button size="icon" variant="outline" className="shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50" asChild>
-                            <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer">
-                              <MessageCircle className="h-4 w-4" />
-                            </a>
-                          </Button>
+                        <div key={sl.id} className="rounded-lg border border-border p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="shrink-0 gap-1">
+                              {roleMeta && <span>{roleMeta.icon}</span>}
+                              {sl.assignee_name}
+                            </Badge>
+                            {roleMeta && (
+                              <span className="text-xs text-muted-foreground">{roleMeta.label}</span>
+                            )}
+                            <div className="flex-1" />
+                            <select
+                              className="text-xs border border-input rounded-md px-2 py-1 bg-background"
+                              value={sl.vendor_role || ''}
+                              onChange={async (e) => {
+                                const role = e.target.value || null;
+                                await supabase.from('timeline_share_links').update({ vendor_role: role } as any).eq('id', sl.id);
+                                loadShareLinks(selectedTimeline.id);
+                              }}
+                            >
+                              <option value="">Set role…</option>
+                              {VENDOR_ROLES.map(r => (
+                                <option key={r.value} value={r.value}>{r.icon} {r.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              key={sl.id + '-email'}
+                              placeholder="Email for reminders…"
+                              defaultValue={sl.email || ''}
+                              className="text-xs flex-1"
+                              type="email"
+                              onBlur={async (e) => {
+                                const email = e.target.value.trim() || null;
+                                if (email !== (sl.email || null)) {
+                                  await supabase.from('timeline_share_links').update({ email } as any).eq('id', sl.id);
+                                  loadShareLinks(selectedTimeline.id);
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Input readOnly value={link} className="text-xs flex-1" />
+                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8" onClick={() => copyToClipboard(link)}>
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50" asChild>
+                              <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer">
+                                <MessageCircle className="h-3.5 w-3.5" />
+                              </a>
+                            </Button>
+                          </div>
                         </div>
                       );
                     })}
