@@ -296,6 +296,54 @@ export type Database = {
         }
         Relationships: []
       }
+      vendor_connection_requests: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          id: string
+          message: string | null
+          requester_user_id: string
+          status: string
+          updated_at: string
+          vendor_listing_id: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          message?: string | null
+          requester_user_id: string
+          status?: string
+          updated_at?: string
+          vendor_listing_id: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          message?: string | null
+          requester_user_id?: string
+          status?: string
+          updated_at?: string
+          vendor_listing_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendor_connection_requests_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_connection_requests_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vendor_listings: {
         Row: {
           business_name: string
