@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, Trash2, Edit2, Copy, Link2, Users, ArrowLeft,
-  Calendar, FileText, ChevronRight, Share2, X, Check, Timer
+  Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical
 } from 'lucide-react';
 
 interface Timeline {
@@ -78,6 +78,10 @@ export default function Timeline() {
   const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
   const [shiftMinutes, setShiftMinutes] = useState(30);
 
+  // Drag-and-drop
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   const baseUrl = window.location.origin;
 
   // Load timelines
@@ -103,6 +107,7 @@ export default function Timeline() {
       .from('timeline_events')
       .select('*')
       .eq('timeline_id', timelineId)
+      .order('sort_order', { ascending: true })
       .order('event_time', { ascending: true });
     if (data) setEvents(data as TimelineEvent[]);
   };
@@ -259,6 +264,22 @@ export default function Timeline() {
     toast({ title: `Shifted all events ${shiftMinutes} min ${direction}` });
   };
 
+  const handleDrop = async (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx || !selectedTimeline) return;
+    const reordered = [...events];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    // Optimistic update
+    setEvents(reordered);
+    // Persist new sort_order
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].sort_order !== i) {
+        await supabase.from('timeline_events').update({ sort_order: i }).eq('id', reordered[i].id);
+      }
+    }
+    loadEvents(selectedTimeline.id);
+  };
+
   const templates = timelines.filter(t => t.is_template);
   const instances = timelines.filter(t => !t.is_template);
 
@@ -318,20 +339,23 @@ export default function Timeline() {
             </Card>
           ) : (
             <div className="relative ml-4 border-l-2 border-primary/20 pl-6 space-y-1">
-              <AnimatePresence>
                 {events.map((ev, i) => (
-                  <motion.div
+                  <div
                     key={ev.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.04 }}
-                    className="relative group"
+                    draggable
+                    onDragStart={() => setDragIndex(i)}
+                    onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
+                    onDragEnd={() => { if (dragIndex !== null && dragOverIndex !== null) handleDrop(dragIndex, dragOverIndex); setDragIndex(null); setDragOverIndex(null); }}
+                    className={`relative group transition-all ${dragIndex === i ? 'opacity-40 scale-[0.98]' : ''} ${dragOverIndex === i && dragIndex !== null && dragIndex !== i ? 'border-t-2 border-primary pt-1' : ''}`}
                   >
                     {/* Dot on the timeline */}
                     <div className="absolute -left-[31px] top-4 h-3.5 w-3.5 rounded-full border-2 border-primary bg-background" />
 
                     <Card className="shadow-sm hover:shadow-md transition-shadow">
-                      <CardContent className="flex items-start gap-4 py-4 px-5">
+                      <CardContent className="flex items-start gap-2 py-4 px-5">
+                        <div className="shrink-0 cursor-grab active:cursor-grabbing pt-1 text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+                          <GripVertical className="h-4 w-4" />
+                        </div>
                         <div className="shrink-0 min-w-[80px]">
                           <p className="text-lg font-bold text-primary font-display">{formatTime(ev.event_time)}</p>
                         </div>
@@ -358,9 +382,8 @@ export default function Timeline() {
                         </div>
                       </CardContent>
                     </Card>
-                  </motion.div>
+                  </div>
                 ))}
-              </AnimatePresence>
             </div>
           )}
         </div>
