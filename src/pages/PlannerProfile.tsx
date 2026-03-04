@@ -85,6 +85,18 @@ export default function PlannerProfile() {
     setDialogOpen(false);
     setMessage('');
     toast({ title: 'Interest sent! ✨', description: 'Your planner will review your request.' });
+    // Send email notification (fire-and-forget)
+    if (planner.company_email) {
+      supabase.functions.invoke('send-connection-notification', {
+        body: {
+          recipientEmail: planner.company_email,
+          recipientName: planner.company_name || planner.full_name,
+          requesterName: profile?.full_name || 'A couple',
+          message: message.trim() || null,
+          type: 'planner',
+        },
+      }).catch(() => {});
+    }
   };
 
   if (loading) {

@@ -211,6 +211,7 @@ export default function VendorDirectory() {
                         <VendorInterestButton
                           vendorListingId={v.id}
                           vendorName={v.business_name}
+                          vendorEmail={v.email}
                           existingStatus={requestStatuses[v.id] || null}
                         />
                       </div>

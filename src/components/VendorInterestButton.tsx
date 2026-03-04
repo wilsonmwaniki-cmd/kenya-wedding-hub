@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 interface VendorInterestButtonProps {
   vendorListingId: string;
   vendorName: string;
+  vendorEmail?: string | null;
   /** Pre-loaded status for this vendor (null = no request yet) */
   existingStatus?: string | null;
   onStatusChange?: () => void;
@@ -20,6 +21,7 @@ interface VendorInterestButtonProps {
 export default function VendorInterestButton({
   vendorListingId,
   vendorName,
+  vendorEmail,
   existingStatus = null,
   onStatusChange,
   size = 'sm',
@@ -53,6 +55,18 @@ export default function VendorInterestButton({
       setStatus('pending');
       toast({ title: 'Interest sent! ✨', description: `${vendorName} will review your request.` });
       onStatusChange?.();
+      // Send email notification (fire-and-forget)
+      if (vendorEmail) {
+        supabase.functions.invoke('send-connection-notification', {
+          body: {
+            recipientEmail: vendorEmail,
+            recipientName: vendorName,
+            requesterName: profile?.full_name || 'A couple',
+            message: message.trim() || null,
+            type: 'vendor',
+          },
+        }).catch(() => {});
+      }
     }
     setSubmitting(false);
     setDialogOpen(false);
