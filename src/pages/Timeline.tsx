@@ -17,6 +17,25 @@ import {
   Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle, Printer
 } from 'lucide-react';
 
+const VENDOR_ROLES = [
+  { value: 'photographer', label: 'Photographer', icon: '📸' },
+  { value: 'videographer', label: 'Videographer', icon: '🎬' },
+  { value: 'mc', label: 'MC / Host', icon: '🎤' },
+  { value: 'makeup', label: 'Makeup Artist', icon: '💄' },
+  { value: 'hair', label: 'Hair Stylist', icon: '💇' },
+  { value: 'dj', label: 'DJ', icon: '🎵' },
+  { value: 'florist', label: 'Florist', icon: '💐' },
+  { value: 'caterer', label: 'Caterer', icon: '🍽️' },
+  { value: 'decorator', label: 'Decorator', icon: '✨' },
+  { value: 'planner', label: 'Planner', icon: '📋' },
+  { value: 'transport', label: 'Transport', icon: '🚗' },
+  { value: 'officiant', label: 'Officiant', icon: '💍' },
+  { value: 'other', label: 'Other', icon: '👤' },
+] as const;
+
+const getVendorRole = (role: string | null) =>
+  VENDOR_ROLES.find(r => r.value === role) || null;
+
 const EVENT_CATEGORIES = [
   { value: 'prep', label: 'Prep', color: 'bg-blue-100 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
   { value: 'ceremony', label: 'Ceremony', color: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
