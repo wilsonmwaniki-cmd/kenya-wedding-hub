@@ -17,6 +17,20 @@ import {
   Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle, Printer
 } from 'lucide-react';
 
+const EVENT_CATEGORIES = [
+  { value: 'prep', label: 'Prep', color: 'bg-blue-100 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
+  { value: 'ceremony', label: 'Ceremony', color: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
+  { value: 'reception', label: 'Reception', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  { value: 'transport', label: 'Transport', color: 'bg-purple-100 text-purple-700 border-purple-200', dot: 'bg-purple-500' },
+  { value: 'photo', label: 'Photo/Video', color: 'bg-pink-100 text-pink-700 border-pink-200', dot: 'bg-pink-500' },
+  { value: 'food', label: 'Food & Drinks', color: 'bg-orange-100 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
+  { value: 'entertainment', label: 'Entertainment', color: 'bg-indigo-100 text-indigo-700 border-indigo-200', dot: 'bg-indigo-500' },
+  { value: 'other', label: 'Other', color: 'bg-gray-100 text-gray-700 border-gray-200', dot: 'bg-gray-500' },
+] as const;
+
+const getCategoryMeta = (cat: string | null) =>
+  EVENT_CATEGORIES.find(c => c.value === cat) || null;
+
 interface Timeline {
   id: string;
   user_id: string;
@@ -36,6 +50,7 @@ interface TimelineEvent {
   description: string | null;
   assigned_people: string[];
   sort_order: number;
+  category: string | null;
 }
 
 interface ShareLink {
@@ -70,7 +85,7 @@ export default function Timeline() {
   const [eventTitle, setEventTitle] = useState('');
   const [eventDesc, setEventDesc] = useState('');
   const [eventAssigned, setEventAssigned] = useState('');
-
+  const [eventCategory, setEventCategory] = useState<string | null>(null);
   // Share dialog
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
@@ -82,6 +97,8 @@ export default function Timeline() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
+  // Category filter
+  const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const baseUrl = window.location.origin;
 
   // Load timelines
@@ -190,6 +207,7 @@ export default function Timeline() {
     setEventTitle('');
     setEventDesc('');
     setEventAssigned('');
+    setEventCategory(null);
     setEventDialogOpen(true);
   };
 
@@ -199,6 +217,7 @@ export default function Timeline() {
     setEventTitle(ev.title);
     setEventDesc(ev.description || '');
     setEventAssigned(ev.assigned_people.join(', '));
+    setEventCategory(ev.category);
     setEventDialogOpen(true);
   };
 
@@ -211,6 +230,7 @@ export default function Timeline() {
       title: eventTitle.trim(),
       description: eventDesc.trim() || null,
       assigned_people: assigned,
+      category: eventCategory,
       sort_order: editingEvent?.sort_order ?? events.length,
     };
 
@@ -329,6 +349,28 @@ export default function Timeline() {
           </Button>
         </div>
 
+        {/* Category filter bar */}
+        {events.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <span className="text-xs text-muted-foreground font-medium">Filter:</span>
+            <button
+              onClick={() => setFilterCategory(null)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${!filterCategory ? 'bg-foreground text-background border-foreground' : 'bg-background text-muted-foreground border-border hover:border-foreground/30'}`}
+            >
+              All
+            </button>
+            {EVENT_CATEGORIES.filter(c => events.some(e => e.category === c.value)).map(c => (
+              <button
+                key={c.value}
+                onClick={() => setFilterCategory(filterCategory === c.value ? null : c.value)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${filterCategory === c.value ? c.color + ' border-current' : 'bg-background text-muted-foreground border-border hover:border-foreground/30'}`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Visual timeline */}
         <div className="relative">
           {events.length === 0 ? (
@@ -344,7 +386,7 @@ export default function Timeline() {
             </Card>
           ) : (
             <div className="relative ml-4 border-l-2 border-primary/20 pl-6 space-y-1">
-                {events.map((ev, i) => (
+                {events.filter(ev => !filterCategory || ev.category === filterCategory).map((ev, i) => (
                   <div
                     key={ev.id}
                     draggable
@@ -365,7 +407,14 @@ export default function Timeline() {
                           <p className="text-lg font-bold text-primary font-display">{formatTime(ev.event_time)}</p>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-card-foreground">{ev.title}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-card-foreground">{ev.title}</p>
+                            {getCategoryMeta(ev.category) && (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${getCategoryMeta(ev.category)!.color}`}>
+                                {getCategoryMeta(ev.category)!.label}
+                              </span>
+                            )}
+                          </div>
                           {ev.description && <p className="text-sm text-muted-foreground mt-0.5">{ev.description}</p>}
                           {ev.assigned_people.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
@@ -413,6 +462,28 @@ export default function Timeline() {
               <div>
                 <Label>Description (optional)</Label>
                 <Textarea placeholder="Additional details…" value={eventDesc} onChange={e => setEventDesc(e.target.value)} rows={2} />
+              </div>
+              <div>
+                <Label>Category</Label>
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setEventCategory(null)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${!eventCategory ? 'bg-foreground text-background border-foreground' : 'bg-background text-muted-foreground border-border'}`}
+                  >
+                    None
+                  </button>
+                  {EVENT_CATEGORIES.map(c => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => setEventCategory(c.value)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${eventCategory === c.value ? c.color + ' border-current' : 'bg-background text-muted-foreground border-border'}`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div>
                 <Label>Assigned People</Label>

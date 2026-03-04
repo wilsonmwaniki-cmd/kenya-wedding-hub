@@ -1,0 +1,1 @@
+ALTER TABLE public.timeline_events ADD COLUMN category text DEFAULT null;

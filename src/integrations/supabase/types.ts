@@ -284,6 +284,7 @@ export type Database = {
       timeline_events: {
         Row: {
           assigned_people: string[]
+          category: string | null
           created_at: string
           description: string | null
           event_time: string
@@ -294,6 +295,7 @@ export type Database = {
         }
         Insert: {
           assigned_people?: string[]
+          category?: string | null
           created_at?: string
           description?: string | null
           event_time: string
@@ -304,6 +306,7 @@ export type Database = {
         }
         Update: {
           assigned_people?: string[]
+          category?: string | null
           created_at?: string
           description?: string | null
           event_time?: string

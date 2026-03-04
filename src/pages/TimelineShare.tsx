@@ -13,7 +13,23 @@ interface SharedEvent {
   description: string | null;
   assigned_people: string[];
   sort_order: number;
+  category?: string | null;
 }
+
+const CATEGORY_COLORS: Record<string, string> = {
+  prep: 'bg-blue-100 text-blue-700 border-blue-200',
+  ceremony: 'bg-amber-100 text-amber-700 border-amber-200',
+  reception: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  transport: 'bg-purple-100 text-purple-700 border-purple-200',
+  photo: 'bg-pink-100 text-pink-700 border-pink-200',
+  food: 'bg-orange-100 text-orange-700 border-orange-200',
+  entertainment: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  other: 'bg-gray-100 text-gray-700 border-gray-200',
+};
+const CATEGORY_LABELS: Record<string, string> = {
+  prep: 'Prep', ceremony: 'Ceremony', reception: 'Reception', transport: 'Transport',
+  photo: 'Photo/Video', food: 'Food & Drinks', entertainment: 'Entertainment', other: 'Other',
+};
 
 interface SharedTimeline {
   id: string;
@@ -147,7 +163,14 @@ export default function TimelineShare() {
                       <p className="text-lg font-bold text-primary font-display">{formatTime(ev.event_time)}</p>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-card-foreground">{ev.title}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-card-foreground">{ev.title}</p>
+                        {ev.category && CATEGORY_COLORS[ev.category] && (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${CATEGORY_COLORS[ev.category]}`}>
+                            {CATEGORY_LABELS[ev.category]}
+                          </span>
+                        )}
+                      </div>
                       {ev.description && <p className="text-sm text-muted-foreground mt-0.5">{ev.description}</p>}
                       {ev.assigned_people.length > 0 && !timeline.assignee_name && (
                         <div className="flex flex-wrap gap-1.5 mt-2">
