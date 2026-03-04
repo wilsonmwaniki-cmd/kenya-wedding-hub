@@ -77,6 +77,8 @@ interface ShareLink {
   timeline_id: string;
   assignee_name: string;
   share_token: string;
+  vendor_role: string | null;
+  email: string | null;
 }
 
 export default function Timeline() {
