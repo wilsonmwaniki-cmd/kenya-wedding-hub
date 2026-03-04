@@ -25,6 +25,8 @@ import NotFound from "./pages/NotFound";
 import PlannerProfile from "./pages/PlannerProfile";
 import PlannerDirectory from "./pages/PlannerDirectory";
 import ResetPassword from "./pages/ResetPassword";
+import TimelinePage from "./pages/Timeline";
+import TimelineShare from "./pages/TimelineShare";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +64,8 @@ const App = () => (
                 <Route path="/vendor-settings" element={<ProtectedPage><VendorSettings /></ProtectedPage>} />
                 <Route path="/ai-chat" element={<ProtectedPage><AiChat /></ProtectedPage>} />
                 <Route path="/settings" element={<ProtectedPage><ProfileSettings /></ProtectedPage>} />
+                <Route path="/timeline" element={<ProtectedPage><TimelinePage /></ProtectedPage>} />
+                <Route path="/timeline/share/:token" element={<TimelineShare />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </NotificationProvider>
