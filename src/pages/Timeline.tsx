@@ -659,6 +659,22 @@ export default function Timeline() {
                             </select>
                           </div>
                           <div className="flex items-center gap-2">
+                            <Input
+                              placeholder="Email for reminders…"
+                              value={sl.email || ''}
+                              className="text-xs flex-1"
+                              onBlur={async (e) => {
+                                const email = e.target.value.trim() || null;
+                                if (email !== sl.email) {
+                                  await supabase.from('timeline_share_links').update({ email } as any).eq('id', sl.id);
+                                  loadShareLinks(selectedTimeline.id);
+                                }
+                              }}
+                              onChange={() => {}} // controlled by onBlur
+                              defaultValue={sl.email || ''}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
                             <Input readOnly value={link} className="text-xs flex-1" />
                             <Button size="icon" variant="outline" className="shrink-0 h-8 w-8" onClick={() => copyToClipboard(link)}>
                               <Copy className="h-3.5 w-3.5" />
