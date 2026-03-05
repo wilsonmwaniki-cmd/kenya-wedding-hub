@@ -54,41 +54,56 @@ export type Database = {
       }
       guests: {
         Row: {
+          category: string | null
+          checked_in: boolean
+          checked_in_at: string | null
           client_id: string | null
           created_at: string
           email: string | null
+          group_name: string | null
           id: string
           meal_preference: string | null
           name: string
           phone: string | null
           plus_one: boolean | null
           rsvp_status: string | null
+          rsvp_token: string
           table_number: number | null
           user_id: string
         }
         Insert: {
+          category?: string | null
+          checked_in?: boolean
+          checked_in_at?: string | null
           client_id?: string | null
           created_at?: string
           email?: string | null
+          group_name?: string | null
           id?: string
           meal_preference?: string | null
           name: string
           phone?: string | null
           plus_one?: boolean | null
           rsvp_status?: string | null
+          rsvp_token?: string
           table_number?: number | null
           user_id: string
         }
         Update: {
+          category?: string | null
+          checked_in?: boolean
+          checked_in_at?: string | null
           client_id?: string | null
           created_at?: string
           email?: string | null
+          group_name?: string | null
           id?: string
           meal_preference?: string | null
           name?: string
           phone?: string | null
           plus_one?: boolean | null
           rsvp_status?: string | null
+          rsvp_token?: string
           table_number?: number | null
           user_id?: string
         }
@@ -648,6 +663,11 @@ export type Database = {
         Returns: boolean
       }
       owns_timeline: { Args: { _timeline_id: string }; Returns: boolean }
+      public_rsvp_lookup: { Args: { _token: string }; Returns: Json }
+      public_rsvp_respond: {
+        Args: { _status: string; _token: string }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "couple" | "planner" | "vendor"
