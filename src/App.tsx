@@ -27,6 +27,7 @@ import PlannerDirectory from "./pages/PlannerDirectory";
 import ResetPassword from "./pages/ResetPassword";
 import TimelinePage from "./pages/Timeline";
 import TimelineShare from "./pages/TimelineShare";
+import GuestRsvp from "./pages/GuestRsvp";
 
 const queryClient = new QueryClient();
 
@@ -66,6 +67,7 @@ const App = () => (
                 <Route path="/settings" element={<ProtectedPage><ProfileSettings /></ProtectedPage>} />
                 <Route path="/timeline" element={<ProtectedPage><TimelinePage /></ProtectedPage>} />
                 <Route path="/timeline/share/:token" element={<TimelineShare />} />
+                <Route path="/rsvp/:token" element={<GuestRsvp />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </NotificationProvider>
