@@ -70,6 +70,8 @@ const App = () => (
                 <Route path="/timeline" element={<ProtectedPage><TimelinePage /></ProtectedPage>} />
                 <Route path="/timeline/share/:token" element={<TimelineShare />} />
                 <Route path="/rsvp/:token" element={<GuestRsvp />} />
+                <Route path="/wedding/:token" element={<WeddingPortfolio />} />
+                <Route path="/portfolio" element={<ProtectedPage><ManagePortfolio /></ProtectedPage>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </NotificationProvider>
