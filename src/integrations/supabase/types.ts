@@ -192,6 +192,48 @@ export type Database = {
         }
         Relationships: []
       }
+      portfolio_vendors: {
+        Row: {
+          created_at: string
+          id: string
+          portfolio_id: string
+          vendor_category: string
+          vendor_listing_id: string | null
+          vendor_name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          portfolio_id: string
+          vendor_category: string
+          vendor_listing_id?: string | null
+          vendor_name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          portfolio_id?: string
+          vendor_category?: string
+          vendor_listing_id?: string | null
+          vendor_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portfolio_vendors_portfolio_id_fkey"
+            columns: ["portfolio_id"]
+            isOneToOne: false
+            referencedRelation: "wedding_portfolios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portfolio_vendors_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -554,6 +596,60 @@ export type Database = {
         }
         Relationships: []
       }
+      vendor_reviews: {
+        Row: {
+          created_at: string
+          id: string
+          portfolio_id: string | null
+          rating: number
+          review_text: string | null
+          reviewer_name: string | null
+          reviewer_role: string | null
+          reviewer_user_id: string
+          updated_at: string
+          vendor_listing_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          portfolio_id?: string | null
+          rating: number
+          review_text?: string | null
+          reviewer_name?: string | null
+          reviewer_role?: string | null
+          reviewer_user_id: string
+          updated_at?: string
+          vendor_listing_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          portfolio_id?: string | null
+          rating?: number
+          review_text?: string | null
+          reviewer_name?: string | null
+          reviewer_role?: string | null
+          reviewer_user_id?: string
+          updated_at?: string
+          vendor_listing_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendor_reviews_portfolio_id_fkey"
+            columns: ["portfolio_id"]
+            isOneToOne: false
+            referencedRelation: "wedding_portfolios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_reviews_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vendors: {
         Row: {
           category: string
@@ -610,6 +706,65 @@ export type Database = {
             columns: ["vendor_listing_id"]
             isOneToOne: false
             referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wedding_portfolios: {
+        Row: {
+          client_id: string | null
+          cover_photo_url: string | null
+          created_at: string
+          description: string | null
+          guest_count: number | null
+          id: string
+          is_published: boolean
+          share_token: string
+          style_tags: string[] | null
+          title: string
+          updated_at: string
+          user_id: string
+          wedding_date: string | null
+          wedding_location: string | null
+        }
+        Insert: {
+          client_id?: string | null
+          cover_photo_url?: string | null
+          created_at?: string
+          description?: string | null
+          guest_count?: number | null
+          id?: string
+          is_published?: boolean
+          share_token?: string
+          style_tags?: string[] | null
+          title: string
+          updated_at?: string
+          user_id: string
+          wedding_date?: string | null
+          wedding_location?: string | null
+        }
+        Update: {
+          client_id?: string | null
+          cover_photo_url?: string | null
+          created_at?: string
+          description?: string | null
+          guest_count?: number | null
+          id?: string
+          is_published?: boolean
+          share_token?: string
+          style_tags?: string[] | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+          wedding_date?: string | null
+          wedding_location?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wedding_portfolios_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
             referencedColumns: ["id"]
           },
         ]

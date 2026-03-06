@@ -28,6 +28,8 @@ import ResetPassword from "./pages/ResetPassword";
 import TimelinePage from "./pages/Timeline";
 import TimelineShare from "./pages/TimelineShare";
 import GuestRsvp from "./pages/GuestRsvp";
+import WeddingPortfolio from "./pages/WeddingPortfolio";
+import ManagePortfolio from "./pages/ManagePortfolio";
 
 const queryClient = new QueryClient();
 
@@ -68,6 +70,8 @@ const App = () => (
                 <Route path="/timeline" element={<ProtectedPage><TimelinePage /></ProtectedPage>} />
                 <Route path="/timeline/share/:token" element={<TimelineShare />} />
                 <Route path="/rsvp/:token" element={<GuestRsvp />} />
+                <Route path="/wedding/:token" element={<WeddingPortfolio />} />
+                <Route path="/portfolio" element={<ProtectedPage><ManagePortfolio /></ProtectedPage>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </NotificationProvider>
