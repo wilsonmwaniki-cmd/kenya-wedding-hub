@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import heroImage from '@/assets/hero-wedding.jpg';
+import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 
 const features = [
   { icon: Wallet, title: 'Budget Tracking', desc: 'Keep your wedding finances organized with category-level tracking.' },
@@ -23,7 +24,7 @@ function InlineAuthForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'couple' | 'planner' | 'vendor'>('couple');
+  const [role, setRole] = useState<SignupRole>('couple');
   const [submitting, setSubmitting] = useState(false);
   const { signIn, signUp } = useAuth();
   const { toast } = useToast();
@@ -180,7 +181,7 @@ export default function Landing() {
   }
 
   if (user) {
-    return <Navigate to={profile?.role === 'planner' ? '/clients' : profile?.role === 'vendor' ? '/vendor-settings' : '/dashboard'} replace />;
+    return <Navigate to={getHomeRouteForRole(profile?.role)} replace />;
   }
 
   return (

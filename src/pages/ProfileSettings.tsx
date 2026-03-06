@@ -18,6 +18,7 @@ export default function ProfileSettings() {
 
   const isPlanner = profile?.role === 'planner';
   const isVendor = profile?.role === 'vendor';
+  const isAdmin = profile?.role === 'admin';
 
   const [form, setForm] = useState({
     full_name: '',
@@ -61,7 +62,7 @@ export default function ProfileSettings() {
         updates.company_website = form.company_website;
         updates.bio = form.bio;
         updates.specialties = form.specialties;
-      } else {
+      } else if (!isVendor && !isAdmin) {
         updates.partner_name = form.partner_name;
         updates.wedding_date = form.wedding_date;
         updates.wedding_location = form.wedding_location;
@@ -99,7 +100,7 @@ export default function ProfileSettings() {
       <div>
         <h1 className="font-display text-3xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground">
-          {isPlanner ? 'Manage your planner profile & company details' : isVendor ? 'Manage your account settings' : 'Manage your wedding profile'}
+          {isPlanner ? 'Manage your planner profile & company details' : isVendor ? 'Manage your account settings' : isAdmin ? 'Manage your owner profile' : 'Manage your wedding profile'}
         </p>
       </div>
 
@@ -214,7 +215,7 @@ export default function ProfileSettings() {
               </CardContent>
             </Card>
           </>
-        ) : !isVendor ? (
+        ) : !isVendor && !isAdmin ? (
           /* Couple: Wedding Details */
           <Card className="shadow-card">
             <CardHeader>

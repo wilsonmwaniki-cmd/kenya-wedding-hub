@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Heart, Loader2, Users, Briefcase, Store } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 
 export default function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -15,7 +16,7 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'couple' | 'planner' | 'vendor'>('couple');
+  const [role, setRole] = useState<SignupRole>('couple');
   const [submitting, setSubmitting] = useState(false);
   const { signIn, signUp, user, profile, loading } = useAuth();
   const { toast } = useToast();
@@ -28,7 +29,7 @@ export default function Auth() {
     );
   }
 
-  if (user) return <Navigate to={profile?.role === 'planner' ? '/clients' : profile?.role === 'vendor' ? '/vendor-settings' : '/dashboard'} replace />;
+  if (user) return <Navigate to={getHomeRouteForRole(profile?.role)} replace />;
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();

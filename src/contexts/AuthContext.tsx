@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import type { AppRole, SignupRole } from '@/lib/roles';
 
 interface Profile {
   id: string;
@@ -9,7 +10,7 @@ interface Profile {
   partner_name: string | null;
   wedding_date: string | null;
   wedding_location: string | null;
-  role: 'couple' | 'planner' | 'vendor';
+  role: AppRole;
   company_name: string | null;
   company_email: string | null;
   company_phone: string | null;
@@ -24,7 +25,7 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string, role?: 'couple' | 'planner' | 'vendor') => Promise<void>;
+  signUp: (email: string, password: string, fullName: string, role?: SignupRole) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
@@ -86,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string, role: 'couple' | 'planner' | 'vendor' = 'couple') => {
+  const signUp = async (email: string, password: string, fullName: string, role: SignupRole = 'couple') => {
     const { error } = await supabase.auth.signUp({
       email,
       password,

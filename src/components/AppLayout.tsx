@@ -5,7 +5,7 @@ import { usePlanner } from '@/contexts/PlannerContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft
+  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, ShieldCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +37,11 @@ const vendorNavItems = [
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
+const adminNavItems = [
+  { path: '/admin', label: 'Admin Portal', icon: ShieldCheck },
+  { path: '/settings', label: 'Settings', icon: Settings },
+];
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
@@ -44,8 +49,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { signOut, profile } = useAuth();
   const { isPlanner, selectedClient, selectClient } = usePlanner();
 
+  const isAdmin = profile?.role === 'admin';
   const isVendor = profile?.role === 'vendor';
-  const navItems = isVendor ? vendorNavItems : isPlanner ? plannerNavItems : coupleNavItems;
+  const navItems = isAdmin ? adminNavItems : isVendor ? vendorNavItems : isPlanner ? plannerNavItems : coupleNavItems;
 
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !selectedClient;

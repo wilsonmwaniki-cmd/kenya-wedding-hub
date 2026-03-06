@@ -24,6 +24,8 @@ import NotFound from "./pages/NotFound";
 import PlannerProfile from "./pages/PlannerProfile";
 import PlannerDirectory from "./pages/PlannerDirectory";
 import ResetPassword from "./pages/ResetPassword";
+import AdminPortal from "./pages/AdminPortal";
+import type { AppRole } from "@/lib/roles";
 
 const queryClient = new QueryClient();
 
@@ -32,7 +34,7 @@ function ProtectedPage({
   allowedRoles,
 }: {
   children: React.ReactNode;
-  allowedRoles?: Array<'couple' | 'planner' | 'vendor'>;
+  allowedRoles?: AppRole[];
 }) {
   return (
     <ProtectedRoute allowedRoles={allowedRoles}>
@@ -65,7 +67,8 @@ const App = () => (
               <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
               <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
               <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner']}><AiChat /></ProtectedPage>} />
-              <Route path="/settings" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><ProfileSettings /></ProtectedPage>} />
+              <Route path="/admin" element={<ProtectedPage allowedRoles={['admin']}><AdminPortal /></ProtectedPage>} />
+              <Route path="/settings" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor', 'admin']}><ProfileSettings /></ProtectedPage>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </PlannerProvider>
