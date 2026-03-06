@@ -28,6 +28,8 @@ import ResetPassword from "./pages/ResetPassword";
 import TimelinePage from "./pages/Timeline";
 import TimelineShare from "./pages/TimelineShare";
 import GuestRsvp from "./pages/GuestRsvp";
+import WeddingPortfolio from "./pages/WeddingPortfolio";
+import ManagePortfolio from "./pages/ManagePortfolio";
 
 const queryClient = new QueryClient();
 
