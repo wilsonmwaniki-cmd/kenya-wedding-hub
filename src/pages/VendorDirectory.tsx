@@ -220,6 +220,17 @@ export default function VendorDirectory() {
                         )}
                       </div>
                     )}
+                    {vendorRatings[v.id] && (
+                      <div className="mt-2 flex items-center justify-center gap-1.5">
+                        <div className="flex gap-0.5">
+                          {[1,2,3,4,5].map(s => (
+                            <Star key={s} className={`h-3.5 w-3.5 ${s <= Math.round(vendorRatings[v.id].avg) ? 'text-accent fill-accent' : 'text-muted-foreground/30'}`} />
+                          ))}
+                        </div>
+                        <span className="text-xs font-semibold text-foreground">{vendorRatings[v.id].avg.toFixed(1)}</span>
+                        <span className="text-xs text-muted-foreground">({vendorRatings[v.id].count})</span>
+                      </div>
+                    )}
                     {v.is_verified && (
                       <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
                         <CheckCircle2 className="h-3 w-3" /> Verified Vendor
