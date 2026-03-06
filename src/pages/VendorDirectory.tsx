@@ -38,15 +38,32 @@ export default function VendorDirectory() {
   const [vendorRatings, setVendorRatings] = useState<Record<string, { avg: number; count: number }>>({});
 
   useEffect(() => {
-
-  useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
-        .from('vendor_listings')
-        .select('id, business_name, category, description, logo_url, location, services, is_verified, phone, email, website')
-        .eq('is_approved', true)
-        .order('is_verified', { ascending: false });
-      setVendors((data as VendorListing[]) || []);
+      const [listingsRes, ratingsRes] = await Promise.all([
+        supabase
+          .from('vendor_listings')
+          .select('id, business_name, category, description, logo_url, location, services, is_verified, phone, email, website')
+          .eq('is_approved', true)
+          .order('is_verified', { ascending: false }),
+        supabase
+          .from('vendor_reviews')
+          .select('vendor_listing_id, rating'),
+      ]);
+      setVendors((listingsRes.data as VendorListing[]) || []);
+
+      // Aggregate ratings
+      const ratingsMap: Record<string, { total: number; count: number }> = {};
+      ((ratingsRes.data || []) as Array<{ vendor_listing_id: string; rating: number }>).forEach(r => {
+        if (!ratingsMap[r.vendor_listing_id]) ratingsMap[r.vendor_listing_id] = { total: 0, count: 0 };
+        ratingsMap[r.vendor_listing_id].total += r.rating;
+        ratingsMap[r.vendor_listing_id].count += 1;
+      });
+      const computed: Record<string, { avg: number; count: number }> = {};
+      Object.entries(ratingsMap).forEach(([id, { total, count }]) => {
+        computed[id] = { avg: total / count, count };
+      });
+      setVendorRatings(computed);
+
       setLoading(false);
     };
     load();
