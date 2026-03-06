@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Heart, Search, Loader2, Store, ArrowLeft, CheckCircle2, MapPin } from 'lucide-react';
+import { Heart, Search, Loader2, Store, ArrowLeft, CheckCircle2, MapPin, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
 import VendorInterestButton from '@/components/VendorInterestButton';
 
@@ -35,6 +35,9 @@ export default function VendorDirectory() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [requestStatuses, setRequestStatuses] = useState<Record<string, string>>({});
+  const [vendorRatings, setVendorRatings] = useState<Record<string, { avg: number; count: number }>>({});
+
+  useEffect(() => {
 
   useEffect(() => {
     const load = async () => {
