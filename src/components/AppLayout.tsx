@@ -18,6 +18,7 @@ const coupleNavItems = [
   { path: '/guests', label: 'Guests', icon: Users },
   { path: '/vendors', label: 'Vendors', icon: Store },
   { path: '/timeline', label: 'Timeline', icon: Clock },
+  { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
   { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -30,6 +31,7 @@ const plannerNavItems = [
   { path: '/guests', label: 'Guests', icon: Users },
   { path: '/vendors', label: 'Vendors', icon: Store },
   { path: '/timeline', label: 'Timeline', icon: Clock },
+  { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
   { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
