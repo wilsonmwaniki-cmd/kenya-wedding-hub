@@ -64,7 +64,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !selectedClient;
-  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/vendors', '/timeline'];
+  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/vendors', '/timeline', '/portfolio'];
 
   const handleSignOut = async () => {
     await signOut();
