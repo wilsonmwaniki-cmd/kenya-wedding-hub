@@ -29,7 +29,7 @@ export default function Auth() {
     );
   }
 
-  if (user) return <Navigate to={getHomeRouteForRole(profile?.role)} replace />;
+  if (user && profile?.role) return <Navigate to={getHomeRouteForRole(profile.role)} replace />;
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
