@@ -19,6 +19,7 @@ export default function Auth() {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<SignupRole>('couple');
   const [submitting, setSubmitting] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const { signIn, signUp, user, profile, loading } = useAuth();
   const { toast } = useToast();
 
