@@ -25,7 +25,12 @@ export default function ProtectedRoute({
 
   if (allowedRoles?.length) {
     if (!profile?.role) {
-      return <Navigate to="/auth" replace />;
+      // Profile still loading or missing — show spinner instead of redirecting to avoid loops
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      );
     }
 
     if (!allowedRoles.includes(profile.role)) {
