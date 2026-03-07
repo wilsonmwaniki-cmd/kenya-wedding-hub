@@ -803,6 +803,69 @@ export type Database = {
       }
     }
     Functions: {
+      admin_dashboard_metrics: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          open_link_requests: number
+          pending_vendor_approvals: number
+          total_admins: number
+          total_budget_items: number
+          total_clients: number
+          total_couples: number
+          total_guests: number
+          total_planners: number
+          total_tasks: number
+          total_users: number
+          total_vendor_listings: number
+          total_vendors: number
+        }[]
+      }
+      admin_list_users: {
+        Args: {
+          limit_rows?: number
+          offset_rows?: number
+          role_filter?: Database["public"]["Enums"]["app_role"] | null
+          search_query?: string | null
+        }
+        Returns: {
+          company_name: string | null
+          created_at: string
+          email: string | null
+          full_name: string | null
+          last_sign_in_at: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+          wedding_date: string | null
+        }[]
+      }
+      admin_list_vendor_listings: {
+        Args: {
+          limit_rows?: number
+          offset_rows?: number
+          search_query?: string | null
+          status_filter?: string | null
+        }
+        Returns: {
+          business_name: string
+          category: string
+          is_approved: boolean
+          is_verified: boolean
+          listing_id: string
+          location: string | null
+          owner_email: string | null
+          owner_name: string | null
+          updated_at: string
+          user_id: string
+        }[]
+      }
+      admin_review_vendor_listing: {
+        Args: { approve: boolean; listing_id: string; verify?: boolean }
+        Returns: undefined
+      }
+      admin_set_user_role: {
+        Args: { new_role: Database["public"]["Enums"]["app_role"]; target_user_id: string }
+        Returns: undefined
+      }
       get_assignee_timeline: { Args: { _share_token: string }; Returns: Json }
       get_shared_timeline: { Args: { _share_token: string }; Returns: Json }
       has_role: {
@@ -817,6 +880,7 @@ export type Database = {
         Args: { _data_user_id: string }
         Returns: boolean
       }
+      require_admin: { Args: Record<PropertyKey, never>; Returns: undefined }
       owns_timeline: { Args: { _timeline_id: string }; Returns: boolean }
       public_rsvp_lookup: { Args: { _token: string }; Returns: Json }
       public_rsvp_respond: {
@@ -825,7 +889,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "couple" | "planner" | "vendor"
+      app_role: "admin" | "couple" | "planner" | "vendor"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -953,7 +1017,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["couple", "planner", "vendor"],
+      app_role: ["admin", "couple", "planner", "vendor"],
     },
   },
 } as const

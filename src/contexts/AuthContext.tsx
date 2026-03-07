@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import type { AppRole, SignupRole } from '@/lib/roles';
 
 interface Profile {
   id: string;
@@ -9,7 +10,7 @@ interface Profile {
   partner_name: string | null;
   wedding_date: string | null;
   wedding_location: string | null;
-  role: 'couple' | 'planner' | 'vendor';
+  role: AppRole;
   company_name: string | null;
   company_email: string | null;
   company_phone: string | null;
@@ -24,7 +25,7 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string, role?: 'couple' | 'planner' | 'vendor') => Promise<void>;
+  signUp: (email: string, password: string, fullName: string, role?: SignupRole) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
@@ -39,14 +40,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
-    const [profileRes, roleRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('user_id', userId).single(),
-      supabase.from('user_roles').select('role').eq('user_id', userId).single(),
-    ]);
-    if (profileRes.data) {
-      const role = (roleRes.data?.role as 'couple' | 'planner' | 'vendor') || 'couple';
-      setProfile({ ...profileRes.data, role } as Profile);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Failed to load profile:', error.message);
+      setProfile(null);
+      return null;
     }
+
+    if (!data) {
+      setProfile(null);
+      return null;
+    }
+
+    setProfile(data as Profile);
+    return data as Profile;
   };
 
   useEffect(() => {
@@ -55,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          setTimeout(() => fetchProfile(session.user.id), 0);
+          await fetchProfile(session.user.id);
         } else {
           setProfile(null);
         }
@@ -63,17 +75,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
+      if (session?.user) {
+        await fetchProfile(session.user.id);
+      }
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string, role: 'couple' | 'planner' | 'vendor' = 'couple') => {
+  const signUp = async (email: string, password: string, fullName: string, role: SignupRole = 'couple') => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
