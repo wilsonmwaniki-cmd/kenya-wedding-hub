@@ -54,41 +54,56 @@ export type Database = {
       }
       guests: {
         Row: {
+          category: string | null
+          checked_in: boolean
+          checked_in_at: string | null
           client_id: string | null
           created_at: string
           email: string | null
+          group_name: string | null
           id: string
           meal_preference: string | null
           name: string
           phone: string | null
           plus_one: boolean | null
           rsvp_status: string | null
+          rsvp_token: string
           table_number: number | null
           user_id: string
         }
         Insert: {
+          category?: string | null
+          checked_in?: boolean
+          checked_in_at?: string | null
           client_id?: string | null
           created_at?: string
           email?: string | null
+          group_name?: string | null
           id?: string
           meal_preference?: string | null
           name: string
           phone?: string | null
           plus_one?: boolean | null
           rsvp_status?: string | null
+          rsvp_token?: string
           table_number?: number | null
           user_id: string
         }
         Update: {
+          category?: string | null
+          checked_in?: boolean
+          checked_in_at?: string | null
           client_id?: string | null
           created_at?: string
           email?: string | null
+          group_name?: string | null
           id?: string
           meal_preference?: string | null
           name?: string
           phone?: string | null
           plus_one?: boolean | null
           rsvp_status?: string | null
+          rsvp_token?: string
           table_number?: number | null
           user_id?: string
         }
@@ -152,6 +167,7 @@ export type Database = {
           couple_user_id: string
           created_at: string
           id: string
+          message: string | null
           planner_user_id: string
           status: string
           updated_at: string
@@ -160,6 +176,7 @@ export type Database = {
           couple_user_id: string
           created_at?: string
           id?: string
+          message?: string | null
           planner_user_id: string
           status?: string
           updated_at?: string
@@ -168,11 +185,54 @@ export type Database = {
           couple_user_id?: string
           created_at?: string
           id?: string
+          message?: string | null
           planner_user_id?: string
           status?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      portfolio_vendors: {
+        Row: {
+          created_at: string
+          id: string
+          portfolio_id: string
+          vendor_category: string
+          vendor_listing_id: string | null
+          vendor_name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          portfolio_id: string
+          vendor_category: string
+          vendor_listing_id?: string | null
+          vendor_name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          portfolio_id?: string
+          vendor_category?: string
+          vendor_listing_id?: string | null
+          vendor_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portfolio_vendors_portfolio_id_fkey"
+            columns: ["portfolio_id"]
+            isOneToOne: false
+            referencedRelation: "wedding_portfolios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portfolio_vendors_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -278,6 +338,132 @@ export type Database = {
           },
         ]
       }
+      timeline_events: {
+        Row: {
+          assigned_people: string[]
+          category: string | null
+          created_at: string
+          description: string | null
+          event_time: string
+          id: string
+          sort_order: number
+          timeline_id: string
+          title: string
+        }
+        Insert: {
+          assigned_people?: string[]
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          event_time: string
+          id?: string
+          sort_order?: number
+          timeline_id: string
+          title: string
+        }
+        Update: {
+          assigned_people?: string[]
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          event_time?: string
+          id?: string
+          sort_order?: number
+          timeline_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timeline_events_timeline_id_fkey"
+            columns: ["timeline_id"]
+            isOneToOne: false
+            referencedRelation: "timelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      timeline_share_links: {
+        Row: {
+          assignee_name: string
+          created_at: string
+          email: string | null
+          id: string
+          share_token: string
+          timeline_id: string
+          vendor_role: string | null
+        }
+        Insert: {
+          assignee_name: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          share_token?: string
+          timeline_id: string
+          vendor_role?: string | null
+        }
+        Update: {
+          assignee_name?: string
+          created_at?: string
+          email?: string | null
+          id?: string
+          share_token?: string
+          timeline_id?: string
+          vendor_role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timeline_share_links_timeline_id_fkey"
+            columns: ["timeline_id"]
+            isOneToOne: false
+            referencedRelation: "timelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      timelines: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          id: string
+          is_template: boolean
+          share_token: string
+          timeline_date: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          is_template?: boolean
+          share_token?: string
+          timeline_date?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          is_template?: boolean
+          share_token?: string
+          timeline_date?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timelines_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -295,6 +481,54 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      vendor_connection_requests: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          id: string
+          message: string | null
+          requester_user_id: string
+          status: string
+          updated_at: string
+          vendor_listing_id: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          message?: string | null
+          requester_user_id: string
+          status?: string
+          updated_at?: string
+          vendor_listing_id: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          message?: string | null
+          requester_user_id?: string
+          status?: string
+          updated_at?: string
+          vendor_listing_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendor_connection_requests_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_connection_requests_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       vendor_listings: {
         Row: {
@@ -362,6 +596,60 @@ export type Database = {
         }
         Relationships: []
       }
+      vendor_reviews: {
+        Row: {
+          created_at: string
+          id: string
+          portfolio_id: string | null
+          rating: number
+          review_text: string | null
+          reviewer_name: string | null
+          reviewer_role: string | null
+          reviewer_user_id: string
+          updated_at: string
+          vendor_listing_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          portfolio_id?: string | null
+          rating: number
+          review_text?: string | null
+          reviewer_name?: string | null
+          reviewer_role?: string | null
+          reviewer_user_id: string
+          updated_at?: string
+          vendor_listing_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          portfolio_id?: string | null
+          rating?: number
+          review_text?: string | null
+          reviewer_name?: string | null
+          reviewer_role?: string | null
+          reviewer_user_id?: string
+          updated_at?: string
+          vendor_listing_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendor_reviews_portfolio_id_fkey"
+            columns: ["portfolio_id"]
+            isOneToOne: false
+            referencedRelation: "wedding_portfolios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_reviews_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vendors: {
         Row: {
           category: string
@@ -418,6 +706,65 @@ export type Database = {
             columns: ["vendor_listing_id"]
             isOneToOne: false
             referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wedding_portfolios: {
+        Row: {
+          client_id: string | null
+          cover_photo_url: string | null
+          created_at: string
+          description: string | null
+          guest_count: number | null
+          id: string
+          is_published: boolean
+          share_token: string
+          style_tags: string[] | null
+          title: string
+          updated_at: string
+          user_id: string
+          wedding_date: string | null
+          wedding_location: string | null
+        }
+        Insert: {
+          client_id?: string | null
+          cover_photo_url?: string | null
+          created_at?: string
+          description?: string | null
+          guest_count?: number | null
+          id?: string
+          is_published?: boolean
+          share_token?: string
+          style_tags?: string[] | null
+          title: string
+          updated_at?: string
+          user_id: string
+          wedding_date?: string | null
+          wedding_location?: string | null
+        }
+        Update: {
+          client_id?: string | null
+          cover_photo_url?: string | null
+          created_at?: string
+          description?: string | null
+          guest_count?: number | null
+          id?: string
+          is_published?: boolean
+          share_token?: string
+          style_tags?: string[] | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+          wedding_date?: string | null
+          wedding_location?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wedding_portfolios_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
             referencedColumns: ["id"]
           },
         ]
@@ -519,6 +866,8 @@ export type Database = {
         Args: { new_role: Database["public"]["Enums"]["app_role"]; target_user_id: string }
         Returns: undefined
       }
+      get_assignee_timeline: { Args: { _share_token: string }; Returns: Json }
+      get_shared_timeline: { Args: { _share_token: string }; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -532,6 +881,12 @@ export type Database = {
         Returns: boolean
       }
       require_admin: { Args: Record<PropertyKey, never>; Returns: undefined }
+      owns_timeline: { Args: { _timeline_id: string }; Returns: boolean }
+      public_rsvp_lookup: { Args: { _token: string }; Returns: Json }
+      public_rsvp_respond: {
+        Args: { _status: string; _token: string }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "admin" | "couple" | "planner" | "vendor"

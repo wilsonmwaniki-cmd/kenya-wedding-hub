@@ -4,10 +4,12 @@ import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Wallet, CheckSquare, Users, Store, Calendar, Heart, LinkIcon, Unlink, CalendarPlus } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Wallet, CheckSquare, Users, Store, Calendar, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
+import MyConnections from '@/components/MyConnections';
 import { useToast } from '@/hooks/use-toast';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 
@@ -21,6 +23,31 @@ interface DashboardStats {
   totalVendors: number;
 }
 
+interface UpcomingTimelineEvent {
+  id: string;
+  event_time: string;
+  title: string;
+  category: string | null;
+  assigned_people: string[];
+  timeline_title: string;
+  timeline_date: string | null;
+}
+
+const CATEGORY_COLORS: Record<string, string> = {
+  prep: 'bg-blue-100 text-blue-700 border-blue-200',
+  ceremony: 'bg-amber-100 text-amber-700 border-amber-200',
+  reception: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  transport: 'bg-purple-100 text-purple-700 border-purple-200',
+  photo: 'bg-pink-100 text-pink-700 border-pink-200',
+  food: 'bg-orange-100 text-orange-700 border-orange-200',
+  entertainment: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  other: 'bg-gray-100 text-gray-700 border-gray-200',
+};
+const CATEGORY_LABELS: Record<string, string> = {
+  prep: 'Prep', ceremony: 'Ceremony', reception: 'Reception', transport: 'Transport',
+  photo: 'Photo/Video', food: 'Food & Drinks', entertainment: 'Entertainment', other: 'Other',
+};
+
 export default function Dashboard() {
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner } = usePlanner();
@@ -30,6 +57,7 @@ export default function Dashboard() {
     totalBudget: 0, totalSpent: 0, totalTasks: 0, completedTasks: 0,
     totalGuests: 0, confirmedGuests: 0, totalVendors: 0,
   });
+  const [upcomingEvents, setUpcomingEvents] = useState<UpcomingTimelineEvent[]>([]);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) {
@@ -58,6 +86,38 @@ export default function Dashboard() {
       });
     };
     load();
+
+    // Load upcoming timeline events
+    const loadTimeline = async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: timelines } = await supabase
+        .from('timelines')
+        .select('id, title, timeline_date')
+        .or(dataOrFilter)
+        .eq('is_template', false)
+        .gte('timeline_date', today)
+        .order('timeline_date', { ascending: true })
+        .limit(1);
+      if (timelines?.length) {
+        const tl = timelines[0] as any;
+        const { data: evts } = await supabase
+          .from('timeline_events')
+          .select('id, event_time, title, category, assigned_people')
+          .eq('timeline_id', tl.id)
+          .order('event_time', { ascending: true })
+          .limit(5);
+        if (evts) {
+          setUpcomingEvents(evts.map((e: any) => ({
+            ...e,
+            timeline_title: tl.title,
+            timeline_date: tl.timeline_date,
+          })));
+        }
+      } else {
+        setUpcomingEvents([]);
+      }
+    };
+    loadTimeline();
   }, [user, selectedClient, dataOrFilter]);
 
   const displayName = isPlanner && selectedClient
@@ -150,6 +210,59 @@ export default function Dashboard() {
           </motion.div>
         ))}
       </div>
+
+      {/* My Connections — couples only */}
+      {!isPlanner && <MyConnections />}
+
+      {/* Timeline overview widget */}
+      {upcomingEvents.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Upcoming Timeline
+              {upcomingEvents[0]?.timeline_date && (
+                <Badge variant="outline" className="text-[10px] font-normal ml-1">
+                  {new Date(upcomingEvents[0].timeline_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Badge>
+              )}
+            </CardTitle>
+            <Link to="/timeline" className="text-xs text-primary hover:underline flex items-center gap-0.5">
+              View all <ChevronRight className="h-3 w-3" />
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {upcomingEvents.map((ev, i) => {
+                const formatTime = (t: string) => {
+                  const [h, m] = t.split(':');
+                  const hour = parseInt(h);
+                  const ampm = hour >= 12 ? 'PM' : 'AM';
+                  const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                  return `${h12}:${m} ${ampm}`;
+                };
+                const catColor = ev.category && CATEGORY_COLORS[ev.category];
+                const catLabel = ev.category && CATEGORY_LABELS[ev.category];
+                return (
+                  <motion.div
+                    key={ev.id}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="flex items-center gap-3 py-1.5"
+                  >
+                    <span className="text-sm font-semibold text-primary font-display min-w-[70px]">{formatTime(ev.event_time)}</span>
+                    <span className="text-sm text-card-foreground">{ev.title}</span>
+                    {catColor && catLabel && (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${catColor}`}>{catLabel}</span>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="flex items-start gap-4 py-5">

@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Heart, Search, Loader2, Store, ArrowLeft, CheckCircle2, MapPin } from 'lucide-react';
+import { Heart, Search, Loader2, Store, ArrowLeft, CheckCircle2, MapPin, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
+import VendorInterestButton from '@/components/VendorInterestButton';
 
 const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -27,23 +29,62 @@ interface VendorListing {
 }
 
 export default function VendorDirectory() {
+  const { user } = useAuth();
   const [vendors, setVendors] = useState<VendorListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
+  const [requestStatuses, setRequestStatuses] = useState<Record<string, string>>({});
+  const [vendorRatings, setVendorRatings] = useState<Record<string, { avg: number; count: number }>>({});
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
-        .from('vendor_listings')
-        .select('id, business_name, category, description, logo_url, location, services, is_verified, phone, email, website')
-        .eq('is_approved', true)
-        .order('is_verified', { ascending: false });
-      setVendors((data as VendorListing[]) || []);
+      const [listingsRes, ratingsRes] = await Promise.all([
+        supabase
+          .from('vendor_listings')
+          .select('id, business_name, category, description, logo_url, location, services, is_verified, phone, email, website')
+          .eq('is_approved', true)
+          .order('is_verified', { ascending: false }),
+        supabase
+          .from('vendor_reviews')
+          .select('vendor_listing_id, rating'),
+      ]);
+      setVendors((listingsRes.data as VendorListing[]) || []);
+
+      // Aggregate ratings
+      const ratingsMap: Record<string, { total: number; count: number }> = {};
+      ((ratingsRes.data || []) as Array<{ vendor_listing_id: string; rating: number }>).forEach(r => {
+        if (!ratingsMap[r.vendor_listing_id]) ratingsMap[r.vendor_listing_id] = { total: 0, count: 0 };
+        ratingsMap[r.vendor_listing_id].total += r.rating;
+        ratingsMap[r.vendor_listing_id].count += 1;
+      });
+      const computed: Record<string, { avg: number; count: number }> = {};
+      Object.entries(ratingsMap).forEach(([id, { total, count }]) => {
+        computed[id] = { avg: total / count, count };
+      });
+      setVendorRatings(computed);
+
       setLoading(false);
     };
     load();
   }, []);
+
+  // Load existing request statuses for logged-in user
+  useEffect(() => {
+    if (!user) return;
+    const loadStatuses = async () => {
+      const { data } = await supabase
+        .from('vendor_connection_requests' as any)
+        .select('vendor_listing_id, status')
+        .eq('requester_user_id', user.id);
+      if (data) {
+        const map: Record<string, string> = {};
+        (data as any[]).forEach((r: any) => { map[r.vendor_listing_id] = r.status; });
+        setRequestStatuses(map);
+      }
+    };
+    loadStatuses();
+  }, [user]);
 
   const filtered = vendors.filter((v) => {
     if (category !== 'All' && v.category !== category) return false;
@@ -70,9 +111,11 @@ export default function VendorDirectory() {
               <ArrowLeft className="h-4 w-4" /> Home
             </Button>
           </Link>
-          <Link to="/auth">
-            <Button size="sm">Sign In</Button>
-          </Link>
+          {!user && (
+            <Link to="/auth">
+              <Button size="sm">Sign In</Button>
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -177,10 +220,32 @@ export default function VendorDirectory() {
                         )}
                       </div>
                     )}
+                    {vendorRatings[v.id] && (
+                      <div className="mt-2 flex items-center justify-center gap-1.5">
+                        <div className="flex gap-0.5">
+                          {[1,2,3,4,5].map(s => (
+                            <Star key={s} className={`h-3.5 w-3.5 ${s <= Math.round(vendorRatings[v.id].avg) ? 'text-accent fill-accent' : 'text-muted-foreground/30'}`} />
+                          ))}
+                        </div>
+                        <span className="text-xs font-semibold text-foreground">{vendorRatings[v.id].avg.toFixed(1)}</span>
+                        <span className="text-xs text-muted-foreground">({vendorRatings[v.id].count})</span>
+                      </div>
+                    )}
                     {v.is_verified && (
                       <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
                         <CheckCircle2 className="h-3 w-3" /> Verified Vendor
                       </span>
+                    )}
+                    {/* Interest button for logged-in couples/planners */}
+                    {user && (
+                      <div className="mt-4">
+                        <VendorInterestButton
+                          vendorListingId={v.id}
+                          vendorName={v.business_name}
+                          vendorEmail={v.email}
+                          existingStatus={requestStatuses[v.id] || null}
+                        />
+                      </div>
                     )}
                   </CardContent>
                 </Card>

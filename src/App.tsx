@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PlannerProvider } from "@/contexts/PlannerContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Landing from "./pages/Landing";
@@ -26,6 +27,11 @@ import PlannerDirectory from "./pages/PlannerDirectory";
 import ResetPassword from "./pages/ResetPassword";
 import AdminPortal from "./pages/AdminPortal";
 import type { AppRole } from "@/lib/roles";
+import TimelinePage from "./pages/Timeline";
+import TimelineShare from "./pages/TimelineShare";
+import GuestRsvp from "./pages/GuestRsvp";
+import WeddingPortfolio from "./pages/WeddingPortfolio";
+import ManagePortfolio from "./pages/ManagePortfolio";
 
 const queryClient = new QueryClient();
 
@@ -51,26 +57,33 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <PlannerProvider>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/planners" element={<PlannerDirectory />} />
-              <Route path="/vendors-directory" element={<VendorDirectory />} />
-              <Route path="/planner/:id" element={<PlannerProfile />} />
-              <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
-              <Route path="/dashboard" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Dashboard /></ProtectedPage>} />
-              <Route path="/budget" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Budget /></ProtectedPage>} />
-              <Route path="/tasks" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Tasks /></ProtectedPage>} />
-              <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Guests /></ProtectedPage>} />
-              <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
-              <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
-              <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
-              <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner']}><AiChat /></ProtectedPage>} />
-              <Route path="/admin" element={<ProtectedPage allowedRoles={['admin']}><AdminPortal /></ProtectedPage>} />
-              <Route path="/settings" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor', 'admin']}><ProfileSettings /></ProtectedPage>} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <NotificationProvider>
+              <Routes>
+                <Route path="/" element={<Landing />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/planners" element={<PlannerDirectory />} />
+                <Route path="/vendors-directory" element={<VendorDirectory />} />
+                <Route path="/planner/:id" element={<PlannerProfile />} />
+                <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
+                <Route path="/dashboard" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Dashboard /></ProtectedPage>} />
+                <Route path="/budget" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Budget /></ProtectedPage>} />
+                <Route path="/tasks" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Tasks /></ProtectedPage>} />
+                <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Guests /></ProtectedPage>} />
+                <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
+                <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
+                <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
+                <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner']}><AiChat /></ProtectedPage>} />
+                <Route path="/admin" element={<ProtectedPage allowedRoles={['admin']}><AdminPortal /></ProtectedPage>} />
+                <Route path="/settings" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor', 'admin']}><ProfileSettings /></ProtectedPage>} />
+                <Route path="/timeline" element={<ProtectedPage allowedRoles={['couple', 'planner']}><TimelinePage /></ProtectedPage>} />
+                <Route path="/timeline/share/:token" element={<TimelineShare />} />
+                <Route path="/rsvp/:token" element={<GuestRsvp />} />
+                <Route path="/wedding/:token" element={<WeddingPortfolio />} />
+                <Route path="/portfolio" element={<ProtectedPage allowedRoles={['couple', 'planner']}><ManagePortfolio /></ProtectedPage>} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </NotificationProvider>
           </PlannerProvider>
         </AuthProvider>
       </BrowserRouter>

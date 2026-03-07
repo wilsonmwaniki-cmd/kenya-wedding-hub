@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, ShieldCheck
+  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +17,8 @@ const coupleNavItems = [
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
   { path: '/vendors', label: 'Vendors', icon: Store },
+  { path: '/timeline', label: 'Timeline', icon: Clock },
+  { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
   { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -27,6 +30,8 @@ const plannerNavItems = [
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
   { path: '/vendors', label: 'Vendors', icon: Store },
+  { path: '/timeline', label: 'Timeline', icon: Clock },
+  { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
   { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -48,14 +53,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { signOut, profile } = useAuth();
   const { isPlanner, selectedClient, selectClient } = usePlanner();
+  const { vendorRequestCount, plannerRequestCount } = useNotifications();
 
   const isAdmin = profile?.role === 'admin';
   const isVendor = profile?.role === 'vendor';
   const navItems = isAdmin ? adminNavItems : isVendor ? vendorNavItems : isPlanner ? plannerNavItems : coupleNavItems;
 
+  // Map paths to badge counts
+  const badgeCounts: Record<string, number> = {};
+  if (isVendor) {
+    badgeCounts['/vendor-dashboard'] = vendorRequestCount;
+  }
+  if (isPlanner) {
+    badgeCounts['/clients'] = plannerRequestCount;
+  }
+
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !selectedClient;
-  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/vendors'];
+  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/vendors', '/timeline', '/portfolio'];
 
   const handleSignOut = async () => {
     await signOut();
@@ -138,7 +153,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   `}
                 >
                   <item.icon className="h-4.5 w-4.5" />
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {(badgeCounts[item.path] || 0) > 0 && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                      {badgeCounts[item.path]}
+                    </span>
+                  )}
                 </Link>
               );
             })}
