@@ -803,6 +803,36 @@ export type Database = {
       }
     }
     Functions: {
+      admin_dashboard_metrics: { Args: never; Returns: Json }
+      admin_list_users: {
+        Args: {
+          limit_rows?: number
+          offset_rows?: number
+          role_filter?: string
+          search_query?: string
+        }
+        Returns: Json
+      }
+      admin_list_vendor_listings: {
+        Args: {
+          limit_rows?: number
+          offset_rows?: number
+          search_query?: string
+          status_filter?: string
+        }
+        Returns: Json
+      }
+      admin_review_vendor_listing: {
+        Args: { approve: boolean; listing_id: string; verify: boolean }
+        Returns: undefined
+      }
+      admin_set_user_role: {
+        Args: {
+          new_role: Database["public"]["Enums"]["app_role"]
+          target_user_id: string
+        }
+        Returns: undefined
+      }
       get_assignee_timeline: { Args: { _share_token: string }; Returns: Json }
       get_shared_timeline: { Args: { _share_token: string }; Returns: Json }
       has_role: {
@@ -825,7 +855,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "couple" | "planner" | "vendor"
+      app_role: "couple" | "planner" | "vendor" | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -953,7 +983,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["couple", "planner", "vendor"],
+      app_role: ["couple", "planner", "vendor", "admin"],
     },
   },
 } as const
