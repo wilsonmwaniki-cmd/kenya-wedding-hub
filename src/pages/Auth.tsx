@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Heart, Loader2, Users, Briefcase, Store } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
+import { lovable } from '@/integrations/lovable/index';
 
 export default function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
