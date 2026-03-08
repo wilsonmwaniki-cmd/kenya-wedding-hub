@@ -9,10 +9,18 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
+import {
+  createVendorReputationReview,
+  getVendorReputationBenchmark,
+  listVendorReputationReviews,
+  type VendorReputationBenchmark,
+  type VendorReputationIssueFlag,
+  type VendorReputationReview,
+} from '@/lib/vendorReputation';
 
 interface Vendor {
   id: string;
@@ -37,6 +45,19 @@ interface DirectoryVendor {
 }
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
+const vendorStatuses = ['contacted', 'quoted', 'booked', 'completed', 'rejected'] as const;
+const issueFlagOptions: Array<{ value: VendorReputationIssueFlag; label: string }> = [
+  { value: 'late_setup', label: 'Late setup' },
+  { value: 'late_delivery', label: 'Late delivery' },
+  { value: 'poor_communication', label: 'Poor communication' },
+  { value: 'deposit_risk', label: 'Deposit risk' },
+  { value: 'quality_issue', label: 'Quality issue' },
+  { value: 'no_show', label: 'No-show' },
+  { value: 'scope_change', label: 'Scope change' },
+  { value: 'budget_overrun', label: 'Budget overrun' },
+  { value: 'unprofessional_staff', label: 'Unprofessional staff' },
+  { value: 'payment_dispute', label: 'Payment dispute' },
+];
 
 function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'N/A';
@@ -56,6 +77,25 @@ function benchmarkSummary(benchmark?: VendorPriceBenchmark | null) {
     return `${benchmark.sample_size} observations captured. Benchmarks unlock at 5 samples.`;
   }
   return 'No market observations captured yet for this segment.';
+}
+
+function reputationSummary(benchmark?: VendorReputationBenchmark | null) {
+  if (!benchmark) return 'Loading planner trust data...';
+  if (benchmark.benchmark_visible && benchmark.average_overall_rating != null) {
+    const hireAgainRate = benchmark.hire_again_rate != null ? `${Math.round(benchmark.hire_again_rate * 100)}% would hire again` : 'Hire-again rate pending';
+    return `Planner score ${benchmark.average_overall_rating.toFixed(1)}/5 · ${hireAgainRate}`;
+  }
+  if (benchmark.sample_size > 0) {
+    return `${benchmark.sample_size} scorecards captured. Trust benchmarks unlock at 3 reviews.`;
+  }
+  return 'No planner scorecards captured yet for this vendor segment.';
+}
+
+function formatIssueFlags(issueFlags: string[]) {
+  if (!issueFlags.length) return 'No flagged issues';
+  return issueFlags
+    .map((flag) => issueFlagOptions.find((option) => option.value === flag)?.label ?? flag)
+    .join(', ');
 }
 
 export default function Vendors() {
@@ -78,6 +118,25 @@ export default function Vendors() {
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [modalBenchmark, setModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
   const [modalBenchmarkLoading, setModalBenchmarkLoading] = useState(false);
+  const [reputationBenchmarksLoading, setReputationBenchmarksLoading] = useState(false);
+  const [categoryReputationBenchmarks, setCategoryReputationBenchmarks] = useState<Record<string, VendorReputationBenchmark>>({});
+  const [listingReputationBenchmarks, setListingReputationBenchmarks] = useState<Record<string, VendorReputationBenchmark>>({});
+  const [reviewsBySourceVendorId, setReviewsBySourceVendorId] = useState<Record<string, VendorReputationReview>>({});
+  const [reviewDialogVendor, setReviewDialogVendor] = useState<Vendor | null>(null);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewForm, setReviewForm] = useState({
+    overallRating: '5',
+    reliabilityRating: '5',
+    communicationRating: '5',
+    qualityRating: '5',
+    punctualityRating: '5',
+    valueRating: '5',
+    deliveredOnTime: 'yes',
+    wouldHireAgain: 'yes',
+    visibility: 'planner_network',
+    privateNotes: '',
+    issueFlags: [] as VendorReputationIssueFlag[],
+  });
 
   useEffect(() => {
     if (isPlanner && !selectedClient) navigate('/clients');
@@ -149,6 +208,68 @@ export default function Vendors() {
   useEffect(() => {
     void loadBenchmarks(vendors);
   }, [vendors, selectedClient?.wedding_location]);
+
+  const loadReputationData = async (rows: Vendor[]) => {
+    if (!rows.length) {
+      setCategoryReputationBenchmarks({});
+      setListingReputationBenchmarks({});
+      setReviewsBySourceVendorId({});
+      return;
+    }
+
+    setReputationBenchmarksLoading(true);
+    try {
+      const uniqueCategories = [...new Set(rows.map((row) => row.category).filter(Boolean))];
+      const uniqueListingIds = [...new Set(rows.map((row) => row.vendor_listing_id).filter(Boolean))] as string[];
+
+      const [reviews, categoryResults, listingResults] = await Promise.all([
+        listVendorReputationReviews({
+          clientId: selectedClient?.id ?? null,
+          limit: 200,
+        }),
+        Promise.all(
+          uniqueCategories.map(async (category) => [
+            benchmarkKey(category),
+            await getVendorReputationBenchmark({
+              category,
+              minSampleSize: 3,
+            }),
+          ] as const),
+        ),
+        Promise.all(
+          uniqueListingIds.map(async (listingId) => [
+            listingId,
+            await getVendorReputationBenchmark({
+              vendorListingId: listingId,
+              minSampleSize: 3,
+            }),
+          ] as const),
+        ),
+      ]);
+
+      setReviewsBySourceVendorId(
+        Object.fromEntries(
+          reviews
+            .filter((review) => review.source_vendor_id)
+            .map((review) => [review.source_vendor_id as string, review]),
+        ),
+      );
+      setCategoryReputationBenchmarks(Object.fromEntries(categoryResults));
+      setListingReputationBenchmarks(Object.fromEntries(listingResults));
+    } catch (error: any) {
+      toast({
+        title: 'Failed to load vendor trust data',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setReputationBenchmarksLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadReputationData(vendors);
+  }, [vendors, selectedClient?.id]);
 
   useEffect(() => {
     if (!open || mode !== 'custom') return;
@@ -301,6 +422,75 @@ export default function Vendors() {
     await load();
   };
 
+  const resetReviewForm = () => {
+    setReviewForm({
+      overallRating: '5',
+      reliabilityRating: '5',
+      communicationRating: '5',
+      qualityRating: '5',
+      punctualityRating: '5',
+      valueRating: '5',
+      deliveredOnTime: 'yes',
+      wouldHireAgain: 'yes',
+      visibility: 'planner_network',
+      privateNotes: '',
+      issueFlags: [],
+    });
+  };
+
+  const toggleIssueFlag = (flag: VendorReputationIssueFlag) => {
+    setReviewForm((prev) => ({
+      ...prev,
+      issueFlags: prev.issueFlags.includes(flag)
+        ? prev.issueFlags.filter((currentFlag) => currentFlag !== flag)
+        : [...prev.issueFlags, flag],
+    }));
+  };
+
+  const submitReview = async (vendor: Vendor) => {
+    if (!selectedClient) return;
+
+    setReviewSubmitting(true);
+    try {
+      await createVendorReputationReview({
+        overallRating: Number(reviewForm.overallRating),
+        reliabilityRating: Number(reviewForm.reliabilityRating),
+        communicationRating: Number(reviewForm.communicationRating),
+        qualityRating: Number(reviewForm.qualityRating),
+        punctualityRating: Number(reviewForm.punctualityRating),
+        valueRating: Number(reviewForm.valueRating),
+        vendorName: vendor.name,
+        vendorCategory: vendor.category,
+        vendorListingId: vendor.vendor_listing_id,
+        sourceVendorId: vendor.id,
+        clientId: selectedClient.id,
+        eventDate: selectedClient.wedding_date ?? null,
+        deliveredOnTime: reviewForm.deliveredOnTime === 'yes',
+        wouldHireAgain: reviewForm.wouldHireAgain === 'yes',
+        issueFlags: reviewForm.issueFlags,
+        privateNotes: reviewForm.privateNotes || null,
+        visibility: reviewForm.visibility as 'private' | 'planner_network' | 'admin_only',
+        isAnonymized: true,
+      });
+
+      toast({
+        title: 'Vendor scorecard saved',
+        description: 'Your planner review now feeds the vendor reputation graph.',
+      });
+      setReviewDialogVendor(null);
+      resetReviewForm();
+      await loadReputationData(vendors);
+    } catch (error: any) {
+      toast({
+        title: 'Failed to save review',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
   const trackedCategoryBenchmarks = useMemo(() => {
     const categories = [...new Set(vendors.map((vendor) => vendor.category).filter(Boolean))];
     return categories
@@ -310,6 +500,16 @@ export default function Vendors() {
         benchmark: categoryBenchmarks[benchmarkKey(category)],
       }));
   }, [vendors, categoryBenchmarks]);
+
+  const trackedReputationBenchmarks = useMemo(() => {
+    const categories = [...new Set(vendors.map((vendor) => vendor.category).filter(Boolean))];
+    return categories
+      .slice(0, 4)
+      .map((category) => ({
+        category,
+        benchmark: categoryReputationBenchmarks[benchmarkKey(category)],
+      }));
+  }, [vendors, categoryReputationBenchmarks]);
 
   if (isPlanner && !selectedClient) return null;
 
@@ -459,6 +659,40 @@ export default function Vendors() {
         </CardContent>
       </Card>
 
+      <Card className="shadow-card">
+        <CardContent className="py-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Vendor reputation graph is active</p>
+              <p className="text-sm text-muted-foreground">
+                Scorecards stay private to planners and admins until enough trusted reviews exist.
+              </p>
+            </div>
+            {reputationBenchmarksLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Refreshing trust benchmarks
+              </div>
+            )}
+          </div>
+          {trackedReputationBenchmarks.length > 0 && (
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {trackedReputationBenchmarks.map(({ category, benchmark }) => (
+                <div key={category} className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-foreground">{category}</span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {benchmark?.sample_size ?? 0} reviews
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{reputationSummary(benchmark)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 sm:grid-cols-2">
         {vendors.map((vendor) => {
           const categoryBenchmark = categoryBenchmarks[benchmarkKey(vendor.category)];
@@ -469,6 +703,11 @@ export default function Vendors() {
           const priceDelta = hasMedian && vendor.price
             ? Math.round(((vendor.price - (activeBenchmark?.median_amount ?? 0)) / (activeBenchmark?.median_amount ?? 1)) * 100)
             : null;
+          const existingReview = reviewsBySourceVendorId[vendor.id];
+          const categoryReputation = categoryReputationBenchmarks[benchmarkKey(vendor.category)];
+          const listingReputation = vendor.vendor_listing_id ? listingReputationBenchmarks[vendor.vendor_listing_id] : null;
+          const activeReputation = listingReputation?.benchmark_visible ? listingReputation : categoryReputation;
+          const canReview = vendor.status === 'booked' || vendor.status === 'completed';
 
           return (
             <Card key={vendor.id} className="shadow-card">
@@ -502,6 +741,36 @@ export default function Vendors() {
                   {priceDelta != null && (
                     <p className="mt-2 text-xs font-medium text-foreground">
                       Current quote is {Math.abs(priceDelta)}% {priceDelta >= 0 ? 'above' : 'below'} the benchmark median.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-primary" />
+                      <p className="text-sm font-medium text-foreground">Planner trust signal</p>
+                    </div>
+                    <Badge variant="outline" className="text-[10px]">
+                      {activeReputation?.sample_size ?? 0} reviews
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {reputationSummary(activeReputation)}
+                  </p>
+                  {existingReview ? (
+                    <div className="mt-3 rounded-md border border-border/70 bg-background px-3 py-2 text-xs text-muted-foreground">
+                      <p className="font-medium text-foreground">
+                        Your scorecard: {existingReview.overall_rating}/5 overall
+                      </p>
+                      <p className="mt-1">
+                        {existingReview.would_hire_again ? 'Would hire again' : 'Would not hire again'} · {existingReview.delivered_on_time === null ? 'Timing not rated' : existingReview.delivered_on_time ? 'Delivered on time' : 'Delivery timing issue'}
+                      </p>
+                      <p className="mt-1">{formatIssueFlags(existingReview.issue_flags ?? [])}</p>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Add a scorecard after the vendor is booked or completed to grow your planner-only reputation graph.
                     </p>
                   )}
                 </div>
@@ -541,12 +810,39 @@ export default function Vendors() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="contacted">Contacted</SelectItem>
-                      <SelectItem value="quoted">Quoted</SelectItem>
-                      <SelectItem value="booked">Booked</SelectItem>
-                      <SelectItem value="rejected">Rejected</SelectItem>
+                      {vendorStatuses.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background px-3 py-3">
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Post-event review</p>
+                    <p className="text-sm text-muted-foreground">
+                      {existingReview
+                        ? 'Scorecard captured. This vendor is now contributing to planner trust data.'
+                        : canReview
+                          ? 'Capture a private scorecard now that this vendor is engaged.'
+                          : 'Move this vendor to booked or completed before leaving a scorecard.'}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2"
+                    disabled={!canReview || Boolean(existingReview)}
+                    onClick={() => {
+                      resetReviewForm();
+                      setReviewDialogVendor(vendor);
+                    }}
+                  >
+                    <Star className="h-4 w-4" />
+                    {existingReview ? 'Reviewed' : 'Review Vendor'}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -556,6 +852,146 @@ export default function Vendors() {
           <p className="col-span-full text-center text-muted-foreground py-12">No vendors yet. Start by adding your venue!</p>
         )}
       </div>
+
+      <Dialog
+        open={Boolean(reviewDialogVendor)}
+        onOpenChange={(openState) => {
+          if (!openState) {
+            setReviewDialogVendor(null);
+            resetReviewForm();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              Review {reviewDialogVendor?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {reviewDialogVendor && (
+            <div className="space-y-5">
+              <div className="rounded-lg border border-border/70 bg-muted/40 p-3 text-sm text-muted-foreground">
+                This scorecard is private to planners and admins. Aggregate trust scores only unlock after enough planner reviews exist.
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {[
+                  ['Overall', 'overallRating'],
+                  ['Reliability', 'reliabilityRating'],
+                  ['Communication', 'communicationRating'],
+                  ['Quality', 'qualityRating'],
+                  ['Punctuality', 'punctualityRating'],
+                  ['Value', 'valueRating'],
+                ].map(([label, key]) => (
+                  <div key={key} className="space-y-2">
+                    <Label>{label}</Label>
+                    <Select
+                      value={reviewForm[key as keyof typeof reviewForm] as string}
+                      onValueChange={(value) => setReviewForm((prev) => ({ ...prev, [key]: value }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {[5, 4, 3, 2, 1].map((score) => (
+                          <SelectItem key={score} value={String(score)}>
+                            {score} / 5
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Delivered on time</Label>
+                  <Select value={reviewForm.deliveredOnTime} onValueChange={(value) => setReviewForm((prev) => ({ ...prev, deliveredOnTime: value }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Yes</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Would hire again</Label>
+                  <Select value={reviewForm.wouldHireAgain} onValueChange={(value) => setReviewForm((prev) => ({ ...prev, wouldHireAgain: value }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Yes</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Visibility</Label>
+                <Select value={reviewForm.visibility} onValueChange={(value) => setReviewForm((prev) => ({ ...prev, visibility: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planner_network">Planner network benchmark</SelectItem>
+                    <SelectItem value="private">Private to you</SelectItem>
+                    <SelectItem value="admin_only">Admin only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Issue flags</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {issueFlagOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => toggleIssueFlag(option.value)}
+                      className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                        reviewForm.issueFlags.includes(option.value)
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-accent/50'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="review-notes">Private notes</Label>
+                <Input
+                  id="review-notes"
+                  value={reviewForm.privateNotes}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, privateNotes: e.target.value }))}
+                  placeholder="What should another planner know about working with this vendor?"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setReviewDialogVendor(null);
+                    resetReviewForm();
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="gap-2"
+                  disabled={reviewSubmitting}
+                  onClick={() => submitReview(reviewDialogVendor)}
+                >
+                  {reviewSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                  Save Scorecard
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
