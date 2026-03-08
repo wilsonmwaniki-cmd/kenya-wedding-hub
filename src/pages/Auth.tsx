@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Heart, Loader2, Users, Briefcase, Store } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
-import { lovable } from '@/integrations/lovable/index';
+import GoogleAuthButton from '@/components/GoogleAuthButton';
 
 export default function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -19,8 +19,8 @@ export default function Auth() {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<SignupRole>('couple');
   const [submitting, setSubmitting] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const { signIn, signUp, user, profile, loading } = useAuth();
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const { signIn, signUp, signInWithGoogle, user, profile, loading } = useAuth();
   const { toast } = useToast();
 
   if (loading) {
@@ -67,6 +67,16 @@ export default function Auth() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setGoogleSubmitting(true);
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+      setGoogleSubmitting(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-warm p-4">
       <Card className="w-full max-w-md shadow-warm border-border/50">
@@ -99,6 +109,21 @@ export default function Auth() {
             </form>
           ) : (
             <>
+              <div className="space-y-4">
+                <GoogleAuthButton
+                  loading={googleSubmitting}
+                  disabled={submitting || googleSubmitting}
+                  onClick={handleGoogleSignIn}
+                />
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">or use email</span>
+                  </div>
+                </div>
+              </div>
               <form onSubmit={handleSubmit} className="space-y-4">
                 {isSignUp && (
                   <>
@@ -167,7 +192,7 @@ export default function Auth() {
                   </div>
                   <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
                 </div>
-                <Button type="submit" className="w-full" disabled={submitting}>
+                <Button type="submit" className="w-full" disabled={submitting || googleSubmitting}>
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   {isSignUp ? 'Create Account' : 'Sign In'}
                 </Button>

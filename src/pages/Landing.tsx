@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import heroImage from '@/assets/hero-wedding.jpg';
 import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
+import GoogleAuthButton from '@/components/GoogleAuthButton';
 
 const features = [
   { icon: Wallet, title: 'Budget Tracking', desc: 'Keep your wedding finances organized with category-level tracking.' },
@@ -26,7 +27,8 @@ function InlineAuthForm() {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<SignupRole>('couple');
   const [submitting, setSubmitting] = useState(false);
-  const { signIn, signUp } = useAuth();
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const { signIn, signUp, signInWithGoogle } = useAuth();
   const { toast } = useToast();
 
   const handleForgotPassword = async (e: React.FormEvent) => {
@@ -60,6 +62,16 @@ function InlineAuthForm() {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setGoogleSubmitting(true);
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+      setGoogleSubmitting(false);
     }
   };
 
@@ -103,6 +115,22 @@ function InlineAuthForm() {
         </form>
       ) : (
         <>
+      <div className="space-y-3">
+        <GoogleAuthButton
+          loading={googleSubmitting}
+          disabled={submitting || googleSubmitting}
+          onClick={handleGoogleSignIn}
+          text={isSignUp ? 'Sign up with Google' : 'Sign in with Google'}
+        />
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border/60" />
+          </div>
+          <div className="relative flex justify-center text-[10px] uppercase">
+            <span className="bg-card px-2 text-muted-foreground">or continue with email</span>
+          </div>
+        </div>
+      </div>
           <form onSubmit={handleSubmit} className="space-y-3">
         {isSignUp && (
           <>
@@ -147,7 +175,7 @@ function InlineAuthForm() {
           </div>
           <Input id="hero-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} className="h-9 text-sm" />
         </div>
-        <Button type="submit" className="w-full gap-2" size="sm" disabled={submitting}>
+        <Button type="submit" className="w-full gap-2" size="sm" disabled={submitting || googleSubmitting}>
           {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {isSignUp ? 'Get Started' : 'Sign In'}
           {!submitting && <ArrowRight className="h-4 w-4" />}
