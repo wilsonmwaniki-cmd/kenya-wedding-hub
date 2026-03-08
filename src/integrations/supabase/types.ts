@@ -596,6 +596,100 @@ export type Database = {
         }
         Relationships: []
       }
+      vendor_price_observations: {
+        Row: {
+          amount: number
+          category: string
+          client_id: string | null
+          created_at: string
+          currency: string
+          event_date: string | null
+          guest_count: number | null
+          id: string
+          is_anonymized: boolean
+          location_county: string | null
+          notes: string | null
+          price_type: string
+          recorded_by_user_id: string
+          source: string
+          source_vendor_id: string | null
+          updated_at: string
+          user_id: string
+          vendor_listing_id: string | null
+          vendor_name_snapshot: string
+          venue_name: string | null
+          wedding_style: string | null
+        }
+        Insert: {
+          amount: number
+          category: string
+          client_id?: string | null
+          created_at?: string
+          currency?: string
+          event_date?: string | null
+          guest_count?: number | null
+          id?: string
+          is_anonymized?: boolean
+          location_county?: string | null
+          notes?: string | null
+          price_type?: string
+          recorded_by_user_id?: string
+          source?: string
+          source_vendor_id?: string | null
+          updated_at?: string
+          user_id: string
+          vendor_listing_id?: string | null
+          vendor_name_snapshot: string
+          venue_name?: string | null
+          wedding_style?: string | null
+        }
+        Update: {
+          amount?: number
+          category?: string
+          client_id?: string | null
+          created_at?: string
+          currency?: string
+          event_date?: string | null
+          guest_count?: number | null
+          id?: string
+          is_anonymized?: boolean
+          location_county?: string | null
+          notes?: string | null
+          price_type?: string
+          recorded_by_user_id?: string
+          source?: string
+          source_vendor_id?: string | null
+          updated_at?: string
+          user_id?: string
+          vendor_listing_id?: string | null
+          vendor_name_snapshot?: string
+          venue_name?: string | null
+          wedding_style?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendor_price_observations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_price_observations_source_vendor_id_fkey"
+            columns: ["source_vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_price_observations_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vendor_reviews: {
         Row: {
           created_at: string
@@ -833,6 +927,31 @@ export type Database = {
         }
         Returns: undefined
       }
+      can_access_vendor_price_observation: {
+        Args: { _client_id: string | null; _user_id: string }
+        Returns: boolean
+      }
+      get_vendor_price_benchmark: {
+        Args: {
+          category_filter?: string | null
+          county_filter?: string | null
+          min_sample_size?: number | null
+          vendor_listing_filter?: string | null
+          venue_filter?: string | null
+        }
+        Returns: {
+          average_amount: number | null
+          benchmark_visible: boolean
+          last_observation_at: string | null
+          maximum_amount: number | null
+          median_amount: number | null
+          minimum_amount: number | null
+          percentile_25_amount: number | null
+          percentile_75_amount: number | null
+          sample_size: number
+          vendor_count: number
+        }[]
+      }
       get_assignee_timeline: { Args: { _share_token: string }; Returns: Json }
       get_shared_timeline: { Args: { _share_token: string }; Returns: Json }
       has_role: {
@@ -852,6 +971,25 @@ export type Database = {
       public_rsvp_respond: {
         Args: { _status: string; _token: string }
         Returns: Json
+      }
+      record_vendor_price_observation: {
+        Args: {
+          client?: string | null
+          county_input?: string | null
+          event_date_input?: string | null
+          guest_count_input?: number | null
+          is_anonymized_input?: boolean | null
+          notes_input?: string | null
+          observation_amount: number
+          observation_category: string
+          price_type_input?: string | null
+          source_input?: string | null
+          vendor_listing?: string | null
+          vendor_name: string
+          venue_input?: string | null
+          wedding_style_input?: string | null
+        }
+        Returns: string
       }
     }
     Enums: {
