@@ -690,6 +690,106 @@ export type Database = {
           },
         ]
       }
+      vendor_reputation_reviews: {
+        Row: {
+          client_id: string | null
+          communication_rating: number
+          created_at: string
+          delivered_on_time: boolean | null
+          event_date: string | null
+          id: string
+          is_anonymized: boolean
+          issue_flags: string[]
+          overall_rating: number
+          private_notes: string | null
+          punctuality_rating: number
+          quality_rating: number
+          reliability_rating: number
+          reviewer_user_id: string
+          source_vendor_id: string | null
+          updated_at: string
+          user_id: string
+          value_rating: number
+          vendor_category_snapshot: string
+          vendor_listing_id: string | null
+          vendor_name_snapshot: string
+          visibility: string
+          would_hire_again: boolean
+        }
+        Insert: {
+          client_id?: string | null
+          communication_rating: number
+          created_at?: string
+          delivered_on_time?: boolean | null
+          event_date?: string | null
+          id?: string
+          is_anonymized?: boolean
+          issue_flags?: string[]
+          overall_rating: number
+          private_notes?: string | null
+          punctuality_rating: number
+          quality_rating: number
+          reliability_rating: number
+          reviewer_user_id?: string
+          source_vendor_id?: string | null
+          updated_at?: string
+          user_id: string
+          value_rating: number
+          vendor_category_snapshot: string
+          vendor_listing_id?: string | null
+          vendor_name_snapshot: string
+          visibility?: string
+          would_hire_again?: boolean
+        }
+        Update: {
+          client_id?: string | null
+          communication_rating?: number
+          created_at?: string
+          delivered_on_time?: boolean | null
+          event_date?: string | null
+          id?: string
+          is_anonymized?: boolean
+          issue_flags?: string[]
+          overall_rating?: number
+          private_notes?: string | null
+          punctuality_rating?: number
+          quality_rating?: number
+          reliability_rating?: number
+          reviewer_user_id?: string
+          source_vendor_id?: string | null
+          updated_at?: string
+          user_id?: string
+          value_rating?: number
+          vendor_category_snapshot?: string
+          vendor_listing_id?: string | null
+          vendor_name_snapshot?: string
+          visibility?: string
+          would_hire_again?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendor_reputation_reviews_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_reputation_reviews_source_vendor_id_fkey"
+            columns: ["source_vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_reputation_reviews_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vendor_reviews: {
         Row: {
           created_at: string
@@ -931,6 +1031,15 @@ export type Database = {
         Args: { _client_id: string | null; _user_id: string }
         Returns: boolean
       }
+      can_manage_vendor_reputation_review: {
+        Args: {
+          _owner_user_id: string
+          _reviewer_user_id: string
+          _client_id: string | null
+          _source_vendor_id: string | null
+        }
+        Returns: boolean
+      }
       get_vendor_price_benchmark: {
         Args: {
           category_filter?: string | null
@@ -948,6 +1057,28 @@ export type Database = {
           minimum_amount: number | null
           percentile_25_amount: number | null
           percentile_75_amount: number | null
+          sample_size: number
+          vendor_count: number
+        }[]
+      }
+      get_vendor_reputation_benchmark: {
+        Args: {
+          category_filter?: string | null
+          min_sample_size?: number | null
+          vendor_listing_filter?: string | null
+        }
+        Returns: {
+          average_communication_rating: number | null
+          average_overall_rating: number | null
+          average_punctuality_rating: number | null
+          average_quality_rating: number | null
+          average_reliability_rating: number | null
+          average_value_rating: number | null
+          benchmark_visible: boolean
+          flagged_review_count: number | null
+          hire_again_rate: number | null
+          last_review_at: string | null
+          on_time_rate: number | null
           sample_size: number
           vendor_count: number
         }[]
@@ -1009,6 +1140,30 @@ export type Database = {
         }
         Returns: string
       }
+      record_vendor_reputation_review: {
+        Args: {
+          client_input?: string | null
+          communication_input: number
+          delivered_on_time_input?: boolean | null
+          event_date_input?: string | null
+          is_anonymized_input?: boolean | null
+          issue_flags_input?: string[] | null
+          overall_rating_input: number
+          private_notes_input?: string | null
+          punctuality_input: number
+          quality_input: number
+          reliability_input: number
+          source_vendor_input?: string | null
+          value_input: number
+          vendor_category_input?: string | null
+          vendor_listing_input?: string | null
+          vendor_name_input?: string | null
+          visibility_input?: string | null
+          would_hire_again_input?: boolean | null
+        }
+        Returns: string
+      }
+      require_planner_or_admin: { Args: never; Returns: undefined }
     }
     Enums: {
       app_role: "couple" | "planner" | "vendor" | "admin"
