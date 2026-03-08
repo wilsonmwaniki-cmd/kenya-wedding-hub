@@ -952,6 +952,24 @@ export type Database = {
           vendor_count: number
         }[]
       }
+      get_public_budget_estimate: {
+        Args: {
+          county_input?: string | null
+          guest_count_input?: number | null
+          min_sample_size?: number | null
+          venue_tier_input?: string | null
+          wedding_style_input?: string | null
+        }
+        Returns: {
+          benchmark_visible: boolean
+          category: string
+          high_amount: number
+          low_amount: number
+          sample_size: number
+          source: string
+          suggested_amount: number
+        }[]
+      }
       get_assignee_timeline: { Args: { _share_token: string }; Returns: Json }
       get_shared_timeline: { Args: { _share_token: string }; Returns: Json }
       has_role: {
