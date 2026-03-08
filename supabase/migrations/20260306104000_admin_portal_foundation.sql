@@ -103,13 +103,13 @@ BEGIN
   RETURN QUERY
   SELECT
     p.user_id,
-    u.email,
-    u.created_at,
-    u.last_sign_in_at,
-    p.full_name,
+    u.email::text,
+    u.created_at::timestamptz,
+    u.last_sign_in_at::timestamptz,
+    p.full_name::text,
     p.role,
-    p.company_name,
-    p.wedding_date
+    p.company_name::text,
+    p.wedding_date::date
   FROM public.profiles p
   LEFT JOIN auth.users u
     ON u.id = p.user_id
@@ -192,14 +192,14 @@ BEGIN
   SELECT
     v.id,
     v.user_id,
-    v.business_name,
-    v.category,
-    v.location,
+    v.business_name::text,
+    v.category::text,
+    v.location::text,
     v.is_approved,
     v.is_verified,
-    v.updated_at,
-    p.full_name,
-    u.email
+    v.updated_at::timestamptz,
+    p.full_name::text,
+    u.email::text
   FROM public.vendor_listings v
   LEFT JOIN public.profiles p
     ON p.user_id = v.user_id
