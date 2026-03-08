@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,15 +8,44 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
-import { Plus, Trash2, Wallet } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
 
 interface BudgetCategory {
   id: string;
   name: string;
   allocated: number;
   spent: number;
+}
+
+interface SpendLogForm {
+  vendorName: string;
+  amount: string;
+  notes: string;
+  addToSpent: boolean;
+}
+
+function formatCurrency(value: number | null | undefined) {
+  if (value == null) return 'N/A';
+  return `KES ${Number(value).toLocaleString()}`;
+}
+
+function benchmarkKey(category: string) {
+  return category.toLowerCase().trim();
+}
+
+function benchmarkSummary(benchmark?: VendorPriceBenchmark | null) {
+  if (!benchmark) return 'Loading market data...';
+  if (benchmark.benchmark_visible) {
+    return `Median ${formatCurrency(benchmark.median_amount)} · Range ${formatCurrency(benchmark.minimum_amount)} - ${formatCurrency(benchmark.maximum_amount)}`;
+  }
+  if (benchmark.sample_size > 0) {
+    return `${benchmark.sample_size} observations captured. Benchmarks unlock at 5 samples.`;
+  }
+  return 'No market observations captured yet for this category.';
 }
 
 export default function Budget() {
@@ -28,6 +57,20 @@ export default function Budget() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [allocated, setAllocated] = useState('');
+  const [spentDrafts, setSpentDrafts] = useState<Record<string, string>>({});
+  const [savingSpentId, setSavingSpentId] = useState<string | null>(null);
+  const [benchmarksLoading, setBenchmarksLoading] = useState(false);
+  const [categoryBenchmarks, setCategoryBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
+  const [addModalBenchmark, setAddModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
+  const [addModalBenchmarkLoading, setAddModalBenchmarkLoading] = useState(false);
+  const [recordingCategory, setRecordingCategory] = useState<BudgetCategory | null>(null);
+  const [recordingSpend, setRecordingSpend] = useState(false);
+  const [spendLog, setSpendLog] = useState<SpendLogForm>({
+    vendorName: '',
+    amount: '',
+    notes: '',
+    addToSpent: true,
+  });
 
   useEffect(() => {
     if (isPlanner && !selectedClient) navigate('/clients');
@@ -35,31 +78,238 @@ export default function Budget() {
 
   const load = async () => {
     if (!dataOrFilter) return;
-    const { data } = await supabase.from('budget_categories').select('*').or(dataOrFilter).order('created_at');
-    if (data) setCategories(data.map(d => ({ ...d, allocated: Number(d.allocated), spent: Number(d.spent) })));
+    const { data, error } = await supabase.from('budget_categories').select('*').or(dataOrFilter).order('created_at');
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    const rows = (data ?? []).map((item) => ({
+      ...item,
+      allocated: Number(item.allocated),
+      spent: Number(item.spent),
+    })) as BudgetCategory[];
+
+    setCategories(rows);
+    setSpentDrafts(Object.fromEntries(rows.map((row) => [row.id, String(row.spent || 0)])));
   };
 
-  useEffect(() => { load(); }, [user, selectedClient, dataOrFilter]);
+  useEffect(() => {
+    void load();
+  }, [user, selectedClient, dataOrFilter]);
+
+  const loadBenchmarks = async (rows: BudgetCategory[]) => {
+    if (!rows.length) {
+      setCategoryBenchmarks({});
+      return;
+    }
+
+    setBenchmarksLoading(true);
+    try {
+      const uniqueCategories = [...new Set(rows.map((row) => row.name).filter(Boolean))];
+      const results = await Promise.all(
+        uniqueCategories.map(async (category) => [
+          benchmarkKey(category),
+          await getVendorPriceBenchmark({
+            category,
+            venue: selectedClient?.wedding_location ?? null,
+            minSampleSize: 5,
+          }),
+        ] as const),
+      );
+
+      setCategoryBenchmarks(Object.fromEntries(results));
+    } catch (error: any) {
+      toast({
+        title: 'Failed to load budget benchmarks',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setBenchmarksLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadBenchmarks(categories);
+  }, [categories, selectedClient?.wedding_location]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let active = true;
+    const run = async () => {
+      if (!name.trim()) {
+        setAddModalBenchmark(null);
+        return;
+      }
+
+      setAddModalBenchmarkLoading(true);
+      try {
+        const result = await getVendorPriceBenchmark({
+          category: name.trim(),
+          venue: selectedClient?.wedding_location ?? null,
+          minSampleSize: 5,
+        });
+        if (active) setAddModalBenchmark(result);
+      } catch {
+        if (active) setAddModalBenchmark(null);
+      } finally {
+        if (active) setAddModalBenchmarkLoading(false);
+      }
+    };
+
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [open, name, selectedClient?.wedding_location]);
 
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    const insert: any = {
-      user_id: user.id, name, allocated: parseFloat(allocated) || 0, spent: 0,
+
+    const insert: Record<string, unknown> = {
+      user_id: user.id,
+      name,
+      allocated: parseFloat(allocated) || 0,
+      spent: 0,
     };
+
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+
     const { error } = await supabase.from('budget_categories').insert(insert);
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    setName(''); setAllocated(''); setOpen(false); load();
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    setName('');
+    setAllocated('');
+    setOpen(false);
+    await load();
+  };
+
+  const saveSpent = async (category: BudgetCategory) => {
+    const draft = spentDrafts[category.id]?.trim() ?? '';
+    const nextSpent = draft === '' ? 0 : Number(draft);
+
+    if (!Number.isFinite(nextSpent) || nextSpent < 0) {
+      toast({
+        title: 'Invalid spent amount',
+        description: 'Enter a valid KES amount that is zero or higher.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingSpentId(category.id);
+    const { error } = await supabase
+      .from('budget_categories')
+      .update({ spent: nextSpent })
+      .eq('id', category.id);
+
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } else {
+      toast({
+        title: 'Spent total updated',
+        description: `${category.name} now shows ${formatCurrency(nextSpent)} spent.`,
+      });
+      await load();
+    }
+    setSavingSpentId(null);
   };
 
   const deleteCategory = async (id: string) => {
     await supabase.from('budget_categories').delete().eq('id', id);
-    load();
+    await load();
   };
 
-  const totalAllocated = categories.reduce((s, c) => s + c.allocated, 0);
-  const totalSpent = categories.reduce((s, c) => s + c.spent, 0);
+  const openSpendRecorder = (category: BudgetCategory) => {
+    setRecordingCategory(category);
+    setSpendLog({
+      vendorName: '',
+      amount: '',
+      notes: '',
+      addToSpent: true,
+    });
+  };
+
+  const recordSpendObservation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recordingCategory) return;
+
+    const amount = Number(spendLog.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({
+        title: 'Invalid amount',
+        description: 'Enter a real KES amount greater than zero.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!spendLog.vendorName.trim()) {
+      toast({
+        title: 'Vendor name required',
+        description: 'Enter the vendor or payee name for this spend.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setRecordingSpend(true);
+    try {
+      await createVendorPriceObservation({
+        amount,
+        category: recordingCategory.name,
+        vendorName: spendLog.vendorName.trim(),
+        clientId: selectedClient?.id ?? null,
+        source: 'budget_entry',
+        priceType: 'final_paid',
+        venue: selectedClient?.wedding_location ?? null,
+        eventDate: selectedClient?.wedding_date ?? null,
+        notes: spendLog.notes.trim() || null,
+        isAnonymized: true,
+      });
+
+      if (spendLog.addToSpent) {
+        const nextSpent = recordingCategory.spent + amount;
+        const { error } = await supabase
+          .from('budget_categories')
+          .update({ spent: nextSpent })
+          .eq('id', recordingCategory.id);
+
+        if (error) throw error;
+      }
+
+      toast({
+        title: 'Spend recorded',
+        description: 'Your actual spend has been added to pricing intelligence.',
+      });
+      setRecordingCategory(null);
+      await load();
+    } catch (error: any) {
+      toast({
+        title: 'Failed to record spend',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRecordingSpend(false);
+    }
+  };
+
+  const totalAllocated = categories.reduce((sum, category) => sum + category.allocated, 0);
+  const totalSpent = categories.reduce((sum, category) => sum + category.spent, 0);
+
+  const highlightedBenchmarks = useMemo(() => {
+    return categories.slice(0, 4).map((category) => ({
+      category: category.name,
+      benchmark: categoryBenchmarks[benchmarkKey(category.name)],
+    }));
+  }, [categories, categoryBenchmarks]);
 
   if (isPlanner && !selectedClient) return null;
 
@@ -77,6 +327,15 @@ export default function Budget() {
           <DialogContent>
             <DialogHeader><DialogTitle className="font-display">Add Budget Category</DialogTitle></DialogHeader>
             <form onSubmit={addCategory} className="space-y-4">
+              <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  {addModalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
+                  Market signal for this category
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {addModalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(addModalBenchmark)}
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label>Category Name</Label>
                 <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Venue, Catering" required />
@@ -104,23 +363,105 @@ export default function Budget() {
         </CardContent>
       </Card>
 
+      <Card className="shadow-card">
+        <CardContent className="py-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Budget intelligence is active</p>
+              <p className="text-sm text-muted-foreground">
+                Record actual paid spend here to improve your planning benchmarks.
+                {selectedClient?.wedding_location ? ` Benchmarks are tuned to ${selectedClient.wedding_location}.` : ''}
+              </p>
+            </div>
+            {benchmarksLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Refreshing benchmarks
+              </div>
+            )}
+          </div>
+          {highlightedBenchmarks.length > 0 && (
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {highlightedBenchmarks.map(({ category, benchmark }) => (
+                <div key={category} className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-foreground">{category}</span>
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                      {benchmark?.sample_size ?? 0} obs
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{benchmarkSummary(benchmark)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 sm:grid-cols-2">
-        {categories.map(c => {
-          const pct = c.allocated ? Math.min((c.spent / c.allocated) * 100, 100) : 0;
+        {categories.map((category) => {
+          const pct = category.allocated ? Math.min((category.spent / category.allocated) * 100, 100) : 0;
+          const benchmark = categoryBenchmarks[benchmarkKey(category.name)];
+          const overMedian = benchmark?.benchmark_visible && benchmark.median_amount != null && category.spent > benchmark.median_amount;
+
           return (
-            <Card key={c.id} className="shadow-card">
+            <Card key={category.id} className="shadow-card">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-base font-medium">{c.name}</CardTitle>
-                <button onClick={() => deleteCategory(c.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                <CardTitle className="text-base font-medium">{category.name}</CardTitle>
+                <button onClick={() => deleteCategory(category.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                   <Trash2 className="h-4 w-4" />
                 </button>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-foreground">Market benchmark</p>
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                      {benchmark?.sample_size ?? 0} obs
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {benchmarkSummary(benchmark)}
+                  </p>
+                  {overMedian && (
+                    <p className="mt-2 text-xs font-medium text-foreground">
+                      Current spend is above the benchmark median.
+                    </p>
+                  )}
+                </div>
+
                 <div className="flex justify-between text-sm text-muted-foreground mb-1">
-                  <span>KES {c.spent.toLocaleString()}</span>
-                  <span>KES {c.allocated.toLocaleString()}</span>
+                  <span>KES {category.spent.toLocaleString()}</span>
+                  <span>KES {category.allocated.toLocaleString()}</span>
                 </div>
                 <Progress value={pct} className="h-2" />
+
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div className="space-y-2">
+                    <Label htmlFor={`spent-${category.id}`}>Spent so far</Label>
+                    <Input
+                      id={`spent-${category.id}`}
+                      type="number"
+                      value={spentDrafts[category.id] ?? ''}
+                      onChange={(e) => setSpentDrafts((prev) => ({ ...prev, [category.id]: e.target.value }))}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => saveSpent(category)}
+                    disabled={savingSpentId === category.id}
+                  >
+                    {savingSpentId === category.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Save Spent
+                  </Button>
+                </div>
+
+                <Button type="button" variant="secondary" className="w-full gap-2" onClick={() => openSpendRecorder(category)}>
+                  <Receipt className="h-4 w-4" />
+                  Record Actual Spend
+                </Button>
               </CardContent>
             </Card>
           );
@@ -129,6 +470,62 @@ export default function Budget() {
           <p className="col-span-full text-center text-muted-foreground py-12">No budget categories yet. Add one to get started!</p>
         )}
       </div>
+
+      <Dialog open={Boolean(recordingCategory)} onOpenChange={(nextOpen) => { if (!nextOpen) setRecordingCategory(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              Record Actual Spend{recordingCategory ? ` · ${recordingCategory.name}` : ''}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={recordSpendObservation} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Vendor / payee name</Label>
+              <Input
+                value={spendLog.vendorName}
+                onChange={(e) => setSpendLog((prev) => ({ ...prev, vendorName: e.target.value }))}
+                placeholder="e.g. Enashipai, Bloom Flowers, DJ Mo"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Amount paid (KES)</Label>
+              <Input
+                type="number"
+                value={spendLog.amount}
+                onChange={(e) => setSpendLog((prev) => ({ ...prev, amount: e.target.value }))}
+                placeholder="0"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (optional)</Label>
+              <Input
+                value={spendLog.notes}
+                onChange={(e) => setSpendLog((prev) => ({ ...prev, notes: e.target.value }))}
+                placeholder="What this covered, negotiated extras, etc."
+              />
+            </div>
+            <div className="flex items-start gap-3 rounded-lg border border-border/70 p-3">
+              <Checkbox
+                id="add-to-budget-spent"
+                checked={spendLog.addToSpent}
+                onCheckedChange={(checked) => setSpendLog((prev) => ({ ...prev, addToSpent: checked === true }))}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="add-to-budget-spent" className="cursor-pointer">Also add this amount to the category spent total</Label>
+                <p className="text-xs text-muted-foreground">
+                  Leave this on for real payments. Turn it off if you only want to log market intelligence.
+                </p>
+              </div>
+            </div>
+            <Button type="submit" className="w-full gap-2" disabled={recordingSpend}>
+              {recordingSpend ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+              Record Spend
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
