@@ -79,21 +79,21 @@ export default function AdminPortal() {
   const [vendorStatusFilter, setVendorStatusFilter] = useState<VendorStatusFilter>("pending");
 
   const loadMetrics = async () => {
-    const { data, error } = await supabase.rpc("admin_dashboard_metrics");
+    const { data, error } = await supabase.rpc("admin_dashboard_metrics" as any);
     if (error) throw error;
     const row = Array.isArray(data) ? data[0] : data;
-    setMetrics((row ?? null) as AdminDashboardMetrics | null);
+    setMetrics((row ?? null) as unknown as AdminDashboardMetrics | null);
   };
 
   const loadUsers = async () => {
-    const { data, error } = await supabase.rpc("admin_list_users", {
+    const { data, error } = await supabase.rpc("admin_list_users" as any, {
       search_query: userSearch.trim() || null,
       role_filter: userRoleFilter === "all" ? null : userRoleFilter,
       limit_rows: 100,
       offset_rows: 0,
     });
     if (error) throw error;
-    const rows = ((data ?? []) as AdminUserRow[]).map((row) => ({
+    const rows = ((data ?? []) as unknown as AdminUserRow[]).map((row) => ({
       ...row,
       role: row.role ?? "couple",
     }));
@@ -110,14 +110,14 @@ export default function AdminPortal() {
   };
 
   const loadVendors = async () => {
-    const { data, error } = await supabase.rpc("admin_list_vendor_listings", {
+    const { data, error } = await supabase.rpc("admin_list_vendor_listings" as any, {
       search_query: vendorSearch.trim() || null,
       status_filter: vendorStatusFilter,
       limit_rows: 100,
       offset_rows: 0,
     });
     if (error) throw error;
-    setVendors((data ?? []) as AdminVendorRow[]);
+    setVendors((data ?? []) as unknown as AdminVendorRow[]);
   };
 
   const loadAll = async (showFullLoader = false) => {
@@ -189,7 +189,7 @@ export default function AdminPortal() {
 
     setSavingUserId(targetUserId);
     try {
-      const { error } = await supabase.rpc("admin_set_user_role", {
+      const { error } = await supabase.rpc("admin_set_user_role" as any, {
         target_user_id: targetUserId,
         new_role: nextRole,
       });
@@ -215,7 +215,7 @@ export default function AdminPortal() {
   const handleVendorReview = async (listingId: string, approve: boolean, verify: boolean) => {
     setSavingVendorId(listingId);
     try {
-      const { error } = await supabase.rpc("admin_review_vendor_listing", {
+      const { error } = await supabase.rpc("admin_review_vendor_listing" as any, {
         listing_id: listingId,
         approve,
         verify,
