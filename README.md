@@ -64,6 +64,21 @@ This project is built with:
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
 
+## Production Launch
+
+This repository can be launched in two different ways:
+
+- Prototype mode: keep using the current Lovable project and its existing backend.
+- Production mode: create a new Supabase project you control, run this repo's migrations into it, then create a new Lovable project connected to that Supabase project from day one.
+
+For a real launch where you control the database, auth, backups, and billing, use production mode.
+
+See:
+
+- [Production cutover guide](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/docs/PRODUCTION_CUTOVER.md)
+- [Admin bootstrap SQL](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/supabase/sql/bootstrap_admin.sql)
+- [Supabase setup script](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/scripts/supabase_prod_setup.sh)
+
 ## Can I connect a custom domain to my Lovable project?
 
 Yes, you can!
