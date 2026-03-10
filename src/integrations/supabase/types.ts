@@ -998,6 +998,16 @@ export type Database = {
     }
     Functions: {
       admin_dashboard_metrics: { Args: never; Returns: Json }
+      admin_list_vendor_reputation_reviews: {
+        Args: {
+          issue_filter?: string
+          limit_rows?: number
+          offset_rows?: number
+          search_query?: string
+          visibility_filter?: string
+        }
+        Returns: Json
+      }
       admin_list_users: {
         Args: {
           limit_rows?: number
@@ -1018,6 +1028,11 @@ export type Database = {
       }
       admin_review_vendor_listing: {
         Args: { approve: boolean; listing_id: string; verify: boolean }
+        Returns: undefined
+      }
+      admin_reputation_review_metrics: { Args: never; Returns: Json }
+      admin_set_vendor_reputation_visibility: {
+        Args: { new_visibility: string; review_id: string }
         Returns: undefined
       }
       admin_set_user_role: {
