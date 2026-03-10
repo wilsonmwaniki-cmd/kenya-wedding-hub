@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle } from "lucide-react";
+import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
@@ -53,6 +53,34 @@ interface AdminVendorRow {
 
 type UserRoleFilter = "all" | AppRole;
 type VendorStatusFilter = "all" | "pending" | "approved";
+type ReputationIssueFilter = "all" | "flagged" | "clean";
+type ReputationVisibilityFilter = "all" | "private" | "planner_network" | "admin_only";
+
+interface AdminReputationMetrics {
+  total_reviews: number;
+  flagged_reviews: number;
+  planner_network_reviews: number;
+  admin_only_reviews: number;
+  private_reviews: number;
+}
+
+interface AdminReputationRow {
+  review_id: string;
+  created_at: string;
+  vendor_listing_id: string | null;
+  vendor_name: string;
+  vendor_category: string;
+  reviewer_user_id: string;
+  reviewer_name: string | null;
+  reviewer_email: string | null;
+  client_name: string | null;
+  overall_rating: number;
+  delivered_on_time: boolean | null;
+  would_hire_again: boolean;
+  issue_flags: string[];
+  visibility: ReputationVisibilityFilter;
+  private_notes: string | null;
+}
 
 const roleOptions: AppRole[] = ["couple", "planner", "vendor", "admin"];
 
@@ -69,14 +97,21 @@ export default function AdminPortal() {
   const [metrics, setMetrics] = useState<AdminDashboardMetrics | null>(null);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [vendors, setVendors] = useState<AdminVendorRow[]>([]);
+  const [reputationMetrics, setReputationMetrics] = useState<AdminReputationMetrics | null>(null);
+  const [reputationReviews, setReputationReviews] = useState<AdminReputationRow[]>([]);
   const [roleDrafts, setRoleDrafts] = useState<Record<string, AppRole>>({});
+  const [reviewVisibilityDrafts, setReviewVisibilityDrafts] = useState<Record<string, ReputationVisibilityFilter>>({});
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [savingVendorId, setSavingVendorId] = useState<string | null>(null);
+  const [savingReviewId, setSavingReviewId] = useState<string | null>(null);
 
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState<UserRoleFilter>("all");
   const [vendorSearch, setVendorSearch] = useState("");
   const [vendorStatusFilter, setVendorStatusFilter] = useState<VendorStatusFilter>("pending");
+  const [reputationSearch, setReputationSearch] = useState("");
+  const [reputationIssueFilter, setReputationIssueFilter] = useState<ReputationIssueFilter>("flagged");
+  const [reputationVisibilityFilter, setReputationVisibilityFilter] = useState<ReputationVisibilityFilter>("all");
 
   const loadMetrics = async () => {
     const { data, error } = await supabase.rpc("admin_dashboard_metrics" as any);
@@ -120,11 +155,42 @@ export default function AdminPortal() {
     setVendors((data ?? []) as unknown as AdminVendorRow[]);
   };
 
+  const loadReputationMetrics = async () => {
+    const { data, error } = await supabase.rpc("admin_reputation_review_metrics" as any);
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    setReputationMetrics((row ?? null) as unknown as AdminReputationMetrics | null);
+  };
+
+  const loadReputationReviews = async () => {
+    const { data, error } = await supabase.rpc("admin_list_vendor_reputation_reviews" as any, {
+      search_query: reputationSearch.trim() || null,
+      issue_filter: reputationIssueFilter,
+      visibility_filter: reputationVisibilityFilter,
+      limit_rows: 100,
+      offset_rows: 0,
+    });
+    if (error) throw error;
+
+    const rows = ((data ?? []) as unknown as AdminReputationRow[]).map((row) => ({
+      ...row,
+      issue_flags: row.issue_flags ?? [],
+    }));
+    setReputationReviews(rows);
+    setReviewVisibilityDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) {
+        if (!next[row.review_id]) next[row.review_id] = row.visibility;
+      }
+      return next;
+    });
+  };
+
   const loadAll = async (showFullLoader = false) => {
     if (showFullLoader) setLoading(true);
     else setRefreshing(true);
     try {
-      await Promise.all([loadMetrics(), loadUsers(), loadVendors()]);
+      await Promise.all([loadMetrics(), loadUsers(), loadVendors(), loadReputationMetrics(), loadReputationReviews()]);
     } catch (error: any) {
       toast({
         title: "Failed to load admin portal",
@@ -165,13 +231,26 @@ export default function AdminPortal() {
     }
   };
 
+  const applyReputationFilters = async () => {
+    try {
+      await loadReputationReviews();
+    } catch (error: any) {
+      toast({
+        title: "Failed to load reputation reviews",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const healthSummary = useMemo(() => {
     const missingNames = users.filter((item) => !item.full_name?.trim() && !item.company_name?.trim()).length;
     const pendingVendorCount = vendors.filter((item) => !item.is_approved).length;
     const noLocationCount = vendors.filter((item) => !item.location?.trim()).length;
+    const flaggedReviews = reputationMetrics?.flagged_reviews ?? 0;
 
-    return { missingNames, pendingVendorCount, noLocationCount };
-  }, [users, vendors]);
+    return { missingNames, pendingVendorCount, noLocationCount, flaggedReviews };
+  }, [users, vendors, reputationMetrics]);
 
   const handleRoleUpdate = async (targetUserId: string) => {
     const target = users.find((item) => item.user_id === targetUserId);
@@ -239,6 +318,36 @@ export default function AdminPortal() {
     }
   };
 
+  const handleReputationVisibilityUpdate = async (reviewId: string) => {
+    const nextVisibility = reviewVisibilityDrafts[reviewId];
+    const target = reputationReviews.find((item) => item.review_id === reviewId);
+    if (!target || !nextVisibility || target.visibility === nextVisibility) return;
+
+    setSavingReviewId(reviewId);
+    try {
+      const { error } = await supabase.rpc("admin_set_vendor_reputation_visibility" as any, {
+        review_id: reviewId,
+        new_visibility: nextVisibility,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Review visibility updated",
+        description: `${target.vendor_name} scorecard is now ${nextVisibility.replace("_", " ")}.`,
+      });
+
+      await Promise.all([loadReputationReviews(), loadReputationMetrics()]);
+    } catch (error: any) {
+      toast({
+        title: "Visibility update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingReviewId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -297,6 +406,15 @@ export default function AdminPortal() {
             <CheckSquare className="h-5 w-5 text-primary" />
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">Flagged Scorecards</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <p className="text-2xl font-semibold">{countLabel(reputationMetrics?.flagged_reviews)}</p>
+            <MessageSquareWarning className="h-5 w-5 text-primary" />
+          </CardContent>
+        </Card>
       </div>
 
       <Tabs defaultValue="overview" className="space-y-4">
@@ -304,6 +422,7 @@ export default function AdminPortal() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="users">Users & Roles</TabsTrigger>
           <TabsTrigger value="vendors">Vendor Moderation</TabsTrigger>
+          <TabsTrigger value="reputation">Reputation Oversight</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -351,6 +470,12 @@ export default function AdminPortal() {
                   <span>Listings without location</span>
                   <Badge variant={healthSummary.noLocationCount > 0 ? "outline" : "secondary"}>
                     {healthSummary.noLocationCount}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Flagged reputation reviews</span>
+                  <Badge variant={healthSummary.flaggedReviews > 0 ? "destructive" : "secondary"}>
+                    {healthSummary.flaggedReviews}
                   </Badge>
                 </div>
               </CardContent>
@@ -590,6 +715,198 @@ export default function AdminPortal() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="reputation" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Total Scorecards</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(reputationMetrics?.total_reviews)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Flagged</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(reputationMetrics?.flagged_reviews)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Planner Network</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(reputationMetrics?.planner_network_reviews)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Admin Only</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(reputationMetrics?.admin_only_reviews)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Private</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(reputationMetrics?.private_reviews)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="space-y-3">
+              <CardTitle className="text-base">Flagged Review Queue</CardTitle>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={reputationSearch}
+                  onChange={(e) => setReputationSearch(e.target.value)}
+                  placeholder="Search vendor, reviewer, client, or email"
+                />
+                <Select value={reputationIssueFilter} onValueChange={(value) => setReputationIssueFilter(value as ReputationIssueFilter)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="flagged">Flagged only</SelectItem>
+                    <SelectItem value="clean">Clean only</SelectItem>
+                    <SelectItem value="all">All reviews</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={reputationVisibilityFilter} onValueChange={(value) => setReputationVisibilityFilter(value as ReputationVisibilityFilter)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All visibility</SelectItem>
+                    <SelectItem value="planner_network">Planner network</SelectItem>
+                    <SelectItem value="admin_only">Admin only</SelectItem>
+                    <SelectItem value="private">Private</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={() => applyReputationFilters()}>
+                  Apply
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Reviewer</TableHead>
+                    <TableHead>Issues</TableHead>
+                    <TableHead>Visibility</TableHead>
+                    <TableHead>Notes</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reputationReviews.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No reputation reviews matched your filters.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {reputationReviews.map((item) => {
+                    const nextVisibility = reviewVisibilityDrafts[item.review_id] ?? item.visibility;
+                    const visibilityChanged = nextVisibility !== item.visibility;
+
+                    return (
+                      <TableRow key={item.review_id}>
+                        <TableCell>
+                          <p className="font-medium">{item.vendor_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.vendor_category}
+                            {item.client_name ? ` • ${item.client_name}` : ""}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(item.created_at).toLocaleDateString()}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm">{item.reviewer_name || "Unknown reviewer"}</p>
+                          <p className="text-xs text-muted-foreground">{item.reviewer_email || item.reviewer_user_id}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.overall_rating}/5 overall • {item.would_hire_again ? "would hire again" : "would not hire again"}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          {item.issue_flags.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {item.issue_flags.map((flag) => (
+                                <Badge key={flag} variant="destructive" className="text-[10px]">
+                                  {flag.replace(/_/g, " ")}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <Badge variant="secondary">No flags</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={nextVisibility}
+                            onValueChange={(value) =>
+                              setReviewVisibilityDrafts((prev) => ({
+                                ...prev,
+                                [item.review_id]: value as ReputationVisibilityFilter,
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-[170px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="planner_network">Planner network</SelectItem>
+                              <SelectItem value="admin_only">Admin only</SelectItem>
+                              <SelectItem value="private">Private</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="max-w-[280px] text-sm text-muted-foreground">
+                          {item.private_notes?.trim() ? item.private_notes : "No private notes"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant={visibilityChanged ? "default" : "outline"}
+                            disabled={!visibilityChanged || savingReviewId === item.review_id}
+                            onClick={() => handleReputationVisibilityUpdate(item.review_id)}
+                          >
+                            {savingReviewId === item.review_id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                            Save
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {reputationMetrics?.flagged_reviews ? (
+            <Card className="border-amber-300 bg-amber-50">
+              <CardContent className="py-4">
+                <p className="flex items-center gap-2 text-sm text-amber-900">
+                  <AlertTriangle className="h-4 w-4" />
+                  Flagged scorecards should be reviewed for visibility. Keep credible warnings in the planner network; limit sensitive or unverifiable notes to admin-only.
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
         </TabsContent>
       </Tabs>
     </div>
