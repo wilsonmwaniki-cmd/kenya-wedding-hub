@@ -40,6 +40,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const getFallbackFullName = (authUser: User) => {
+    const fullName = authUser.user_metadata?.full_name;
+    const name = authUser.user_metadata?.name;
+    const givenName = authUser.user_metadata?.given_name;
+    const familyName = authUser.user_metadata?.family_name;
+    const combinedName = [givenName, familyName].filter(Boolean).join(' ').trim();
+
+    return fullName || name || combinedName || authUser.email?.split('@')[0] || '';
+  };
+
+  const getFallbackRole = async (authUser: User): Promise<AppRole> => {
+    const requestedRole = authUser.user_metadata?.role;
+    if (requestedRole === 'admin' || requestedRole === 'vendor' || requestedRole === 'planner' || requestedRole === 'couple') {
+      return requestedRole;
+    }
+
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', authUser.id);
+
+    if (error || !data?.length) return 'couple';
+
+    const rolePriority: Record<AppRole, number> = {
+      admin: 4,
+      vendor: 3,
+      planner: 2,
+      couple: 1,
+    };
+
+    return [...data]
+      .sort((a, b) => rolePriority[b.role as AppRole] - rolePriority[a.role as AppRole])[0]
+      .role as AppRole;
+  };
+
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -62,13 +97,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data as Profile;
   };
 
+  const ensureProfile = async (authUser: User) => {
+    const existingProfile = await fetchProfile(authUser.id);
+    if (existingProfile) return existingProfile;
+
+    const role = await getFallbackRole(authUser);
+    const fullName = getFallbackFullName(authUser);
+
+    const { error } = await supabase
+      .from('profiles')
+      .insert({
+        user_id: authUser.id,
+        full_name: fullName,
+        role,
+      });
+
+    if (error && error.code !== '23505') {
+      console.error('Failed to recover missing profile:', error.message);
+      setProfile(null);
+      return null;
+    }
+
+    return await fetchProfile(authUser.id);
+  };
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          await fetchProfile(session.user.id);
+          await ensureProfile(session.user);
         } else {
           setProfile(null);
         }
@@ -80,7 +139,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        await fetchProfile(session.user.id);
+        await ensureProfile(session.user);
+      } else {
+        setProfile(null);
       }
       setLoading(false);
     });
