@@ -21,7 +21,7 @@ export interface PublicBudgetEstimateInput {
 export async function getPublicBudgetEstimate(
   input: PublicBudgetEstimateInput,
 ): Promise<PublicBudgetEstimateRow[]> {
-  const { data, error } = await supabase.rpc('get_public_budget_estimate', {
+  const { data, error } = await (supabase.rpc as any)('get_public_budget_estimate', {
     guest_count_input: input.guestCount,
     wedding_style_input: input.weddingStyle,
     venue_tier_input: input.venueTier,
