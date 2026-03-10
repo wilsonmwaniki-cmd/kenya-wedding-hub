@@ -362,7 +362,7 @@ export default function Vendors() {
 
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
 
-    const { error } = await supabase.from('vendors').insert(insert);
+    const { error } = await supabase.from('vendors').insert(insert as any);
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
       return;
