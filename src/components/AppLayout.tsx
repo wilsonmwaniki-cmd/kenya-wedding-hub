@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
 const coupleNavItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
@@ -24,8 +24,8 @@ const coupleNavItems = [
 ];
 
 const plannerNavItems = [
-  { path: '/clients', label: 'My Clients', icon: Briefcase },
-  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/clients', label: 'My Weddings', icon: Briefcase },
+  { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },

@@ -18,4 +18,16 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "react-core": ["react", "react-dom", "react-router-dom"],
+          "supabase-data": ["@supabase/supabase-js", "@tanstack/react-query"],
+          "motion-icons": ["framer-motion", "lucide-react"],
+          charts: ["recharts"],
+        },
+      },
+    },
+  },
 }));
