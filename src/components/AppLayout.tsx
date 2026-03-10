@@ -184,7 +184,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Button>
           <div className="flex items-center gap-2">
             <Heart className="h-5 w-5 text-primary" fill="currentColor" />
-            <span className="font-display text-base font-semibold">WeddingPlan</span>
+            <span className="font-display text-base font-semibold">The Wedding Control Room</span>
           </div>
           {isPlanner && selectedClient && (
             <Badge variant="outline" className="ml-auto text-xs truncate max-w-[120px]">

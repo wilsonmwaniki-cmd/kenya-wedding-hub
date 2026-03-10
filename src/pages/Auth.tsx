@@ -83,7 +83,7 @@ export default function Auth() {
         <CardHeader className="text-center space-y-3">
           <div className="mx-auto flex items-center gap-2">
             <Heart className="h-7 w-7 text-primary" fill="currentColor" />
-            <span className="font-display text-2xl font-bold text-foreground">WeddingPlan</span>
+            <span className="font-display text-2xl font-bold text-foreground">The Wedding Control Room</span>
           </div>
           <CardTitle className="font-display text-xl">{isForgot ? 'Forgot Password' : isSignUp ? 'Create Account' : 'Welcome Back'}</CardTitle>
           <CardDescription>
