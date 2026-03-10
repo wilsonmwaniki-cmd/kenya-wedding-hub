@@ -178,7 +178,7 @@ export default function Budget() {
 
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
 
-    const { error } = await supabase.from('budget_categories').insert(insert as any);
+    const { error } = await supabase.from('budget_categories').insert(insert);
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
       return;

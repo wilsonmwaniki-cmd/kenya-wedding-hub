@@ -1,9 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { Tables, TablesInsert, TablesUpdate } from '@/integrations/supabase/types';
 
-// These types reference tables not yet in generated types - using any until DB schema syncs
-export type VendorPriceObservation = any;
-export type VendorPriceObservationInsert = any;
-export type VendorPriceObservationUpdate = any;
+export type VendorPriceObservation = Tables<'vendor_price_observations'>;
+export type VendorPriceObservationInsert = TablesInsert<'vendor_price_observations'>;
+export type VendorPriceObservationUpdate = TablesUpdate<'vendor_price_observations'>;
 
 export interface VendorPriceBenchmark {
   sample_size: number;
@@ -56,7 +56,7 @@ export async function listVendorPriceObservations({
   category,
   limit = 100,
 }: ListVendorPriceObservationsFilters = {}): Promise<VendorPriceObservation[]> {
-  let query = (supabase as any)
+  let query = supabase
     .from('vendor_price_observations')
     .select('*')
     .order('created_at', { ascending: false })
@@ -72,7 +72,7 @@ export async function listVendorPriceObservations({
 }
 
 export async function createVendorPriceObservation(input: RecordVendorPriceObservationInput): Promise<string> {
-  const { data, error } = await (supabase.rpc as any)('record_vendor_price_observation', {
+  const { data, error } = await supabase.rpc('record_vendor_price_observation', {
     observation_amount: input.amount,
     observation_category: input.category,
     vendor_name: input.vendorName,
@@ -90,14 +90,14 @@ export async function createVendorPriceObservation(input: RecordVendorPriceObser
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 }
 
 export async function updateVendorPriceObservation(
   id: string,
   updates: VendorPriceObservationUpdate,
 ): Promise<VendorPriceObservation> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('vendor_price_observations')
     .update(updates)
     .eq('id', id)
@@ -109,7 +109,7 @@ export async function updateVendorPriceObservation(
 }
 
 export async function deleteVendorPriceObservation(id: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('vendor_price_observations')
     .delete()
     .eq('id', id);
@@ -120,7 +120,7 @@ export async function deleteVendorPriceObservation(id: string): Promise<void> {
 export async function getVendorPriceBenchmark(
   filters: VendorPriceBenchmarkFilters,
 ): Promise<VendorPriceBenchmark> {
-  const { data, error } = await (supabase.rpc as any)('get_vendor_price_benchmark', {
+  const { data, error } = await supabase.rpc('get_vendor_price_benchmark', {
     category_filter: filters.category ?? null,
     venue_filter: filters.venue ?? null,
     county_filter: filters.county ?? null,

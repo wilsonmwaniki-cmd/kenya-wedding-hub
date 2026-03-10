@@ -1,9 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { Tables, TablesInsert, TablesUpdate } from '@/integrations/supabase/types';
 
-// These types reference tables not yet in generated types - using any until DB schema syncs
-export type VendorReputationReview = any;
-export type VendorReputationReviewInsert = any;
-export type VendorReputationReviewUpdate = any;
+export type VendorReputationReview = Tables<'vendor_reputation_reviews'>;
+export type VendorReputationReviewInsert = TablesInsert<'vendor_reputation_reviews'>;
+export type VendorReputationReviewUpdate = TablesUpdate<'vendor_reputation_reviews'>;
 
 export type VendorReputationVisibility = 'private' | 'planner_network' | 'admin_only';
 
@@ -77,7 +77,7 @@ export async function listVendorReputationReviews({
   visibility,
   limit = 100,
 }: ListVendorReputationReviewsFilters = {}): Promise<VendorReputationReview[]> {
-  let query = (supabase as any)
+  let query = supabase
     .from('vendor_reputation_reviews')
     .select('*')
     .order('created_at', { ascending: false })
@@ -94,7 +94,7 @@ export async function listVendorReputationReviews({
 }
 
 export async function createVendorReputationReview(input: RecordVendorReputationReviewInput): Promise<string> {
-  const { data, error } = await (supabase.rpc as any)('record_vendor_reputation_review', {
+  const { data, error } = await supabase.rpc('record_vendor_reputation_review', {
     overall_rating_input: input.overallRating,
     reliability_input: input.reliabilityRating,
     communication_input: input.communicationRating,
@@ -116,14 +116,14 @@ export async function createVendorReputationReview(input: RecordVendorReputation
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 }
 
 export async function updateVendorReputationReview(
   id: string,
   updates: VendorReputationReviewUpdate,
 ): Promise<VendorReputationReview> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('vendor_reputation_reviews')
     .update(updates)
     .eq('id', id)
@@ -135,7 +135,7 @@ export async function updateVendorReputationReview(
 }
 
 export async function deleteVendorReputationReview(id: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('vendor_reputation_reviews')
     .delete()
     .eq('id', id);
@@ -146,7 +146,7 @@ export async function deleteVendorReputationReview(id: string): Promise<void> {
 export async function getVendorReputationBenchmark(
   filters: VendorReputationBenchmarkFilters,
 ): Promise<VendorReputationBenchmark> {
-  const { data, error } = await (supabase.rpc as any)('get_vendor_reputation_benchmark', {
+  const { data, error } = await supabase.rpc('get_vendor_reputation_benchmark', {
     vendor_listing_filter: filters.vendorListingId ?? null,
     category_filter: filters.category ?? null,
     min_sample_size: filters.minSampleSize ?? 3,
