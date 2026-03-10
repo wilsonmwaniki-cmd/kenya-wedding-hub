@@ -121,32 +121,76 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return await fetchProfile(authUser.id);
   };
 
+  const syncAuthState = async (nextSession: Session | null) => {
+    setSession(nextSession);
+    setUser(nextSession?.user ?? null);
+
+    if (nextSession?.user) {
+      await ensureProfile(nextSession.user);
+      return;
+    }
+
+    setProfile(null);
+  };
+
+  const hydrateSessionFromHash = async () => {
+    if (typeof window === 'undefined') return;
+    if (!window.location.hash.includes('access_token=')) return;
+
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const accessToken = hashParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token');
+
+    if (!accessToken || !refreshToken) return;
+
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      console.error('Failed to hydrate auth session from callback hash:', error.message);
+      return;
+    }
+
+    window.history.replaceState(
+      {},
+      document.title,
+      `${window.location.pathname}${window.location.search}`,
+    );
+  };
+
   useEffect(() => {
+    let active = true;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await ensureProfile(session.user);
-        } else {
-          setProfile(null);
+        try {
+          if (!active) return;
+          await syncAuthState(session);
+        } finally {
+          if (active) setLoading(false);
         }
-        setLoading(false);
       }
     );
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await ensureProfile(session.user);
-      } else {
-        setProfile(null);
+    const initializeAuth = async () => {
+      try {
+        await hydrateSessionFromHash();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!active) return;
+        await syncAuthState(session);
+      } finally {
+        if (active) setLoading(false);
       }
-      setLoading(false);
-    });
+    };
 
-    return () => subscription.unsubscribe();
+    void initializeAuth();
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string, role: SignupRole = 'couple') => {
