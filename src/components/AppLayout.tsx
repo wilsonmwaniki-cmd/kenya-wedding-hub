@@ -102,7 +102,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="flex h-full flex-col">
           <div className="flex items-center gap-2 border-b border-sidebar-border px-6 py-5">
             <Heart className="h-6 w-6 text-sidebar-primary" fill="currentColor" />
-            <span className="font-display text-lg font-semibold text-sidebar-foreground">WeddingPlan</span>
+            <span className="font-display text-lg font-semibold text-sidebar-foreground">The Wedding Control Room</span>
             <button onClick={() => setSidebarOpen(false)} className="ml-auto lg:hidden text-sidebar-foreground">
               <X className="h-5 w-5" />
             </button>
