@@ -9,7 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp } from 'lucide-react';
+import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -52,6 +53,8 @@ export default function VendorSettings() {
     social_twitter: '',
   });
   const [newService, setNewService] = useState('');
+  const [reputationLoading, setReputationLoading] = useState(false);
+  const [reputationOverview, setReputationOverview] = useState<VendorReputationOverview | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -82,6 +85,31 @@ export default function VendorSettings() {
     };
     load();
   }, [user]);
+
+  useEffect(() => {
+    if (!listing?.id) {
+      setReputationOverview(null);
+      return;
+    }
+
+    let active = true;
+    const loadReputationOverview = async () => {
+      setReputationLoading(true);
+      try {
+        const data = await getVendorReputationOverview(listing.id, 3);
+        if (active) setReputationOverview(data);
+      } catch {
+        if (active) setReputationOverview(null);
+      } finally {
+        if (active) setReputationLoading(false);
+      }
+    };
+
+    void loadReputationOverview();
+    return () => {
+      active = false;
+    };
+  }, [listing?.id]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,6 +200,81 @@ export default function VendorSettings() {
                 </div>
               </>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {listing && (
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="font-display flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              Vendor Trust Overview
+            </CardTitle>
+            <CardDescription>
+              Planner reputation data from structured post-event scorecards. Only aggregate, threshold-safe data is shown here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {reputationLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading trust overview
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Planner Score</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {reputationOverview?.benchmark_visible && reputationOverview.average_overall_rating != null
+                      ? `${reputationOverview.average_overall_rating.toFixed(1)}/5`
+                      : 'Locked'}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {reputationOverview?.sample_size ?? 0} scorecards captured
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Hire Again</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {reputationOverview?.benchmark_visible && reputationOverview.hire_again_rate != null
+                      ? `${Math.round(reputationOverview.hire_again_rate * 100)}%`
+                      : 'Locked'}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Share of planners who would book you again</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">On-Time Rate</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {reputationOverview?.benchmark_visible && reputationOverview.on_time_rate != null
+                      ? `${Math.round(reputationOverview.on_time_rate * 100)}%`
+                      : 'Locked'}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Based on scorecards that rated delivery timing</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Issue Rate</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {reputationOverview?.benchmark_visible && reputationOverview.flagged_review_count != null
+                      ? `${reputationOverview.flagged_review_count}`
+                      : 'Locked'}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Scorecards with flagged delivery or coordination issues</p>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-foreground">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                Market position signal
+              </div>
+              <p className="mt-1">
+                {reputationOverview?.benchmark_visible
+                  ? 'Your planner trust metrics are visible because the minimum review threshold has been met.'
+                  : 'Trust metrics unlock after at least 3 planner scorecards. Encourage excellent execution and repeat planner relationships to strengthen this score.'}
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -35,6 +35,21 @@ export interface VendorReputationBenchmark {
   last_review_at: string | null;
 }
 
+export interface VendorReputationOverview {
+  sample_size: number;
+  benchmark_visible: boolean;
+  average_overall_rating: number | null;
+  average_reliability_rating: number | null;
+  average_communication_rating: number | null;
+  average_quality_rating: number | null;
+  average_punctuality_rating: number | null;
+  average_value_rating: number | null;
+  hire_again_rate: number | null;
+  on_time_rate: number | null;
+  flagged_review_count: number | null;
+  last_review_at: string | null;
+}
+
 export interface VendorReputationBenchmarkFilters {
   vendorListingId?: string | null;
   category?: string | null;
@@ -168,6 +183,34 @@ export async function getVendorReputationBenchmark(
     on_time_rate: row?.on_time_rate ?? null,
     flagged_review_count: row?.flagged_review_count ?? null,
     vendor_count: row?.vendor_count ?? 0,
+    last_review_at: row?.last_review_at ?? null,
+  };
+}
+
+export async function getVendorReputationOverview(
+  listingId: string,
+  minSampleSize = 3,
+): Promise<VendorReputationOverview> {
+  const { data, error } = await supabase.rpc('get_vendor_reputation_overview', {
+    listing_id_input: listingId,
+    min_sample_size: minSampleSize,
+  });
+
+  if (error) throw error;
+
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    sample_size: row?.sample_size ?? 0,
+    benchmark_visible: row?.benchmark_visible ?? false,
+    average_overall_rating: row?.average_overall_rating ?? null,
+    average_reliability_rating: row?.average_reliability_rating ?? null,
+    average_communication_rating: row?.average_communication_rating ?? null,
+    average_quality_rating: row?.average_quality_rating ?? null,
+    average_punctuality_rating: row?.average_punctuality_rating ?? null,
+    average_value_rating: row?.average_value_rating ?? null,
+    hire_again_rate: row?.hire_again_rate ?? null,
+    on_time_rate: row?.on_time_rate ?? null,
+    flagged_review_count: row?.flagged_review_count ?? null,
     last_review_at: row?.last_review_at ?? null,
   };
 }

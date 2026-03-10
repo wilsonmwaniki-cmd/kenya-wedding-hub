@@ -1083,6 +1083,26 @@ export type Database = {
           vendor_count: number
         }[]
       }
+      get_vendor_reputation_overview: {
+        Args: {
+          listing_id_input: string
+          min_sample_size?: number | null
+        }
+        Returns: {
+          average_communication_rating: number | null
+          average_overall_rating: number | null
+          average_punctuality_rating: number | null
+          average_quality_rating: number | null
+          average_reliability_rating: number | null
+          average_value_rating: number | null
+          benchmark_visible: boolean
+          flagged_review_count: number | null
+          hire_again_rate: number | null
+          last_review_at: string | null
+          on_time_rate: number | null
+          sample_size: number
+        }[]
+      }
       get_public_budget_estimate: {
         Args: {
           county_input?: string | null

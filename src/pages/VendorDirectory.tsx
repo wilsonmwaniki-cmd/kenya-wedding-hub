@@ -11,6 +11,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Heart, Search, Loader2, Store, ArrowLeft, CheckCircle2, MapPin, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
 import VendorInterestButton from '@/components/VendorInterestButton';
+import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 
 const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -29,13 +30,15 @@ interface VendorListing {
 }
 
 export default function VendorDirectory() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [vendors, setVendors] = useState<VendorListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [requestStatuses, setRequestStatuses] = useState<Record<string, string>>({});
   const [vendorRatings, setVendorRatings] = useState<Record<string, { avg: number; count: number }>>({});
+  const [trustLoading, setTrustLoading] = useState(false);
+  const [vendorTrust, setVendorTrust] = useState<Record<string, VendorReputationOverview>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -69,6 +72,40 @@ export default function VendorDirectory() {
     load();
   }, []);
 
+  useEffect(() => {
+    const canSeeTrust = profile?.role === 'planner' || profile?.role === 'admin';
+    if (!canSeeTrust || vendors.length === 0) {
+      setVendorTrust({});
+      return;
+    }
+
+    let active = true;
+    const loadTrust = async () => {
+      setTrustLoading(true);
+      try {
+        const results = await Promise.all(
+          vendors.map(async (vendor) => [
+            vendor.id,
+            await getVendorReputationOverview(vendor.id, 3),
+          ] as const),
+        );
+
+        if (!active) return;
+        setVendorTrust(Object.fromEntries(results));
+      } catch (error) {
+        if (!active) return;
+        setVendorTrust({});
+      } finally {
+        if (active) setTrustLoading(false);
+      }
+    };
+
+    void loadTrust();
+    return () => {
+      active = false;
+    };
+  }, [vendors, profile?.role]);
+
   // Load existing request statuses for logged-in user
   useEffect(() => {
     if (!user) return;
@@ -97,6 +134,8 @@ export default function VendorDirectory() {
       v.services?.some((s) => s.toLowerCase().includes(q))
     );
   });
+
+  const showPlannerTrust = profile?.role === 'planner' || profile?.role === 'admin';
 
   return (
     <div className="min-h-screen bg-background">
@@ -162,6 +201,16 @@ export default function VendorDirectory() {
             </SelectContent>
           </Select>
         </motion.div>
+        {showPlannerTrust && (
+          <motion.p
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground"
+          >
+            Planner trust data is visible. Private scorecards stay hidden until at least 3 reviews exist.
+          </motion.p>
+        )}
       </section>
 
       <section className="mx-auto max-w-5xl px-6 py-12">
@@ -229,6 +278,37 @@ export default function VendorDirectory() {
                         </div>
                         <span className="text-xs font-semibold text-foreground">{vendorRatings[v.id].avg.toFixed(1)}</span>
                         <span className="text-xs text-muted-foreground">({vendorRatings[v.id].count})</span>
+                      </div>
+                    )}
+                    {showPlannerTrust && (
+                      <div className="mt-3 w-full rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-left">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Planner trust</span>
+                          <Badge variant="outline" className="text-[10px]">
+                            {vendorTrust[v.id]?.sample_size ?? 0} reviews
+                          </Badge>
+                        </div>
+                        {trustLoading && !vendorTrust[v.id] ? (
+                          <p className="mt-2 text-xs text-muted-foreground">Loading trust signal…</p>
+                        ) : vendorTrust[v.id]?.benchmark_visible && vendorTrust[v.id]?.average_overall_rating != null ? (
+                          <div className="mt-2 space-y-1">
+                            <p className="text-sm font-semibold text-foreground">
+                              {vendorTrust[v.id].average_overall_rating.toFixed(1)}/5 planner score
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {vendorTrust[v.id].hire_again_rate != null ? `${Math.round(vendorTrust[v.id].hire_again_rate * 100)}% would hire again` : 'Hire-again rate pending'}
+                              {vendorTrust[v.id].on_time_rate != null ? ` · ${Math.round(vendorTrust[v.id].on_time_rate * 100)}% on time` : ''}
+                            </p>
+                          </div>
+                        ) : vendorTrust[v.id]?.sample_size ? (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {vendorTrust[v.id].sample_size} scorecards captured. Benchmark unlocks at 3 reviews.
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            No planner trust scorecards yet for this vendor.
+                          </p>
+                        )}
                       </div>
                     )}
                     {v.is_verified && (
