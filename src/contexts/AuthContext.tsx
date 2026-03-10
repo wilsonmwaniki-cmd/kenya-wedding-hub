@@ -75,6 +75,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .role as AppRole;
   };
 
+  const buildFallbackProfile = (authUser: User, role: AppRole): Profile => ({
+    id: authUser.id,
+    user_id: authUser.id,
+    full_name: getFallbackFullName(authUser) || null,
+    partner_name: null,
+    wedding_date: null,
+    wedding_location: null,
+    role,
+    company_name: null,
+    company_email: authUser.email ?? null,
+    company_phone: null,
+    company_website: null,
+    bio: null,
+    specialties: null,
+    avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null,
+  });
+
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -114,11 +131,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error && error.code !== '23505') {
       console.error('Failed to recover missing profile:', error.message);
-      setProfile(null);
-      return null;
+      const fallbackProfile = buildFallbackProfile(authUser, role);
+      setProfile(fallbackProfile);
+      return fallbackProfile;
     }
 
-    return await fetchProfile(authUser.id);
+    const recoveredProfile = await fetchProfile(authUser.id);
+    if (recoveredProfile) return recoveredProfile;
+
+    const fallbackProfile = buildFallbackProfile(authUser, role);
+    setProfile(fallbackProfile);
+    return fallbackProfile;
   };
 
   const syncAuthState = async (nextSession: Session | null) => {
