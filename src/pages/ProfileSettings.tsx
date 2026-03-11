@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,14 +8,16 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Plus, Copy, ExternalLink } from 'lucide-react';
+import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyhole, AlertTriangle } from 'lucide-react';
 import AvatarUpload from '@/components/AvatarUpload';
+import { plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
 
 export default function ProfileSettings() {
   const { profile, updateProfile } = useAuth();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [newSpecialty, setNewSpecialty] = useState('');
+  const [requestingVerification, setRequestingVerification] = useState(false);
 
   const isPlanner = profile?.role === 'planner';
   const isVendor = profile?.role === 'vendor';
@@ -95,6 +98,23 @@ export default function ProfileSettings() {
     toast({ title: 'Link copied!', description: 'Share this link with potential clients.' });
   };
 
+  const handleRequestPlannerVerification = async () => {
+    setRequestingVerification(true);
+    try {
+      const { error } = await supabase.rpc('request_planner_verification' as any);
+      if (error) throw error;
+      toast({ title: 'Verification requested', description: 'Your planner verification request has been sent to admin.' });
+      window.location.reload();
+    } catch (err: any) {
+      toast({ title: 'Verification request failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setRequestingVerification(false);
+    }
+  };
+
+  const plannerSubscriptionActive = plannerHasActiveSubscription(profile);
+  const plannerFullAccess = plannerHasFullAccess(profile);
+
   return (
     <div className="space-y-6 max-w-xl">
       <div>
@@ -115,6 +135,64 @@ export default function ProfileSettings() {
             <Button type="button" variant="outline" size="sm" onClick={copyProfileLink}>
               <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Link
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {isPlanner && profile && (
+        <Card className={plannerFullAccess ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
+          <CardHeader>
+            <CardTitle className="font-display flex items-center gap-2">
+              {plannerFullAccess ? <ShieldCheck className="h-5 w-5 text-primary" /> : <LockKeyhole className="h-5 w-5 text-primary" />}
+              Planner Access
+            </CardTitle>
+            <CardDescription>
+              Full planner access unlocks only after active subscription and verification.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={plannerSubscriptionActive ? 'secondary' : 'outline'}>
+                <CreditCard className="mr-1 h-3 w-3" />
+                {profile.planner_subscription_status}
+              </Badge>
+              <Badge variant={profile.planner_verified ? 'secondary' : 'outline'}>
+                <ShieldCheck className="mr-1 h-3 w-3" />
+                {profile.planner_verified ? 'Verified' : profile.planner_verification_requested ? 'Verification requested' : 'Unverified'}
+              </Badge>
+            </div>
+
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Current access status</p>
+              <p className="mt-1">{plannerAccessMessage(profile)}</p>
+              {profile.planner_subscription_expires_at && (
+                <p className="mt-1 text-xs">
+                  Subscription expiry: {new Date(profile.planner_subscription_expires_at).toLocaleDateString()}
+                </p>
+              )}
+              {profile.planner_verification_requested_at && !profile.planner_verified && (
+                <p className="mt-1 text-xs">
+                  Verification requested on {new Date(profile.planner_verification_requested_at).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                onClick={handleRequestPlannerVerification}
+                disabled={!plannerSubscriptionActive || profile.planner_verified || profile.planner_verification_requested || requestingVerification}
+              >
+                {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                {profile.planner_verified ? 'Already Verified' : profile.planner_verification_requested ? 'Verification Requested' : 'Request Verification'}
+              </Button>
+              {!plannerSubscriptionActive && (
+                <div className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <AlertTriangle className="h-4 w-4" />
+                  Subscription must be activated by admin before verification can be requested.
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

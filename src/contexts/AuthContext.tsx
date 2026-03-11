@@ -18,6 +18,12 @@ interface Profile {
   bio: string | null;
   specialties: string[] | null;
   avatar_url: string | null;
+  planner_verified: boolean;
+  planner_verification_requested: boolean;
+  planner_verification_requested_at: string | null;
+  planner_subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
+  planner_subscription_started_at: string | null;
+  planner_subscription_expires_at: string | null;
 }
 
 interface AuthContextType {
@@ -90,6 +96,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     bio: null,
     specialties: null,
     avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null,
+    planner_verified: false,
+    planner_verification_requested: false,
+    planner_verification_requested_at: null,
+    planner_subscription_status: 'inactive',
+    planner_subscription_started_at: null,
+    planner_subscription_expires_at: null,
   });
 
   const fetchProfile = async (userId: string) => {

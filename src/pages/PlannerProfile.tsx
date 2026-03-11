@@ -41,12 +41,11 @@ export default function PlannerProfile() {
 
   useEffect(() => {
     if (!id) return;
-    const load = async () => {
+      const load = async () => {
       const { data, error } = await supabase
-        .from('profiles')
+        .from('public_planner_profiles')
         .select('id, user_id, full_name, company_name, company_email, company_phone, company_website, bio, specialties, avatar_url')
         .eq('id', id)
-        .eq('role', 'planner' as any)
         .single();
       if (error || !data) {
         setNotFound(true);
