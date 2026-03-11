@@ -427,7 +427,7 @@ export default function Landing() {
       <nav className="flex items-center justify-between px-6 py-4 lg:px-12">
         <div className="flex items-center gap-2">
           <Heart className="h-6 w-6 text-primary" fill="currentColor" />
-          <span className="font-display text-xl font-bold text-foreground">WeddingPlan Kenya</span>
+          <span className="font-display text-xl font-bold text-foreground">Centerpiece</span>
         </div>
         <div className="flex items-center gap-3">
           <Link to="/planners">
@@ -503,7 +503,7 @@ export default function Landing() {
       <footer className="border-t border-border px-6 py-8 text-center text-sm text-muted-foreground">
         <div className="flex items-center justify-center gap-2">
           <Heart className="h-4 w-4 text-primary" fill="currentColor" />
-          <span>WeddingPlan Kenya © {new Date().getFullYear()}</span>
+          <span>Centerpiece © {new Date().getFullYear()}</span>
         </div>
       </footer>
     </div>

@@ -226,7 +226,7 @@ export default function WeddingPortfolio() {
       <footer className="border-t border-border px-6 py-8 text-center text-sm text-muted-foreground">
         <div className="flex items-center justify-center gap-2">
           <Heart className="h-4 w-4 text-primary" fill="currentColor" />
-          <span>WeddingPlan Kenya © {new Date().getFullYear()}</span>
+          <span>Centerpiece © {new Date().getFullYear()}</span>
         </div>
       </footer>
     </div>
