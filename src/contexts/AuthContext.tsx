@@ -144,12 +144,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return fallbackProfile;
   };
 
-  const syncAuthState = async (nextSession: Session | null) => {
+  const syncAuthState = (nextSession: Session | null) => {
     setSession(nextSession);
     setUser(nextSession?.user ?? null);
 
     if (nextSession?.user) {
-      await ensureProfile(nextSession.user);
+      void ensureProfile(nextSession.user);
       return;
     }
 
@@ -183,6 +183,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const getSessionWithTimeout = async (timeoutMs = 2500): Promise<Session | null> => {
+    return await Promise.race([
+      supabase.auth.getSession().then(({ data: { session } }) => session),
+      new Promise<null>((resolve) => {
+        setTimeout(() => {
+          console.warn(`Auth session lookup timed out after ${timeoutMs}ms; continuing without blocking app startup.`);
+          resolve(null);
+        }, timeoutMs);
+      }),
+    ]);
+  };
+
   useEffect(() => {
     let active = true;
 
@@ -190,7 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (_event, session) => {
         try {
           if (!active) return;
-          await syncAuthState(session);
+          syncAuthState(session);
         } finally {
           if (active) setLoading(false);
         }
@@ -200,9 +212,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const initializeAuth = async () => {
       try {
         await hydrateSessionFromHash();
-        const { data: { session } } = await supabase.auth.getSession();
+        const session = await getSessionWithTimeout();
         if (!active) return;
-        await syncAuthState(session);
+        syncAuthState(session);
       } finally {
         if (active) setLoading(false);
       }
@@ -237,7 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
     if (error) throw error;
