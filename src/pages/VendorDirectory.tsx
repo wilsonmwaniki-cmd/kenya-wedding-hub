@@ -12,6 +12,7 @@ import { Heart, Search, Loader2, Store, ArrowLeft, CheckCircle2, MapPin, Star } 
 import { motion } from 'framer-motion';
 import VendorInterestButton from '@/components/VendorInterestButton';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
+import { vendorHasFullAccess } from '@/lib/vendorAccess';
 
 const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -24,6 +25,8 @@ interface VendorListing {
   location: string | null;
   services: string[] | null;
   is_verified: boolean;
+  subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
+  subscription_expires_at: string | null;
   phone: string | null;
   email: string | null;
   website: string | null;
@@ -45,7 +48,7 @@ export default function VendorDirectory() {
       const [listingsRes, ratingsRes] = await Promise.all([
         supabase
           .from('vendor_listings')
-          .select('id, business_name, category, description, logo_url, location, services, is_verified, phone, email, website')
+          .select('id, business_name, category, description, logo_url, location, services, is_verified, subscription_status, subscription_expires_at, phone, email, website')
           .eq('is_approved', true)
           .order('is_verified', { ascending: false }),
         supabase
@@ -317,7 +320,7 @@ export default function VendorDirectory() {
                       </span>
                     )}
                     {/* Interest button for logged-in couples/planners */}
-                    {user && (
+                    {user && vendorHasFullAccess(v) && (
                       <div className="mt-4">
                         <VendorInterestButton
                           vendorListingId={v.id}
@@ -326,6 +329,11 @@ export default function VendorDirectory() {
                           existingStatus={requestStatuses[v.id] || null}
                         />
                       </div>
+                    )}
+                    {user && !vendorHasFullAccess(v) && profile?.role !== 'vendor' && (
+                      <p className="mt-4 text-xs text-muted-foreground">
+                        Planner connections unlock after vendor verification and subscription.
+                      </p>
                     )}
                   </CardContent>
                 </Card>
