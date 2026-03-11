@@ -14,6 +14,7 @@ import type { AppRole } from "@/lib/roles";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Auth = lazy(() => import("./pages/Auth"));
+const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const PlannerDashboard = lazy(() => import("./pages/PlannerDashboard"));
 const Budget = lazy(() => import("./pages/Budget"));
@@ -76,6 +77,7 @@ const App = () => (
                 <Routes>
                   <Route path="/" element={<Landing />} />
                   <Route path="/auth" element={<Auth />} />
+                  <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
                   <Route path="/planners" element={<PlannerDirectory />} />
                   <Route path="/vendors-directory" element={<VendorDirectory />} />
