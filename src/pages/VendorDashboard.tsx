@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, Sparkles, X, Check } from 'lucide-react';
+import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, Sparkles, X, Check, LockKeyhole, ShieldCheck, CreditCard } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { vendorAccessMessage, vendorHasFullAccess } from '@/lib/vendorAccess';
 
 interface Booking {
   id: string;
@@ -30,6 +32,16 @@ interface ConnectionRequest {
   wedding_date: string | null;
 }
 
+interface VendorListingAccess {
+  id: string;
+  business_name: string;
+  is_approved: boolean;
+  is_verified: boolean;
+  verification_requested: boolean;
+  subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
+  subscription_expires_at: string | null;
+}
+
 export default function VendorDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -37,6 +49,7 @@ export default function VendorDashboard() {
   const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [listingId, setListingId] = useState<string | null>(null);
+  const [listing, setListing] = useState<VendorListingAccess | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,22 +58,26 @@ export default function VendorDashboard() {
       // Get vendor's listing ID
       const { data: listing } = await supabase
         .from('vendor_listings')
-        .select('id')
+        .select('id, business_name, is_approved, is_verified, verification_requested, subscription_status, subscription_expires_at')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (listing) {
+        setListing(listing as VendorListingAccess);
         setListingId(listing.id);
-        // Get all bookings referencing this listing
-        const { data } = await supabase
-          .from('vendors')
-          .select('id, name, category, status, price, phone, email, notes, created_at')
-          .eq('vendor_listing_id', listing.id)
-          .order('created_at', { ascending: false });
-        if (data) setBookings(data.map(d => ({ ...d, price: d.price ? Number(d.price) : null })));
+        if (vendorHasFullAccess(listing as VendorListingAccess)) {
+          const { data } = await supabase
+            .from('vendors')
+            .select('id, name, category, status, price, phone, email, notes, created_at')
+            .eq('vendor_listing_id', listing.id)
+            .order('created_at', { ascending: false });
+          if (data) setBookings(data.map(d => ({ ...d, price: d.price ? Number(d.price) : null })));
 
-        // Get connection requests
-        await loadConnectionRequests(listing.id);
+          await loadConnectionRequests(listing.id);
+        } else {
+          setBookings([]);
+          setConnectionRequests([]);
+        }
       }
       setLoading(false);
     };
@@ -156,6 +173,7 @@ export default function VendorDashboard() {
     .filter(b => b.status === 'booked' && b.price)
     .reduce((sum, b) => sum + (b.price || 0), 0);
   const pendingRequests = connectionRequests.filter(r => r.status === 'pending');
+  const fullAccess = vendorHasFullAccess(listing);
 
   if (loading) {
     return (
@@ -180,6 +198,41 @@ export default function VendorDashboard() {
         <h1 className="font-display text-3xl font-bold text-foreground">Dashboard</h1>
         <p className="text-muted-foreground">Track your bookings and client inquiries.</p>
       </div>
+
+      {listing && !fullAccess && (
+        <Card className="border-border/70 bg-muted/20">
+          <CardHeader>
+            <CardTitle className="font-display flex items-center gap-2">
+              <LockKeyhole className="h-5 w-5 text-primary" />
+              Full vendor dashboard is locked
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={listing.is_approved ? 'secondary' : 'outline'}>
+                {listing.is_approved ? 'Approved' : 'Approval pending'}
+              </Badge>
+              <Badge variant={listing.subscription_status === 'active' ? 'secondary' : 'outline'}>
+                <CreditCard className="mr-1 h-3 w-3" />
+                {listing.subscription_status}
+              </Badge>
+              <Badge variant={listing.is_verified ? 'secondary' : 'outline'}>
+                <ShieldCheck className="mr-1 h-3 w-3" />
+                {listing.is_verified ? 'Verified' : listing.verification_requested ? 'Verification requested' : 'Unverified'}
+              </Badge>
+            </div>
+
+            <p className="text-sm text-muted-foreground">{vendorAccessMessage(listing)}</p>
+            <p className="text-sm text-muted-foreground">
+              Planner connections, booking requests, and backend statistics only unlock after active subscription and verification.
+            </p>
+
+            <Button asChild>
+              <Link to="/vendor-settings">Open vendor settings</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-4">
@@ -231,8 +284,16 @@ export default function VendorDashboard() {
         </Card>
       </div>
 
+      {!listing && (
+        <Card className="shadow-card">
+          <CardContent className="py-10 text-center text-muted-foreground">
+            Set up your vendor listing first to unlock the vendor workflow.
+          </CardContent>
+        </Card>
+      )}
+
       {/* Connection Requests */}
-      {connectionRequests.length > 0 && (
+      {fullAccess && connectionRequests.length > 0 && (
         <Card className="shadow-card border-primary/20">
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
@@ -319,7 +380,9 @@ export default function VendorDashboard() {
             <div className="text-center py-12 space-y-2">
               <CalendarDays className="h-10 w-10 text-muted-foreground/40 mx-auto" />
               <p className="text-muted-foreground">
-                {listingId
+                {!fullAccess
+                  ? 'Bookings and planner requests unlock after subscription and verification.'
+                  : listingId
                   ? 'No bookings yet. When couples or planners connect with you, they\'ll appear here.'
                   : 'Set up your listing first to start receiving bookings.'}
               </p>

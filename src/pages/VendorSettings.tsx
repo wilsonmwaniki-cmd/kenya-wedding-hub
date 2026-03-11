@@ -9,8 +9,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole } from 'lucide-react';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
+import { vendorAccessMessage, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -26,6 +27,11 @@ interface VendorListing {
   services: string[];
   is_approved: boolean;
   is_verified: boolean;
+  verification_requested: boolean;
+  verification_requested_at: string | null;
+  subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
+  subscription_started_at: string | null;
+  subscription_expires_at: string | null;
   social_instagram: string | null;
   social_facebook: string | null;
   social_tiktok: string | null;
@@ -55,6 +61,7 @@ export default function VendorSettings() {
   const [newService, setNewService] = useState('');
   const [reputationLoading, setReputationLoading] = useState(false);
   const [reputationOverview, setReputationOverview] = useState<VendorReputationOverview | null>(null);
+  const [requestingVerification, setRequestingVerification] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -87,7 +94,7 @@ export default function VendorSettings() {
   }, [user]);
 
   useEffect(() => {
-    if (!listing?.id) {
+    if (!listing?.id || !vendorHasFullAccess(listing)) {
       setReputationOverview(null);
       return;
     }
@@ -162,6 +169,35 @@ export default function VendorSettings() {
     setForm((f) => ({ ...f, services: f.services.filter((x) => x !== s) }));
   };
 
+  const handleRequestVerification = async () => {
+    setRequestingVerification(true);
+    try {
+      const { error } = await supabase.rpc('request_vendor_verification' as any);
+      if (error) throw error;
+
+      toast({
+        title: 'Verification requested',
+        description: 'Your verification request has been sent to the admin review queue.',
+      });
+
+      if (!user) return;
+      const { data } = await supabase.from('vendor_listings').select('*').eq('user_id', user.id).maybeSingle();
+      if (data) setListing(data as VendorListing);
+    } catch (error: any) {
+      toast({
+        title: 'Verification request failed',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRequestingVerification(false);
+    }
+  };
+
+  const subscriptionActive = vendorHasActiveSubscription(listing);
+  const fullAccess = vendorHasFullAccess(listing);
+  const verificationRequestOpen = Boolean(listing?.verification_requested);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -205,6 +241,65 @@ export default function VendorSettings() {
       )}
 
       {listing && (
+        <Card className={fullAccess ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
+          <CardHeader>
+            <CardTitle className="font-display flex items-center gap-2">
+              {fullAccess ? <ShieldCheck className="h-5 w-5 text-primary" /> : <LockKeyhole className="h-5 w-5 text-primary" />}
+              Vendor Access
+            </CardTitle>
+            <CardDescription>
+              Full planner connections and vendor analytics unlock only after approval, active subscription, and verification.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={listing.is_approved ? 'secondary' : 'outline'}>
+                {listing.is_approved ? 'Approved' : 'Approval pending'}
+              </Badge>
+              <Badge variant={subscriptionActive ? 'secondary' : 'outline'}>
+                Subscription: {listing.subscription_status}
+              </Badge>
+              <Badge variant={listing.is_verified ? 'secondary' : 'outline'}>
+                {listing.is_verified ? 'Verified' : verificationRequestOpen ? 'Verification requested' : 'Unverified'}
+              </Badge>
+            </div>
+
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Current access status</p>
+              <p className="mt-1">{vendorAccessMessage(listing)}</p>
+              {listing.subscription_expires_at && (
+                <p className="mt-1 text-xs">
+                  Subscription expiry: {new Date(listing.subscription_expires_at).toLocaleDateString()}
+                </p>
+              )}
+              {listing.verification_requested_at && !listing.is_verified && (
+                <p className="mt-1 text-xs">
+                  Verification requested on {new Date(listing.verification_requested_at).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                onClick={handleRequestVerification}
+                disabled={!listing.is_approved || !subscriptionActive || listing.is_verified || verificationRequestOpen || requestingVerification}
+              >
+                {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                {listing.is_verified ? 'Already Verified' : verificationRequestOpen ? 'Verification Requested' : 'Request Verification'}
+              </Button>
+              {!subscriptionActive && (
+                <div className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <CreditCard className="h-4 w-4" />
+                  Subscription must be activated by admin before verification can be requested.
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {listing && (
         <Card className="shadow-card">
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
@@ -216,7 +311,17 @@ export default function VendorSettings() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {reputationLoading ? (
+            {!fullAccess ? (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                <div className="flex items-center gap-2 font-medium">
+                  <AlertTriangle className="h-4 w-4" />
+                  Trust metrics are locked
+                </div>
+                <p className="mt-2">
+                  Planner connection requests, backend statistics, and trust benchmarks unlock only after active subscription and verification.
+                </p>
+              </div>
+            ) : reputationLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading trust overview

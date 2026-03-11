@@ -46,6 +46,10 @@ interface AdminVendorRow {
   location: string | null;
   is_approved: boolean;
   is_verified: boolean;
+  verification_requested: boolean;
+  verification_requested_at: string | null;
+  subscription_status: "inactive" | "active" | "past_due" | "cancelled";
+  subscription_expires_at: string | null;
   updated_at: string;
   owner_name: string | null;
   owner_email: string | null;
@@ -100,6 +104,8 @@ export default function AdminPortal() {
   const [reputationMetrics, setReputationMetrics] = useState<AdminReputationMetrics | null>(null);
   const [reputationReviews, setReputationReviews] = useState<AdminReputationRow[]>([]);
   const [roleDrafts, setRoleDrafts] = useState<Record<string, AppRole>>({});
+  const [subscriptionDrafts, setSubscriptionDrafts] = useState<Record<string, AdminVendorRow["subscription_status"]>>({});
+  const [subscriptionExpiryDrafts, setSubscriptionExpiryDrafts] = useState<Record<string, string>>({});
   const [reviewVisibilityDrafts, setReviewVisibilityDrafts] = useState<Record<string, ReputationVisibilityFilter>>({});
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [savingVendorId, setSavingVendorId] = useState<string | null>(null);
@@ -152,7 +158,22 @@ export default function AdminPortal() {
       offset_rows: 0,
     });
     if (error) throw error;
-    setVendors((data ?? []) as unknown as AdminVendorRow[]);
+    const rows = (data ?? []) as unknown as AdminVendorRow[];
+    setVendors(rows);
+    setSubscriptionDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) {
+        next[row.listing_id] = row.subscription_status;
+      }
+      return next;
+    });
+    setSubscriptionExpiryDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) {
+        next[row.listing_id] = row.subscription_expires_at ? row.subscription_expires_at.slice(0, 10) : "";
+      }
+      return next;
+    });
   };
 
   const loadReputationMetrics = async () => {
@@ -310,6 +331,37 @@ export default function AdminPortal() {
     } catch (error: any) {
       toast({
         title: "Vendor update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingVendorId(null);
+    }
+  };
+
+  const handleVendorSubscriptionUpdate = async (listingId: string) => {
+    const nextStatus = subscriptionDrafts[listingId];
+    const nextExpiry = subscriptionExpiryDrafts[listingId]?.trim() || null;
+    if (!nextStatus) return;
+
+    setSavingVendorId(listingId);
+    try {
+      const { error } = await supabase.rpc("admin_set_vendor_subscription" as any, {
+        listing_id: listingId,
+        new_subscription_status: nextStatus,
+        new_subscription_expires_at: nextExpiry ? new Date(`${nextExpiry}T23:59:59Z`).toISOString() : null,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Subscription updated",
+        description: `Vendor subscription is now ${nextStatus}.`,
+      });
+
+      await loadVendors();
+    } catch (error: any) {
+      toast({
+        title: "Subscription update failed",
         description: error.message,
         variant: "destructive",
       });
@@ -633,6 +685,7 @@ export default function AdminPortal() {
                     <TableHead>Listing</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Owner</TableHead>
+                    <TableHead>Subscription</TableHead>
                     <TableHead>Last Updated</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
@@ -640,7 +693,7 @@ export default function AdminPortal() {
                 <TableBody>
                   {vendors.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
                         No vendor listings found.
                       </TableCell>
                     </TableRow>
@@ -658,13 +711,61 @@ export default function AdminPortal() {
                         <Badge variant={item.is_verified ? "secondary" : "outline"}>
                           {item.is_verified ? "Verified" : "Unverified"}
                         </Badge>
+                        {item.verification_requested && !item.is_verified && (
+                          <Badge variant="outline">Verification requested</Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         <p className="text-sm">{item.owner_name || "Unknown owner"}</p>
                         <p className="text-xs text-muted-foreground">{item.owner_email || item.user_id}</p>
                       </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <Select
+                            value={subscriptionDrafts[item.listing_id] ?? item.subscription_status}
+                            onValueChange={(value) =>
+                              setSubscriptionDrafts((prev) => ({
+                                ...prev,
+                                [item.listing_id]: value as AdminVendorRow["subscription_status"],
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-[150px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="inactive">inactive</SelectItem>
+                              <SelectItem value="active">active</SelectItem>
+                              <SelectItem value="past_due">past_due</SelectItem>
+                              <SelectItem value="cancelled">cancelled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="date"
+                            value={subscriptionExpiryDrafts[item.listing_id] ?? ""}
+                            onChange={(e) =>
+                              setSubscriptionExpiryDrafts((prev) => ({
+                                ...prev,
+                                [item.listing_id]: e.target.value,
+                              }))
+                            }
+                            className="w-[150px]"
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={savingVendorId === item.listing_id}
+                            onClick={() => handleVendorSubscriptionUpdate(item.listing_id)}
+                          >
+                            Save subscription
+                          </Button>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {new Date(item.updated_at).toLocaleDateString()}
+                        {item.verification_requested_at && !item.is_verified && (
+                          <p className="mt-1">Requested {new Date(item.verification_requested_at).toLocaleDateString()}</p>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
@@ -691,10 +792,14 @@ export default function AdminPortal() {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={savingVendorId === item.listing_id || !item.is_approved}
+                            disabled={
+                              savingVendorId === item.listing_id ||
+                              !item.is_approved ||
+                              subscriptionDrafts[item.listing_id] !== "active"
+                            }
                             onClick={() => handleVendorReview(item.listing_id, true, !item.is_verified)}
                           >
-                            {item.is_verified ? "Unverify" : "Verify"}
+                            {item.is_verified ? "Unverify" : item.verification_requested ? "Verify request" : "Verify"}
                           </Button>
                         </div>
                       </TableCell>

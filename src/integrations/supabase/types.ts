@@ -543,6 +543,9 @@ export type Database = {
           location: string | null
           logo_url: string | null
           phone: string | null
+          subscription_expires_at: string | null
+          subscription_started_at: string | null
+          subscription_status: string
           services: string[] | null
           social_facebook: string | null
           social_instagram: string | null
@@ -550,6 +553,8 @@ export type Database = {
           social_twitter: string | null
           updated_at: string
           user_id: string
+          verification_requested: boolean
+          verification_requested_at: string | null
           website: string | null
         }
         Insert: {
@@ -564,6 +569,9 @@ export type Database = {
           location?: string | null
           logo_url?: string | null
           phone?: string | null
+          subscription_expires_at?: string | null
+          subscription_started_at?: string | null
+          subscription_status?: string
           services?: string[] | null
           social_facebook?: string | null
           social_instagram?: string | null
@@ -571,6 +579,8 @@ export type Database = {
           social_twitter?: string | null
           updated_at?: string
           user_id: string
+          verification_requested?: boolean
+          verification_requested_at?: string | null
           website?: string | null
         }
         Update: {
@@ -585,6 +595,9 @@ export type Database = {
           location?: string | null
           logo_url?: string | null
           phone?: string | null
+          subscription_expires_at?: string | null
+          subscription_started_at?: string | null
+          subscription_status?: string
           services?: string[] | null
           social_facebook?: string | null
           social_instagram?: string | null
@@ -592,6 +605,8 @@ export type Database = {
           social_twitter?: string | null
           updated_at?: string
           user_id?: string
+          verification_requested?: boolean
+          verification_requested_at?: string | null
           website?: string | null
         }
         Relationships: []
@@ -1031,6 +1046,14 @@ export type Database = {
         Returns: undefined
       }
       admin_reputation_review_metrics: { Args: never; Returns: Json }
+      admin_set_vendor_subscription: {
+        Args: {
+          listing_id: string
+          new_subscription_expires_at?: string | null
+          new_subscription_status: string
+        }
+        Returns: undefined
+      }
       admin_set_vendor_reputation_visibility: {
         Args: { new_visibility: string; review_id: string }
         Returns: undefined
@@ -1117,6 +1140,11 @@ export type Database = {
           on_time_rate: number | null
           sample_size: number
         }[]
+      }
+      request_vendor_verification: { Args: never; Returns: undefined }
+      vendor_listing_has_full_access: {
+        Args: { target_listing_id: string }
+        Returns: boolean
       }
       get_public_budget_estimate: {
         Args: {
