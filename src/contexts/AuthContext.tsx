@@ -144,12 +144,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return fallbackProfile;
   };
 
-  const syncAuthState = async (nextSession: Session | null) => {
+  const syncAuthState = (nextSession: Session | null) => {
     setSession(nextSession);
     setUser(nextSession?.user ?? null);
 
     if (nextSession?.user) {
-      await ensureProfile(nextSession.user);
+      void ensureProfile(nextSession.user);
       return;
     }
 
@@ -190,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (_event, session) => {
         try {
           if (!active) return;
-          await syncAuthState(session);
+          syncAuthState(session);
         } finally {
           if (active) setLoading(false);
         }
@@ -202,7 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await hydrateSessionFromHash();
         const { data: { session } } = await supabase.auth.getSession();
         if (!active) return;
-        await syncAuthState(session);
+        syncAuthState(session);
       } finally {
         if (active) setLoading(false);
       }
