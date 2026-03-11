@@ -40,6 +40,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const getFallbackFullName = (authUser: User) => {
+    const fullName = authUser.user_metadata?.full_name;
+    const name = authUser.user_metadata?.name;
+    const givenName = authUser.user_metadata?.given_name;
+    const familyName = authUser.user_metadata?.family_name;
+    const combinedName = [givenName, familyName].filter(Boolean).join(' ').trim();
+
+    return fullName || name || combinedName || authUser.email?.split('@')[0] || '';
+  };
+
+  const getFallbackRole = async (authUser: User): Promise<AppRole> => {
+    const requestedRole = authUser.user_metadata?.role;
+    if (requestedRole === 'admin' || requestedRole === 'vendor' || requestedRole === 'planner' || requestedRole === 'couple') {
+      return requestedRole;
+    }
+
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', authUser.id);
+
+    if (error || !data?.length) return 'couple';
+
+    const rolePriority: Record<AppRole, number> = {
+      admin: 4,
+      vendor: 3,
+      planner: 2,
+      couple: 1,
+    };
+
+    return [...data]
+      .sort((a, b) => rolePriority[b.role as AppRole] - rolePriority[a.role as AppRole])[0]
+      .role as AppRole;
+  };
+
+  const buildFallbackProfile = (authUser: User, role: AppRole): Profile => ({
+    id: authUser.id,
+    user_id: authUser.id,
+    full_name: getFallbackFullName(authUser) || null,
+    partner_name: null,
+    wedding_date: null,
+    wedding_location: null,
+    role,
+    company_name: null,
+    company_email: authUser.email ?? null,
+    company_phone: null,
+    company_website: null,
+    bio: null,
+    specialties: null,
+    avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null,
+  });
+
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -62,30 +114,106 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data as Profile;
   };
 
+  const ensureProfile = async (authUser: User) => {
+    const existingProfile = await fetchProfile(authUser.id);
+    if (existingProfile) return existingProfile;
+
+    const role = await getFallbackRole(authUser);
+    const fullName = getFallbackFullName(authUser);
+
+    const { error } = await supabase
+      .from('profiles')
+      .insert({
+        user_id: authUser.id,
+        full_name: fullName,
+        role,
+      });
+
+    if (error && error.code !== '23505') {
+      console.error('Failed to recover missing profile:', error.message);
+      const fallbackProfile = buildFallbackProfile(authUser, role);
+      setProfile(fallbackProfile);
+      return fallbackProfile;
+    }
+
+    const recoveredProfile = await fetchProfile(authUser.id);
+    if (recoveredProfile) return recoveredProfile;
+
+    const fallbackProfile = buildFallbackProfile(authUser, role);
+    setProfile(fallbackProfile);
+    return fallbackProfile;
+  };
+
+  const syncAuthState = async (nextSession: Session | null) => {
+    setSession(nextSession);
+    setUser(nextSession?.user ?? null);
+
+    if (nextSession?.user) {
+      await ensureProfile(nextSession.user);
+      return;
+    }
+
+    setProfile(null);
+  };
+
+  const hydrateSessionFromHash = async () => {
+    if (typeof window === 'undefined') return;
+    if (!window.location.hash.includes('access_token=')) return;
+
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const accessToken = hashParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token');
+
+    if (!accessToken || !refreshToken) return;
+
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      console.error('Failed to hydrate auth session from callback hash:', error.message);
+      return;
+    }
+
+    window.history.replaceState(
+      {},
+      document.title,
+      `${window.location.pathname}${window.location.search}`,
+    );
+  };
+
   useEffect(() => {
+    let active = true;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await fetchProfile(session.user.id);
-        } else {
-          setProfile(null);
+        try {
+          if (!active) return;
+          await syncAuthState(session);
+        } finally {
+          if (active) setLoading(false);
         }
-        setLoading(false);
       }
     );
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchProfile(session.user.id);
+    const initializeAuth = async () => {
+      try {
+        await hydrateSessionFromHash();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!active) return;
+        await syncAuthState(session);
+      } finally {
+        if (active) setLoading(false);
       }
-      setLoading(false);
-    });
+    };
 
-    return () => subscription.unsubscribe();
+    void initializeAuth();
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string, role: SignupRole = 'couple') => {

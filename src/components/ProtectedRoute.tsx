@@ -13,6 +13,15 @@ export default function ProtectedRoute({
   const { user, profile, loading } = useAuth();
   const location = useLocation();
 
+  const inferredRole = (() => {
+    if (profile?.role) return profile.role;
+    const requestedRole = user?.user_metadata?.role;
+    if (requestedRole === 'admin' || requestedRole === 'vendor' || requestedRole === 'planner' || requestedRole === 'couple') {
+      return requestedRole as AppRole;
+    }
+    return 'couple' as AppRole;
+  })();
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -24,17 +33,8 @@ export default function ProtectedRoute({
   if (!user) return <Navigate to="/auth" replace state={{ from: location.pathname }} />;
 
   if (allowedRoles?.length) {
-    if (!profile?.role) {
-      // Profile still loading or missing — show spinner instead of redirecting to avoid loops
-      return (
-        <div className="flex min-h-screen items-center justify-center bg-background">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      );
-    }
-
-    if (!allowedRoles.includes(profile.role)) {
-      return <Navigate to={getHomeRouteForRole(profile.role)} replace />;
+    if (!allowedRoles.includes(inferredRole)) {
+      return <Navigate to={getHomeRouteForRole(inferredRole)} replace />;
     }
   }
 
