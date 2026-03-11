@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Sparkles, Check, Loader2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { plannerHasFullAccess } from '@/lib/plannerAccess';
 
 interface VendorInterestButtonProps {
   vendorListingId: string;
@@ -35,6 +36,7 @@ export default function VendorInterestButton({
 
   // Only couples and planners can send interest
   if (!user || !profile || profile.role === 'vendor') return null;
+  if (profile.role === 'planner' && !plannerHasFullAccess(profile as any)) return null;
 
   const handleSendInterest = async () => {
     setSubmitting(true);

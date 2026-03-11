@@ -55,8 +55,23 @@ interface AdminVendorRow {
   owner_email: string | null;
 }
 
+interface AdminPlannerRow {
+  profile_id: string;
+  user_id: string;
+  full_name: string | null;
+  company_name: string | null;
+  company_email: string | null;
+  planner_verified: boolean;
+  planner_verification_requested: boolean;
+  planner_verification_requested_at: string | null;
+  planner_subscription_status: "inactive" | "active" | "past_due" | "cancelled";
+  planner_subscription_expires_at: string | null;
+  updated_at: string;
+}
+
 type UserRoleFilter = "all" | AppRole;
 type VendorStatusFilter = "all" | "pending" | "approved";
+type PlannerVerificationFilter = "all" | "pending" | "verified" | "requested";
 type ReputationIssueFilter = "all" | "flagged" | "clean";
 type ReputationVisibilityFilter = "all" | "private" | "planner_network" | "admin_only";
 
@@ -101,11 +116,15 @@ export default function AdminPortal() {
   const [metrics, setMetrics] = useState<AdminDashboardMetrics | null>(null);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [vendors, setVendors] = useState<AdminVendorRow[]>([]);
+  const [planners, setPlanners] = useState<AdminPlannerRow[]>([]);
   const [reputationMetrics, setReputationMetrics] = useState<AdminReputationMetrics | null>(null);
   const [reputationReviews, setReputationReviews] = useState<AdminReputationRow[]>([]);
   const [roleDrafts, setRoleDrafts] = useState<Record<string, AppRole>>({});
   const [subscriptionDrafts, setSubscriptionDrafts] = useState<Record<string, AdminVendorRow["subscription_status"]>>({});
   const [subscriptionExpiryDrafts, setSubscriptionExpiryDrafts] = useState<Record<string, string>>({});
+  const [plannerSubscriptionDrafts, setPlannerSubscriptionDrafts] = useState<Record<string, AdminPlannerRow["planner_subscription_status"]>>({});
+  const [plannerSubscriptionExpiryDrafts, setPlannerSubscriptionExpiryDrafts] = useState<Record<string, string>>({});
+  const [plannerVerificationDrafts, setPlannerVerificationDrafts] = useState<Record<string, boolean>>({});
   const [reviewVisibilityDrafts, setReviewVisibilityDrafts] = useState<Record<string, ReputationVisibilityFilter>>({});
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [savingVendorId, setSavingVendorId] = useState<string | null>(null);
@@ -115,6 +134,8 @@ export default function AdminPortal() {
   const [userRoleFilter, setUserRoleFilter] = useState<UserRoleFilter>("all");
   const [vendorSearch, setVendorSearch] = useState("");
   const [vendorStatusFilter, setVendorStatusFilter] = useState<VendorStatusFilter>("pending");
+  const [plannerSearch, setPlannerSearch] = useState("");
+  const [plannerVerificationFilter, setPlannerVerificationFilter] = useState<PlannerVerificationFilter>("all");
   const [reputationSearch, setReputationSearch] = useState("");
   const [reputationIssueFilter, setReputationIssueFilter] = useState<ReputationIssueFilter>("flagged");
   const [reputationVisibilityFilter, setReputationVisibilityFilter] = useState<ReputationVisibilityFilter>("all");
@@ -183,6 +204,33 @@ export default function AdminPortal() {
     setReputationMetrics((row ?? null) as unknown as AdminReputationMetrics | null);
   };
 
+  const loadPlanners = async () => {
+    const { data, error } = await supabase.rpc("admin_list_planner_profiles" as any, {
+      search_query: plannerSearch.trim() || null,
+      verification_filter: plannerVerificationFilter,
+      limit_rows: 100,
+      offset_rows: 0,
+    });
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as AdminPlannerRow[];
+    setPlanners(rows);
+    setPlannerSubscriptionDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.planner_subscription_status;
+      return next;
+    });
+    setPlannerSubscriptionExpiryDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.planner_subscription_expires_at ? row.planner_subscription_expires_at.slice(0, 10) : "";
+      return next;
+    });
+    setPlannerVerificationDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.planner_verified;
+      return next;
+    });
+  };
+
   const loadReputationReviews = async () => {
     const { data, error } = await supabase.rpc("admin_list_vendor_reputation_reviews" as any, {
       search_query: reputationSearch.trim() || null,
@@ -211,7 +259,7 @@ export default function AdminPortal() {
     if (showFullLoader) setLoading(true);
     else setRefreshing(true);
     try {
-      await Promise.all([loadMetrics(), loadUsers(), loadVendors(), loadReputationMetrics(), loadReputationReviews()]);
+      await Promise.all([loadMetrics(), loadUsers(), loadVendors(), loadPlanners(), loadReputationMetrics(), loadReputationReviews()]);
     } catch (error: any) {
       toast({
         title: "Failed to load admin portal",
@@ -246,6 +294,18 @@ export default function AdminPortal() {
     } catch (error: any) {
       toast({
         title: "Failed to load vendors",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const applyPlannerFilters = async () => {
+    try {
+      await loadPlanners();
+    } catch (error: any) {
+      toast({
+        title: "Failed to load planners",
         description: error.message,
         variant: "destructive",
       });
@@ -370,6 +430,39 @@ export default function AdminPortal() {
     }
   };
 
+  const handlePlannerAccessUpdate = async (targetUserId: string) => {
+    const nextStatus = plannerSubscriptionDrafts[targetUserId];
+    const nextExpiry = plannerSubscriptionExpiryDrafts[targetUserId]?.trim() || null;
+    const nextVerified = plannerVerificationDrafts[targetUserId];
+    if (!nextStatus || nextVerified === undefined) return;
+
+    setSavingUserId(targetUserId);
+    try {
+      const { error } = await supabase.rpc("admin_set_planner_access" as any, {
+        target_user_id: targetUserId,
+        new_verified: nextVerified,
+        new_subscription_status: nextStatus,
+        new_subscription_expires_at: nextExpiry ? new Date(`${nextExpiry}T23:59:59Z`).toISOString() : null,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Planner access updated",
+        description: `Planner access updated to ${nextStatus}${nextVerified ? ' and verified' : ''}.`,
+      });
+
+      await loadPlanners();
+    } catch (error: any) {
+      toast({
+        title: "Planner access update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingUserId(null);
+    }
+  };
+
   const handleReputationVisibilityUpdate = async (reviewId: string) => {
     const nextVisibility = reviewVisibilityDrafts[reviewId];
     const target = reputationReviews.find((item) => item.review_id === reviewId);
@@ -473,6 +566,7 @@ export default function AdminPortal() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="users">Users & Roles</TabsTrigger>
+          <TabsTrigger value="planners">Planner Moderation</TabsTrigger>
           <TabsTrigger value="vendors">Vendor Moderation</TabsTrigger>
           <TabsTrigger value="reputation">Reputation Oversight</TabsTrigger>
         </TabsList>
@@ -820,6 +914,139 @@ export default function AdminPortal() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="planners" className="space-y-4">
+          <Card>
+            <CardHeader className="space-y-3">
+              <CardTitle className="text-base">Planner Access Review</CardTitle>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={plannerSearch}
+                  onChange={(e) => setPlannerSearch(e.target.value)}
+                  placeholder="Search by planner name, company, or email"
+                />
+                <Select value={plannerVerificationFilter} onValueChange={(value) => setPlannerVerificationFilter(value as PlannerVerificationFilter)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All planners</SelectItem>
+                    <SelectItem value="requested">Verification requested</SelectItem>
+                    <SelectItem value="pending">Unverified</SelectItem>
+                    <SelectItem value="verified">Verified</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={() => applyPlannerFilters()}>
+                  Apply
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Planner</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Subscription</TableHead>
+                    <TableHead>Last Updated</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {planners.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        No planner profiles found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {planners.map((item) => (
+                    <TableRow key={item.user_id}>
+                      <TableCell>
+                        <p className="font-medium">{item.company_name || item.full_name || "Unnamed Planner"}</p>
+                        <p className="text-xs text-muted-foreground">{item.company_email || item.user_id}</p>
+                      </TableCell>
+                      <TableCell className="space-x-2">
+                        <Badge variant={item.planner_verified ? "secondary" : "outline"}>
+                          {item.planner_verified ? "Verified" : "Unverified"}
+                        </Badge>
+                        {item.planner_verification_requested && !item.planner_verified && (
+                          <Badge variant="outline">Verification requested</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <Select
+                            value={plannerSubscriptionDrafts[item.user_id] ?? item.planner_subscription_status}
+                            onValueChange={(value) =>
+                              setPlannerSubscriptionDrafts((prev) => ({
+                                ...prev,
+                                [item.user_id]: value as AdminPlannerRow["planner_subscription_status"],
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-[150px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="inactive">inactive</SelectItem>
+                              <SelectItem value="active">active</SelectItem>
+                              <SelectItem value="past_due">past_due</SelectItem>
+                              <SelectItem value="cancelled">cancelled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="date"
+                            value={plannerSubscriptionExpiryDrafts[item.user_id] ?? ""}
+                            onChange={(e) =>
+                              setPlannerSubscriptionExpiryDrafts((prev) => ({
+                                ...prev,
+                                [item.user_id]: e.target.value,
+                              }))
+                            }
+                            className="w-[150px]"
+                          />
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={plannerVerificationDrafts[item.user_id] ?? item.planner_verified}
+                              onChange={(e) =>
+                                setPlannerVerificationDrafts((prev) => ({
+                                  ...prev,
+                                  [item.user_id]: e.target.checked,
+                                }))
+                              }
+                            />
+                            <span className="text-sm">Verified</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(item.updated_at).toLocaleDateString()}
+                        {item.planner_verification_requested_at && !item.planner_verified && (
+                          <p className="mt-1">Requested {new Date(item.planner_verification_requested_at).toLocaleDateString()}</p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          disabled={savingUserId === item.user_id}
+                          onClick={() => handlePlannerAccessUpdate(item.user_id)}
+                        >
+                          {savingUserId === item.user_id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                          Save access
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="reputation" className="space-y-4">

@@ -16,6 +16,9 @@ interface PlannerItem {
   avatar_url: string | null;
   bio: string | null;
   specialties: string[] | null;
+  company_email: string | null;
+  company_phone: string | null;
+  company_website: string | null;
 }
 
 export default function PlannerDirectory() {
@@ -27,7 +30,7 @@ export default function PlannerDirectory() {
     const load = async () => {
       const { data } = await supabase
         .from('public_planner_profiles')
-        .select('id, full_name, company_name, avatar_url, bio, specialties');
+        .select('id, full_name, company_name, avatar_url, bio, specialties, company_email, company_phone, company_website');
       setPlanners((data as PlannerItem[]) || []);
       setLoading(false);
     };

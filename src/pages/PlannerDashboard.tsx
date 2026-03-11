@@ -8,11 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircle2, XCircle, LockKeyhole, CreditCard, ShieldCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import MyConnections from '@/components/MyConnections';
+import { plannerAccessMessage, plannerHasFullAccess } from '@/lib/plannerAccess';
 
 interface LinkRequest {
   id: string;
@@ -25,7 +26,7 @@ interface LinkRequest {
 }
 
 export default function PlannerDashboard() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { clients, loadClients, selectClient } = usePlanner();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -119,10 +120,39 @@ export default function PlannerDashboard() {
     navigate('/dashboard');
   };
 
+  const fullPlannerAccess = plannerHasFullAccess(profile);
+
   return (
     <div className="space-y-6">
+      {!fullPlannerAccess && (
+        <Card className="border-border/70 bg-muted/20">
+          <CardHeader>
+            <CardTitle className="font-display flex items-center gap-2">
+              <LockKeyhole className="h-5 w-5 text-primary" />
+              Full planner workspace is locked
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={profile?.planner_subscription_status === 'active' ? 'secondary' : 'outline'}>
+                <CreditCard className="mr-1 h-3 w-3" />
+                {profile?.planner_subscription_status || 'inactive'}
+              </Badge>
+              <Badge variant={profile?.planner_verified ? 'secondary' : 'outline'}>
+                <ShieldCheck className="mr-1 h-3 w-3" />
+                {profile?.planner_verified ? 'Verified' : profile?.planner_verification_requested ? 'Verification requested' : 'Unverified'}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">{plannerAccessMessage(profile)}</p>
+            <p className="text-sm text-muted-foreground">
+              Planner-to-couple links, planner-to-vendor outreach, and client workspace management unlock after verification and active subscription.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Pending Link Requests */}
-      {linkRequests.length > 0 && (
+      {fullPlannerAccess && linkRequests.length > 0 && (
         <Card className="border-primary/20 bg-primary/5">
           <CardHeader>
             <CardTitle className="font-display text-base flex items-center gap-2">
@@ -157,7 +187,7 @@ export default function PlannerDashboard() {
       )}
 
       {/* Planner's vendor connections */}
-      <MyConnections />
+      {fullPlannerAccess && <MyConnections />}
 
       <div className="flex items-center justify-between">
         <div>
@@ -166,7 +196,7 @@ export default function PlannerDashboard() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="h-4 w-4" /> Add Client</Button>
+            <Button className="gap-2" disabled={!fullPlannerAccess}><Plus className="h-4 w-4" /> Add Client</Button>
           </DialogTrigger>
           <DialogContent className="max-w-md">
             <DialogHeader><DialogTitle className="font-display">New Client</DialogTitle></DialogHeader>

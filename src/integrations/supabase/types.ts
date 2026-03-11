@@ -246,6 +246,12 @@ export type Database = {
           full_name: string | null
           id: string
           partner_name: string | null
+          planner_subscription_expires_at: string | null
+          planner_subscription_started_at: string | null
+          planner_subscription_status: string
+          planner_verification_requested: boolean
+          planner_verification_requested_at: string | null
+          planner_verified: boolean
           role: Database["public"]["Enums"]["app_role"]
           specialties: string[] | null
           updated_at: string
@@ -264,6 +270,12 @@ export type Database = {
           full_name?: string | null
           id?: string
           partner_name?: string | null
+          planner_subscription_expires_at?: string | null
+          planner_subscription_started_at?: string | null
+          planner_subscription_status?: string
+          planner_verification_requested?: boolean
+          planner_verification_requested_at?: string | null
+          planner_verified?: boolean
           role?: Database["public"]["Enums"]["app_role"]
           specialties?: string[] | null
           updated_at?: string
@@ -282,6 +294,12 @@ export type Database = {
           full_name?: string | null
           id?: string
           partner_name?: string | null
+          planner_subscription_expires_at?: string | null
+          planner_subscription_started_at?: string | null
+          planner_subscription_status?: string
+          planner_verification_requested?: boolean
+          planner_verification_requested_at?: string | null
+          planner_verified?: boolean
           role?: Database["public"]["Enums"]["app_role"]
           specialties?: string[] | null
           updated_at?: string
@@ -984,7 +1002,10 @@ export type Database = {
         Row: {
           avatar_url: string | null
           bio: string | null
+          company_email: string | null
           company_name: string | null
+          company_phone: string | null
+          company_website: string | null
           full_name: string | null
           id: string | null
           specialties: string[] | null
@@ -993,7 +1014,10 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           bio?: string | null
+          company_email?: string | null
           company_name?: string | null
+          company_phone?: string | null
+          company_website?: string | null
           full_name?: string | null
           id?: string | null
           specialties?: string[] | null
@@ -1002,7 +1026,10 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           bio?: string | null
+          company_email?: string | null
           company_name?: string | null
+          company_phone?: string | null
+          company_website?: string | null
           full_name?: string | null
           id?: string | null
           specialties?: string[] | null
@@ -1051,6 +1078,24 @@ export type Database = {
           listing_id: string
           new_subscription_expires_at?: string | null
           new_subscription_status: string
+        }
+        Returns: undefined
+      }
+      admin_list_planner_profiles: {
+        Args: {
+          limit_rows?: number
+          offset_rows?: number
+          search_query?: string
+          verification_filter?: string
+        }
+        Returns: Json
+      }
+      admin_set_planner_access: {
+        Args: {
+          new_subscription_expires_at?: string | null
+          new_subscription_status: string
+          new_verified: boolean
+          target_user_id: string
         }
         Returns: undefined
       }
@@ -1142,6 +1187,11 @@ export type Database = {
         }[]
       }
       request_vendor_verification: { Args: never; Returns: undefined }
+      request_planner_verification: { Args: never; Returns: undefined }
+      planner_profile_has_full_access: {
+        Args: { target_planner_user_id: string }
+        Returns: boolean
+      }
       vendor_listing_has_full_access: {
         Args: { target_listing_id: string }
         Returns: boolean
