@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles } from 'lucide-react';
+import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserCog } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
@@ -86,145 +86,125 @@ function PublicBudgetEstimator() {
   }, [estimateRows]);
 
   return (
-    <section className="border-y border-border bg-gradient-to-b from-muted/30 to-background">
-      <div className="mx-auto max-w-6xl px-6 py-20">
-        <div className="max-w-2xl">
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-primary">Cost Index</p>
-          <h2 className="mt-3 font-display text-3xl font-bold text-foreground sm:text-4xl">
-            Estimate your Kenyan wedding budget before you hire anyone
-          </h2>
-          <p className="mt-4 text-muted-foreground">
-            Powered by anonymized wedding pricing data from real planner workflows. Use it to set a realistic starting budget, then sign up to turn the estimate into a working plan.
-          </p>
+    <Card className="border-border/60 bg-card/95 shadow-warm backdrop-blur-sm">
+      <CardContent className="space-y-5 p-6">
+        <div className="flex items-start gap-3">
+          <div className="rounded-2xl bg-primary/10 p-3">
+            <Calculator className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">Cost Estimator</p>
+            <h3 className="mt-1 font-display text-2xl font-semibold text-foreground">
+              Start with a realistic budget
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Use live Kenyan wedding pricing signals before you book vendors.
+            </p>
+          </div>
         </div>
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-[420px_1fr]">
-          <Card className="border-border/60 bg-card/95 shadow-warm">
-            <CardContent className="space-y-5 p-6">
-              <div className="flex items-center gap-2">
-                <Calculator className="h-5 w-5 text-primary" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="guest-count">Guest count</Label>
+            <Input
+              id="guest-count"
+              type="number"
+              value={guestCount}
+              onChange={(e) => setGuestCount(e.target.value)}
+              placeholder="120"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="county">County / town</Label>
+            <Input
+              id="county"
+              value={county}
+              onChange={(e) => setCounty(e.target.value)}
+              placeholder="e.g. Nairobi, Nakuru, Kiambu"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Wedding style</Label>
+            <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="intimate">Intimate</SelectItem>
+                <SelectItem value="classic">Classic</SelectItem>
+                <SelectItem value="garden">Garden</SelectItem>
+                <SelectItem value="luxury">Luxury</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Venue tier</Label>
+            <Select value={venueTier} onValueChange={(value: 'budget' | 'mid_tier' | 'luxury') => setVenueTier(value)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="budget">Budget</SelectItem>
+                <SelectItem value="mid_tier">Mid-tier</SelectItem>
+                <SelectItem value="luxury">Luxury</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="rounded-2xl bg-primary/5 p-5">
+            <p className="text-sm font-medium text-muted-foreground">Estimated total budget</p>
+            <p className="mt-2 font-display text-3xl font-bold text-foreground">{formatCurrency(totals.suggested)}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-background/70 p-5">
+            <p className="text-sm font-medium text-foreground">Market confidence</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{totals.marketCount}/{estimateRows.length || 0}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              categories using live observations
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {estimateRows.slice(0, 4).map((row) => (
+            <div key={row.category} className="rounded-xl border border-border/70 bg-background/80 p-4">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium text-foreground">Budget calculator</p>
-                  <p className="text-sm text-muted-foreground">Tune the wedding profile and generate an estimate.</p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="guest-count">Guest count</Label>
-                <Input
-                  id="guest-count"
-                  type="number"
-                  value={guestCount}
-                  onChange={(e) => setGuestCount(e.target.value)}
-                  placeholder="120"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="county">County / town</Label>
-                <Input
-                  id="county"
-                  value={county}
-                  onChange={(e) => setCounty(e.target.value)}
-                  placeholder="e.g. Nairobi, Nakuru, Kiambu"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Wedding style</Label>
-                <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="intimate">Intimate</SelectItem>
-                    <SelectItem value="classic">Classic</SelectItem>
-                    <SelectItem value="garden">Garden</SelectItem>
-                    <SelectItem value="luxury">Luxury</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Venue tier</Label>
-                <Select value={venueTier} onValueChange={(value: 'budget' | 'mid_tier' | 'luxury') => setVenueTier(value)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="budget">Budget</SelectItem>
-                    <SelectItem value="mid_tier">Mid-tier</SelectItem>
-                    <SelectItem value="luxury">Luxury</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <Button onClick={() => void loadEstimate()} className="w-full gap-2" disabled={loadingEstimate}>
-                {loadingEstimate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Estimate Wedding Budget
-              </Button>
-
-              <p className="text-xs text-muted-foreground">
-                This is an early estimate, not a quotation. Market-backed categories appear once enough anonymized observations exist.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/60 bg-card shadow-card">
-            <CardContent className="p-6">
-              <div className="grid gap-4 md:grid-cols-[1.15fr_0.85fr]">
-                <div className="rounded-2xl bg-primary/5 p-5">
-                  <p className="text-sm font-medium text-muted-foreground">Estimated total budget</p>
-                  <p className="mt-2 font-display text-4xl font-bold text-foreground">{formatCurrency(totals.suggested)}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
+                  <p className="font-medium text-foreground">{row.category}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {row.source === 'market' ? `${row.sample_size} live observations` : 'Modeled fallback'}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-border/70 p-5">
-                  <p className="text-sm font-medium text-foreground">Estimator confidence</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{totals.marketCount}/{estimateRows.length || 0}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    categories using live market observations
-                  </p>
-                </div>
+                <span className="rounded-full border border-border px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {row.source}
+                </span>
               </div>
-
-              <div className="mt-6 grid gap-3 md:grid-cols-2">
-                {estimateRows.map((row) => (
-                  <div key={row.category} className="rounded-xl border border-border/70 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-medium text-foreground">{row.category}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {row.source === 'market'
-                            ? `${row.sample_size} market observations`
-                            : 'Fallback model until more live data is available'}
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-border px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {row.source}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-lg font-semibold text-foreground">{formatCurrency(row.suggested_amount)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Range {formatCurrency(row.low_amount)} - {formatCurrency(row.high_amount)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <Link to="/auth">
-                  <Button className="gap-2">
-                    Turn This Into a Plan
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </Link>
-                <p className="text-sm text-muted-foreground">
-                  Sign up to track vendors, capture real prices, and refine the estimate with your planner.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+              <p className="mt-3 text-base font-semibold text-foreground">{formatCurrency(row.suggested_amount)}</p>
+            </div>
+          ))}
         </div>
-      </div>
-    </section>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Button onClick={() => void loadEstimate()} className="gap-2 sm:flex-1" disabled={loadingEstimate}>
+            {loadingEstimate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Refresh Estimate
+          </Button>
+          <Link to="/auth" className="sm:flex-1">
+            <Button variant="outline" className="w-full gap-2">
+              Turn This Into a Plan
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Early estimate only. Sign up to turn this into a working wedding plan with vendors, tasks, and approvals.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -235,6 +215,7 @@ function InlineAuthForm() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<SignupRole>('couple');
+  const [committeeName, setCommitteeName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const { signIn, signUp, signInWithGoogle } = useAuth();
@@ -262,7 +243,9 @@ function InlineAuthForm() {
     setSubmitting(true);
     try {
       if (isSignUp) {
-        await signUp(email, password, fullName, role);
+        await signUp(email, password, fullName, role, {
+          committeeName: role === 'committee' ? committeeName : null,
+        });
         toast({ title: 'Account created!', description: 'Check your email to confirm your account.' });
       } else {
         await signIn(email, password);
@@ -287,6 +270,7 @@ function InlineAuthForm() {
   const roles = [
     { value: 'couple' as const, icon: Users, label: 'Couple', sub: 'Plan your wedding' },
     { value: 'planner' as const, icon: Briefcase, label: 'Planner', sub: 'Manage clients' },
+    { value: 'committee' as const, icon: UserCog, label: 'Committee', sub: 'Run one wedding together' },
     { value: 'vendor' as const, icon: Store, label: 'Vendor', sub: 'List your business' },
   ];
 
@@ -295,14 +279,15 @@ function InlineAuthForm() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: 0.3 }}
-      className="w-full max-w-sm rounded-2xl border border-border/50 bg-card/95 p-6 shadow-warm backdrop-blur-sm"
+      className="w-full rounded-[28px] border border-border/60 bg-card/95 p-6 shadow-warm backdrop-blur-sm"
     >
-      <div className="mb-4 text-center">
-        <h3 className="font-display text-lg font-semibold text-card-foreground">
+      <div className="mb-5 border-b border-border/60 pb-4 text-center">
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">Sign in or create your account</p>
+        <h3 className="mt-2 font-display text-2xl font-semibold text-card-foreground">
           {isForgot ? 'Forgot Password' : isSignUp ? 'Create Your Account' : 'Welcome Back'}
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          {isForgot ? 'Enter your email to receive a reset link' : isSignUp ? 'Start planning your dream wedding' : 'Sign in to continue'}
+          {isForgot ? 'Enter your email to receive a reset link' : isSignUp ? 'Open your wedding workspace in minutes.' : 'Pick up exactly where the wedding left off.'}
         </p>
       </div>
 
@@ -343,13 +328,20 @@ function InlineAuthForm() {
           <form onSubmit={handleSubmit} className="space-y-3">
         {isSignUp && (
           <>
-            <div className="space-y-1.5">
-              <Label htmlFor="hero-name" className="text-xs">Full Name</Label>
-              <Input id="hero-name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" required className="h-9 text-sm" />
+          <div className="space-y-1.5">
+              <Label htmlFor="hero-name" className="text-xs">{role === 'committee' ? 'Chairperson Name' : 'Full Name'}</Label>
+              <Input
+                id="hero-name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder={role === 'committee' ? 'Committee chair full name' : 'Your full name'}
+                required
+                className="h-9 text-sm"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Account Type</Label>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-2 gap-1.5">
                 {roles.map((r) => (
                   <button
                     key={r.value}
@@ -363,10 +355,24 @@ function InlineAuthForm() {
                   >
                     <r.icon className="h-4 w-4" />
                     <span className="text-xs font-medium">{r.label}</span>
+                    <span className="text-[10px] leading-tight text-center opacity-80">{r.sub}</span>
                   </button>
                 ))}
               </div>
             </div>
+            {role === 'committee' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="hero-committee-name" className="text-xs">Committee Name</Label>
+                <Input
+                  id="hero-committee-name"
+                  value={committeeName}
+                  onChange={(e) => setCommitteeName(e.target.value)}
+                  placeholder="e.g. Anne & Mark Wedding Committee"
+                  required
+                  className="h-9 text-sm"
+                />
+              </div>
+            )}
           </>
         )}
         <div className="space-y-1.5">
@@ -422,58 +428,135 @@ export default function Landing() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#fbf6f1_0%,#fffdfa_18%,#ffffff_100%)]">
       {/* Nav */}
-      <nav className="flex items-center justify-between px-6 py-4 lg:px-12">
-        <div className="flex items-center gap-2">
-          <Heart className="h-6 w-6 text-primary" fill="currentColor" />
-          <span className="font-display text-xl font-bold text-foreground">Centerpiece</span>
-        </div>
+      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-8">
         <div className="flex items-center gap-3">
+          <div className="rounded-full bg-primary/10 p-2.5">
+            <Heart className="h-6 w-6 text-primary" fill="currentColor" />
+          </div>
+          <div>
+            <span className="font-display text-2xl font-bold text-foreground">Centerpiece</span>
+            <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Wedding Planning in Kenya</p>
+          </div>
+        </div>
+        <div className="hidden items-center gap-3 md:flex">
           <Link to="/planners">
             <Button variant="ghost" size="sm">Find a Planner</Button>
           </Link>
           <Link to="/vendors-directory">
             <Button variant="ghost" size="sm">Vendor Directory</Button>
           </Link>
+          <Link to="/auth">
+            <Button size="sm" className="gap-2">
+              Login / Sign Up
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
         </div>
       </nav>
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0">
+      <section className="relative overflow-hidden pb-16">
+        <div className="absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_top_left,rgba(221,108,58,0.18),transparent_38%),radial-gradient(circle_at_top_right,rgba(62,39,35,0.12),transparent_32%)]" />
+        <div className="absolute left-1/2 top-10 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute right-0 top-24 hidden h-[420px] w-[32rem] overflow-hidden rounded-l-[3rem] lg:block">
           <img src={heroImage} alt="Kenyan wedding couple" className="h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-hero" />
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(42,28,24,0.55),rgba(42,28,24,0.12))]" />
         </div>
-        <div className="relative mx-auto max-w-6xl px-6 py-20 lg:py-32">
-          <div className="flex flex-col items-center gap-10 lg:flex-row lg:items-center lg:justify-between">
-            {/* Left: copy */}
-            <div className="max-w-lg text-center lg:text-left">
+        <div className="relative mx-auto max-w-7xl px-6 pt-6 lg:px-8 lg:pt-8">
+          <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr_0.9fr]">
+            <div className="flex flex-col justify-between gap-6">
+              <div className="max-w-xl">
+                <div className="inline-flex items-center rounded-full border border-primary/20 bg-white/80 px-4 py-2 text-xs font-medium uppercase tracking-[0.2em] text-primary shadow-sm backdrop-blur-sm">
+                  One home for the whole wedding
+                </div>
               <motion.h1
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6 }}
-                className="font-display text-4xl font-bold leading-tight text-primary-foreground sm:text-5xl lg:text-6xl"
+                  className="mt-6 font-display text-4xl font-bold leading-[1.05] text-foreground sm:text-5xl xl:text-6xl"
               >
-                Plan Your Dream<br />Kenyan Wedding
+                  Plan the wedding,
+                  <br />
+                  find the right team,
+                  <br />
+                  know the cost early.
               </motion.h1>
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.2 }}
-                className="mt-6 text-lg text-primary-foreground/80"
+                  className="mt-6 max-w-2xl text-lg text-muted-foreground"
               >
-                From budgets to guest lists, manage every detail of your wedding day with one beautiful platform.
+                  Centerpiece gives couples, committees, planners, and verified vendors one elegant wedding workspace for budgets, discovery, reviews, and execution.
               </motion.p>
             </div>
 
-            {/* Right: auth form */}
-            <InlineAuthForm />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Link to="/vendors-directory" className="group">
+                  <Card className="h-full border-border/60 bg-white/85 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
+                    <CardContent className="space-y-3 p-5">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10">
+                        <Store className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-display text-xl font-semibold text-foreground">Vendor Directory</p>
+                        <p className="mt-1 text-sm text-muted-foreground">Browse verified wedding vendors without digging through WhatsApp referrals.</p>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                        Explore vendors
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+
+                <Link to="/planners" className="group">
+                  <Card className="h-full border-border/60 bg-white/85 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
+                    <CardContent className="space-y-3 p-5">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10">
+                        <Briefcase className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-display text-xl font-semibold text-foreground">Find a Planner</p>
+                        <p className="mt-1 text-sm text-muted-foreground">See professional planners or choose a committee-led setup for your wedding.</p>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                        Meet planners
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </div>
+
+              <div className="grid gap-3 rounded-[28px] border border-border/60 bg-white/70 p-5 shadow-sm backdrop-blur-sm sm:grid-cols-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Built for</p>
+                  <p className="mt-2 font-medium text-foreground">Couples, planners, committees, vendors</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Trust layer</p>
+                  <p className="mt-2 font-medium text-foreground">Verified access, pricing, reviews</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Start fast</p>
+                  <p className="mt-2 font-medium text-foreground">Estimate cost and open your workspace</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="xl:pt-10">
+              <PublicBudgetEstimator />
+            </div>
+
+            <div className="xl:pt-12">
+              <InlineAuthForm />
+            </div>
           </div>
         </div>
       </section>
-
-      <PublicBudgetEstimator />
 
       {/* Features */}
       <section className="mx-auto max-w-5xl px-6 py-20">
