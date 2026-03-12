@@ -141,7 +141,7 @@ export default function ResetPassword() {
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto flex items-center gap-2">
               <Heart className="h-7 w-7 text-primary" fill="currentColor" />
-              <span className="font-display text-2xl font-bold text-foreground">WeddingPlan</span>
+              <span className="font-display text-2xl font-bold text-foreground">Centerpiece</span>
             </div>
             <CardTitle className="font-display text-xl">Reset Password</CardTitle>
             <CardDescription>Loading your recovery session...</CardDescription>
@@ -161,7 +161,7 @@ export default function ResetPassword() {
           <CardHeader className="text-center space-y-3">
             <div className="mx-auto flex items-center gap-2">
               <Heart className="h-7 w-7 text-primary" fill="currentColor" />
-              <span className="font-display text-2xl font-bold text-foreground">WeddingPlan</span>
+              <span className="font-display text-2xl font-bold text-foreground">Centerpiece</span>
             </div>
             <CardTitle className="font-display text-xl">Reset Link Invalid</CardTitle>
             <CardDescription>
@@ -187,7 +187,7 @@ export default function ResetPassword() {
         <CardHeader className="text-center space-y-3">
           <div className="mx-auto flex items-center gap-2">
             <Heart className="h-7 w-7 text-primary" fill="currentColor" />
-            <span className="font-display text-2xl font-bold text-foreground">WeddingPlan</span>
+            <span className="font-display text-2xl font-bold text-foreground">Centerpiece</span>
           </div>
           <CardTitle className="font-display text-xl">Set New Password</CardTitle>
           <CardDescription>Enter your new password below</CardDescription>

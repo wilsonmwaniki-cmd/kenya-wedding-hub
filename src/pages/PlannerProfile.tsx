@@ -123,7 +123,7 @@ export default function PlannerProfile() {
       <header className="border-b border-border bg-card">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-2">
           <Heart className="h-5 w-5 text-primary" fill="currentColor" />
-          <span className="font-display text-base font-semibold text-foreground">WeddingPlan</span>
+          <span className="font-display text-base font-semibold text-foreground">Centerpiece</span>
           <Link to="/" className="ml-auto text-sm text-muted-foreground hover:text-foreground transition-colors">
             Home
           </Link>
