@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Heart, Loader2, Users, Briefcase, Store } from 'lucide-react';
+import { Heart, Loader2, Users, Briefcase, Store, UserCog } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
@@ -18,6 +18,7 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<SignupRole>('couple');
+  const [committeeName, setCommitteeName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const { signIn, signUp, signInWithGoogle, user, profile, loading } = useAuth();
@@ -55,7 +56,9 @@ export default function Auth() {
     setSubmitting(true);
     try {
       if (isSignUp) {
-        await signUp(email, password, fullName, role);
+        await signUp(email, password, fullName, role, {
+          committeeName: role === 'committee' ? committeeName : null,
+        });
         toast({ title: 'Account created!', description: 'Check your email to confirm your account.' });
       } else {
         await signIn(email, password);
@@ -128,12 +131,12 @@ export default function Auth() {
                 {isSignUp && (
                   <>
                     <div className="space-y-2">
-                      <Label htmlFor="name">Full Name</Label>
-                      <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your full name" required />
+                      <Label htmlFor="name">{role === 'committee' ? 'Chairperson Name' : 'Full Name'}</Label>
+                      <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder={role === 'committee' ? 'Committee chair full name' : 'Your full name'} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Account Type</Label>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => setRole('couple')}
@@ -162,6 +165,19 @@ export default function Auth() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => setRole('committee')}
+                          className={`flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors ${
+                            role === 'committee'
+                              ? 'border-primary bg-primary/5 text-primary'
+                              : 'border-border text-muted-foreground hover:border-primary/50'
+                          }`}
+                        >
+                          <UserCog className="h-5 w-5" />
+                          <span className="text-sm font-medium">Committee</span>
+                          <span className="text-[10px] text-center leading-tight">Run one wedding together</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setRole('vendor')}
                           className={`flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors ${
                             role === 'vendor'
@@ -175,6 +191,18 @@ export default function Auth() {
                         </button>
                       </div>
                     </div>
+                    {role === 'committee' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="committee-name">Committee Name</Label>
+                        <Input
+                          id="committee-name"
+                          value={committeeName}
+                          onChange={(e) => setCommitteeName(e.target.value)}
+                          placeholder="e.g. Mary & James Wedding Committee"
+                          required
+                        />
+                      </div>
+                    )}
                   </>
                 )}
                 <div className="space-y-2">

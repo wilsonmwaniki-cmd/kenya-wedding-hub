@@ -5,6 +5,12 @@ interface PlannerAccessRecord {
   planner_subscription_status?: string | null;
   planner_subscription_expires_at?: string | null;
   planner_verification_requested?: boolean | null;
+  planner_type?: string | null;
+  committee_name?: string | null;
+}
+
+export function isCommitteePlanner(record?: PlannerAccessRecord | null) {
+  return record?.planner_type === 'committee';
 }
 
 export function plannerHasActiveSubscription(record?: PlannerAccessRecord | null) {
@@ -19,8 +25,12 @@ export function plannerHasFullAccess(record?: PlannerAccessRecord | null) {
 }
 
 export function plannerAccessMessage(record?: PlannerAccessRecord | null) {
-  if (!plannerHasActiveSubscription(record)) return 'Active subscription required before planner connections and vendor outreach unlock.';
+  if (!plannerHasActiveSubscription(record)) {
+    return isCommitteePlanner(record)
+      ? 'Active committee subscription required before committee vendor and couple coordination unlocks.'
+      : 'Active subscription required before planner connections and vendor outreach unlock.';
+  }
   if (record?.planner_verification_requested && !record?.planner_verified) return 'Verification request is in admin review.';
-  if (!record?.planner_verified) return 'Verification required.';
-  return 'Full planner access is active.';
+  if (!record?.planner_verified) return isCommitteePlanner(record) ? 'Committee verification required.' : 'Verification required.';
+  return isCommitteePlanner(record) ? 'Full committee access is active.' : 'Full planner access is active.';
 }

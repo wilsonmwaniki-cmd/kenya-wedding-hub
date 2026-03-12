@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import MyConnections from '@/components/MyConnections';
-import { plannerAccessMessage, plannerHasFullAccess } from '@/lib/plannerAccess';
+import { isCommitteePlanner, plannerAccessMessage, plannerHasFullAccess } from '@/lib/plannerAccess';
 
 interface LinkRequest {
   id: string;
@@ -121,6 +121,11 @@ export default function PlannerDashboard() {
   };
 
   const fullPlannerAccess = plannerHasFullAccess(profile);
+  const isCommittee = isCommitteePlanner(profile);
+  const workspaceLabel = isCommittee ? 'committee workspace' : 'planner workspace';
+  const collectionHeading = isCommittee ? 'Committee Weddings' : 'My Clients';
+  const addLabel = isCommittee ? 'Add Wedding' : 'Add Client';
+  const committeeAtCapacity = isCommittee && clients.length >= 1;
 
   return (
     <div className="space-y-6">
@@ -145,7 +150,9 @@ export default function PlannerDashboard() {
             </div>
             <p className="text-sm text-muted-foreground">{plannerAccessMessage(profile)}</p>
             <p className="text-sm text-muted-foreground">
-              Planner-to-couple links, planner-to-vendor outreach, and client workspace management unlock after verification and active subscription.
+              {isCommittee
+                ? 'Committee-to-couple links, vendor outreach, and the shared wedding workspace unlock after verification and active subscription.'
+                : 'Planner-to-couple links, planner-to-vendor outreach, and client workspace management unlock after verification and active subscription.'}
             </p>
           </CardContent>
         </Card>
@@ -191,15 +198,15 @@ export default function PlannerDashboard() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">My Clients</h1>
-          <p className="text-muted-foreground">{clients.length} wedding{clients.length !== 1 ? 's' : ''} being managed</p>
+          <h1 className="font-display text-3xl font-bold text-foreground">{collectionHeading}</h1>
+          <p className="text-muted-foreground">{clients.length} wedding{clients.length !== 1 ? 's' : ''} in this {workspaceLabel}</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2" disabled={!fullPlannerAccess}><Plus className="h-4 w-4" /> Add Client</Button>
+            <Button className="gap-2" disabled={!fullPlannerAccess || committeeAtCapacity}><Plus className="h-4 w-4" /> {addLabel}</Button>
           </DialogTrigger>
           <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle className="font-display">New Client</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="font-display">{isCommittee ? 'New Wedding Workspace' : 'New Client'}</DialogTitle></DialogHeader>
             <form onSubmit={addClient} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
@@ -231,11 +238,19 @@ export default function PlannerDashboard() {
                   <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+254..." />
                 </div>
               </div>
-              <Button type="submit" className="w-full">Add Client</Button>
+              <Button type="submit" className="w-full">{addLabel}</Button>
             </form>
           </DialogContent>
         </Dialog>
       </div>
+
+      {committeeAtCapacity && (
+        <Card className="border-border/70 bg-muted/20">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            Committee accounts are currently scoped to one wedding workspace. Manage committee members and assignments from Settings.
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {clients.map((c, i) => {
@@ -305,7 +320,11 @@ export default function PlannerDashboard() {
       {clients.length === 0 && (
         <div className="text-center py-16">
           <Users className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
-          <p className="text-muted-foreground">No clients yet. Add your first client to start managing their wedding!</p>
+          <p className="text-muted-foreground">
+            {isCommittee
+              ? 'No wedding workspace yet. Add your wedding to start assigning committee roles and managing vendors.'
+              : 'No clients yet. Add your first client to start managing their wedding!'}
+          </p>
         </div>
       )}
     </div>

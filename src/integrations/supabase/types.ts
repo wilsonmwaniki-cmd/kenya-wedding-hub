@@ -192,6 +192,45 @@ export type Database = {
         }
         Relationships: []
       }
+      wedding_committee_members: {
+        Row: {
+          chair_user_id: string
+          created_at: string
+          email: string | null
+          full_name: string
+          id: string
+          permission_level: string
+          phone: string
+          responsibility: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          chair_user_id: string
+          created_at?: string
+          email?: string | null
+          full_name: string
+          id?: string
+          permission_level?: string
+          phone: string
+          responsibility: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          chair_user_id?: string
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          permission_level?: string
+          phone?: string
+          responsibility?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       portfolio_vendors: {
         Row: {
           created_at: string
@@ -245,7 +284,9 @@ export type Database = {
           created_at: string
           full_name: string | null
           id: string
+          committee_name: string | null
           partner_name: string | null
+          planner_type: string | null
           planner_subscription_expires_at: string | null
           planner_subscription_started_at: string | null
           planner_subscription_status: string
@@ -269,7 +310,9 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          committee_name?: string | null
           partner_name?: string | null
+          planner_type?: string | null
           planner_subscription_expires_at?: string | null
           planner_subscription_started_at?: string | null
           planner_subscription_status?: string
@@ -293,7 +336,9 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          committee_name?: string | null
           partner_name?: string | null
+          planner_type?: string | null
           planner_subscription_expires_at?: string | null
           planner_subscription_started_at?: string | null
           planner_subscription_status?: string
@@ -738,6 +783,8 @@ export type Database = {
           punctuality_rating: number
           quality_rating: number
           reliability_rating: number
+          review_source: string
+          review_source_role: string | null
           reviewer_user_id: string
           source_vendor_id: string | null
           updated_at: string
@@ -763,6 +810,8 @@ export type Database = {
           punctuality_rating: number
           quality_rating: number
           reliability_rating: number
+          review_source?: string
+          review_source_role?: string | null
           reviewer_user_id?: string
           source_vendor_id?: string | null
           updated_at?: string
@@ -788,6 +837,8 @@ export type Database = {
           punctuality_rating?: number
           quality_rating?: number
           reliability_rating?: number
+          review_source?: string
+          review_source_role?: string | null
           reviewer_user_id?: string
           source_vendor_id?: string | null
           updated_at?: string
@@ -1277,6 +1328,10 @@ export type Database = {
         Returns: string
       }
       require_planner_or_admin: { Args: never; Returns: undefined }
+      can_manage_committee_members: {
+        Args: { target_chair_user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "couple" | "planner" | "vendor" | "admin"

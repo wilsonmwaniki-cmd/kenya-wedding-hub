@@ -83,7 +83,7 @@ function reputationSummary(benchmark?: VendorReputationBenchmark | null) {
   if (!benchmark) return 'Loading planner trust data...';
   if (benchmark.benchmark_visible && benchmark.average_overall_rating != null) {
     const hireAgainRate = benchmark.hire_again_rate != null ? `${Math.round(benchmark.hire_again_rate * 100)}% would hire again` : 'Hire-again rate pending';
-    return `Planner score ${benchmark.average_overall_rating.toFixed(1)}/5 · ${hireAgainRate}`;
+    return `Planner / committee score ${benchmark.average_overall_rating.toFixed(1)}/5 · ${hireAgainRate}`;
   }
   if (benchmark.sample_size > 0) {
     return `${benchmark.sample_size} scorecards captured. Trust benchmarks unlock at 3 reviews.`;
@@ -96,6 +96,12 @@ function formatIssueFlags(issueFlags: string[]) {
   return issueFlags
     .map((flag) => issueFlagOptions.find((option) => option.value === flag)?.label ?? flag)
     .join(', ');
+}
+
+function reviewSourceLabel(source?: string | null, role?: string | null) {
+  if (source === 'committee') return role ? `Committee planned wedding · ${role}` : 'Committee planned wedding';
+  if (source === 'admin') return 'Admin review';
+  return 'Professional planner review';
 }
 
 export default function Vendors() {
@@ -749,7 +755,7 @@ export default function Vendors() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="h-4 w-4 text-primary" />
-                      <p className="text-sm font-medium text-foreground">Planner trust signal</p>
+                      <p className="text-sm font-medium text-foreground">Planner & committee trust signal</p>
                     </div>
                     <Badge variant="outline" className="text-[10px]">
                       {activeReputation?.sample_size ?? 0} reviews
@@ -763,6 +769,7 @@ export default function Vendors() {
                       <p className="font-medium text-foreground">
                         Your scorecard: {existingReview.overall_rating}/5 overall
                       </p>
+                      <p className="mt-1">{reviewSourceLabel(existingReview.review_source, existingReview.review_source_role)}</p>
                       <p className="mt-1">
                         {existingReview.would_hire_again ? 'Would hire again' : 'Would not hire again'} · {existingReview.delivered_on_time === null ? 'Timing not rated' : existingReview.delivered_on_time ? 'Delivered on time' : 'Delivery timing issue'}
                       </p>
@@ -770,7 +777,7 @@ export default function Vendors() {
                     </div>
                   ) : (
                     <p className="mt-3 text-xs text-muted-foreground">
-                      Add a scorecard after the vendor is booked or completed to grow your planner-only reputation graph.
+                      Add a scorecard after the vendor is booked or completed to grow the professional and committee reputation graph.
                     </p>
                   )}
                 </div>
