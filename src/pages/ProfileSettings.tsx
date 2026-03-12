@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import type { Tables } from '@/integrations/supabase/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,9 +9,25 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyhole, AlertTriangle } from 'lucide-react';
+import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyhole, AlertTriangle, UserCog, Phone } from 'lucide-react';
 import AvatarUpload from '@/components/AvatarUpload';
-import { plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
+import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
+
+type CommitteeMember = Tables<'wedding_committee_members'>;
+
+const committeePermissionOptions = ['chair', 'member', 'viewer'] as const;
+const committeeResponsibilityOptions = [
+  'Photography',
+  'Catering',
+  'Decor',
+  'Venue',
+  'Transport',
+  'Entertainment',
+  'Guest Coordination',
+  'Finance',
+  'Protocol / MC',
+  'Bridal Logistics',
+];
 
 export default function ProfileSettings() {
   const { profile, updateProfile } = useAuth();
@@ -18,10 +35,23 @@ export default function ProfileSettings() {
   const [saving, setSaving] = useState(false);
   const [newSpecialty, setNewSpecialty] = useState('');
   const [requestingVerification, setRequestingVerification] = useState(false);
+  const [committeeMembers, setCommitteeMembers] = useState<CommitteeMember[]>([]);
+  const [committeeLoading, setCommitteeLoading] = useState(false);
+  const [savingCommitteeMember, setSavingCommitteeMember] = useState(false);
+  const [deletingCommitteeMemberId, setDeletingCommitteeMemberId] = useState<string | null>(null);
+  const [committeeMemberForm, setCommitteeMemberForm] = useState({
+    full_name: '',
+    phone: '',
+    email: '',
+    responsibility: committeeResponsibilityOptions[0],
+    permission_level: 'member' as CommitteeMember['permission_level'],
+  });
 
   const isPlanner = profile?.role === 'planner';
   const isVendor = profile?.role === 'vendor';
   const isAdmin = profile?.role === 'admin';
+  const isCommittee = isCommitteePlanner(profile);
+  const isProfessionalPlanner = isPlanner && !isCommittee;
 
   const [form, setForm] = useState({
     full_name: '',
@@ -34,6 +64,7 @@ export default function ProfileSettings() {
     company_website: '',
     bio: '',
     specialties: [] as string[],
+    committee_name: '',
   });
 
   useEffect(() => {
@@ -49,22 +80,50 @@ export default function ProfileSettings() {
         company_website: profile.company_website || '',
         bio: profile.bio || '',
         specialties: profile.specialties || [],
+        committee_name: profile.committee_name || '',
       });
     }
   }, [profile]);
+
+  const loadCommitteeMembers = async () => {
+    if (!profile?.user_id || !isCommittee) {
+      setCommitteeMembers([]);
+      return;
+    }
+    setCommitteeLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('wedding_committee_members')
+        .select('*')
+        .eq('chair_user_id', profile.user_id)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setCommitteeMembers((data ?? []) as CommitteeMember[]);
+    } catch (err: any) {
+      toast({ title: 'Failed to load committee members', description: err.message, variant: 'destructive' });
+    } finally {
+      setCommitteeLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadCommitteeMembers();
+  }, [profile?.user_id, isCommittee]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
       const updates: Record<string, any> = { full_name: form.full_name };
-      if (isPlanner) {
+      if (isProfessionalPlanner) {
         updates.company_name = form.company_name;
         updates.company_email = form.company_email;
         updates.company_phone = form.company_phone;
         updates.company_website = form.company_website;
         updates.bio = form.bio;
         updates.specialties = form.specialties;
+      } else if (isCommittee) {
+        updates.committee_name = form.committee_name;
       } else if (!isVendor && !isAdmin) {
         updates.partner_name = form.partner_name;
         updates.wedding_date = form.wedding_date;
@@ -115,12 +174,64 @@ export default function ProfileSettings() {
   const plannerSubscriptionActive = plannerHasActiveSubscription(profile);
   const plannerFullAccess = plannerHasFullAccess(profile);
 
+  const addCommitteeMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile?.user_id) return;
+    setSavingCommitteeMember(true);
+    try {
+      const { error } = await supabase.from('wedding_committee_members').insert({
+        chair_user_id: profile.user_id,
+        full_name: committeeMemberForm.full_name,
+        phone: committeeMemberForm.phone,
+        email: committeeMemberForm.email || null,
+        responsibility: committeeMemberForm.responsibility,
+        permission_level: committeeMemberForm.permission_level,
+      });
+      if (error) throw error;
+      setCommitteeMemberForm({
+        full_name: '',
+        phone: '',
+        email: '',
+        responsibility: committeeResponsibilityOptions[0],
+        permission_level: 'member',
+      });
+      await loadCommitteeMembers();
+      toast({ title: 'Committee member added' });
+    } catch (err: any) {
+      toast({ title: 'Failed to add committee member', description: err.message, variant: 'destructive' });
+    } finally {
+      setSavingCommitteeMember(false);
+    }
+  };
+
+  const removeCommitteeMember = async (memberId: string) => {
+    setDeletingCommitteeMemberId(memberId);
+    try {
+      const { error } = await supabase.from('wedding_committee_members').delete().eq('id', memberId);
+      if (error) throw error;
+      await loadCommitteeMembers();
+      toast({ title: 'Committee member removed' });
+    } catch (err: any) {
+      toast({ title: 'Failed to remove committee member', description: err.message, variant: 'destructive' });
+    } finally {
+      setDeletingCommitteeMemberId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-xl">
       <div>
         <h1 className="font-display text-3xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground">
-          {isPlanner ? 'Manage your planner profile & company details' : isVendor ? 'Manage your account settings' : isAdmin ? 'Manage your owner profile' : 'Manage your wedding profile'}
+          {isProfessionalPlanner
+            ? 'Manage your planner profile & company details'
+            : isCommittee
+              ? 'Manage your committee profile, members, and access'
+              : isVendor
+                ? 'Manage your account settings'
+                : isAdmin
+                  ? 'Manage your owner profile'
+                  : 'Manage your wedding profile'}
         </p>
       </div>
 
@@ -129,12 +240,14 @@ export default function ProfileSettings() {
           <CardContent className="flex items-center gap-3 py-4">
             <ExternalLink className="h-4 w-4 text-primary shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground">Public Profile</p>
-              <p className="text-xs text-muted-foreground truncate">{profileUrl}</p>
+              <p className="text-sm font-medium text-foreground">{isCommittee ? 'Workspace Link' : 'Public Profile'}</p>
+              <p className="text-xs text-muted-foreground truncate">{isCommittee ? 'Committee accounts are not listed publicly. This link is private to your workspace.' : profileUrl}</p>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={copyProfileLink}>
-              <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Link
-            </Button>
+            {!isCommittee && (
+              <Button type="button" variant="outline" size="sm" onClick={copyProfileLink}>
+                <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Link
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
@@ -165,6 +278,9 @@ export default function ProfileSettings() {
             <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">Current access status</p>
               <p className="mt-1">{plannerAccessMessage(profile)}</p>
+              {isCommittee && profile.committee_name && (
+                <p className="mt-1 text-xs">Committee: {profile.committee_name}</p>
+              )}
               {profile.planner_subscription_expires_at && (
                 <p className="mt-1 text-xs">
                   Subscription expiry: {new Date(profile.planner_subscription_expires_at).toLocaleDateString()}
@@ -189,7 +305,7 @@ export default function ProfileSettings() {
               {!plannerSubscriptionActive && (
                 <div className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                   <AlertTriangle className="h-4 w-4" />
-                  Subscription must be activated by admin before verification can be requested.
+                  {isCommittee ? 'Committee subscription must be activated by admin before verification can be requested.' : 'Subscription must be activated by admin before verification can be requested.'}
                 </div>
               )}
             </div>
@@ -218,7 +334,7 @@ export default function ProfileSettings() {
           </CardContent>
         </Card>
 
-        {isPlanner ? (
+        {isProfessionalPlanner ? (
           <>
             {/* Company Details */}
             <Card className="shadow-card">
@@ -289,6 +405,131 @@ export default function ProfileSettings() {
                       ))}
                     </div>
                   )}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : isCommittee ? (
+          <>
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="font-display">Committee Details</CardTitle>
+                <CardDescription>Set the committee name used across this wedding workspace.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Committee Name</Label>
+                  <Input
+                    value={form.committee_name}
+                    onChange={e => setForm(f => ({ ...f, committee_name: e.target.value }))}
+                    placeholder="e.g. Mary & James Wedding Committee"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="font-display flex items-center gap-2">
+                  <UserCog className="h-5 w-5 text-primary" />
+                  Committee Members
+                </CardTitle>
+                <CardDescription>
+                  Add members, assign wedding responsibilities, and store the phone numbers attached to each role.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <form onSubmit={addCommitteeMember} className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Full Name</Label>
+                    <Input
+                      value={committeeMemberForm.full_name}
+                      onChange={(e) => setCommitteeMemberForm((prev) => ({ ...prev, full_name: e.target.value }))}
+                      placeholder="Committee member name"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Phone Number</Label>
+                    <Input
+                      value={committeeMemberForm.phone}
+                      onChange={(e) => setCommitteeMemberForm((prev) => ({ ...prev, phone: e.target.value }))}
+                      placeholder="+254..."
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Email (optional)</Label>
+                    <Input
+                      type="email"
+                      value={committeeMemberForm.email}
+                      onChange={(e) => setCommitteeMemberForm((prev) => ({ ...prev, email: e.target.value }))}
+                      placeholder="member@example.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Responsibility</Label>
+                    <select
+                      value={committeeMemberForm.responsibility}
+                      onChange={(e) => setCommitteeMemberForm((prev) => ({ ...prev, responsibility: e.target.value }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {committeeResponsibilityOptions.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Permission</Label>
+                    <select
+                      value={committeeMemberForm.permission_level}
+                      onChange={(e) => setCommitteeMemberForm((prev) => ({ ...prev, permission_level: e.target.value as CommitteeMember['permission_level'] }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {committeePermissionOptions.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <Button type="submit" disabled={savingCommitteeMember}>
+                      {savingCommitteeMember ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                      Add Committee Member
+                    </Button>
+                  </div>
+                </form>
+
+                <div className="space-y-3">
+                  {committeeLoading && <p className="text-sm text-muted-foreground">Loading committee members...</p>}
+                  {!committeeLoading && committeeMembers.length === 0 && (
+                    <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
+                      No committee members added yet.
+                    </div>
+                  )}
+                  {committeeMembers.map((member) => (
+                    <div key={member.id} className="flex items-start justify-between gap-4 rounded-lg border border-border/70 bg-background px-4 py-3">
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">{member.full_name}</p>
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                          <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" /> {member.phone}</span>
+                          {member.email && <span>{member.email}</span>}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="outline">{member.responsibility}</Badge>
+                          <Badge variant="secondary">{member.permission_level}</Badge>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeCommitteeMember(member.id)}
+                        disabled={deletingCommitteeMemberId === member.id}
+                      >
+                        {deletingCommitteeMemberId === member.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>

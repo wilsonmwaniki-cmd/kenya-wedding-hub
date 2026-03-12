@@ -61,6 +61,8 @@ interface AdminPlannerRow {
   full_name: string | null;
   company_name: string | null;
   company_email: string | null;
+  planner_type: "professional" | "committee";
+  committee_name: string | null;
   planner_verified: boolean;
   planner_verification_requested: boolean;
   planner_verification_requested_at: string | null;
@@ -98,6 +100,8 @@ interface AdminReputationRow {
   would_hire_again: boolean;
   issue_flags: string[];
   visibility: ReputationVisibilityFilter;
+  review_source: string;
+  review_source_role: string | null;
   private_notes: string | null;
 }
 
@@ -919,12 +923,12 @@ export default function AdminPortal() {
         <TabsContent value="planners" className="space-y-4">
           <Card>
             <CardHeader className="space-y-3">
-              <CardTitle className="text-base">Planner Access Review</CardTitle>
+              <CardTitle className="text-base">Planner & Committee Access Review</CardTitle>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Input
                   value={plannerSearch}
                   onChange={(e) => setPlannerSearch(e.target.value)}
-                  placeholder="Search by planner name, company, or email"
+                  placeholder="Search by name, company, committee, or email"
                 />
                 <Select value={plannerVerificationFilter} onValueChange={(value) => setPlannerVerificationFilter(value as PlannerVerificationFilter)}>
                   <SelectTrigger className="w-full sm:w-[180px]">
@@ -950,7 +954,7 @@ export default function AdminPortal() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Planner</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Type / Status</TableHead>
                     <TableHead>Subscription</TableHead>
                     <TableHead>Last Updated</TableHead>
                     <TableHead className="text-right">Action</TableHead>
@@ -967,10 +971,17 @@ export default function AdminPortal() {
                   {planners.map((item) => (
                     <TableRow key={item.user_id}>
                       <TableCell>
-                        <p className="font-medium">{item.company_name || item.full_name || "Unnamed Planner"}</p>
+                        <p className="font-medium">
+                          {item.planner_type === 'committee'
+                            ? item.committee_name || item.full_name || 'Unnamed Committee'
+                            : item.company_name || item.full_name || 'Unnamed Planner'}
+                        </p>
                         <p className="text-xs text-muted-foreground">{item.company_email || item.user_id}</p>
                       </TableCell>
                       <TableCell className="space-x-2">
+                        <Badge variant="outline">
+                          {item.planner_type === 'committee' ? 'Committee' : 'Professional'}
+                        </Badge>
                         <Badge variant={item.planner_verified ? "secondary" : "outline"}>
                           {item.planner_verified ? "Verified" : "Unverified"}
                         </Badge>
@@ -1172,6 +1183,13 @@ export default function AdminPortal() {
                           <p className="text-xs text-muted-foreground">{item.reviewer_email || item.reviewer_user_id}</p>
                           <p className="text-xs text-muted-foreground">
                             {item.overall_rating}/5 overall • {item.would_hire_again ? "would hire again" : "would not hire again"}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {item.review_source === 'committee'
+                              ? `Committee planned wedding${item.review_source_role ? ` · ${item.review_source_role}` : ''}`
+                              : item.review_source === 'admin'
+                                ? 'Admin review'
+                                : 'Professional planner review'}
                           </p>
                         </TableCell>
                         <TableCell>

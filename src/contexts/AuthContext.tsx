@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import type { AppRole, SignupRole } from '@/lib/roles';
+import type { AppRole, PlannerType, SignupRole } from '@/lib/roles';
 
 interface Profile {
   id: string;
@@ -18,6 +18,8 @@ interface Profile {
   bio: string | null;
   specialties: string[] | null;
   avatar_url: string | null;
+  planner_type: PlannerType | null;
+  committee_name: string | null;
   planner_verified: boolean;
   planner_verification_requested: boolean;
   planner_verification_requested_at: string | null;
@@ -31,7 +33,13 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string, role?: SignupRole) => Promise<void>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    role?: SignupRole,
+    options?: { committeeName?: string | null }
+  ) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -58,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getFallbackRole = async (authUser: User): Promise<AppRole> => {
     const requestedRole = authUser.user_metadata?.role;
+    if (requestedRole === 'committee') return 'planner';
     if (requestedRole === 'admin' || requestedRole === 'vendor' || requestedRole === 'planner' || requestedRole === 'couple') {
       return requestedRole;
     }
@@ -96,6 +105,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     bio: null,
     specialties: null,
     avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null,
+    planner_type: authUser.user_metadata?.planner_type === 'committee'
+      ? 'committee'
+      : role === 'planner'
+        ? 'professional'
+        : null,
+    committee_name: authUser.user_metadata?.committee_name || null,
     planner_verified: false,
     planner_verification_requested: false,
     planner_verification_requested_at: null,
@@ -132,6 +147,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const role = await getFallbackRole(authUser);
     const fullName = getFallbackFullName(authUser);
+    const plannerType = authUser.user_metadata?.planner_type === 'committee'
+      ? 'committee'
+      : role === 'planner'
+        ? 'professional'
+        : null;
+    const committeeName = plannerType === 'committee'
+      ? authUser.user_metadata?.committee_name ?? null
+      : null;
 
     const { error } = await supabase
       .from('profiles')
@@ -139,6 +162,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user_id: authUser.id,
         full_name: fullName,
         role,
+        planner_type: plannerType,
+        committee_name: committeeName,
       });
 
     if (error && error.code !== '23505') {
@@ -240,12 +265,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string, role: SignupRole = 'couple') => {
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    role: SignupRole = 'couple',
+    options?: { committeeName?: string | null },
+  ) => {
+    const isCommittee = role === 'committee';
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName, role },
+        data: {
+          full_name: fullName,
+          role: isCommittee ? 'planner' : role,
+          planner_type: isCommittee ? 'committee' : role === 'planner' ? 'professional' : null,
+          committee_name: isCommittee ? options?.committeeName ?? null : null,
+        },
         emailRedirectTo: window.location.origin,
       },
     });
