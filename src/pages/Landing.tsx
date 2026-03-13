@@ -27,7 +27,7 @@ function formatCurrency(value: number | null | undefined) {
   return `KES ${Number(value).toLocaleString()}`;
 }
 
-function PublicBudgetEstimator() {
+function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
   const [guestCount, setGuestCount] = useState('120');
   const [county, setCounty] = useState('Nakuru');
   const [weddingStyle, setWeddingStyle] = useState<'intimate' | 'classic' | 'luxury' | 'garden'>('classic');
@@ -84,6 +84,73 @@ function PublicBudgetEstimator() {
       { suggested: 0, low: 0, high: 0, marketCount: 0 },
     );
   }, [estimateRows]);
+
+  if (compact) {
+    return (
+      <Card className="border-border/40 bg-white/95 shadow-2xl backdrop-blur-sm">
+        <CardContent className="space-y-5 p-6">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-primary/10 p-2.5">
+              <Calculator className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-display text-2xl font-semibold text-foreground">Quick Cost Estimate</h3>
+              <p className="text-sm text-muted-foreground">Free, instant, and no sign-up required</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="hero-guest-count" className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Number of guests</Label>
+            <Input
+              id="hero-guest-count"
+              type="number"
+              value={guestCount}
+              onChange={(e) => setGuestCount(e.target.value)}
+              placeholder="120"
+              className="h-12 bg-background/90"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="hero-county" className="text-xs uppercase tracking-[0.16em] text-muted-foreground">County</Label>
+            <Input
+              id="hero-county"
+              value={county}
+              onChange={(e) => setCounty(e.target.value)}
+              placeholder="e.g. Nairobi"
+              className="h-12 bg-background/90"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Wedding style</Label>
+            <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
+              <SelectTrigger className="h-12 bg-background/90"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="intimate">Intimate</SelectItem>
+                <SelectItem value="classic">Classic</SelectItem>
+                <SelectItem value="garden">Garden</SelectItem>
+                <SelectItem value="luxury">Luxury</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button onClick={() => void loadEstimate()} className="h-12 w-full gap-2" disabled={loadingEstimate}>
+            {loadingEstimate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Get Estimate
+          </Button>
+
+          <div className="rounded-2xl bg-primary/5 p-4">
+            <p className="text-sm font-medium text-muted-foreground">Estimated total budget</p>
+            <p className="mt-1 font-display text-3xl font-bold text-foreground">{formatCurrency(totals.suggested)}</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-border/60 bg-card/95 shadow-warm backdrop-blur-sm">
@@ -428,165 +495,211 @@ export default function Landing() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#fbf6f1_0%,#fffdfa_18%,#ffffff_100%)]">
-      {/* Nav */}
-      <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-8">
-        <div className="flex items-center gap-3">
-          <div className="rounded-full bg-primary/10 p-2.5">
-            <Heart className="h-6 w-6 text-primary" fill="currentColor" />
+    <div className="min-h-screen bg-[linear-gradient(180deg,#fcf8f3_0%,#fffdfa_24%,#ffffff_100%)] text-foreground">
+      <nav className="sticky top-0 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
+          <div className="flex items-center gap-3">
+            <Heart className="h-5 w-5 text-primary" fill="currentColor" />
+            <span className="font-display text-2xl font-semibold text-foreground">Centerpiece</span>
           </div>
-          <div>
-            <span className="font-display text-2xl font-bold text-foreground">Centerpiece</span>
-            <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Wedding Planning in Kenya</p>
+          <div className="hidden items-center gap-8 md:flex">
+            <Link to="/vendors-directory" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Vendors</Link>
+            <Link to="/planners" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Planners</Link>
+            <a href="#cost-estimator" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Cost Estimator</a>
+            <a href="#auth" className="inline-flex h-10 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
+              Sign In
+            </a>
           </div>
-        </div>
-        <div className="hidden items-center gap-3 md:flex">
-          <Link to="/planners">
-            <Button variant="ghost" size="sm">Find a Planner</Button>
-          </Link>
-          <Link to="/vendors-directory">
-            <Button variant="ghost" size="sm">Vendor Directory</Button>
-          </Link>
-          <Link to="/auth">
-            <Button size="sm" className="gap-2">
-              Login / Sign Up
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
         </div>
       </nav>
 
-      {/* Hero */}
-      <section className="relative overflow-hidden pb-16">
-        <div className="absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_top_left,rgba(221,108,58,0.18),transparent_38%),radial-gradient(circle_at_top_right,rgba(62,39,35,0.12),transparent_32%)]" />
-        <div className="absolute left-1/2 top-10 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute right-0 top-24 hidden h-[420px] w-[32rem] overflow-hidden rounded-l-[3rem] lg:block">
-          <img src={heroImage} alt="Kenyan wedding couple" className="h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(42,28,24,0.55),rgba(42,28,24,0.12))]" />
-        </div>
-        <div className="relative mx-auto max-w-7xl px-6 pt-6 lg:px-8 lg:pt-8">
-          <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr_0.9fr]">
-            <div className="flex flex-col justify-between gap-6">
-              <div className="max-w-xl">
-                <div className="inline-flex items-center rounded-full border border-primary/20 bg-white/80 px-4 py-2 text-xs font-medium uppercase tracking-[0.2em] text-primary shadow-sm backdrop-blur-sm">
-                  One home for the whole wedding
-                </div>
-              <motion.h1
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6 }}
-                  className="mt-6 font-display text-4xl font-bold leading-[1.05] text-foreground sm:text-5xl xl:text-6xl"
-              >
-                  Plan the wedding,
+      <section className="mx-auto max-w-7xl px-6 pt-10 lg:px-8 lg:pt-12">
+        <div className="overflow-hidden rounded-[40px] border border-border/40 shadow-[0_30px_80px_rgba(62,39,35,0.18)]">
+          <div className="relative min-h-[720px]">
+            <img src={heroImage} alt="Kenyan wedding centerpiece" className="absolute inset-0 h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(42,28,24,0.72)_0%,rgba(42,28,24,0.45)_40%,rgba(42,28,24,0.28)_100%)]" />
+            <div className="relative grid min-h-[720px] gap-10 px-8 py-10 lg:grid-cols-[1.1fr_0.9fr] lg:px-16 lg:py-16">
+              <div className="flex flex-col justify-center text-primary-foreground">
+                <motion.p
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                  className="text-sm uppercase tracking-[0.35em] text-primary-foreground/80"
+                >
+                  Wedding Planning for Kenya
+                </motion.p>
+                <motion.h1
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.1 }}
+                  className="mt-6 max-w-3xl font-display text-5xl font-semibold leading-[0.95] sm:text-6xl xl:text-7xl"
+                >
+                  Find trusted vendors.
                   <br />
-                  find the right team,
-                  <br />
-                  know the cost early.
-              </motion.h1>
-              <motion.p
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-                  className="mt-6 max-w-2xl text-lg text-muted-foreground"
-              >
-                  Centerpiece gives couples, committees, planners, and verified vendors one elegant wedding workspace for budgets, discovery, reviews, and execution.
-              </motion.p>
-            </div>
+                  <span className="italic font-normal">Know your budget.</span>
+                  <span className="font-normal"> Plan with confidence.</span>
+                </motion.h1>
+                <motion.p
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.2 }}
+                  className="mt-6 max-w-2xl text-xl leading-relaxed text-primary-foreground/86"
+                >
+                  Centerpiece helps couples, planners, and committees discover vendors, find planners, and estimate costs in one wedding planning platform built for Kenya.
+                </motion.p>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Link to="/vendors-directory" className="group">
-                  <Card className="h-full border-border/60 bg-white/85 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
-                    <CardContent className="space-y-3 p-5">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10">
-                        <Store className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-display text-xl font-semibold text-foreground">Vendor Directory</p>
-                        <p className="mt-1 text-sm text-muted-foreground">Browse verified wedding vendors without digging through WhatsApp referrals.</p>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm font-medium text-primary">
-                        Explore vendors
-                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-
-                <Link to="/planners" className="group">
-                  <Card className="h-full border-border/60 bg-white/85 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
-                    <CardContent className="space-y-3 p-5">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10">
-                        <Briefcase className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-display text-xl font-semibold text-foreground">Find a Planner</p>
-                        <p className="mt-1 text-sm text-muted-foreground">See professional planners or choose a committee-led setup for your wedding.</p>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm font-medium text-primary">
-                        Meet planners
-                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                <motion.div
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.3 }}
+                  className="mt-10 flex flex-wrap gap-4"
+                >
+                  <Link to="/vendors-directory">
+                    <Button variant="outline" className="h-12 min-w-[200px] border-white/40 bg-white/10 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white">
+                      Vendor Directory
+                    </Button>
+                  </Link>
+                  <Link to="/planners">
+                    <Button variant="outline" className="h-12 min-w-[200px] border-white/40 bg-white/10 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white">
+                      Find a Planner
+                    </Button>
+                  </Link>
+                  <a href="#cost-estimator">
+                    <Button variant="outline" className="h-12 min-w-[200px] border-white/40 bg-white/10 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white">
+                      Cost Estimator
+                    </Button>
+                  </a>
+                </motion.div>
               </div>
 
-              <div className="grid gap-3 rounded-[28px] border border-border/60 bg-white/70 p-5 shadow-sm backdrop-blur-sm sm:grid-cols-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Built for</p>
-                  <p className="mt-2 font-medium text-foreground">Couples, planners, committees, vendors</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Trust layer</p>
-                  <p className="mt-2 font-medium text-foreground">Verified access, pricing, reviews</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Start fast</p>
-                  <p className="mt-2 font-medium text-foreground">Estimate cost and open your workspace</p>
+              <div id="cost-estimator" className="flex items-center lg:justify-end">
+                <div className="w-full max-w-[520px]">
+                  <PublicBudgetEstimator compact />
                 </div>
               </div>
-            </div>
-
-            <div className="xl:pt-10">
-              <PublicBudgetEstimator />
-            </div>
-
-            <div className="xl:pt-12">
-              <InlineAuthForm />
             </div>
           </div>
         </div>
       </section>
 
-      {/* Features */}
-      <section className="mx-auto max-w-5xl px-6 py-20">
-        <h2 className="text-center font-display text-3xl font-bold text-foreground">Everything You Need</h2>
-        <p className="mx-auto mt-3 max-w-lg text-center text-muted-foreground">
-          Designed specifically for Kenyan weddings — from ruracio to reception.
-        </p>
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
+        <div className="text-center">
+          <p className="text-sm uppercase tracking-[0.22em] text-primary">Built for the wedding ecosystem</p>
+          <h2 className="mt-5 font-display text-4xl font-semibold leading-tight sm:text-5xl">
+            Everything you need to <span className="italic font-normal">plan</span>
+          </h2>
+          <p className="mx-auto mt-4 max-w-3xl text-lg text-muted-foreground">
+            Whether you are a couple, a committee, a planner, or a vendor, Centerpiece gives you the tools to get it done.
+          </p>
+        </div>
+
+        <div className="mt-14 grid gap-8 lg:grid-cols-3">
+          <Link to="/vendors-directory" className="group">
+            <Card className="h-full rounded-[28px] border-border/60 bg-card/95 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
+              <CardContent className="space-y-5 p-8">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
+                  <Store className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="font-display text-2xl font-semibold">Vendor Directory</h3>
+                  <p className="mt-3 text-base leading-8 text-muted-foreground">
+                    Browse vetted venues, caterers, photographers, florists, DJs, and more across Kenya.
+                  </p>
+                </div>
+                <div className="pt-4 text-sm font-medium uppercase tracking-[0.14em] text-primary">
+                  Browse vendors →
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link to="/planners" className="group">
+            <Card className="h-full rounded-[28px] border-border/60 bg-card/95 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
+              <CardContent className="space-y-5 p-8">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                  <Briefcase className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="font-display text-2xl font-semibold">Find a Planner</h3>
+                  <p className="mt-3 text-base leading-8 text-muted-foreground">
+                    Get matched with experienced wedding planners and coordinators who know your region and style.
+                  </p>
+                </div>
+                <div className="pt-4 text-sm font-medium uppercase tracking-[0.14em] text-primary">
+                  Explore planners →
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <a href="#cost-estimator" className="group">
+            <Card className="h-full rounded-[28px] border-border/60 bg-card/95 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
+              <CardContent className="space-y-5 p-8">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                  <Calculator className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="font-display text-2xl font-semibold">Cost Estimator</h3>
+                  <p className="mt-3 text-base leading-8 text-muted-foreground">
+                    Get realistic budget breakdowns tailored to your guest count, location, and wedding style.
+                  </p>
+                </div>
+                <div className="pt-4 text-sm font-medium uppercase tracking-[0.14em] text-primary">
+                  Estimate costs →
+                </div>
+              </CardContent>
+            </Card>
+          </a>
+        </div>
+
+        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {features.map((f, i) => (
             <motion.div
               key={f.title}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              className="rounded-xl border border-border bg-card p-6 shadow-card"
+              transition={{ delay: i * 0.08 }}
+              className="rounded-2xl border border-border/60 bg-card/90 p-6 shadow-sm"
             >
               <f.icon className="h-8 w-8 text-primary" />
-              <h3 className="mt-4 font-display text-lg font-semibold text-card-foreground">{f.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{f.desc}</p>
+              <h3 className="mt-5 font-display text-xl font-semibold">{f.title}</h3>
+              <p className="mt-2 text-sm leading-7 text-muted-foreground">{f.desc}</p>
             </motion.div>
           ))}
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-border px-6 py-8 text-center text-sm text-muted-foreground">
-        <div className="flex items-center justify-center gap-2">
-          <Heart className="h-4 w-4 text-primary" fill="currentColor" />
-          <span>Centerpiece © {new Date().getFullYear()}</span>
+      <section id="auth" className="border-y border-border/50 bg-[#f7f0e8]">
+        <div className="mx-auto grid max-w-7xl gap-12 px-6 py-20 lg:grid-cols-[1fr_520px] lg:px-8">
+          <div className="flex flex-col justify-center">
+            <p className="text-sm uppercase tracking-[0.22em] text-primary">Get Started</p>
+            <h2 className="mt-5 font-display text-4xl font-semibold leading-tight sm:text-5xl">
+              Your planning <span className="italic font-normal">workspace</span>
+            </h2>
+            <p className="mt-5 max-w-2xl text-lg leading-9 text-muted-foreground">
+              Create a free account to save vendors, build your budget, and collaborate with your partner, committee, or planner.
+            </p>
+            <ul className="mt-8 space-y-5 text-lg text-foreground">
+              <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Save and compare vendors side by side</li>
+              <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Build and share realistic budgets</li>
+              <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Collaborate with your committee or planner</li>
+              <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Track your planning progress in one place</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center">
+            <InlineAuthForm />
+          </div>
+        </div>
+      </section>
+
+      <footer className="bg-primary px-6 py-8 text-primary-foreground">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-sm sm:flex-row lg:px-2">
+          <div className="font-display text-2xl font-semibold">Centerpiece</div>
+          <div className="text-center text-primary-foreground/80 sm:text-right">
+            © {new Date().getFullYear()} Centerpiece. Wedding planning for Kenya.
+          </div>
         </div>
       </footer>
     </div>
