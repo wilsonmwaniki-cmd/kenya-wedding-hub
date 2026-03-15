@@ -87,28 +87,32 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-      <Card className="border-border/40 bg-white/95 shadow-2xl backdrop-blur-sm">
-        <CardContent className="space-y-5 p-6">
-          <div className="flex items-center gap-3">
+      <Card className="border-border/40 bg-white/96 shadow-[0_28px_80px_rgba(57,38,31,0.24)] backdrop-blur-sm">
+        <CardContent className="space-y-5 p-7">
+          <div className="flex items-start gap-3">
             <div className="rounded-xl bg-primary/10 p-2.5">
               <Calculator className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h3 className="font-display text-2xl font-semibold text-foreground">Quick Cost Estimate</h3>
-              <p className="text-sm text-muted-foreground">Free, instant, and no sign-up required</p>
+              <h3 className="font-display text-[1.9rem] font-semibold leading-none text-foreground">Quick Cost Estimate</h3>
+              <p className="mt-2 text-sm text-muted-foreground">Free, instant, and no sign-up required</p>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="hero-guest-count" className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Number of guests</Label>
-            <Input
-              id="hero-guest-count"
-              type="number"
-              value={guestCount}
-              onChange={(e) => setGuestCount(e.target.value)}
-              placeholder="120"
-              className="h-12 bg-background/90"
-            />
+            <Label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Number of guests</Label>
+            <Select value={guestCount} onValueChange={setGuestCount}>
+              <SelectTrigger className="h-12 border-border/70 bg-background/90">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="50">Up to 50 guests</SelectItem>
+                <SelectItem value="80">50 - 100 guests</SelectItem>
+                <SelectItem value="120">100 - 150 guests</SelectItem>
+                <SelectItem value="180">150 - 220 guests</SelectItem>
+                <SelectItem value="260">220+ guests</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -118,16 +122,16 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
               value={county}
               onChange={(e) => setCounty(e.target.value)}
               placeholder="e.g. Nairobi"
-              className="h-12 bg-background/90"
+              className="h-12 border-border/70 bg-background/90"
             />
           </div>
 
           <div className="space-y-2">
             <Label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Wedding style</Label>
             <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
-              <SelectTrigger className="h-12 bg-background/90"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-12 border-border/70 bg-background/90"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="intimate">Intimate</SelectItem>
+                <SelectItem value="intimate">Intimate & Simple</SelectItem>
                 <SelectItem value="classic">Classic</SelectItem>
                 <SelectItem value="garden">Garden</SelectItem>
                 <SelectItem value="luxury">Luxury</SelectItem>
@@ -147,6 +151,25 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
               Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
             </p>
           </div>
+
+          <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+            <p className="text-sm font-medium text-foreground">What your estimate includes</p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+              {estimateRows.slice(0, 4).map((row) => (
+                <div key={row.category} className="rounded-xl bg-white px-3 py-2">
+                  <p className="font-medium text-foreground">{row.category}</p>
+                  <p>{formatCurrency(row.suggested_amount)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <Link to="/auth">
+            <Button variant="outline" className="h-11 w-full gap-2">
+              Turn This Into a Plan
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
         </CardContent>
       </Card>
     );
@@ -513,12 +536,12 @@ export default function Landing() {
         </div>
       </nav>
 
-      <section className="mx-auto max-w-7xl px-6 pt-10 lg:px-8 lg:pt-12">
-        <div className="overflow-hidden rounded-[40px] border border-border/40 shadow-[0_30px_80px_rgba(62,39,35,0.18)]">
-          <div className="relative min-h-[720px]">
+      <section className="mx-auto max-w-7xl px-6 pt-8 lg:px-8 lg:pt-10">
+        <div className="overflow-hidden rounded-[34px] border border-border/40 shadow-[0_30px_80px_rgba(62,39,35,0.18)]">
+          <div className="relative min-h-[690px]">
             <img src={heroImage} alt="Kenyan wedding centerpiece" className="absolute inset-0 h-full w-full object-cover" />
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(42,28,24,0.72)_0%,rgba(42,28,24,0.45)_40%,rgba(42,28,24,0.28)_100%)]" />
-            <div className="relative grid min-h-[720px] gap-10 px-8 py-10 lg:grid-cols-[1.1fr_0.9fr] lg:px-16 lg:py-16">
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(42,28,24,0.74)_0%,rgba(42,28,24,0.52)_38%,rgba(42,28,24,0.3)_100%)]" />
+            <div className="relative grid min-h-[690px] gap-10 px-8 py-10 lg:grid-cols-[1.08fr_0.92fr] lg:px-16 lg:py-16">
               <div className="flex flex-col justify-center text-primary-foreground">
                 <motion.p
                   initial={{ opacity: 0, y: 16 }}
@@ -532,12 +555,13 @@ export default function Landing() {
                   initial={{ opacity: 0, y: 18 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: 0.1 }}
-                  className="mt-6 max-w-3xl font-display text-5xl font-semibold leading-[0.95] sm:text-6xl xl:text-7xl"
+                  className="mt-6 max-w-3xl font-display text-5xl font-semibold leading-[0.94] sm:text-6xl xl:text-[5.4rem]"
                 >
                   Find trusted vendors.
                   <br />
                   <span className="italic font-normal">Know your budget.</span>
-                  <span className="font-normal"> Plan with confidence.</span>
+                  <br />
+                  <span className="font-normal">Plan with confidence.</span>
                 </motion.h1>
                 <motion.p
                   initial={{ opacity: 0, y: 18 }}
@@ -555,17 +579,17 @@ export default function Landing() {
                   className="mt-10 flex flex-wrap gap-4"
                 >
                   <Link to="/vendors-directory">
-                    <Button variant="outline" className="h-12 min-w-[200px] border-white/40 bg-white/10 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white">
+                    <Button variant="outline" className="h-12 min-w-[200px] border-white/40 bg-white/8 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white">
                       Vendor Directory
                     </Button>
                   </Link>
                   <Link to="/planners">
-                    <Button variant="outline" className="h-12 min-w-[200px] border-white/40 bg-white/10 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white">
+                    <Button variant="outline" className="h-12 min-w-[200px] border-white/40 bg-white/8 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white">
                       Find a Planner
                     </Button>
                   </Link>
                   <a href="#cost-estimator">
-                    <Button variant="outline" className="h-12 min-w-[200px] border-white/40 bg-white/10 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white">
+                    <Button variant="outline" className="h-12 min-w-[200px] border-white/40 bg-white/8 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white">
                       Cost Estimator
                     </Button>
                   </a>
@@ -582,14 +606,14 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-6 py-20 lg:px-8">
+      <section className="mx-auto max-w-7xl px-6 py-18 lg:px-8">
         <div className="text-center">
-          <p className="text-sm uppercase tracking-[0.22em] text-primary">Built for the wedding ecosystem</p>
+          <p className="text-sm uppercase tracking-[0.22em] text-primary">Choose your starting point</p>
           <h2 className="mt-5 font-display text-4xl font-semibold leading-tight sm:text-5xl">
-            Everything you need to <span className="italic font-normal">plan</span>
+            Start with the part that matters <span className="italic font-normal">most</span>
           </h2>
           <p className="mx-auto mt-4 max-w-3xl text-lg text-muted-foreground">
-            Whether you are a couple, a committee, a planner, or a vendor, Centerpiece gives you the tools to get it done.
+            Compare vendors, find the right planner, or turn your estimate into a workable wedding plan.
           </p>
         </div>
 
@@ -652,7 +676,7 @@ export default function Landing() {
           </a>
         </div>
 
-        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {features.map((f, i) => (
             <motion.div
               key={f.title}
@@ -678,13 +702,13 @@ export default function Landing() {
               Your planning <span className="italic font-normal">workspace</span>
             </h2>
             <p className="mt-5 max-w-2xl text-lg leading-9 text-muted-foreground">
-              Create a free account to save vendors, build your budget, and collaborate with your partner, committee, or planner.
+              Create a free account to save vendors, build your budget, and move from first estimate to final decisions in one place.
             </p>
             <ul className="mt-8 space-y-5 text-lg text-foreground">
               <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Save and compare vendors side by side</li>
-              <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Build and share realistic budgets</li>
+              <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Turn your estimate into a real wedding budget</li>
               <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Collaborate with your committee or planner</li>
-              <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Track your planning progress in one place</li>
+              <li className="flex items-start gap-4"><span className="mt-2 h-2 w-2 rounded-full bg-primary" />Track vendor decisions, tasks, and progress in one place</li>
             </ul>
           </div>
 
