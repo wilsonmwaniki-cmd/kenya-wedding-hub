@@ -22,6 +22,12 @@ export default function ProtectedRoute({
     return 'couple' as AppRole;
   })();
 
+  const inferredPlannerType = profile?.planner_type === 'committee' || profile?.planner_type === 'professional'
+    ? profile.planner_type
+    : user?.user_metadata?.planner_type === 'committee' || user?.user_metadata?.planner_type === 'professional'
+      ? user.user_metadata.planner_type
+      : null;
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -34,7 +40,7 @@ export default function ProtectedRoute({
 
   if (allowedRoles?.length) {
     if (!allowedRoles.includes(inferredRole)) {
-      return <Navigate to={getHomeRouteForRole(inferredRole)} replace />;
+      return <Navigate to={getHomeRouteForRole(inferredRole, inferredPlannerType)} replace />;
     }
   }
 

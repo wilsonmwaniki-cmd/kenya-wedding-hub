@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Heart, Loader2, Users, Briefcase, Store, UserCog } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
+import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 
 export default function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -21,18 +22,66 @@ export default function Auth() {
   const [committeeName, setCommitteeName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   const { signIn, signUp, signInWithGoogle, user, profile, loading } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
-  if (loading) {
+  useEffect(() => {
+    if (loading || !user || !profile?.role || redirecting) return;
+
+    let active = true;
+
+    const finalizeEntry = async () => {
+      setRedirecting(true);
+
+      try {
+        if (hasPendingEstimatorPlanDraft()) {
+          const seeded = await seedPendingEstimatorPlanForUser({
+            userId: user.id,
+            role: profile.role,
+            plannerType: profile.planner_type,
+          });
+
+          if (seeded && active) {
+            toast({
+              title: 'Wedding plan ready',
+              description: 'Your estimate was turned into a starter budget, vendor list, and tasks.',
+            });
+            navigate('/budget', { replace: true });
+            return;
+          }
+        }
+
+        if (active) {
+          navigate(getHomeRouteForRole(profile.role, profile.planner_type), { replace: true });
+        }
+      } catch (err: any) {
+        if (active) {
+          toast({
+            title: 'Could not build your plan',
+            description: err.message,
+            variant: 'destructive',
+          });
+          navigate(getHomeRouteForRole(profile.role, profile.planner_type), { replace: true });
+        }
+      }
+    };
+
+    void finalizeEntry();
+
+    return () => {
+      active = false;
+    };
+  }, [loading, navigate, profile?.planner_type, profile?.role, redirecting, toast, user]);
+
+  if (loading || redirecting || (user && !profile?.role)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
-
-  if (user && profile?.role) return <Navigate to={getHomeRouteForRole(profile.role)} replace />;
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();

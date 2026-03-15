@@ -8,12 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserCog } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import heroImage from '@/assets/hero-wedding.jpg';
 import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
+import { saveEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 
 const features = [
   { icon: Wallet, title: 'Budget Tracking', desc: 'Keep your wedding finances organized with category-level tracking.' },
@@ -34,7 +36,30 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
   const [venueTier, setVenueTier] = useState<'budget' | 'mid_tier' | 'luxury'>('mid_tier');
   const [loadingEstimate, setLoadingEstimate] = useState(false);
   const [estimateRows, setEstimateRows] = useState<PublicBudgetEstimateRow[]>([]);
+  const [startingPlan, setStartingPlan] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
+
+  const handleTurnIntoPlan = () => {
+    const normalizedGuestCount = Number(guestCount);
+    if (!Number.isFinite(normalizedGuestCount) || normalizedGuestCount <= 0) {
+      toast({
+        title: 'Invalid guest count',
+        description: 'Enter a realistic guest count greater than zero.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setStartingPlan(true);
+    saveEstimatorPlanDraft({
+      guestCount: normalizedGuestCount,
+      county: county.trim() || 'Nairobi',
+      weddingStyle,
+      venueTier,
+    });
+    navigate('/auth');
+  };
 
   const loadEstimate = async () => {
     const normalizedGuestCount = Number(guestCount);
@@ -164,12 +189,11 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
             </div>
           </div>
 
-          <Link to="/auth">
-            <Button variant="outline" className="h-11 w-full gap-2">
-              Turn This Into a Plan
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
+          <Button variant="outline" className="h-11 w-full gap-2" onClick={handleTurnIntoPlan} disabled={startingPlan}>
+            {startingPlan ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            <span>Turn This Into a Plan</span>
+            {!startingPlan && <ArrowRight className="h-4 w-4" />}
+          </Button>
         </CardContent>
       </Card>
     );
@@ -282,12 +306,11 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
             {loadingEstimate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             Refresh Estimate
           </Button>
-          <Link to="/auth" className="sm:flex-1">
-            <Button variant="outline" className="w-full gap-2">
-              Turn This Into a Plan
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
+          <Button variant="outline" className="w-full gap-2 sm:flex-1" onClick={handleTurnIntoPlan} disabled={startingPlan}>
+            {startingPlan ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            <span>Turn This Into a Plan</span>
+            {!startingPlan && <ArrowRight className="h-4 w-4" />}
+          </Button>
         </div>
 
         <p className="text-xs text-muted-foreground">
@@ -514,7 +537,7 @@ export default function Landing() {
   }
 
   if (user) {
-    return <Navigate to={getHomeRouteForRole(profile?.role)} replace />;
+    return <Navigate to={getHomeRouteForRole(profile?.role, profile?.planner_type)} replace />;
   }
 
   return (
