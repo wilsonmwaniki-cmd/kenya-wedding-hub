@@ -373,6 +373,8 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.admin_list_planner_profiles(text, text, integer, integer);
+
 CREATE OR REPLACE FUNCTION public.admin_list_planner_profiles(
   search_query text DEFAULT NULL,
   verification_filter text DEFAULT 'all',
@@ -436,6 +438,8 @@ BEGIN
   OFFSET GREATEST(0, offset_rows);
 END;
 $$;
+
+DROP FUNCTION IF EXISTS public.admin_list_vendor_reputation_reviews(text, text, text, integer, integer);
 
 CREATE OR REPLACE FUNCTION public.admin_list_vendor_reputation_reviews(
   search_query text DEFAULT NULL,
