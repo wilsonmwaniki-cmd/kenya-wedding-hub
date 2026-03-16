@@ -939,6 +939,8 @@ export type Database = {
           notes: string | null
           phone: string | null
           price: number | null
+          selection_status: string
+          selection_updated_at: string
           status: string | null
           user_id: string
           vendor_listing_id: string | null
@@ -953,6 +955,8 @@ export type Database = {
           notes?: string | null
           phone?: string | null
           price?: number | null
+          selection_status?: string
+          selection_updated_at?: string
           status?: string | null
           user_id: string
           vendor_listing_id?: string | null
@@ -967,6 +971,8 @@ export type Database = {
           notes?: string | null
           phone?: string | null
           price?: number | null
+          selection_status?: string
+          selection_updated_at?: string
           status?: string | null
           user_id?: string
           vendor_listing_id?: string | null
@@ -1324,6 +1330,13 @@ export type Database = {
           vendor_name_input?: string | null
           visibility_input?: string | null
           would_hire_again_input?: boolean | null
+        }
+        Returns: string
+      }
+      set_vendor_selection_status: {
+        Args: {
+          selection_status_input: string
+          vendor_id_input: string
         }
         Returns: string
       }

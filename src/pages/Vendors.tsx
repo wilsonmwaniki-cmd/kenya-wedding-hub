@@ -14,6 +14,12 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
 import {
+  setVendorSelectionStatus,
+  vendorSelectionLabel,
+  vendorSelectionTone,
+  type VendorSelectionStatus,
+} from '@/lib/vendorSelection';
+import {
   createVendorReputationReview,
   getVendorReputationBenchmark,
   listVendorReputationReviews,
@@ -29,6 +35,8 @@ interface Vendor {
   phone: string | null;
   email: string | null;
   price: number | null;
+  selection_status: string;
+  selection_updated_at: string;
   status: string | null;
   notes: string | null;
   vendor_listing_id: string | null;
@@ -46,6 +54,13 @@ interface DirectoryVendor {
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 const vendorStatuses = ['contacted', 'quoted', 'booked', 'completed', 'rejected'] as const;
+const selectionStatuses: VendorSelectionStatus[] = ['shortlisted', 'final', 'backup', 'declined'];
+const selectionSortOrder: Record<string, number> = {
+  final: 0,
+  shortlisted: 1,
+  backup: 2,
+  declined: 3,
+};
 const issueFlagOptions: Array<{ value: VendorReputationIssueFlag; label: string }> = [
   { value: 'late_setup', label: 'Late setup' },
   { value: 'late_delivery', label: 'Late delivery' },
@@ -122,6 +137,7 @@ export default function Vendors() {
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
+  const [savingSelectionId, setSavingSelectionId] = useState<string | null>(null);
   const [modalBenchmark, setModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
   const [modalBenchmarkLoading, setModalBenchmarkLoading] = useState(false);
   const [reputationBenchmarksLoading, setReputationBenchmarksLoading] = useState(false);
@@ -379,9 +395,11 @@ export default function Vendors() {
     await load();
   };
 
-  const updateStatus = async (id: string, status: string) => {
-    setSavingStatusId(id);
-    const { error } = await supabase.from('vendors').update({ status }).eq('id', id);
+  const updateStatus = async (vendor: Vendor, status: string) => {
+    setSavingStatusId(vendor.id);
+    const updates: Record<string, unknown> = { status };
+    if (status === 'rejected') updates.selection_status = 'declined';
+    const { error } = await supabase.from('vendors').update(updates).eq('id', vendor.id);
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
@@ -426,6 +444,29 @@ export default function Vendors() {
   const deleteVendor = async (id: string) => {
     await supabase.from('vendors').delete().eq('id', id);
     await load();
+  };
+
+  const updateSelection = async (vendor: Vendor, selectionStatus: VendorSelectionStatus) => {
+    setSavingSelectionId(vendor.id);
+    try {
+      await setVendorSelectionStatus(vendor.id, selectionStatus);
+      toast({
+        title: selectionStatus === 'final' ? 'Final vendor selected' : 'Vendor selection updated',
+        description:
+          selectionStatus === 'final'
+            ? `${vendor.name} is now your final ${vendor.category.toLowerCase()} choice.`
+            : `${vendor.name} is now marked as ${vendorSelectionLabel(selectionStatus).toLowerCase()}.`,
+      });
+      await load();
+    } catch (error: any) {
+      toast({
+        title: 'Failed to update vendor decision',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingSelectionId(null);
+    }
   };
 
   const resetReviewForm = () => {
@@ -516,6 +557,63 @@ export default function Vendors() {
         benchmark: categoryReputationBenchmarks[benchmarkKey(category)],
       }));
   }, [vendors, categoryReputationBenchmarks]);
+
+  const sortedVendors = useMemo(
+    () =>
+      [...vendors].sort((left, right) => {
+        const categoryCompare = left.category.localeCompare(right.category);
+        if (categoryCompare !== 0) return categoryCompare;
+
+        const selectionCompare =
+          (selectionSortOrder[left.selection_status ?? 'shortlisted'] ?? 99) -
+          (selectionSortOrder[right.selection_status ?? 'shortlisted'] ?? 99);
+        if (selectionCompare !== 0) return selectionCompare;
+
+        return left.name.localeCompare(right.name);
+      }),
+    [vendors],
+  );
+
+  const selectionCounts = useMemo(() => {
+    return vendors.reduce(
+      (summary, vendor) => {
+        const key = (vendor.selection_status || 'shortlisted') as VendorSelectionStatus;
+        summary[key] += 1;
+        return summary;
+      },
+      {
+        shortlisted: 0,
+        final: 0,
+        backup: 0,
+        declined: 0,
+      } as Record<VendorSelectionStatus, number>,
+    );
+  }, [vendors]);
+
+  const finalVendorEntries = useMemo(
+    () => sortedVendors.filter((vendor) => vendor.selection_status === 'final'),
+    [sortedVendors],
+  );
+
+  const categoriesNeedingFinalChoice = useMemo(() => {
+    const grouped = new Map<string, Vendor[]>();
+    vendors.forEach((vendor) => {
+      const current = grouped.get(vendor.category) ?? [];
+      current.push(vendor);
+      grouped.set(vendor.category, current);
+    });
+
+    return [...grouped.entries()]
+      .filter(([, group]) => {
+        const activeVendors = group.filter((vendor) => vendor.selection_status !== 'declined');
+        return activeVendors.length > 0 && !activeVendors.some((vendor) => vendor.selection_status === 'final');
+      })
+      .map(([category, group]) => ({
+        category,
+        shortlistedCount: group.filter((vendor) => vendor.selection_status === 'shortlisted').length,
+      }))
+      .sort((left, right) => left.category.localeCompare(right.category));
+  }, [vendors]);
 
   if (isPlanner && !selectedClient) return null;
 
@@ -699,8 +797,63 @@ export default function Vendors() {
         </CardContent>
       </Card>
 
+      <Card className="shadow-card">
+        <CardContent className="py-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Vendor decision board</p>
+              <p className="text-sm text-muted-foreground">
+                Keep multiple options shortlisted, then lock one final vendor per category when you are ready.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {selectionStatuses.map((status) => (
+              <div key={status} className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">{vendorSelectionLabel(status)}</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{selectionCounts[status]}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-sm font-medium text-foreground">Final vendor lineup</p>
+              {finalVendorEntries.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {finalVendorEntries.map((vendor) => (
+                    <Badge key={vendor.id} className="rounded-full">
+                      {vendor.category}: {vendor.name}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  No final vendors selected yet. Shortlist options first, then mark one final choice per category.
+                </p>
+              )}
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-sm font-medium text-foreground">Categories awaiting a final choice</p>
+              {categoriesNeedingFinalChoice.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {categoriesNeedingFinalChoice.map((item) => (
+                    <Badge key={item.category} variant="outline" className="rounded-full">
+                      {item.category} · {item.shortlistedCount} shortlisted
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Every active category already has a final vendor decision recorded.
+                </p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 sm:grid-cols-2">
-        {vendors.map((vendor) => {
+        {sortedVendors.map((vendor) => {
           const categoryBenchmark = categoryBenchmarks[benchmarkKey(vendor.category)];
           const listingBenchmark = vendor.vendor_listing_id ? listingBenchmarks[vendor.vendor_listing_id] : null;
           const activeBenchmark = listingBenchmark?.benchmark_visible ? listingBenchmark : categoryBenchmark;
@@ -720,7 +873,12 @@ export default function Vendors() {
               <CardHeader className="flex flex-row items-start justify-between pb-2">
                 <div>
                   <CardTitle className="text-base font-medium">{vendor.name}</CardTitle>
-                  <Badge variant="outline" className="mt-1 text-xs">{vendor.category}</Badge>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    <Badge variant="outline" className="text-xs">{vendor.category}</Badge>
+                    <Badge variant={vendorSelectionTone(vendor.selection_status)} className="text-xs">
+                      {vendorSelectionLabel(vendor.selection_status)}
+                    </Badge>
+                  </div>
                 </div>
                 <button onClick={() => deleteVendor(vendor.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                   <Trash2 className="h-4 w-4" />
@@ -812,7 +970,7 @@ export default function Vendors() {
                       Mark booked vendors to strengthen paid-price benchmarks.
                     </p>
                   </div>
-                  <Select value={vendor.status || 'contacted'} onValueChange={(status) => updateStatus(vendor.id, status)}>
+                  <Select value={vendor.status || 'contacted'} onValueChange={(status) => updateStatus(vendor, status)}>
                     <SelectTrigger className="h-9 w-36 text-xs" disabled={savingStatusId === vendor.id}>
                       <SelectValue />
                     </SelectTrigger>
@@ -824,6 +982,50 @@ export default function Vendors() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Selection workflow</p>
+                      <p className="text-sm text-muted-foreground">
+                        Keep options shortlisted, mark backups, and choose one final vendor for {vendor.category.toLowerCase()}.
+                      </p>
+                    </div>
+                    <Select
+                      value={(vendor.selection_status || 'shortlisted') as VendorSelectionStatus}
+                      onValueChange={(value) => updateSelection(vendor, value as VendorSelectionStatus)}
+                    >
+                      <SelectTrigger className="h-9 w-40 text-xs" disabled={savingSelectionId === vendor.id}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectionStatuses.map((status) => (
+                          <SelectItem key={status} value={status}>
+                            {vendorSelectionLabel(status)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={vendor.selection_status === 'final' ? 'secondary' : 'default'}
+                      className="gap-2"
+                      onClick={() => updateSelection(vendor, 'final')}
+                      disabled={savingSelectionId === vendor.id || vendor.selection_status === 'final'}
+                    >
+                      {savingSelectionId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      {vendor.selection_status === 'final' ? 'Final choice locked' : 'Make final choice'}
+                    </Button>
+                    {vendor.selection_status === 'final' && (
+                      <p className="self-center text-xs text-muted-foreground">
+                        Other final vendors in this category are automatically moved to backup.
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background px-3 py-3">
