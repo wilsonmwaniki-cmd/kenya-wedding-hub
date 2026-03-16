@@ -373,6 +373,8 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.admin_list_planner_profiles(text, text, integer, integer);
+
 CREATE OR REPLACE FUNCTION public.admin_list_planner_profiles(
   search_query text DEFAULT NULL,
   verification_filter text DEFAULT 'all',
