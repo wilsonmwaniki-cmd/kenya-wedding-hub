@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { getHomeRouteForRole, type AppRole } from '@/lib/roles';
+import { getHomeRouteForRole, type AppRole, type PlannerType } from '@/lib/roles';
+import { hasPendingEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 
-function getRoleFromUserMetadata(): AppRole {
+function getAuthTargetFromUserMetadata(): { role: AppRole; plannerType: PlannerType | null } {
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const accessToken = hashParams.get('access_token');
 
@@ -12,15 +13,19 @@ function getRoleFromUserMetadata(): AppRole {
     try {
       const payload = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
       const role = payload?.user_metadata?.role;
+      const plannerType = payload?.user_metadata?.planner_type;
       if (role === 'admin' || role === 'vendor' || role === 'planner' || role === 'couple') {
-        return role;
+        return {
+          role,
+          plannerType: plannerType === 'committee' || plannerType === 'professional' ? plannerType : null,
+        };
       }
     } catch {
       // Ignore malformed token payloads and fall back to default route.
     }
   }
 
-  return 'couple';
+  return { role: 'couple', plannerType: null };
 }
 
 export default function AuthCallback() {
@@ -48,9 +53,16 @@ export default function AuthCallback() {
           if (error) throw error;
         }
 
-        const role = getRoleFromUserMetadata();
+        const { role, plannerType } = getAuthTargetFromUserMetadata();
         window.history.replaceState({}, document.title, '/auth/callback');
-        if (active) navigate(getHomeRouteForRole(role), { replace: true });
+        if (!active) return;
+
+        if (hasPendingEstimatorPlanDraft()) {
+          navigate('/auth', { replace: true });
+          return;
+        }
+
+        navigate(getHomeRouteForRole(role, plannerType), { replace: true });
       } catch (error) {
         console.error('Failed to complete auth callback:', error);
         if (active) setStatus('failed');

@@ -47,7 +47,8 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [selectedClient, setSelectedClient] = useState<PlannerClient | null>(null);
   const [linkedPlanner, setLinkedPlanner] = useState<LinkedPlannerInfo | null>(null);
 
-  const isPlanner = profile?.role === 'planner';
+  const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
+  const isPlanner = profile?.role === 'planner' && !isCommittee;
   const isCouple = profile?.role === 'couple';
 
   const loadClients = async () => {
