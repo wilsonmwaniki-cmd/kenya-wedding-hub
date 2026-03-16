@@ -439,6 +439,8 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.admin_list_vendor_reputation_reviews(text, text, text, integer, integer);
+
 CREATE OR REPLACE FUNCTION public.admin_list_vendor_reputation_reviews(
   search_query text DEFAULT NULL,
   issue_filter text DEFAULT 'all',
