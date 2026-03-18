@@ -361,12 +361,18 @@ export type Database = {
           client_id: string | null
           completed: boolean
           created_at: string
+          delegatable: boolean
           description: string | null
           due_date: string | null
           id: string
+          phase: string | null
+          priority_level: number | null
+          recommended_role: string | null
           source_vendor_id: string | null
+          template_source: string | null
           title: string
           user_id: string
+          visibility: string
         }
         Insert: {
           assigned_to?: string | null
@@ -374,12 +380,18 @@ export type Database = {
           client_id?: string | null
           completed?: boolean
           created_at?: string
+          delegatable?: boolean
           description?: string | null
           due_date?: string | null
           id?: string
+          phase?: string | null
+          priority_level?: number | null
+          recommended_role?: string | null
           source_vendor_id?: string | null
+          template_source?: string | null
           title: string
           user_id: string
+          visibility?: string
         }
         Update: {
           assigned_to?: string | null
@@ -387,12 +399,18 @@ export type Database = {
           client_id?: string | null
           completed?: boolean
           created_at?: string
+          delegatable?: boolean
           description?: string | null
           due_date?: string | null
           id?: string
+          phase?: string | null
+          priority_level?: number | null
+          recommended_role?: string | null
           source_vendor_id?: string | null
+          template_source?: string | null
           title?: string
           user_id?: string
+          visibility?: string
         }
         Relationships: [
           {
