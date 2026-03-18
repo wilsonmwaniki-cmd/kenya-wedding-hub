@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
@@ -20,6 +20,13 @@ import {
   type VendorSelectionStatus,
 } from '@/lib/vendorSelection';
 import {
+  updateVendorPaymentState,
+  vendorPaymentStatusLabel,
+  vendorPaymentStatusTone,
+  vendorPaymentStatuses,
+  type VendorPaymentStatus,
+} from '@/lib/vendorPayments';
+import {
   createVendorReputationReview,
   getVendorReputationBenchmark,
   listVendorReputationReviews,
@@ -29,11 +36,16 @@ import {
 } from '@/lib/vendorReputation';
 
 interface Vendor {
+  amount_paid: number;
+  deposit_amount: number;
   id: string;
+  last_payment_at: string | null;
   name: string;
   category: string;
   phone: string | null;
   email: string | null;
+  payment_due_date: string | null;
+  payment_status: string;
   price: number | null;
   selection_status: string;
   selection_updated_at: string;
@@ -50,6 +62,13 @@ interface DirectoryVendor {
   email: string | null;
   location: string | null;
   is_verified: boolean;
+}
+
+interface PaymentDraft {
+  depositAmount: string;
+  amountPaid: string;
+  paymentStatus: VendorPaymentStatus;
+  paymentDueDate: string;
 }
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
@@ -135,7 +154,9 @@ export default function Vendors() {
   const [categoryBenchmarks, setCategoryBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
   const [listingBenchmarks, setListingBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+  const [paymentDrafts, setPaymentDrafts] = useState<Record<string, PaymentDraft>>({});
   const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
+  const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [savingSelectionId, setSavingSelectionId] = useState<string | null>(null);
   const [modalBenchmark, setModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
@@ -172,9 +193,27 @@ export default function Vendors() {
       return;
     }
 
-    const rows = (data ?? []).map((d) => ({ ...d, price: d.price ? Number(d.price) : null })) as Vendor[];
+    const rows = (data ?? []).map((d) => ({
+      ...d,
+      amount_paid: Number(d.amount_paid ?? 0),
+      deposit_amount: Number(d.deposit_amount ?? 0),
+      price: d.price ? Number(d.price) : null,
+    })) as Vendor[];
     setVendors(rows);
     setPriceDrafts(Object.fromEntries(rows.map((row) => [row.id, row.price != null ? String(row.price) : ''])));
+    setPaymentDrafts(
+      Object.fromEntries(
+        rows.map((row) => [
+          row.id,
+          {
+            depositAmount: String(row.deposit_amount ?? 0),
+            amountPaid: String(row.amount_paid ?? 0),
+            paymentStatus: (row.payment_status || 'unpaid') as VendorPaymentStatus,
+            paymentDueDate: row.payment_due_date ?? '',
+          },
+        ]),
+      ),
+    );
   };
 
   useEffect(() => {
@@ -441,6 +480,60 @@ export default function Vendors() {
     setSavingPriceId(null);
   };
 
+  const updateVendorPayment = async (vendor: Vendor) => {
+    const draft = paymentDrafts[vendor.id];
+    if (!draft) return;
+
+    const contractAmountDraft = priceDrafts[vendor.id]?.trim() ?? '';
+    const contractAmount = contractAmountDraft === '' ? null : Number(contractAmountDraft);
+    const depositAmount = draft.depositAmount.trim() === '' ? 0 : Number(draft.depositAmount);
+    const amountPaid = draft.amountPaid.trim() === '' ? 0 : Number(draft.amountPaid);
+
+    if (contractAmountDraft !== '' && (!Number.isFinite(contractAmount) || (contractAmount ?? 0) <= 0)) {
+      toast({
+        title: 'Invalid contract amount',
+        description: 'Enter a valid KES amount greater than zero.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!Number.isFinite(depositAmount) || !Number.isFinite(amountPaid) || depositAmount < 0 || amountPaid < 0) {
+      toast({
+        title: 'Invalid payment amounts',
+        description: 'Deposit and paid amounts must be zero or higher.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingPaymentId(vendor.id);
+    try {
+      await updateVendorPaymentState({
+        vendorId: vendor.id,
+        contractAmount,
+        depositAmount,
+        amountPaid,
+        paymentStatus: draft.paymentStatus,
+        paymentDueDate: draft.paymentDueDate || null,
+      });
+
+      toast({
+        title: 'Payment plan updated',
+        description: `${vendor.name} now shows ${vendorPaymentStatusLabel(draft.paymentStatus).toLowerCase()}.`,
+      });
+      await load();
+    } catch (error: any) {
+      toast({
+        title: 'Failed to save payment state',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingPaymentId(null);
+    }
+  };
+
   const deleteVendor = async (id: string) => {
     await supabase.from('vendors').delete().eq('id', id);
     await load();
@@ -594,6 +687,17 @@ export default function Vendors() {
     () => sortedVendors.filter((vendor) => vendor.selection_status === 'final'),
     [sortedVendors],
   );
+
+  const finalVendorPaymentSummary = useMemo(() => {
+    const totalContract = finalVendorEntries.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
+    const totalPaid = finalVendorEntries.reduce((sum, vendor) => sum + (vendor.amount_paid ?? 0), 0);
+    const totalOutstanding = finalVendorEntries.reduce(
+      (sum, vendor) => sum + Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0),
+      0,
+    );
+
+    return { totalContract, totalPaid, totalOutstanding };
+  }, [finalVendorEntries]);
 
   const categoriesNeedingFinalChoice = useMemo(() => {
     const grouped = new Map<string, Vendor[]>();
@@ -819,13 +923,29 @@ export default function Vendors() {
             <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
               <p className="text-sm font-medium text-foreground">Final vendor lineup</p>
               {finalVendorEntries.length > 0 ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {finalVendorEntries.map((vendor) => (
-                    <Badge key={vendor.id} className="rounded-full">
-                      {vendor.category}: {vendor.name}
-                    </Badge>
-                  ))}
-                </div>
+                <>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {finalVendorEntries.map((vendor) => (
+                      <Badge key={vendor.id} className="rounded-full">
+                        {vendor.category}: {vendor.name}
+                      </Badge>
+                    ))}
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-3">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Final contracts</p>
+                      <p className="mt-1 text-lg font-semibold text-foreground">{formatCurrency(finalVendorPaymentSummary.totalContract)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-3">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid so far</p>
+                      <p className="mt-1 text-lg font-semibold text-foreground">{formatCurrency(finalVendorPaymentSummary.totalPaid)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/70 bg-muted/40 px-3 py-3">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Outstanding</p>
+                      <p className="mt-1 text-lg font-semibold text-foreground">{formatCurrency(finalVendorPaymentSummary.totalOutstanding)}</p>
+                    </div>
+                  </div>
+                </>
               ) : (
                 <p className="mt-3 text-sm text-muted-foreground">
                   No final vendors selected yet. Shortlist options first, then mark one final choice per category.
@@ -961,6 +1081,141 @@ export default function Vendors() {
                     {savingPriceId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     Save Price
                   </Button>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Payment tracking</p>
+                      <p className="text-sm text-muted-foreground">
+                        Track deposit, amount paid, and the next due date for this vendor.
+                      </p>
+                    </div>
+                    <Badge variant={vendorPaymentStatusTone(vendor.payment_status)} className="text-xs">
+                      {vendorPaymentStatusLabel(vendor.payment_status)}
+                    </Badge>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Contract</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.price)}</p>
+                    </div>
+                    <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.amount_paid)}</p>
+                    </div>
+                    <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Outstanding</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">
+                        {formatCurrency(Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0))}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`deposit-${vendor.id}`}>Deposit amount</Label>
+                      <Input
+                        id={`deposit-${vendor.id}`}
+                        type="number"
+                        value={paymentDrafts[vendor.id]?.depositAmount ?? '0'}
+                        onChange={(e) =>
+                          setPaymentDrafts((prev) => ({
+                            ...prev,
+                            [vendor.id]: {
+                              ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                              depositAmount: e.target.value,
+                            },
+                          }))
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`paid-${vendor.id}`}>Amount paid</Label>
+                      <Input
+                        id={`paid-${vendor.id}`}
+                        type="number"
+                        value={paymentDrafts[vendor.id]?.amountPaid ?? '0'}
+                        onChange={(e) =>
+                          setPaymentDrafts((prev) => ({
+                            ...prev,
+                            [vendor.id]: {
+                              ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                              amountPaid: e.target.value,
+                            },
+                          }))
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Payment status</Label>
+                      <Select
+                        value={paymentDrafts[vendor.id]?.paymentStatus ?? 'unpaid'}
+                        onValueChange={(value) =>
+                          setPaymentDrafts((prev) => ({
+                            ...prev,
+                            [vendor.id]: {
+                              ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                              paymentStatus: value as VendorPaymentStatus,
+                            },
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="h-10 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {vendorPaymentStatuses.map((status) => (
+                            <SelectItem key={status} value={status}>
+                              {vendorPaymentStatusLabel(status)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`due-${vendor.id}`}>Next payment due date</Label>
+                      <div className="relative">
+                        <CalendarClock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id={`due-${vendor.id}`}
+                          type="date"
+                          className="pl-9"
+                          value={paymentDrafts[vendor.id]?.paymentDueDate ?? ''}
+                          onChange={(e) =>
+                            setPaymentDrafts((prev) => ({
+                              ...prev,
+                              [vendor.id]: {
+                                ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                                paymentDueDate: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      {vendor.last_payment_at
+                        ? `Last payment update ${new Date(vendor.last_payment_at).toLocaleDateString()}.`
+                        : 'No payment updates recorded yet.'}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => updateVendorPayment(vendor)}
+                      disabled={savingPaymentId === vendor.id}
+                    >
+                      {savingPaymentId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                      Save Payment Plan
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between gap-3">

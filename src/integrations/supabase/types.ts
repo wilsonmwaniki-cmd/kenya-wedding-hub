@@ -930,13 +930,18 @@ export type Database = {
       }
       vendors: {
         Row: {
+          amount_paid: number
           category: string
           client_id: string | null
           created_at: string
+          deposit_amount: number
           email: string | null
           id: string
+          last_payment_at: string | null
           name: string
           notes: string | null
+          payment_due_date: string | null
+          payment_status: string
           phone: string | null
           price: number | null
           selection_status: string
@@ -946,13 +951,18 @@ export type Database = {
           vendor_listing_id: string | null
         }
         Insert: {
+          amount_paid?: number
           category: string
           client_id?: string | null
           created_at?: string
+          deposit_amount?: number
           email?: string | null
           id?: string
+          last_payment_at?: string | null
           name: string
           notes?: string | null
+          payment_due_date?: string | null
+          payment_status?: string
           phone?: string | null
           price?: number | null
           selection_status?: string
@@ -962,13 +972,18 @@ export type Database = {
           vendor_listing_id?: string | null
         }
         Update: {
+          amount_paid?: number
           category?: string
           client_id?: string | null
           created_at?: string
+          deposit_amount?: number
           email?: string | null
           id?: string
+          last_payment_at?: string | null
           name?: string
           notes?: string | null
+          payment_due_date?: string | null
+          payment_status?: string
           phone?: string | null
           price?: number | null
           selection_status?: string
@@ -1339,6 +1354,37 @@ export type Database = {
           vendor_id_input: string
         }
         Returns: string
+      }
+      update_vendor_payment_state: {
+        Args: {
+          amount_paid_input?: number | null
+          contract_amount_input?: number | null
+          deposit_amount_input?: number | null
+          payment_due_date_input?: string | null
+          payment_status_input?: string | null
+          vendor_id_input: string
+        }
+        Returns: {
+          amount_paid: number
+          category: string
+          client_id: string | null
+          created_at: string
+          deposit_amount: number
+          email: string | null
+          id: string
+          last_payment_at: string | null
+          name: string
+          notes: string | null
+          payment_due_date: string | null
+          payment_status: string
+          phone: string | null
+          price: number | null
+          selection_status: string
+          selection_updated_at: string
+          status: string | null
+          user_id: string
+          vendor_listing_id: string | null
+        }
       }
       require_planner_or_admin: { Args: never; Returns: undefined }
       can_manage_committee_members: {
