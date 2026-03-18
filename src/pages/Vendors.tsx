@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles, ArrowRightLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
@@ -169,6 +169,7 @@ export default function Vendors() {
   const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [savingSelectionId, setSavingSelectionId] = useState<string | null>(null);
+  const [comparisonCategory, setComparisonCategory] = useState<string>('all');
   const [modalBenchmark, setModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
   const [modalBenchmarkLoading, setModalBenchmarkLoading] = useState(false);
   const [reputationBenchmarksLoading, setReputationBenchmarksLoading] = useState(false);
@@ -862,6 +863,30 @@ export default function Vendors() {
       .sort((left, right) => left.category.localeCompare(right.category));
   }, [vendors]);
 
+  const comparisonCategories = useMemo(
+    () =>
+      [...new Set(vendors.map((vendor) => vendor.category))]
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right)),
+    [vendors],
+  );
+
+  const activeComparisonCategory = useMemo(() => {
+    if (comparisonCategory !== 'all' && comparisonCategories.includes(comparisonCategory)) return comparisonCategory;
+    return categoriesNeedingFinalChoice[0]?.category ?? comparisonCategories[0] ?? 'all';
+  }, [comparisonCategory, categoriesNeedingFinalChoice, comparisonCategories]);
+
+  const decisionWorkspaceVendors = useMemo(() => {
+    if (activeComparisonCategory === 'all') return [];
+
+    return sortedVendors.filter(
+      (vendor) =>
+        vendor.category === activeComparisonCategory &&
+        vendor.selection_status !== 'declined' &&
+        vendor.status !== 'rejected',
+    );
+  }, [activeComparisonCategory, sortedVendors]);
+
   if (isPlanner && !selectedClient) return null;
 
   return (
@@ -1112,6 +1137,176 @@ export default function Vendors() {
               )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-card">
+        <CardContent className="py-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="h-4 w-4 text-primary" />
+                <p className="text-sm font-medium text-foreground">Decision workspace</p>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Compare shortlisted vendors in one category at a time using price, trust, payment, and task context.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="comparison-category" className="text-xs uppercase tracking-wide text-muted-foreground">
+                Compare category
+              </Label>
+              <Select value={activeComparisonCategory} onValueChange={setComparisonCategory}>
+                <SelectTrigger id="comparison-category" className="w-52">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {comparisonCategories.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {decisionWorkspaceVendors.length > 0 ? (
+            <div className="mt-4 overflow-x-auto">
+              <div className="min-w-[860px] rounded-xl border border-border/70 bg-background">
+                <div
+                  className="grid"
+                  style={{ gridTemplateColumns: `180px repeat(${decisionWorkspaceVendors.length}, minmax(200px, 1fr))` }}
+                >
+                  <div className="border-b border-r border-border/70 bg-muted/40 px-4 py-3 text-sm font-medium text-foreground">
+                    Compare
+                  </div>
+                  {decisionWorkspaceVendors.map((vendor) => {
+                    const linkedTasks = vendorTasksByVendorId[vendor.id] ?? [];
+                    const openLinkedTasks = linkedTasks.filter((task) => !task.completed);
+                    const categoryBenchmark = categoryBenchmarks[benchmarkKey(vendor.category)];
+                    const listingBenchmark = vendor.vendor_listing_id ? listingBenchmarks[vendor.vendor_listing_id] : null;
+                    const activeBenchmark = listingBenchmark?.benchmark_visible ? listingBenchmark : categoryBenchmark;
+                    const activeReputation = vendor.vendor_listing_id && listingReputationBenchmarks[vendor.vendor_listing_id]?.benchmark_visible
+                      ? listingReputationBenchmarks[vendor.vendor_listing_id]
+                      : categoryReputationBenchmarks[benchmarkKey(vendor.category)];
+                    const priceDelta =
+                      activeBenchmark?.benchmark_visible && activeBenchmark.median_amount && vendor.price
+                        ? Math.round(((vendor.price - activeBenchmark.median_amount) / activeBenchmark.median_amount) * 100)
+                        : null;
+
+                    return (
+                      <div key={vendor.id} className="border-b border-border/70 px-4 py-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{vendor.name}</p>
+                            <p className="text-xs text-muted-foreground">{vendor.category}</p>
+                          </div>
+                          <Badge variant={vendorSelectionTone(vendor.selection_status)} className="text-[10px]">
+                            {vendorSelectionLabel(vendor.selection_status)}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={vendor.selection_status === 'final' ? 'secondary' : 'default'}
+                            onClick={() => updateSelection(vendor, 'final')}
+                            disabled={savingSelectionId === vendor.id || vendor.selection_status === 'final'}
+                          >
+                            {vendor.selection_status === 'final' ? 'Final choice' : 'Make final'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              resetVendorTaskForm();
+                              setVendorTaskDialogVendor(vendor);
+                            }}
+                          >
+                            Add task
+                          </Button>
+                        </div>
+                        <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                          <p>Quote: {formatCurrency(vendor.price)}</p>
+                          <p>
+                            Benchmark:{' '}
+                            {activeBenchmark?.benchmark_visible
+                              ? formatCurrency(activeBenchmark.median_amount)
+                              : 'Waiting for more data'}
+                          </p>
+                          <p>
+                            Trust:{' '}
+                            {activeReputation?.benchmark_visible && activeReputation.average_overall_rating != null
+                              ? `${activeReputation.average_overall_rating.toFixed(1)}/5`
+                              : 'Insufficient reviews'}
+                          </p>
+                          <p>Paid: {formatCurrency(vendor.amount_paid)}</p>
+                          <p>Outstanding: {formatCurrency(Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0))}</p>
+                          <p>Open tasks: {openLinkedTasks.length}</p>
+                          {priceDelta != null && (
+                            <p>{Math.abs(priceDelta)}% {priceDelta >= 0 ? 'above' : 'below'} benchmark median</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Quote</div>
+                  {decisionWorkspaceVendors.map((vendor) => (
+                    <div key={`${vendor.id}-quote`} className="px-4 py-3 text-sm text-foreground">
+                      {formatCurrency(vendor.price)}
+                    </div>
+                  ))}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Payment status</div>
+                  {decisionWorkspaceVendors.map((vendor) => (
+                    <div key={`${vendor.id}-payment`} className="px-4 py-3">
+                      <Badge variant={vendorPaymentStatusTone(vendor.payment_status)} className="text-[10px]">
+                        {vendorPaymentStatusLabel(vendor.payment_status)}
+                      </Badge>
+                    </div>
+                  ))}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Amount paid</div>
+                  {decisionWorkspaceVendors.map((vendor) => (
+                    <div key={`${vendor.id}-paid`} className="px-4 py-3 text-sm text-foreground">
+                      {formatCurrency(vendor.amount_paid)}
+                    </div>
+                  ))}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Open tasks</div>
+                  {decisionWorkspaceVendors.map((vendor) => {
+                    const linkedTasks = vendorTasksByVendorId[vendor.id] ?? [];
+                    const openLinkedTasks = linkedTasks.filter((task) => !task.completed);
+                    return (
+                      <div key={`${vendor.id}-tasks`} className="px-4 py-3 text-sm text-foreground">
+                        {openLinkedTasks.length}
+                      </div>
+                    );
+                  })}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Latest due</div>
+                  {decisionWorkspaceVendors.map((vendor) => {
+                    const linkedTasks = vendorTasksByVendorId[vendor.id] ?? [];
+                    const openLinkedTasks = linkedTasks
+                      .filter((task) => !task.completed && task.due_date)
+                      .sort((left, right) => (left.due_date ?? '').localeCompare(right.due_date ?? ''));
+                    return (
+                      <div key={`${vendor.id}-due`} className="px-4 py-3 text-sm text-foreground">
+                        {openLinkedTasks[0]?.due_date ? new Date(openLinkedTasks[0].due_date as string).toLocaleDateString() : 'No due date'}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Add or shortlist at least one active vendor in a category to open the comparison workspace.
+            </p>
+          )}
         </CardContent>
       </Card>
 
