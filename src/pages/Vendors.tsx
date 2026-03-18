@@ -277,9 +277,11 @@ export default function Vendors() {
   const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
   const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
   const [savingWorkflowId, setSavingWorkflowId] = useState<string | null>(null);
+  const [savingNotesId, setSavingNotesId] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [savingSelectionId, setSavingSelectionId] = useState<string | null>(null);
   const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, WorkflowDraft>>({});
+  const [notesDrafts, setNotesDrafts] = useState<Record<string, string>>({});
   const [comparisonCategory, setComparisonCategory] = useState<string>('all');
   const [modalBenchmark, setModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
   const [modalBenchmarkLoading, setModalBenchmarkLoading] = useState(false);
@@ -357,6 +359,11 @@ export default function Vendors() {
             contractStatus: row.contract_status ?? 'not_started',
           },
         ]),
+      ),
+    );
+    setNotesDrafts(
+      Object.fromEntries(
+        rows.map((row) => [row.id, row.notes ?? '']),
       ),
     );
   };
@@ -811,6 +818,32 @@ export default function Vendors() {
     } finally {
       setVendorTaskSubmitting(false);
     }
+  };
+
+  const updateVendorNotes = async (vendor: Vendor) => {
+    const nextNotes = (notesDrafts[vendor.id] ?? '').trim();
+    setSavingNotesId(vendor.id);
+
+    const { error } = await supabase
+      .from('vendors')
+      .update({ notes: nextNotes || null })
+      .eq('id', vendor.id);
+
+    if (error) {
+      toast({
+        title: 'Failed to save decision notes',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } else {
+      toast({
+        title: 'Decision notes saved',
+        description: `Comparison notes for ${vendor.name} were updated.`,
+      });
+      await load();
+    }
+
+    setSavingNotesId(null);
   };
 
   const buildVendorTaskBundle = async (vendor: Vendor) => {
@@ -1299,7 +1332,7 @@ export default function Vendors() {
                 <p className="text-sm font-medium text-foreground">Decision workspace</p>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                Compare shortlisted vendors in one category at a time using price, trust, payment, and task context.
+                Compare shortlisted vendors in one category at a time using price, trust, payment, notes, and task context.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1409,6 +1442,7 @@ export default function Vendors() {
                           <p>Open tasks: {openLinkedTasks.length}</p>
                           <p>Milestones: {completedMilestones}/{milestones.length} complete</p>
                           <p>Next: {nextMilestone ? nextMilestone.label : 'Workflow complete'}</p>
+                          <p>Notes: {notesDrafts[vendor.id]?.trim() ? 'Captured' : 'None yet'}</p>
                           {priceDelta != null && (
                             <p>{Math.abs(priceDelta)}% {priceDelta >= 0 ? 'above' : 'below'} benchmark median</p>
                           )}
@@ -1461,6 +1495,31 @@ export default function Vendors() {
                       </div>
                     );
                   })}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Decision notes</div>
+                  {decisionWorkspaceVendors.map((vendor) => (
+                    <div key={`${vendor.id}-notes`} className="space-y-2 px-4 py-3">
+                      <Textarea
+                        value={notesDrafts[vendor.id] ?? ''}
+                        onChange={(e) => setNotesDrafts((prev) => ({ ...prev, [vendor.id]: e.target.value }))}
+                        placeholder="Why this vendor is strong, weak points, negotiation notes, committee concerns..."
+                        className="min-h-24 text-sm"
+                      />
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="gap-2"
+                          onClick={() => updateVendorNotes(vendor)}
+                          disabled={savingNotesId === vendor.id}
+                        >
+                          {savingNotesId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          Save notes
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
 
                   <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Open tasks</div>
                   {decisionWorkspaceVendors.map((vendor) => {
@@ -1907,6 +1966,34 @@ export default function Vendors() {
                   <p className="mt-3 text-xs text-muted-foreground">
                     Next action: {nextMilestone ? nextMilestone.label : 'Workflow complete'}.
                   </p>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Decision notes</p>
+                      <p className="text-sm text-muted-foreground">
+                        Capture shortlist reasoning, negotiation updates, and final selection comments for this vendor.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => updateVendorNotes(vendor)}
+                      disabled={savingNotesId === vendor.id}
+                    >
+                      {savingNotesId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Save notes
+                    </Button>
+                  </div>
+                  <Textarea
+                    className="mt-4 min-h-24"
+                    value={notesDrafts[vendor.id] ?? ''}
+                    onChange={(e) => setNotesDrafts((prev) => ({ ...prev, [vendor.id]: e.target.value }))}
+                    placeholder="Add quote comparison notes, contract risks, reasons to shortlist, committee feedback, or why this became the final vendor..."
+                  />
                 </div>
 
                 <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
