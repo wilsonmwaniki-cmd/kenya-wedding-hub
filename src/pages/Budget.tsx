@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -13,6 +14,7 @@ import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles } from 'lucide-r
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
+import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
 
 interface BudgetCategory {
   id: string;
@@ -26,6 +28,16 @@ interface SpendLogForm {
   amount: string;
   notes: string;
   addToSpent: boolean;
+}
+
+interface FinalVendorPayment {
+  id: string;
+  name: string;
+  category: string;
+  price: number | null;
+  amount_paid: number;
+  payment_status: string;
+  payment_due_date: string | null;
 }
 
 function formatCurrency(value: number | null | undefined) {
@@ -65,6 +77,7 @@ export default function Budget() {
   const [addModalBenchmarkLoading, setAddModalBenchmarkLoading] = useState(false);
   const [recordingCategory, setRecordingCategory] = useState<BudgetCategory | null>(null);
   const [recordingSpend, setRecordingSpend] = useState(false);
+  const [finalVendorPayments, setFinalVendorPayments] = useState<FinalVendorPayment[]>([]);
   const [spendLog, setSpendLog] = useState<SpendLogForm>({
     vendorName: '',
     amount: '',
@@ -133,6 +146,38 @@ export default function Budget() {
   useEffect(() => {
     void loadBenchmarks(categories);
   }, [categories, selectedClient?.wedding_location]);
+
+  const loadFinalVendorPayments = async () => {
+    if (!dataOrFilter) return;
+
+    const { data, error } = await supabase
+      .from('vendors')
+      .select('id, name, category, price, amount_paid, payment_status, payment_due_date')
+      .or(dataOrFilter)
+      .eq('selection_status', 'final')
+      .order('category');
+
+    if (error) {
+      toast({
+        title: 'Failed to load final vendor payments',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setFinalVendorPayments(
+      ((data ?? []) as any[]).map((row) => ({
+        ...row,
+        amount_paid: Number(row.amount_paid ?? 0),
+        price: row.price != null ? Number(row.price) : null,
+      })),
+    );
+  };
+
+  useEffect(() => {
+    void loadFinalVendorPayments();
+  }, [user, selectedClient, dataOrFilter]);
 
   useEffect(() => {
     if (!open) return;
@@ -303,6 +348,12 @@ export default function Budget() {
 
   const totalAllocated = categories.reduce((sum, category) => sum + category.allocated, 0);
   const totalSpent = categories.reduce((sum, category) => sum + category.spent, 0);
+  const totalFinalVendorContract = finalVendorPayments.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
+  const totalFinalVendorPaid = finalVendorPayments.reduce((sum, vendor) => sum + vendor.amount_paid, 0);
+  const totalFinalVendorOutstanding = finalVendorPayments.reduce(
+    (sum, vendor) => sum + Math.max((vendor.price ?? 0) - vendor.amount_paid, 0),
+    0,
+  );
 
   const highlightedBenchmarks = useMemo(() => {
     return categories.slice(0, 4).map((category) => ({
@@ -394,6 +445,73 @@ export default function Budget() {
                 </div>
               ))}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-card">
+        <CardContent className="py-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Final vendor payment map</p>
+              <p className="text-sm text-muted-foreground">
+                This summary tracks committed vendor spend from the vendors shortlist and final-selection workflow.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Committed contracts</p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorContract)}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid so far</p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorPaid)}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Outstanding</p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorOutstanding)}</p>
+            </div>
+          </div>
+
+          {finalVendorPayments.length > 0 ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {finalVendorPayments.map((vendor) => (
+                <div key={vendor.id} className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{vendor.category}</p>
+                      <p className="text-sm text-muted-foreground">{vendor.name}</p>
+                    </div>
+                    <Badge variant={vendorPaymentStatusTone(vendor.payment_status)} className="text-[10px]">
+                      {vendorPaymentStatusLabel(vendor.payment_status)}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Contract</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.price)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.amount_paid)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Outstanding</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(Math.max((vendor.price ?? 0) - vendor.amount_paid, 0))}</p>
+                    </div>
+                  </div>
+                  {vendor.payment_due_date && (
+                    <p className="mt-3 text-xs text-muted-foreground">Next payment due {new Date(vendor.payment_due_date).toLocaleDateString()}.</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">
+              No final vendors selected yet. Finalize vendors in the vendors workflow to see contract and payment tracking here.
+            </p>
           )}
         </CardContent>
       </Card>
