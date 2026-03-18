@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
@@ -34,6 +35,7 @@ import {
   type VendorReputationIssueFlag,
   type VendorReputationReview,
 } from '@/lib/vendorReputation';
+import { createVendorTask, createVendorTaskBundle } from '@/lib/vendorTasks';
 
 interface Vendor {
   amount_paid: number;
@@ -69,6 +71,14 @@ interface PaymentDraft {
   amountPaid: string;
   paymentStatus: VendorPaymentStatus;
   paymentDueDate: string;
+}
+
+interface VendorTaskItem {
+  id: string;
+  title: string;
+  due_date: string | null;
+  completed: boolean;
+  source_vendor_id: string | null;
 }
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
@@ -167,6 +177,16 @@ export default function Vendors() {
   const [reviewsBySourceVendorId, setReviewsBySourceVendorId] = useState<Record<string, VendorReputationReview>>({});
   const [reviewDialogVendor, setReviewDialogVendor] = useState<Vendor | null>(null);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [vendorTasksByVendorId, setVendorTasksByVendorId] = useState<Record<string, VendorTaskItem[]>>({});
+  const [vendorTaskDialogVendor, setVendorTaskDialogVendor] = useState<Vendor | null>(null);
+  const [vendorTaskSubmitting, setVendorTaskSubmitting] = useState(false);
+  const [creatingVendorTaskBundleId, setCreatingVendorTaskBundleId] = useState<string | null>(null);
+  const [vendorTaskForm, setVendorTaskForm] = useState({
+    title: '',
+    description: '',
+    dueDate: '',
+    assignedTo: '',
+  });
   const [reviewForm, setReviewForm] = useState({
     overallRating: '5',
     reliabilityRating: '5',
@@ -218,6 +238,37 @@ export default function Vendors() {
 
   useEffect(() => {
     void load();
+  }, [user, selectedClient, dataOrFilter]);
+
+  const loadVendorTasks = async () => {
+    if (!dataOrFilter) return;
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('id, title, due_date, completed, source_vendor_id')
+      .or(dataOrFilter)
+      .not('source_vendor_id', 'is', null)
+      .order('due_date', { ascending: true, nullsFirst: false });
+
+    if (error) {
+      toast({
+        title: 'Failed to load vendor tasks',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const grouped = (data as VendorTaskItem[] | null)?.reduce((summary, task) => {
+      if (!task.source_vendor_id) return summary;
+      summary[task.source_vendor_id] = [...(summary[task.source_vendor_id] ?? []), task];
+      return summary;
+    }, {} as Record<string, VendorTaskItem[]>) ?? {};
+
+    setVendorTasksByVendorId(grouped);
+  };
+
+  useEffect(() => {
+    void loadVendorTasks();
   }, [user, selectedClient, dataOrFilter]);
 
   const loadBenchmarks = async (rows: Vendor[]) => {
@@ -562,6 +613,85 @@ export default function Vendors() {
     }
   };
 
+  const resetVendorTaskForm = () => {
+    setVendorTaskForm({
+      title: '',
+      description: '',
+      dueDate: '',
+      assignedTo: '',
+    });
+  };
+
+  const submitVendorTask = async (vendor: Vendor) => {
+    if (!user) return;
+    if (!vendorTaskForm.title.trim()) {
+      toast({
+        title: 'Task title required',
+        description: 'Add a task title before saving.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setVendorTaskSubmitting(true);
+    try {
+      await createVendorTask({
+        userId: user.id,
+        title: vendorTaskForm.title.trim(),
+        description: vendorTaskForm.description.trim() || null,
+        dueDate: vendorTaskForm.dueDate || null,
+        assignedTo: vendorTaskForm.assignedTo.trim() || null,
+        category: vendor.category,
+        clientId: selectedClient?.id ?? null,
+        sourceVendorId: vendor.id,
+      });
+      toast({
+        title: 'Vendor task created',
+        description: `${vendor.name} now has a linked planning task.`,
+      });
+      resetVendorTaskForm();
+      setVendorTaskDialogVendor(null);
+      await loadVendorTasks();
+    } catch (error: any) {
+      toast({
+        title: 'Failed to create vendor task',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setVendorTaskSubmitting(false);
+    }
+  };
+
+  const buildVendorTaskBundle = async (vendor: Vendor) => {
+    if (!user) return;
+    setCreatingVendorTaskBundleId(vendor.id);
+    try {
+      const created = await createVendorTaskBundle({
+        userId: user.id,
+        vendorId: vendor.id,
+        vendorName: vendor.name,
+        category: vendor.category,
+        clientId: selectedClient?.id ?? null,
+      });
+      toast({
+        title: created.length ? 'Vendor task bundle created' : 'Vendor task bundle already exists',
+        description: created.length
+          ? `${created.length} linked tasks were added for ${vendor.name}.`
+          : `No new tasks were needed for ${vendor.name}.`,
+      });
+      await loadVendorTasks();
+    } catch (error: any) {
+      toast({
+        title: 'Failed to create task bundle',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setCreatingVendorTaskBundleId(null);
+    }
+  };
+
   const resetReviewForm = () => {
     setReviewForm({
       overallRating: '5',
@@ -698,6 +828,19 @@ export default function Vendors() {
 
     return { totalContract, totalPaid, totalOutstanding };
   }, [finalVendorEntries]);
+
+  const vendorTaskSummary = useMemo(() => {
+    const vendorTaskGroups = Object.values(vendorTasksByVendorId);
+    const linkedTasks = vendorTaskGroups.flat();
+    const openTasks = linkedTasks.filter((task) => !task.completed);
+    const vendorsWithOpenTasks = vendorTaskGroups.filter((tasks) => tasks.some((task) => !task.completed)).length;
+
+    return {
+      linkedTasks: linkedTasks.length,
+      openTasks: openTasks.length,
+      vendorsWithOpenTasks,
+    };
+  }, [vendorTasksByVendorId]);
 
   const categoriesNeedingFinalChoice = useMemo(() => {
     const grouped = new Map<string, Vendor[]>();
@@ -972,6 +1115,33 @@ export default function Vendors() {
         </CardContent>
       </Card>
 
+      <Card className="shadow-card">
+        <CardContent className="py-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Vendor-linked task flow</p>
+              <p className="text-sm text-muted-foreground">
+                Tie follow-ups, payments, and confirmations to the exact vendor you are evaluating or booking.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Linked tasks</p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{vendorTaskSummary.linkedTasks}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Open vendor tasks</p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{vendorTaskSummary.openTasks}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Vendors with active actions</p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{vendorTaskSummary.vendorsWithOpenTasks}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 sm:grid-cols-2">
         {sortedVendors.map((vendor) => {
           const categoryBenchmark = categoryBenchmarks[benchmarkKey(vendor.category)];
@@ -987,6 +1157,8 @@ export default function Vendors() {
           const listingReputation = vendor.vendor_listing_id ? listingReputationBenchmarks[vendor.vendor_listing_id] : null;
           const activeReputation = listingReputation?.benchmark_visible ? listingReputation : categoryReputation;
           const canReview = vendor.status === 'booked' || vendor.status === 'completed';
+          const linkedTasks = vendorTasksByVendorId[vendor.id] ?? [];
+          const openLinkedTasks = linkedTasks.filter((task) => !task.completed);
 
           return (
             <Card key={vendor.id} className="shadow-card">
@@ -1218,6 +1390,74 @@ export default function Vendors() {
                   </div>
                 </div>
 
+                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Vendor-linked tasks</p>
+                      <p className="text-sm text-muted-foreground">
+                        Keep quote, contract, and logistics work attached to this vendor.
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {openLinkedTasks.length} open
+                    </Badge>
+                  </div>
+                  {linkedTasks.length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      {linkedTasks.slice(0, 3).map((task) => (
+                        <div key={task.id} className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-foreground">{task.title}</p>
+                            <Badge variant={task.completed ? 'secondary' : 'outline'} className="text-[10px]">
+                              {task.completed ? 'Done' : 'Open'}
+                            </Badge>
+                          </div>
+                          {task.due_date && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Due {new Date(task.due_date).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                      {linkedTasks.length > 3 && (
+                        <p className="text-xs text-muted-foreground">
+                          +{linkedTasks.length - 3} more linked tasks in the task board.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      No tasks linked yet. Create a quick bundle to seed vendor follow-ups.
+                    </p>
+                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => {
+                        resetVendorTaskForm();
+                        setVendorTaskDialogVendor(vendor);
+                      }}
+                    >
+                      <ClipboardList className="h-4 w-4" />
+                      Add vendor task
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => buildVendorTaskBundle(vendor)}
+                      disabled={creatingVendorTaskBundleId === vendor.id}
+                    >
+                      {creatingVendorTaskBundleId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <WandSparkles className="h-4 w-4" />}
+                      Create task bundle
+                    </Button>
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between gap-3">
                   <div className="space-y-1">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
@@ -1316,6 +1556,72 @@ export default function Vendors() {
           <p className="col-span-full text-center text-muted-foreground py-12">No vendors yet. Start by adding your venue!</p>
         )}
       </div>
+
+      <Dialog
+        open={Boolean(vendorTaskDialogVendor)}
+        onOpenChange={(openState) => {
+          if (!openState) {
+            setVendorTaskDialogVendor(null);
+            resetVendorTaskForm();
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              Add task for {vendorTaskDialogVendor?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {vendorTaskDialogVendor && (
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitVendorTask(vendorTaskDialogVendor);
+              }}
+            >
+              <div className="space-y-2">
+                <Label>Task title</Label>
+                <Input
+                  value={vendorTaskForm.title}
+                  onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, title: event.target.value }))}
+                  placeholder={`Confirm contract with ${vendorTaskDialogVendor.name}`}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Assign to (optional)</Label>
+                <Input
+                  value={vendorTaskForm.assignedTo}
+                  onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, assignedTo: event.target.value }))}
+                  placeholder="Couple, committee lead, planner, MC..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Due date (optional)</Label>
+                <Input
+                  type="date"
+                  value={vendorTaskForm.dueDate}
+                  onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, dueDate: event.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Description (optional)</Label>
+                <Textarea
+                  rows={3}
+                  value={vendorTaskForm.description}
+                  onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, description: event.target.value }))}
+                  placeholder="Add quote follow-up, payment notes, arrival details, or files to send..."
+                />
+              </div>
+              <Button type="submit" className="w-full gap-2" disabled={vendorTaskSubmitting}>
+                {vendorTaskSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
+                Save vendor task
+              </Button>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(reviewDialogVendor)}

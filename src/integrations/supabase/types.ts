@@ -364,6 +364,7 @@ export type Database = {
           description: string | null
           due_date: string | null
           id: string
+          source_vendor_id: string | null
           title: string
           user_id: string
         }
@@ -376,6 +377,7 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          source_vendor_id?: string | null
           title: string
           user_id: string
         }
@@ -388,6 +390,7 @@ export type Database = {
           description?: string | null
           due_date?: string | null
           id?: string
+          source_vendor_id?: string | null
           title?: string
           user_id?: string
         }
@@ -397,6 +400,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_source_vendor_id_fkey"
+            columns: ["source_vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
             referencedColumns: ["id"]
           },
         ]
