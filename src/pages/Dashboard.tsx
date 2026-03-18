@@ -5,13 +5,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight, MapPin } from 'lucide-react';
+import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight, MapPin, Receipt, BriefcaseBusiness } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
 import MyConnections from '@/components/MyConnections';
 import { useToast } from '@/hooks/use-toast';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
+import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
 
 interface DashboardStats {
   totalBudget: number;
@@ -31,6 +32,24 @@ interface UpcomingTimelineEvent {
   assigned_people: string[];
   timeline_title: string;
   timeline_date: string | null;
+}
+
+interface FinalVendor {
+  id: string;
+  name: string;
+  category: string;
+  price: number | null;
+  amount_paid: number;
+  payment_status: string;
+  payment_due_date: string | null;
+}
+
+interface VendorLinkedTask {
+  id: string;
+  title: string;
+  due_date: string | null;
+  completed: boolean;
+  source_vendor_id: string | null;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -58,6 +77,8 @@ export default function Dashboard() {
     totalGuests: 0, confirmedGuests: 0, totalVendors: 0,
   });
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingTimelineEvent[]>([]);
+  const [finalVendors, setFinalVendors] = useState<FinalVendor[]>([]);
+  const [vendorLinkedTasks, setVendorLinkedTasks] = useState<VendorLinkedTask[]>([]);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) {
@@ -69,11 +90,23 @@ export default function Dashboard() {
     if (!user || !dataOrFilter) return;
 
     const load = async () => {
-      const [budget, tasks, guests, vendors] = await Promise.all([
+      const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows] = await Promise.all([
         supabase.from('budget_categories').select('allocated, spent').or(dataOrFilter),
         supabase.from('tasks').select('completed').or(dataOrFilter),
         supabase.from('guests').select('rsvp_status').or(dataOrFilter),
         supabase.from('vendors').select('id').or(dataOrFilter),
+        supabase
+          .from('vendors')
+          .select('id, name, category, price, amount_paid, payment_status, payment_due_date')
+          .or(dataOrFilter)
+          .eq('selection_status', 'final')
+          .order('category'),
+        supabase
+          .from('tasks')
+          .select('id, title, due_date, completed, source_vendor_id')
+          .or(dataOrFilter)
+          .not('source_vendor_id', 'is', null)
+          .order('due_date', { ascending: true, nullsFirst: false }),
       ]);
       setStats({
         totalBudget: budget.data?.reduce((s, b) => s + Number(b.allocated), 0) ?? 0,
@@ -84,6 +117,12 @@ export default function Dashboard() {
         confirmedGuests: guests.data?.filter(g => g.rsvp_status === 'confirmed').length ?? 0,
         totalVendors: vendors.data?.length ?? 0,
       });
+      setFinalVendors(((finalVendorRows.data ?? []) as any[]).map((vendor) => ({
+        ...vendor,
+        amount_paid: Number(vendor.amount_paid ?? 0),
+        price: vendor.price != null ? Number(vendor.price) : null,
+      })));
+      setVendorLinkedTasks((vendorTaskRows.data ?? []) as VendorLinkedTask[]);
     };
     load();
 
@@ -178,6 +217,45 @@ export default function Dashboard() {
       icon: Heart,
     },
   ];
+
+  const finalVendorMetrics = {
+    totalCommitted: finalVendors.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0),
+    totalPaid: finalVendors.reduce((sum, vendor) => sum + vendor.amount_paid, 0),
+    totalOutstanding: finalVendors.reduce((sum, vendor) => sum + Math.max((vendor.price ?? 0) - vendor.amount_paid, 0), 0),
+  };
+
+  const tasksByVendorId = vendorLinkedTasks.reduce((summary, task) => {
+    if (!task.source_vendor_id) return summary;
+    summary[task.source_vendor_id] = [...(summary[task.source_vendor_id] ?? []), task];
+    return summary;
+  }, {} as Record<string, VendorLinkedTask[]>);
+
+  const finalVendorUrgencies = finalVendors
+    .map((vendor) => {
+      const openTasks = (tasksByVendorId[vendor.id] ?? []).filter((task) => !task.completed);
+      const nextTask = [...openTasks].sort((left, right) => (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31'))[0] ?? null;
+      return {
+        ...vendor,
+        openTasks,
+        nextTask,
+        outstanding: Math.max((vendor.price ?? 0) - vendor.amount_paid, 0),
+      };
+    })
+    .sort((left, right) => {
+      const leftDue = left.nextTask?.due_date ?? '9999-12-31';
+      const rightDue = right.nextTask?.due_date ?? '9999-12-31';
+      return leftDue.localeCompare(rightDue);
+    });
+
+  const today = new Date();
+  const paymentsDueSoon = finalVendorUrgencies.filter((vendor) => {
+    if (!vendor.payment_due_date || vendor.payment_status === 'paid_full') return false;
+    const dueDate = new Date(vendor.payment_due_date);
+    const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
+    return diffDays >= 0 && diffDays <= 14;
+  });
+  const vendorActionCount = finalVendorUrgencies.reduce((sum, vendor) => sum + vendor.openTasks.length, 0);
+  const nextVendorAction = finalVendorUrgencies.find((vendor) => vendor.nextTask);
 
   if (isPlanner && !selectedClient) return null;
 
@@ -314,6 +392,151 @@ export default function Dashboard() {
             </motion.div>
           ))}
         </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <Card className="border-primary/15 shadow-card">
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="font-display text-2xl">Final Vendor Hub</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Track booked vendors, what is still owed, and the next action tied to each final decision.
+                </p>
+              </div>
+              <Receipt className="h-5 w-5 text-primary" />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Final Vendors</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{finalVendorUrgencies.length}</p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Committed</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">KES {finalVendorMetrics.totalCommitted.toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Outstanding</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">KES {finalVendorMetrics.totalOutstanding.toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Open Actions</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{vendorActionCount}</p>
+              </div>
+            </div>
+
+            {finalVendorUrgencies.length > 0 ? (
+              <div className="space-y-3">
+                {finalVendorUrgencies.slice(0, 4).map((vendor) => (
+                  <div key={vendor.id} className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-foreground">{vendor.name}</p>
+                          <Badge variant="outline" className="rounded-full">{vendor.category}</Badge>
+                          <Badge variant={vendorPaymentStatusTone(vendor.payment_status)} className="rounded-full">
+                            {vendorPaymentStatusLabel(vendor.payment_status)}
+                          </Badge>
+                        </div>
+                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                          <span>Contract: KES {(vendor.price ?? 0).toLocaleString()}</span>
+                          <span>Paid: KES {vendor.amount_paid.toLocaleString()}</span>
+                          <span>Outstanding: KES {vendor.outstanding.toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button asChild size="sm" variant="outline">
+                          <Link to="/vendors">Open Vendor</Link>
+                        </Button>
+                        <Button asChild size="sm" variant="outline">
+                          <Link to="/tasks">View Tasks</Link>
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
+                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Payment deadline</p>
+                        <p className="mt-2 text-sm font-medium text-foreground">
+                          {vendor.payment_due_date
+                            ? new Date(vendor.payment_due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            : 'No due date set'}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
+                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next required action</p>
+                        <p className="mt-2 text-sm font-medium text-foreground">
+                          {vendor.nextTask ? vendor.nextTask.title : 'No open vendor tasks'}
+                        </p>
+                        {vendor.nextTask?.due_date && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Due {new Date(vendor.nextTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/15 p-6 text-sm text-muted-foreground">
+                No final vendors yet. Shortlist vendors, make a final choice, and this hub will start tracking payments and required actions automatically.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="font-display text-xl">Next Vendor Decisions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Payments due in 14 days</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{paymentsDueSoon.length}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {paymentsDueSoon.length > 0
+                  ? paymentsDueSoon[0].name
+                  : 'No urgent vendor payments right now'}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next action</p>
+              <p className="mt-2 text-base font-medium text-foreground">
+                {nextVendorAction?.nextTask?.title ?? 'No pending vendor action'}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {nextVendorAction?.name
+                  ? `Linked to ${nextVendorAction.name}`
+                  : 'Your booked vendors are caught up'}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Move this wedding forward</p>
+              <div className="mt-3 flex flex-col gap-2">
+                <Button asChild className="justify-start gap-2">
+                  <Link to="/vendors">
+                    <BriefcaseBusiness className="h-4 w-4" />
+                    Review final vendors
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="justify-start gap-2">
+                  <Link to="/budget">
+                    <Wallet className="h-4 w-4" />
+                    Update budget commitments
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="justify-start gap-2">
+                  <Link to="/tasks">
+                    <CheckSquare className="h-4 w-4" />
+                    Clear vendor actions
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
