@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles, Lock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
@@ -21,7 +21,11 @@ interface BudgetCategory {
   name: string;
   allocated: number;
   spent: number;
+  budget_scope: 'wedding' | 'personal';
+  visibility: 'public' | 'private';
 }
+
+type BudgetScope = 'wedding' | 'personal';
 
 interface SpendLogForm {
   vendorName: string;
@@ -69,6 +73,8 @@ export default function Budget() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [allocated, setAllocated] = useState('');
+  const [newCategoryScope, setNewCategoryScope] = useState<BudgetScope>('wedding');
+  const [activeBudgetScope, setActiveBudgetScope] = useState<BudgetScope>('wedding');
   const [spentDrafts, setSpentDrafts] = useState<Record<string, string>>({});
   const [savingSpentId, setSavingSpentId] = useState<string | null>(null);
   const [benchmarksLoading, setBenchmarksLoading] = useState(false);
@@ -89,6 +95,18 @@ export default function Budget() {
     if (isPlanner && !selectedClient) navigate('/clients');
   }, [isPlanner, selectedClient, navigate]);
 
+  const showPersonalBudget = !isPlanner;
+
+  useEffect(() => {
+    if (!showPersonalBudget && activeBudgetScope === 'personal') {
+      setActiveBudgetScope('wedding');
+    }
+  }, [showPersonalBudget, activeBudgetScope]);
+
+  useEffect(() => {
+    if (open) setNewCategoryScope(activeBudgetScope);
+  }, [open, activeBudgetScope]);
+
   const load = async () => {
     if (!dataOrFilter) return;
     const { data, error } = await supabase.from('budget_categories').select('*').or(dataOrFilter).order('created_at');
@@ -101,6 +119,8 @@ export default function Budget() {
       ...item,
       allocated: Number(item.allocated),
       spent: Number(item.spent),
+      budget_scope: (item.budget_scope ?? 'wedding') as BudgetScope,
+      visibility: (item.visibility ?? 'public') as 'public' | 'private',
     })) as BudgetCategory[];
 
     setCategories(rows);
@@ -119,7 +139,7 @@ export default function Budget() {
 
     setBenchmarksLoading(true);
     try {
-      const uniqueCategories = [...new Set(rows.map((row) => row.name).filter(Boolean))];
+      const uniqueCategories = [...new Set(rows.filter((row) => row.budget_scope === 'wedding').map((row) => row.name).filter(Boolean))];
       const results = await Promise.all(
         uniqueCategories.map(async (category) => [
           benchmarkKey(category),
@@ -219,9 +239,11 @@ export default function Budget() {
       name,
       allocated: parseFloat(allocated) || 0,
       spent: 0,
+      budget_scope: newCategoryScope,
+      visibility: newCategoryScope === 'personal' ? 'private' : 'public',
     };
 
-    if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+    if (newCategoryScope === 'wedding' && isPlanner && selectedClient) insert.client_id = selectedClient.id;
 
     const { error } = await supabase.from('budget_categories').insert(insert);
     if (error) {
@@ -348,6 +370,11 @@ export default function Budget() {
 
   const totalAllocated = categories.reduce((sum, category) => sum + category.allocated, 0);
   const totalSpent = categories.reduce((sum, category) => sum + category.spent, 0);
+  const weddingCategories = categories.filter((category) => category.budget_scope === 'wedding');
+  const personalCategories = categories.filter((category) => category.budget_scope === 'personal');
+  const visibleCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
+  const visibleAllocated = visibleCategories.reduce((sum, category) => sum + category.allocated, 0);
+  const visibleSpent = visibleCategories.reduce((sum, category) => sum + category.spent, 0);
   const totalFinalVendorContract = finalVendorPayments.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
   const totalFinalVendorPaid = finalVendorPayments.reduce((sum, vendor) => sum + vendor.amount_paid, 0);
   const totalFinalVendorOutstanding = finalVendorPayments.reduce(
@@ -356,11 +383,11 @@ export default function Budget() {
   );
 
   const highlightedBenchmarks = useMemo(() => {
-    return categories.slice(0, 4).map((category) => ({
+    return weddingCategories.slice(0, 4).map((category) => ({
       category: category.name,
       benchmark: categoryBenchmarks[benchmarkKey(category.name)],
     }));
-  }, [categories, categoryBenchmarks]);
+  }, [weddingCategories, categoryBenchmarks]);
 
   if (isPlanner && !selectedClient) return null;
 
@@ -369,24 +396,82 @@ export default function Budget() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-foreground">Budget</h1>
-          <p className="text-muted-foreground">Track wedding expenses by category</p>
+          <p className="text-muted-foreground">
+            Split your shared wedding spend from the couple-only personal budget.
+          </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center rounded-full border border-border bg-background p-1">
+            <Button
+              type="button"
+              variant={activeBudgetScope === 'wedding' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveBudgetScope('wedding')}
+            >
+              Wedding Budget
+            </Button>
+            {showPersonalBudget && (
+              <Button
+                type="button"
+                variant={activeBudgetScope === 'personal' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveBudgetScope('personal')}
+              >
+                Personal Budget
+              </Button>
+            )}
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2"><Plus className="h-4 w-4" /> Add Category</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle className="font-display">Add Budget Category</DialogTitle></DialogHeader>
             <form onSubmit={addCategory} className="space-y-4">
-              <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  {addModalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
-                  Market signal for this category
+              {newCategoryScope === 'wedding' ? (
+                <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    {addModalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
+                    Market signal for this category
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {addModalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(addModalBenchmark)}
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {addModalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(addModalBenchmark)}
-                </p>
-              </div>
+              ) : (
+                <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Lock className="h-4 w-4 text-primary" />
+                    Private couple spending
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Personal budget lines are hidden from shared planner views and stay tied to the couple or committee workspace.
+                  </p>
+                </div>
+              )}
+              {showPersonalBudget && (
+                <div className="space-y-2">
+                  <Label>Budget Type</Label>
+                  <div className="flex items-center rounded-full border border-border bg-background p-1">
+                    <Button
+                      type="button"
+                      variant={newCategoryScope === 'wedding' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setNewCategoryScope('wedding')}
+                    >
+                      Wedding
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={newCategoryScope === 'personal' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setNewCategoryScope('personal')}
+                    >
+                      Personal
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Category Name</Label>
                 <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Venue, Catering" required />
@@ -398,7 +483,8 @@ export default function Budget() {
               <Button type="submit" className="w-full">Add Category</Button>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <Card className="shadow-card">
@@ -406,10 +492,10 @@ export default function Budget() {
           <Wallet className="h-10 w-10 text-primary" />
           <div className="flex-1">
             <div className="flex justify-between text-sm text-muted-foreground mb-1">
-              <span>KES {totalSpent.toLocaleString()} spent</span>
-              <span>KES {totalAllocated.toLocaleString()} budget</span>
+              <span>KES {visibleSpent.toLocaleString()} spent</span>
+              <span>KES {visibleAllocated.toLocaleString()} budget</span>
             </div>
-            <Progress value={totalAllocated ? (totalSpent / totalAllocated) * 100 : 0} className="h-2.5" />
+            <Progress value={visibleAllocated ? (visibleSpent / visibleAllocated) * 100 : 0} className="h-2.5" />
           </div>
         </CardContent>
       </Card>
@@ -418,20 +504,23 @@ export default function Budget() {
         <CardContent className="py-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-medium text-foreground">Budget intelligence is active</p>
+              <p className="text-sm font-medium text-foreground">
+                {activeBudgetScope === 'personal' ? 'Personal budget board' : 'Budget intelligence is active'}
+              </p>
               <p className="text-sm text-muted-foreground">
-                Record actual paid spend here to improve your planning benchmarks.
-                {selectedClient?.wedding_location ? ` Benchmarks are tuned to ${selectedClient.wedding_location}.` : ''}
+                {activeBudgetScope === 'personal'
+                  ? 'Track private couple costs like rent, dowry, honeymoon, rings, and preparation expenses separately from the public wedding budget.'
+                  : `Record actual paid spend here to improve your planning benchmarks.${selectedClient?.wedding_location ? ` Benchmarks are tuned to ${selectedClient.wedding_location}.` : ''}`}
               </p>
             </div>
-            {benchmarksLoading && (
+            {activeBudgetScope === 'wedding' && benchmarksLoading && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Refreshing benchmarks
               </div>
             )}
           </div>
-          {highlightedBenchmarks.length > 0 && (
+          {activeBudgetScope === 'wedding' && highlightedBenchmarks.length > 0 && (
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {highlightedBenchmarks.map(({ category, benchmark }) => (
                 <div key={category} className="rounded-lg border border-border/70 bg-background px-4 py-3">
@@ -449,6 +538,7 @@ export default function Budget() {
         </CardContent>
       </Card>
 
+      {activeBudgetScope === 'wedding' && (
       <Card className="shadow-card">
         <CardContent className="py-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -515,38 +605,68 @@ export default function Budget() {
           )}
         </CardContent>
       </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {categories.map((category) => {
+        {visibleCategories.map((category) => {
           const pct = category.allocated ? Math.min((category.spent / category.allocated) * 100, 100) : 0;
           const benchmark = categoryBenchmarks[benchmarkKey(category.name)];
-          const overMedian = benchmark?.benchmark_visible && benchmark.median_amount != null && category.spent > benchmark.median_amount;
+          const overMedian =
+            category.budget_scope === 'wedding'
+            && benchmark?.benchmark_visible
+            && benchmark.median_amount != null
+            && category.spent > benchmark.median_amount;
 
           return (
             <Card key={category.id} className="shadow-card">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-base font-medium">{category.name}</CardTitle>
+                <div className="space-y-1">
+                  <CardTitle className="text-base font-medium">{category.name}</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={category.budget_scope === 'personal' ? 'secondary' : 'outline'}>
+                      {category.budget_scope === 'personal' ? 'Personal' : 'Wedding'}
+                    </Badge>
+                    {category.visibility === 'private' && (
+                      <Badge variant="secondary" className="gap-1">
+                        <Lock className="h-3 w-3" />
+                        Private
+                      </Badge>
+                    )}
+                  </div>
+                </div>
                 <button onClick={() => deleteCategory(category.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                   <Trash2 className="h-4 w-4" />
                 </button>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground">Market benchmark</p>
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                      {benchmark?.sample_size ?? 0} obs
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {benchmarkSummary(benchmark)}
-                  </p>
-                  {overMedian && (
-                    <p className="mt-2 text-xs font-medium text-foreground">
-                      Current spend is above the benchmark median.
+                {category.budget_scope === 'wedding' ? (
+                  <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">Market benchmark</p>
+                      <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                        {benchmark?.sample_size ?? 0} obs
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {benchmarkSummary(benchmark)}
                     </p>
-                  )}
-                </div>
+                    {overMedian && (
+                      <p className="mt-2 text-xs font-medium text-foreground">
+                        Current spend is above the benchmark median.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Lock className="h-4 w-4 text-primary" />
+                      Personal budget line
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Use this board for private couple costs that should stay separate from shared wedding vendor planning.
+                    </p>
+                  </div>
+                )}
 
                 <div className="flex justify-between text-sm text-muted-foreground mb-1">
                   <span>KES {category.spent.toLocaleString()}</span>
@@ -576,16 +696,26 @@ export default function Budget() {
                   </Button>
                 </div>
 
-                <Button type="button" variant="secondary" className="w-full gap-2" onClick={() => openSpendRecorder(category)}>
-                  <Receipt className="h-4 w-4" />
-                  Record Actual Spend
-                </Button>
+                {category.budget_scope === 'wedding' ? (
+                  <Button type="button" variant="secondary" className="w-full gap-2" onClick={() => openSpendRecorder(category)}>
+                    <Receipt className="h-4 w-4" />
+                    Record Actual Spend
+                  </Button>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Personal lines stay manual. Update spent totals directly as you commit those private costs.
+                  </p>
+                )}
               </CardContent>
             </Card>
           );
         })}
-        {categories.length === 0 && (
-          <p className="col-span-full text-center text-muted-foreground py-12">No budget categories yet. Add one to get started!</p>
+        {visibleCategories.length === 0 && (
+          <p className="col-span-full text-center text-muted-foreground py-12">
+            {activeBudgetScope === 'personal'
+              ? 'No personal budget categories yet. Add one to track private couple costs like dowry, honeymoon, or home setup.'
+              : 'No wedding budget categories yet. Add one to get started!'}
+          </p>
         )}
       </div>
 

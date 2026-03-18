@@ -17,30 +17,36 @@ export type Database = {
       budget_categories: {
         Row: {
           allocated: number
+          budget_scope: string
           client_id: string | null
           created_at: string
           id: string
           name: string
           spent: number
           user_id: string
+          visibility: string
         }
         Insert: {
           allocated?: number
+          budget_scope?: string
           client_id?: string | null
           created_at?: string
           id?: string
           name: string
           spent?: number
           user_id: string
+          visibility?: string
         }
         Update: {
           allocated?: number
+          budget_scope?: string
           client_id?: string | null
           created_at?: string
           id?: string
           name?: string
           spent?: number
           user_id?: string
+          visibility?: string
         }
         Relationships: [
           {

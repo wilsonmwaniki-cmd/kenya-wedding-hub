@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
+import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import type { PlannerType } from '@/lib/roles';
 import { buildSeededTasksFromTemplates } from '@/lib/weddingTaskTemplates';
 
@@ -23,6 +24,7 @@ interface SeedWeddingPlanInput {
 
 interface SeedWeddingPlanResult {
   budgetCategoriesCreated: number;
+  personalBudgetCategoriesCreated: number;
   vendorTemplatesCreated: number;
   tasksCreated: number;
 }
@@ -148,7 +150,7 @@ export async function seedWeddingPlanFromEstimator({
   const vendorCategories = buildVendorCategories(draft, estimateRows);
   const [existingBudgetRes, existingVendorRes, existingTaskRes, profileRes, clientRes] = await Promise.all([
     scopedQuery(
-      supabase.from('budget_categories').select('name').eq('user_id', userId),
+      supabase.from('budget_categories').select('name, budget_scope').eq('user_id', userId),
       clientId,
     ),
     scopedQuery(
@@ -171,7 +173,16 @@ export async function seedWeddingPlanFromEstimator({
   if (profileRes.error) throw profileRes.error;
   if ((clientRes as any).error) throw (clientRes as any).error;
 
-  const existingBudgetNames = new Set((existingBudgetRes.data ?? []).map((item) => item.name));
+  const existingWeddingBudgetNames = new Set(
+    ((existingBudgetRes.data ?? []) as any[])
+      .filter((item) => (item.budget_scope ?? 'wedding') === 'wedding')
+      .map((item) => item.name),
+  );
+  const existingPersonalBudgetNames = new Set(
+    ((existingBudgetRes.data ?? []) as any[])
+      .filter((item) => item.budget_scope === 'personal')
+      .map((item) => item.name),
+  );
   const existingVendorKeys = new Set((existingVendorRes.data ?? []).map((item) => `${item.category}::${item.name}`));
   const existingTaskTitles = new Set((existingTaskRes.data ?? []).map((item) => item.title));
   const seededWeddingDate = ((clientRes as any).data?.wedding_date as string | null | undefined)
@@ -185,14 +196,31 @@ export async function seedWeddingPlanFromEstimator({
   });
 
   const budgetInserts = estimateRows
-    .filter((row) => !existingBudgetNames.has(row.category))
+    .filter((row) => !existingWeddingBudgetNames.has(row.category))
     .map((row) => ({
       user_id: userId,
       client_id: clientId,
       name: row.category,
       allocated: row.suggested_amount,
       spent: 0,
+      budget_scope: 'wedding',
+      visibility: 'public',
     }));
+
+  const shouldSeedPersonalBudget = role === 'couple' || plannerType === 'committee';
+  const personalBudgetInserts = shouldSeedPersonalBudget
+    ? personalBudgetTemplates
+        .filter((template) => !existingPersonalBudgetNames.has(template.name))
+        .map((template) => ({
+          user_id: userId,
+          client_id: null,
+          name: template.name,
+          allocated: 0,
+          spent: 0,
+          budget_scope: 'personal',
+          visibility: template.visibility,
+        }))
+    : [];
 
   const vendorInserts = vendorCategories
     .map((category) => buildVendorPlaceholder(category, draft.county))
@@ -216,6 +244,11 @@ export async function seedWeddingPlanFromEstimator({
     if (error) throw error;
   }
 
+  if (personalBudgetInserts.length) {
+    const { error } = await supabase.from('budget_categories').insert(personalBudgetInserts);
+    if (error) throw error;
+  }
+
   if (vendorInserts.length) {
     const { error } = await supabase.from('vendors').insert(vendorInserts);
     if (error) throw error;
@@ -235,6 +268,7 @@ export async function seedWeddingPlanFromEstimator({
 
   return {
     budgetCategoriesCreated: budgetInserts.length,
+    personalBudgetCategoriesCreated: personalBudgetInserts.length,
     vendorTemplatesCreated: vendorInserts.length,
     tasksCreated: taskInserts.length,
   };
