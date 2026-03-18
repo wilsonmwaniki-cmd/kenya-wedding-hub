@@ -112,20 +112,20 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-      <Card className="border-primary/15 bg-white/98 shadow-[0_28px_80px_rgba(57,38,31,0.24)] backdrop-blur-sm">
+      <Card className="border-white/15 bg-[rgba(43,28,24,0.62)] shadow-[0_28px_80px_rgba(57,38,31,0.24)] backdrop-blur-md">
         <CardContent className="space-y-5 p-7">
           <div className="flex items-start gap-3">
-            <div className="rounded-xl bg-primary/10 p-2.5">
-              <Calculator className="h-5 w-5 text-primary" />
+            <div className="rounded-xl bg-white/12 p-2.5">
+              <Calculator className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h3 className="font-display text-[1.9rem] font-semibold leading-none text-foreground">Quick Cost Estimate</h3>
-              <p className="mt-2 text-sm font-medium text-foreground/72">Free, instant, and no sign-up required</p>
+              <h3 className="font-display text-[1.9rem] font-semibold leading-none text-white">Quick Cost Estimate</h3>
+              <p className="mt-2 text-sm font-medium text-white/88">Free, instant, and no sign-up required</p>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/70">Number of guests</Label>
+            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-white/90">Number of guests</Label>
             <Select value={guestCount} onValueChange={setGuestCount}>
               <SelectTrigger className="h-12 border-border/70 bg-white text-foreground shadow-sm">
                 <SelectValue />
@@ -141,7 +141,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="hero-county" className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/70">County</Label>
+            <Label htmlFor="hero-county" className="text-xs font-semibold uppercase tracking-[0.16em] text-white/90">County</Label>
             <Input
               id="hero-county"
               value={county}
@@ -152,7 +152,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/70">Wedding style</Label>
+            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-white/90">Wedding style</Label>
             <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
               <SelectTrigger className="h-12 border-border/70 bg-white text-foreground shadow-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -169,10 +169,10 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
             Get Estimate
           </Button>
 
-          <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4">
-            <p className="text-sm font-medium text-foreground/72">Estimated total budget</p>
-            <p className="mt-1 font-display text-3xl font-bold text-foreground">{formatCurrency(totals.suggested)}</p>
-            <p className="mt-2 text-xs font-medium text-foreground/60">
+          <div className="rounded-2xl border border-white/15 bg-black/18 p-4">
+            <p className="text-sm font-medium text-white/88">Estimated total budget</p>
+            <p className="mt-1 font-display text-3xl font-bold text-white">{formatCurrency(totals.suggested)}</p>
+            <p className="mt-2 text-xs font-medium text-white/72">
               Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
             </p>
           </div>
