@@ -13,6 +13,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles, Lock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
 import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
 
@@ -23,9 +25,15 @@ interface BudgetCategory {
   spent: number;
   budget_scope: 'wedding' | 'personal';
   visibility: 'public' | 'private';
+  committee_role_in_charge: string | null;
+  contract_status: string;
 }
 
 type BudgetScope = 'wedding' | 'personal';
+type BudgetWorkflowDraft = {
+  committeeRoleInCharge: string;
+  contractStatus: string;
+};
 
 interface SpendLogForm {
   vendorName: string;
@@ -76,7 +84,9 @@ export default function Budget() {
   const [newCategoryScope, setNewCategoryScope] = useState<BudgetScope>('wedding');
   const [activeBudgetScope, setActiveBudgetScope] = useState<BudgetScope>('wedding');
   const [spentDrafts, setSpentDrafts] = useState<Record<string, string>>({});
+  const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, BudgetWorkflowDraft>>({});
   const [savingSpentId, setSavingSpentId] = useState<string | null>(null);
+  const [savingWorkflowId, setSavingWorkflowId] = useState<string | null>(null);
   const [benchmarksLoading, setBenchmarksLoading] = useState(false);
   const [categoryBenchmarks, setCategoryBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
   const [addModalBenchmark, setAddModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
@@ -121,10 +131,23 @@ export default function Budget() {
       spent: Number(item.spent),
       budget_scope: (item.budget_scope ?? 'wedding') as BudgetScope,
       visibility: (item.visibility ?? 'public') as 'public' | 'private',
+      committee_role_in_charge: item.committee_role_in_charge ?? null,
+      contract_status: item.contract_status ?? (item.budget_scope === 'personal' ? 'not_required' : 'not_started'),
     })) as BudgetCategory[];
 
     setCategories(rows);
     setSpentDrafts(Object.fromEntries(rows.map((row) => [row.id, String(row.spent || 0)])));
+    setWorkflowDrafts(
+      Object.fromEntries(
+        rows.map((row) => [
+          row.id,
+          {
+            committeeRoleInCharge: row.committee_role_in_charge ?? 'unassigned',
+            contractStatus: row.contract_status ?? (row.budget_scope === 'personal' ? 'not_required' : 'not_started'),
+          },
+        ]),
+      ),
+    );
   };
 
   useEffect(() => {
@@ -291,6 +314,31 @@ export default function Budget() {
   const deleteCategory = async (id: string) => {
     await supabase.from('budget_categories').delete().eq('id', id);
     await load();
+  };
+
+  const saveWorkflow = async (category: BudgetCategory) => {
+    const draft = workflowDrafts[category.id];
+    if (!draft) return;
+
+    setSavingWorkflowId(category.id);
+    const { error } = await supabase
+      .from('budget_categories')
+      .update({
+        committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
+        contract_status: draft.contractStatus,
+      })
+      .eq('id', category.id);
+
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } else {
+      toast({
+        title: 'Budget workflow updated',
+        description: `${category.name} now tracks ownership and contract state.`,
+      });
+      await load();
+    }
+    setSavingWorkflowId(null);
   };
 
   const openSpendRecorder = (category: BudgetCategory) => {
@@ -673,6 +721,91 @@ export default function Budget() {
                   <span>KES {category.allocated.toLocaleString()}</span>
                 </div>
                 <Progress value={pct} className="h-2" />
+
+                {category.budget_scope === 'wedding' && (
+                  <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Ownership & contract</p>
+                        <p className="text-sm text-muted-foreground">
+                          Match this budget line to the committee role handling it and track whether a contract exists.
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px]">
+                        {contractStatusLabel(workflowDrafts[category.id]?.contractStatus ?? category.contract_status)}
+                      </Badge>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Role in charge</Label>
+                        <Select
+                          value={workflowDrafts[category.id]?.committeeRoleInCharge ?? 'unassigned'}
+                          onValueChange={(value) =>
+                            setWorkflowDrafts((prev) => ({
+                              ...prev,
+                              [category.id]: {
+                                ...(prev[category.id] ?? {
+                                  committeeRoleInCharge: 'unassigned',
+                                  contractStatus: category.contract_status,
+                                }),
+                                committeeRoleInCharge: value,
+                              },
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="h-10 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {committeeResponsibilityOptions.map((role) => (
+                              <SelectItem key={role} value={role}>{role}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Contract status</Label>
+                        <Select
+                          value={workflowDrafts[category.id]?.contractStatus ?? category.contract_status}
+                          onValueChange={(value) =>
+                            setWorkflowDrafts((prev) => ({
+                              ...prev,
+                              [category.id]: {
+                                ...(prev[category.id] ?? {
+                                  committeeRoleInCharge: category.committee_role_in_charge ?? 'unassigned',
+                                  contractStatus: category.contract_status,
+                                }),
+                                contractStatus: value,
+                              },
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="h-10 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {contractStatusOptions.map((status) => (
+                              <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() => saveWorkflow(category)}
+                        disabled={savingWorkflowId === category.id}
+                      >
+                        {savingWorkflowId === category.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                        Save Workflow
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                   <div className="space-y-2">
