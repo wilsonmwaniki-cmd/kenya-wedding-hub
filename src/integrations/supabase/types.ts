@@ -18,7 +18,9 @@ export type Database = {
         Row: {
           allocated: number
           budget_scope: string
+          committee_role_in_charge: string | null
           client_id: string | null
+          contract_status: string
           created_at: string
           id: string
           name: string
@@ -29,7 +31,9 @@ export type Database = {
         Insert: {
           allocated?: number
           budget_scope?: string
+          committee_role_in_charge?: string | null
           client_id?: string | null
+          contract_status?: string
           created_at?: string
           id?: string
           name: string
@@ -40,7 +44,9 @@ export type Database = {
         Update: {
           allocated?: number
           budget_scope?: string
+          committee_role_in_charge?: string | null
           client_id?: string | null
+          contract_status?: string
           created_at?: string
           id?: string
           name?: string
@@ -966,7 +972,9 @@ export type Database = {
         Row: {
           amount_paid: number
           category: string
+          committee_role_in_charge: string | null
           client_id: string | null
+          contract_status: string
           created_at: string
           deposit_amount: number
           email: string | null
@@ -987,7 +995,9 @@ export type Database = {
         Insert: {
           amount_paid?: number
           category: string
+          committee_role_in_charge?: string | null
           client_id?: string | null
+          contract_status?: string
           created_at?: string
           deposit_amount?: number
           email?: string | null
@@ -1008,7 +1018,9 @@ export type Database = {
         Update: {
           amount_paid?: number
           category?: string
+          committee_role_in_charge?: string | null
           client_id?: string | null
+          contract_status?: string
           created_at?: string
           deposit_amount?: number
           email?: string | null

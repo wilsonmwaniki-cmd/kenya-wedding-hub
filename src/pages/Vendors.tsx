@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles, ArrowRightLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
+import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
 import { getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
 import {
   setVendorSelectionStatus,
@@ -39,6 +40,8 @@ import { createVendorTask, createVendorTaskBundle } from '@/lib/vendorTasks';
 
 interface Vendor {
   amount_paid: number;
+  committee_role_in_charge: string | null;
+  contract_status: string;
   deposit_amount: number;
   id: string;
   last_payment_at: string | null;
@@ -71,6 +74,11 @@ interface PaymentDraft {
   amountPaid: string;
   paymentStatus: VendorPaymentStatus;
   paymentDueDate: string;
+}
+
+interface WorkflowDraft {
+  committeeRoleInCharge: string;
+  contractStatus: string;
 }
 
 interface VendorTaskItem {
@@ -167,8 +175,10 @@ export default function Vendors() {
   const [paymentDrafts, setPaymentDrafts] = useState<Record<string, PaymentDraft>>({});
   const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
   const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
+  const [savingWorkflowId, setSavingWorkflowId] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [savingSelectionId, setSavingSelectionId] = useState<string | null>(null);
+  const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, WorkflowDraft>>({});
   const [comparisonCategory, setComparisonCategory] = useState<string>('all');
   const [modalBenchmark, setModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
   const [modalBenchmarkLoading, setModalBenchmarkLoading] = useState(false);
@@ -217,6 +227,8 @@ export default function Vendors() {
     const rows = (data ?? []).map((d) => ({
       ...d,
       amount_paid: Number(d.amount_paid ?? 0),
+      committee_role_in_charge: d.committee_role_in_charge ?? null,
+      contract_status: d.contract_status ?? 'not_started',
       deposit_amount: Number(d.deposit_amount ?? 0),
       price: d.price ? Number(d.price) : null,
     })) as Vendor[];
@@ -231,6 +243,17 @@ export default function Vendors() {
             amountPaid: String(row.amount_paid ?? 0),
             paymentStatus: (row.payment_status || 'unpaid') as VendorPaymentStatus,
             paymentDueDate: row.payment_due_date ?? '',
+          },
+        ]),
+      ),
+    );
+    setWorkflowDrafts(
+      Object.fromEntries(
+        rows.map((row) => [
+          row.id,
+          {
+            committeeRoleInCharge: row.committee_role_in_charge ?? 'unassigned',
+            contractStatus: row.contract_status ?? 'not_started',
           },
         ]),
       ),
@@ -612,6 +635,31 @@ export default function Vendors() {
     } finally {
       setSavingSelectionId(null);
     }
+  };
+
+  const updateVendorWorkflow = async (vendor: Vendor) => {
+    const draft = workflowDrafts[vendor.id];
+    if (!draft) return;
+
+    setSavingWorkflowId(vendor.id);
+    const { error } = await supabase
+      .from('vendors')
+      .update({
+        committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
+        contract_status: draft.contractStatus,
+      })
+      .eq('id', vendor.id);
+
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } else {
+      toast({
+        title: 'Vendor workflow updated',
+        description: `${vendor.name} now tracks owner and contract status.`,
+      });
+      await load();
+    }
+    setSavingWorkflowId(null);
   };
 
   const resetVendorTaskForm = () => {
@@ -1244,6 +1292,8 @@ export default function Vendors() {
                           </p>
                           <p>Paid: {formatCurrency(vendor.amount_paid)}</p>
                           <p>Outstanding: {formatCurrency(Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0))}</p>
+                          <p>Owner: {workflowDrafts[vendor.id]?.committeeRoleInCharge === 'unassigned' ? 'Unassigned' : (workflowDrafts[vendor.id]?.committeeRoleInCharge ?? 'Unassigned')}</p>
+                          <p>Contract: {contractStatusLabel(workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status)}</p>
                           <p>Open tasks: {openLinkedTasks.length}</p>
                           {priceDelta != null && (
                             <p>{Math.abs(priceDelta)}% {priceDelta >= 0 ? 'above' : 'below'} benchmark median</p>
@@ -1299,6 +1349,22 @@ export default function Vendors() {
                       </div>
                     );
                   })}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Owner</div>
+                  {decisionWorkspaceVendors.map((vendor) => (
+                    <div key={`${vendor.id}-owner`} className="px-4 py-3 text-sm text-foreground">
+                      {workflowDrafts[vendor.id]?.committeeRoleInCharge === 'unassigned'
+                        ? 'Unassigned'
+                        : (workflowDrafts[vendor.id]?.committeeRoleInCharge ?? 'Unassigned')}
+                    </div>
+                  ))}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Contract</div>
+                  {decisionWorkspaceVendors.map((vendor) => (
+                    <div key={`${vendor.id}-contract`} className="px-4 py-3 text-sm text-foreground">
+                      {contractStatusLabel(workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status)}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1448,6 +1514,83 @@ export default function Vendors() {
                     {savingPriceId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     Save Price
                   </Button>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Owner & contract</p>
+                      <p className="text-sm text-muted-foreground">
+                        Record which committee or planning role owns this vendor and whether a contract has been drawn.
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {contractStatusLabel(workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status)}
+                    </Badge>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Role in charge</Label>
+                      <Select
+                        value={workflowDrafts[vendor.id]?.committeeRoleInCharge ?? 'unassigned'}
+                        onValueChange={(value) =>
+                          setWorkflowDrafts((prev) => ({
+                            ...prev,
+                            [vendor.id]: {
+                              ...(prev[vendor.id] ?? { committeeRoleInCharge: 'unassigned', contractStatus: vendor.contract_status }),
+                              committeeRoleInCharge: value,
+                            },
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="h-10 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unassigned">Unassigned</SelectItem>
+                          {committeeResponsibilityOptions.map((role) => (
+                            <SelectItem key={role} value={role}>{role}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Contract status</Label>
+                      <Select
+                        value={workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status}
+                        onValueChange={(value) =>
+                          setWorkflowDrafts((prev) => ({
+                            ...prev,
+                            [vendor.id]: {
+                              ...(prev[vendor.id] ?? { committeeRoleInCharge: vendor.committee_role_in_charge ?? 'unassigned', contractStatus: vendor.contract_status }),
+                              contractStatus: value,
+                            },
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="h-10 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {contractStatusOptions.map((status) => (
+                            <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => updateVendorWorkflow(vendor)}
+                      disabled={savingWorkflowId === vendor.id}
+                    >
+                      {savingWorkflowId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Save Ownership
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="rounded-lg border border-border/70 bg-background px-3 py-3">

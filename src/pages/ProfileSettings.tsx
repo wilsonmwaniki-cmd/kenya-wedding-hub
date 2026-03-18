@@ -11,24 +11,12 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyhole, AlertTriangle, UserCog, Phone } from 'lucide-react';
 import AvatarUpload from '@/components/AvatarUpload';
+import { committeeResponsibilityOptions } from '@/lib/committeeRoles';
 import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 
 const committeePermissionOptions = ['chair', 'member', 'viewer'] as const;
-const committeeResponsibilityOptions = [
-  'Photography',
-  'Catering',
-  'Decor',
-  'Venue',
-  'Transport',
-  'Entertainment',
-  'Guest Coordination',
-  'Finance',
-  'Protocol / MC',
-  'Bridal Logistics',
-];
-
 export default function ProfileSettings() {
   const { profile, updateProfile } = useAuth();
   const { toast } = useToast();
