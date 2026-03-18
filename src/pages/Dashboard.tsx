@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight, MapPin, Receipt, BriefcaseBusiness } from 'lucide-react';
+import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight, MapPin, Receipt, BriefcaseBusiness, AlertTriangle, ShieldCheck, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
@@ -52,6 +52,33 @@ interface VendorLinkedTask {
   source_vendor_id: string | null;
 }
 
+interface BudgetDigestRow {
+  id: string;
+  name: string;
+  allocated: number;
+  spent: number;
+  budget_scope: 'wedding' | 'personal';
+  visibility: 'public' | 'private';
+}
+
+interface VendorDigestRow {
+  id: string;
+  name: string;
+  category: string;
+  selection_status: string;
+  payment_due_date: string | null;
+  payment_status: string;
+}
+
+interface TaskDigestRow {
+  id: string;
+  title: string;
+  due_date: string | null;
+  completed: boolean;
+  visibility: string;
+  phase: string | null;
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   prep: 'bg-blue-100 text-blue-700 border-blue-200',
   ceremony: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -72,6 +99,8 @@ export default function Dashboard() {
   const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
+  const showPlanningDigest = profile?.role === 'couple' || isCommittee;
   const [stats, setStats] = useState<DashboardStats>({
     totalBudget: 0, totalSpent: 0, totalTasks: 0, completedTasks: 0,
     totalGuests: 0, confirmedGuests: 0, totalVendors: 0,
@@ -79,6 +108,9 @@ export default function Dashboard() {
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingTimelineEvent[]>([]);
   const [finalVendors, setFinalVendors] = useState<FinalVendor[]>([]);
   const [vendorLinkedTasks, setVendorLinkedTasks] = useState<VendorLinkedTask[]>([]);
+  const [budgetDigestRows, setBudgetDigestRows] = useState<BudgetDigestRow[]>([]);
+  const [vendorDigestRows, setVendorDigestRows] = useState<VendorDigestRow[]>([]);
+  const [taskDigestRows, setTaskDigestRows] = useState<TaskDigestRow[]>([]);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) {
@@ -91,10 +123,10 @@ export default function Dashboard() {
 
     const load = async () => {
       const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows] = await Promise.all([
-        supabase.from('budget_categories').select('allocated, spent').or(dataOrFilter),
-        supabase.from('tasks').select('completed').or(dataOrFilter),
+        supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope, visibility').or(dataOrFilter),
+        supabase.from('tasks').select('id, title, due_date, completed, visibility, phase').or(dataOrFilter),
         supabase.from('guests').select('rsvp_status').or(dataOrFilter),
-        supabase.from('vendors').select('id').or(dataOrFilter),
+        supabase.from('vendors').select('id, name, category, selection_status, payment_due_date, payment_status').or(dataOrFilter),
         supabase
           .from('vendors')
           .select('id, name, category, price, amount_paid, payment_status, payment_due_date')
@@ -117,6 +149,23 @@ export default function Dashboard() {
         confirmedGuests: guests.data?.filter(g => g.rsvp_status === 'confirmed').length ?? 0,
         totalVendors: vendors.data?.length ?? 0,
       });
+      setBudgetDigestRows(((budget.data ?? []) as any[]).map((row) => ({
+        ...row,
+        allocated: Number(row.allocated ?? 0),
+        spent: Number(row.spent ?? 0),
+        budget_scope: (row.budget_scope ?? 'wedding') as 'wedding' | 'personal',
+        visibility: (row.visibility ?? 'public') as 'public' | 'private',
+      })));
+      setVendorDigestRows(((vendors.data ?? []) as any[]).map((row) => ({
+        ...row,
+        selection_status: row.selection_status ?? 'shortlisted',
+        payment_due_date: row.payment_due_date ?? null,
+        payment_status: row.payment_status ?? 'not_started',
+      })));
+      setTaskDigestRows(((tasks.data ?? []) as any[]).map((row) => ({
+        ...row,
+        visibility: row.visibility ?? 'public',
+      })));
       setFinalVendors(((finalVendorRows.data ?? []) as any[]).map((vendor) => ({
         ...vendor,
         amount_paid: Number(vendor.amount_paid ?? 0),
@@ -223,6 +272,80 @@ export default function Dashboard() {
     totalPaid: finalVendors.reduce((sum, vendor) => sum + vendor.amount_paid, 0),
     totalOutstanding: finalVendors.reduce((sum, vendor) => sum + Math.max((vendor.price ?? 0) - vendor.amount_paid, 0), 0),
   };
+
+  const weddingBudgetRows = useMemo(
+    () => budgetDigestRows.filter((row) => row.budget_scope === 'wedding'),
+    [budgetDigestRows],
+  );
+  const personalBudgetRows = useMemo(
+    () => budgetDigestRows.filter((row) => row.budget_scope === 'personal'),
+    [budgetDigestRows],
+  );
+  const overspentWeddingCategories = useMemo(
+    () => weddingBudgetRows.filter((row) => row.allocated > 0 && row.spent > row.allocated),
+    [weddingBudgetRows],
+  );
+  const overspentPersonalCategories = useMemo(
+    () => personalBudgetRows.filter((row) => row.allocated > 0 && row.spent > row.allocated),
+    [personalBudgetRows],
+  );
+  const nearLimitCategories = useMemo(
+    () => budgetDigestRows
+      .filter((row) => row.allocated > 0 && row.spent <= row.allocated && row.spent / row.allocated >= 0.85)
+      .sort((left, right) => (right.spent / right.allocated) - (left.spent / left.allocated)),
+    [budgetDigestRows],
+  );
+
+  const pendingTasks = useMemo(
+    () => taskDigestRows.filter((task) => !task.completed),
+    [taskDigestRows],
+  );
+  const privateTasks = useMemo(
+    () => pendingTasks.filter((task) => task.visibility === 'private'),
+    [pendingTasks],
+  );
+  const publicTasks = useMemo(
+    () => pendingTasks.filter((task) => task.visibility !== 'private'),
+    [pendingTasks],
+  );
+  const nextPrivateTask = useMemo(
+    () => [...privateTasks].sort((left, right) => (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31'))[0] ?? null,
+    [privateTasks],
+  );
+  const nextPublicTask = useMemo(
+    () => [...publicTasks].sort((left, right) => (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31'))[0] ?? null,
+    [publicTasks],
+  );
+
+  const vendorDecisionsPending = useMemo(() => {
+    const byCategory = vendorDigestRows.reduce((summary, vendor) => {
+      const category = vendor.category || 'Other';
+      const entry = summary[category] ?? { shortlisted: 0, final: 0, backup: 0 };
+      switch (vendor.selection_status) {
+        case 'final':
+          entry.final += 1;
+          break;
+        case 'backup':
+          entry.backup += 1;
+          break;
+        case 'declined':
+          break;
+        default:
+          entry.shortlisted += 1;
+          break;
+      }
+      summary[category] = entry;
+      return summary;
+    }, {} as Record<string, { shortlisted: number; final: number; backup: number }>);
+
+    return Object.entries(byCategory)
+      .filter(([, counts]) => counts.final === 0 && (counts.shortlisted > 0 || counts.backup > 0))
+      .map(([category, counts]) => ({
+        category,
+        candidates: counts.shortlisted + counts.backup,
+      }))
+      .sort((left, right) => right.candidates - left.candidates);
+  }, [vendorDigestRows]);
 
   const tasksByVendorId = vendorLinkedTasks.reduce((summary, task) => {
     if (!task.source_vendor_id) return summary;
@@ -600,6 +723,211 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {showPlanningDigest && (
+        <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+          <Card className="border-primary/20 shadow-card">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="font-display text-2xl">Planning Digest</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Budget pressure, open vendor choices, payment deadlines, and private versus shared work in one place.
+                  </p>
+                </div>
+                <ShieldCheck className="h-5 w-5 text-primary" />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Budget alerts</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {overspentWeddingCategories.length + overspentPersonalCategories.length + nearLimitCategories.length}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">Wedding, personal, and near-limit categories</p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Vendor decisions</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{vendorDecisionsPending.length}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Categories still missing a final vendor</p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Private queue</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{privateTasks.length}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Personal work only your side should see</p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Public queue</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{publicTasks.length}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Shared tasks safe for planners or committee</p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-3">
+                <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium text-foreground">Budget watch</p>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {overspentWeddingCategories[0] && (
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Wedding overspend</p>
+                        <p className="mt-1 text-sm font-medium text-foreground">{overspentWeddingCategories[0].name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Over by KES {(overspentWeddingCategories[0].spent - overspentWeddingCategories[0].allocated).toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                    {overspentPersonalCategories[0] && (
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Personal overspend</p>
+                        <p className="mt-1 text-sm font-medium text-foreground">{overspentPersonalCategories[0].name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Over by KES {(overspentPersonalCategories[0].spent - overspentPersonalCategories[0].allocated).toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                    {!overspentWeddingCategories[0] && !overspentPersonalCategories[0] && nearLimitCategories[0] && (
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Approaching limit</p>
+                        <p className="mt-1 text-sm font-medium text-foreground">{nearLimitCategories[0].name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {Math.round((nearLimitCategories[0].spent / nearLimitCategories[0].allocated) * 100)}% of budget used
+                        </p>
+                      </div>
+                    )}
+                    {!overspentWeddingCategories[0] && !overspentPersonalCategories[0] && !nearLimitCategories[0] && (
+                      <p className="text-sm text-muted-foreground">No urgent budget pressure right now.</p>
+                    )}
+                    <Button asChild variant="outline" size="sm" className="w-full justify-start gap-2">
+                      <Link to="/budget">
+                        <Wallet className="h-4 w-4" />
+                        Review budgets
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                  <div className="flex items-center gap-2">
+                    <BriefcaseBusiness className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium text-foreground">Decision queue</p>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {vendorDecisionsPending.length > 0 ? (
+                      vendorDecisionsPending.slice(0, 3).map((item) => (
+                        <div key={item.category} className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{item.category}</p>
+                            <p className="text-xs text-muted-foreground">{item.candidates} active options still open</p>
+                          </div>
+                          <Badge variant="outline" className="rounded-full">{item.candidates}</Badge>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No unresolved vendor categories right now.</p>
+                    )}
+                    <Button asChild variant="outline" size="sm" className="w-full justify-start gap-2">
+                      <Link to="/vendors">
+                        <Store className="h-4 w-4" />
+                        Open decision workspace
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium text-foreground">Queue split</p>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Private next</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{nextPrivateTask?.title ?? 'No private tasks pending'}</p>
+                      {nextPrivateTask?.due_date && (
+                        <p className="text-xs text-muted-foreground">
+                          Due {new Date(nextPrivateTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Public next</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{nextPublicTask?.title ?? 'No public tasks pending'}</p>
+                      {nextPublicTask?.due_date && (
+                        <p className="text-xs text-muted-foreground">
+                          Due {new Date(nextPublicTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Payment deadlines</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">
+                        {paymentsDueSoon.length > 0 ? `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due in 14 days` : 'No payment deadlines in the next 14 days'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button asChild variant="outline" size="sm" className="flex-1 justify-start gap-2">
+                        <Link to="/tasks">
+                          <CheckSquare className="h-4 w-4" />
+                          Open tasks
+                        </Link>
+                      </Button>
+                      <Button asChild variant="outline" size="sm" className="flex-1 justify-start gap-2">
+                        <Link to="/vendors">
+                          <EyeOff className="h-4 w-4" />
+                          Review payments
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-primary/20 bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="font-display text-xl">What Your Side Should Handle Next</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Private matters</p>
+                <p className="mt-2 text-base font-medium text-foreground">
+                  {privateTasks.length > 0 ? `${privateTasks.length} private task${privateTasks.length === 1 ? '' : 's'} still need attention` : 'Private decisions are caught up'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Keep attire, health prep, dowry, honeymoon, and other private work out of the shared queue.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Shared planning</p>
+                <p className="mt-2 text-base font-medium text-foreground">
+                  {publicTasks.length > 0 ? `${publicTasks.length} shared task${publicTasks.length === 1 ? '' : 's'} are still open` : 'Shared planning tasks are in good shape'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  These are the actions you can safely coordinate with a planner or committee without mixing in private work.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Fastest unblocker</p>
+                <p className="mt-2 text-base font-medium text-foreground">
+                  {vendorDecisionsPending[0]
+                    ? `Choose a final ${vendorDecisionsPending[0].category} vendor`
+                    : nextPublicTask?.title ?? nextPrivateTask?.title ?? 'Open the wedding workspace'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {vendorDecisionsPending[0]
+                    ? `${vendorDecisionsPending[0].candidates} options are still active in that category.`
+                    : 'The fastest path forward is the next visible task or payment milestone.'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* My Connections — couples only */}
       {!isPlanner && <MyConnections />}
