@@ -26,6 +26,11 @@ interface Task {
   category: string | null;
   assigned_to: string | null;
   source_vendor_id: string | null;
+  phase: string | null;
+  visibility: string;
+  delegatable: boolean;
+  recommended_role: string | null;
+  priority_level: number | null;
 }
 
 interface VendorOption {
@@ -45,6 +50,23 @@ function selectionLabel(status?: string | null) {
       return 'Declined';
     default:
       return 'Shortlisted';
+  }
+}
+
+function phaseLabel(phase?: string | null) {
+  switch (phase) {
+    case 'foundation':
+      return 'Foundation';
+    case 'research':
+      return 'Research';
+    case 'selection_booking':
+      return 'Selection & booking';
+    case 'second_payment':
+      return 'Second payment';
+    case 'closure_final_payment':
+      return 'Closure';
+    default:
+      return null;
   }
 }
 
@@ -129,6 +151,8 @@ export default function Tasks() {
   const done = tasks.filter((task) => task.completed);
   const vendorLinkedTasks = tasks.filter((task) => task.source_vendor_id);
   const openVendorTaskCount = vendorLinkedTasks.filter((task) => !task.completed).length;
+  const privateTaskCount = pending.filter((task) => task.visibility === 'private').length;
+  const delegatedTaskCount = pending.filter((task) => task.delegatable).length;
   const vendorsWithOpenTasks = new Set(
     vendorLinkedTasks.filter((task) => !task.completed && task.source_vendor_id).map((task) => task.source_vendor_id as string),
   ).size;
@@ -163,6 +187,19 @@ export default function Tasks() {
                   {t.category}
                 </Badge>
               )}
+              {phaseLabel(t.phase) && (
+                <Badge variant="outline" className="rounded-full text-[11px]">
+                  {phaseLabel(t.phase)}
+                </Badge>
+              )}
+              <Badge variant={t.visibility === 'private' ? 'destructive' : 'outline'} className="rounded-full text-[11px]">
+                {t.visibility === 'private' ? 'Private' : 'Public'}
+              </Badge>
+              {t.priority_level != null && (
+                <Badge variant="outline" className="rounded-full text-[11px]">
+                  P{t.priority_level}
+                </Badge>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-2">
               {t.due_date && (
@@ -173,6 +210,11 @@ export default function Tasks() {
               {t.assigned_to && (
                 <p className="flex items-center gap-1 text-xs text-muted-foreground">
                   <UserCircle className="h-3 w-3" /> {t.assigned_to}
+                </p>
+              )}
+              {t.delegatable && t.recommended_role && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Link2 className="h-3 w-3" /> Delegate to {t.recommended_role}
                 </p>
               )}
             </div>
@@ -268,16 +310,16 @@ export default function Tasks() {
         </Card>
         <Card className="shadow-card">
           <CardContent className="py-5">
-            <p className="text-sm font-medium text-foreground">Vendors with active actions</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{vendorsWithOpenTasks}</p>
-            <p className="text-sm text-muted-foreground">Unique vendors currently waiting on contracts, payments, or coordination.</p>
+            <p className="text-sm font-medium text-foreground">Private couple tasks</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{privateTaskCount}</p>
+            <p className="text-sm text-muted-foreground">Tasks reserved for the private couple workspace.</p>
           </CardContent>
         </Card>
         <Card className="shadow-card">
           <CardContent className="py-5">
-            <p className="text-sm font-medium text-foreground">Due in the next 7 days</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{dueSoonVendorTasks}</p>
-            <p className="text-sm text-muted-foreground">Vendor-linked tasks that need attention this week.</p>
+            <p className="text-sm font-medium text-foreground">Delegatable actions</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{delegatedTaskCount}</p>
+            <p className="text-sm text-muted-foreground">{vendorsWithOpenTasks} vendors and {dueSoonVendorTasks} due vendor actions are still active this week.</p>
           </CardContent>
         </Card>
       </div>

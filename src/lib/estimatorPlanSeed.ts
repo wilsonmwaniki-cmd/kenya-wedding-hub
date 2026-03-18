@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
 import type { PlannerType } from '@/lib/roles';
+import { buildSeededTasksFromTemplates } from '@/lib/weddingTaskTemplates';
 
 export type EstimatorWeddingStyle = 'intimate' | 'classic' | 'luxury' | 'garden';
 export type EstimatorVenueTier = 'budget' | 'mid_tier' | 'luxury';
@@ -15,6 +16,7 @@ export interface EstimatorPlanDraft {
 interface SeedWeddingPlanInput {
   userId: string;
   clientId?: string | null;
+  role?: string | null;
   plannerType?: PlannerType | null;
   draft: EstimatorPlanDraft;
 }
@@ -30,12 +32,6 @@ const ESTIMATOR_PLAN_DRAFT_KEY = 'centerpiece-estimator-plan-draft';
 const alwaysVendorCategories = ['Venue', 'Catering', 'Photography', 'Flowers', 'Décor', 'Transport'] as const;
 
 const expandedVendorCategories = ['Videography', 'Music/DJ', 'MC', 'Cake'] as const;
-
-const vendorTaskTemplates = [
-  'Shortlist {category} vendors',
-  'Request quotes from {category} vendors',
-  'Review and compare {category} options',
-];
 
 function scopedQuery<T>(query: T, clientId?: string | null) {
   if (!clientId) {
@@ -93,36 +89,6 @@ function buildVendorPlaceholder(category: string, county: string) {
   };
 }
 
-function buildStarterTasks(vendorCategories: string[]) {
-  const tasks = [
-    {
-      title: 'Review your seeded wedding budget',
-      category: 'Planning',
-      assigned_to: null,
-      description: 'Check the suggested category allocations and adjust them to match your wedding priorities.',
-    },
-    {
-      title: 'Set your wedding priorities and must-haves',
-      category: 'Planning',
-      assigned_to: null,
-      description: 'Decide what matters most before you start comparing vendors and approving spend.',
-    },
-  ];
-
-  vendorCategories.slice(0, 6).forEach((category) => {
-    vendorTaskTemplates.forEach((template) => {
-      tasks.push({
-        title: template.replace('{category}', category),
-        category,
-        assigned_to: null,
-        description: `Seeded from your estimator plan so you can move ${category.toLowerCase()} from research to booking.`,
-      });
-    });
-  });
-
-  return tasks;
-}
-
 export function saveEstimatorPlanDraft(draft: EstimatorPlanDraft) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(ESTIMATOR_PLAN_DRAFT_KEY, JSON.stringify(draft));
@@ -167,6 +133,8 @@ export function canSeedEstimatorPlan(role: string | null | undefined, plannerTyp
 export async function seedWeddingPlanFromEstimator({
   userId,
   clientId = null,
+  role = null,
+  plannerType = null,
   draft,
 }: SeedWeddingPlanInput): Promise<SeedWeddingPlanResult> {
   const estimateRows = await getPublicBudgetEstimate({
@@ -178,9 +146,7 @@ export async function seedWeddingPlanFromEstimator({
   });
 
   const vendorCategories = buildVendorCategories(draft, estimateRows);
-  const starterTasks = buildStarterTasks(vendorCategories);
-
-  const [existingBudgetRes, existingVendorRes, existingTaskRes, profileRes] = await Promise.all([
+  const [existingBudgetRes, existingVendorRes, existingTaskRes, profileRes, clientRes] = await Promise.all([
     scopedQuery(
       supabase.from('budget_categories').select('name').eq('user_id', userId),
       clientId,
@@ -193,17 +159,30 @@ export async function seedWeddingPlanFromEstimator({
       supabase.from('tasks').select('title').eq('user_id', userId),
       clientId,
     ),
-    supabase.from('profiles').select('wedding_location').eq('user_id', userId).maybeSingle(),
+    supabase.from('profiles').select('wedding_location, wedding_date').eq('user_id', userId).maybeSingle(),
+    clientId
+      ? supabase.from('planner_clients').select('wedding_date').eq('id', clientId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   if (existingBudgetRes.error) throw existingBudgetRes.error;
   if (existingVendorRes.error) throw existingVendorRes.error;
   if (existingTaskRes.error) throw existingTaskRes.error;
   if (profileRes.error) throw profileRes.error;
+  if ((clientRes as any).error) throw (clientRes as any).error;
 
   const existingBudgetNames = new Set((existingBudgetRes.data ?? []).map((item) => item.name));
   const existingVendorKeys = new Set((existingVendorRes.data ?? []).map((item) => `${item.category}::${item.name}`));
   const existingTaskTitles = new Set((existingTaskRes.data ?? []).map((item) => item.title));
+  const seededWeddingDate = ((clientRes as any).data?.wedding_date as string | null | undefined)
+    ?? profileRes.data?.wedding_date
+    ?? null;
+  const starterTasks = buildSeededTasksFromTemplates({
+    vendorCategories,
+    role,
+    plannerType,
+    weddingDate: seededWeddingDate,
+  });
 
   const budgetInserts = estimateRows
     .filter((row) => !existingBudgetNames.has(row.category))
@@ -230,8 +209,6 @@ export async function seedWeddingPlanFromEstimator({
       ...task,
       user_id: userId,
       client_id: clientId,
-      completed: false,
-      due_date: null,
     }));
 
   if (budgetInserts.length) {
@@ -278,6 +255,7 @@ export async function seedPendingEstimatorPlanForUser({
 
   const result = await seedWeddingPlanFromEstimator({
     userId,
+    role,
     plannerType,
     draft,
   });
