@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
 import { getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
+import type { WeddingTaskPhase } from '@/lib/weddingTaskTemplates';
 import {
   setVendorSelectionStatus,
   vendorSelectionLabel,
@@ -87,7 +88,12 @@ interface VendorTaskItem {
   due_date: string | null;
   completed: boolean;
   source_vendor_id: string | null;
+  phase: WeddingTaskPhase | null;
+  visibility: string;
+  recommended_role: string | null;
 }
+
+type VendorMilestoneStatus = 'not_started' | 'in_progress' | 'complete';
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 const vendorStatuses = ['contacted', 'quoted', 'booked', 'completed', 'rejected'] as const;
@@ -154,6 +160,101 @@ function reviewSourceLabel(source?: string | null, role?: string | null) {
   if (source === 'committee') return role ? `Committee planned wedding · ${role}` : 'Committee planned wedding';
   if (source === 'admin') return 'Admin review';
   return 'Professional planner review';
+}
+
+const vendorMilestonePhases: WeddingTaskPhase[] = [
+  'research',
+  'selection_booking',
+  'second_payment',
+  'closure_final_payment',
+];
+
+function vendorMilestoneLabel(phase: WeddingTaskPhase) {
+  switch (phase) {
+    case 'research':
+      return 'Research';
+    case 'selection_booking':
+      return 'Booking';
+    case 'second_payment':
+      return 'Second payment';
+    case 'closure_final_payment':
+      return 'Closure';
+    default:
+      return phase;
+  }
+}
+
+function vendorMilestoneTone(status: VendorMilestoneStatus) {
+  switch (status) {
+    case 'complete':
+      return 'default' as const;
+    case 'in_progress':
+      return 'secondary' as const;
+    case 'not_started':
+    default:
+      return 'outline' as const;
+  }
+}
+
+function getVendorMilestoneState(vendor: Vendor, tasks: VendorTaskItem[], phase: WeddingTaskPhase): VendorMilestoneStatus {
+  const phaseTasks = tasks.filter((task) => task.phase === phase);
+  const hasCompletedTask = phaseTasks.some((task) => task.completed);
+  const hasOpenTask = phaseTasks.some((task) => !task.completed);
+
+  switch (phase) {
+    case 'research':
+      if (hasCompletedTask || vendor.status === 'quoted' || vendor.status === 'booked' || vendor.status === 'completed') return 'complete';
+      if (hasOpenTask || ['shortlisted', 'backup', 'final', 'declined'].includes(vendor.selection_status || '')) return 'in_progress';
+      return 'not_started';
+    case 'selection_booking':
+      if (hasCompletedTask || vendor.contract_status === 'signed' || vendor.status === 'booked' || vendor.status === 'completed' || vendor.selection_status === 'final') {
+        return 'complete';
+      }
+      if (hasOpenTask || vendor.contract_status === 'drafting' || vendor.contract_status === 'sent' || vendor.selection_status === 'shortlisted' || vendor.selection_status === 'backup') {
+        return 'in_progress';
+      }
+      return 'not_started';
+    case 'second_payment':
+      if (hasCompletedTask || vendor.payment_status === 'part_paid' || vendor.payment_status === 'paid_full') return 'complete';
+      if (hasOpenTask || vendor.payment_status === 'deposit_due' || vendor.payment_status === 'deposit_paid') return 'in_progress';
+      return 'not_started';
+    case 'closure_final_payment':
+      if (hasCompletedTask || (vendor.payment_status === 'paid_full' && (vendor.status === 'completed' || vendor.selection_status === 'final'))) {
+        return 'complete';
+      }
+      if (
+        hasOpenTask ||
+        vendor.selection_status === 'final' ||
+        vendor.status === 'booked' ||
+        vendor.status === 'completed' ||
+        vendor.payment_status === 'deposit_paid' ||
+        vendor.payment_status === 'part_paid' ||
+        vendor.contract_status === 'signed'
+      ) {
+        return 'in_progress';
+      }
+      return 'not_started';
+    default:
+      return 'not_started';
+  }
+}
+
+function buildVendorMilestones(vendor: Vendor, tasks: VendorTaskItem[]) {
+  return vendorMilestonePhases.map((phase) => {
+    const phaseTasks = tasks.filter((task) => task.phase === phase);
+    const nextOpenTask = phaseTasks
+      .filter((task) => !task.completed)
+      .sort((left, right) => (left.due_date ?? '').localeCompare(right.due_date ?? ''))[0] ?? null;
+
+    return {
+      phase,
+      label: vendorMilestoneLabel(phase),
+      status: getVendorMilestoneState(vendor, tasks, phase),
+      openTaskCount: phaseTasks.filter((task) => !task.completed).length,
+      completedTaskCount: phaseTasks.filter((task) => task.completed).length,
+      nextOpenTask,
+    };
+  });
 }
 
 export default function Vendors() {
@@ -268,7 +369,7 @@ export default function Vendors() {
     if (!dataOrFilter) return;
     const { data, error } = await supabase
       .from('tasks')
-      .select('id, title, due_date, completed, source_vendor_id')
+      .select('id, title, due_date, completed, source_vendor_id, phase, visibility, recommended_role')
       .or(dataOrFilter)
       .not('source_vendor_id', 'is', null)
       .order('due_date', { ascending: true, nullsFirst: false });
@@ -722,6 +823,7 @@ export default function Vendors() {
         vendorName: vendor.name,
         category: vendor.category,
         clientId: selectedClient?.id ?? null,
+        paymentDueDate: paymentDrafts[vendor.id]?.paymentDueDate ?? vendor.payment_due_date,
       });
       toast({
         title: created.length ? 'Vendor task bundle created' : 'Vendor task bundle already exists',
@@ -1232,6 +1334,9 @@ export default function Vendors() {
                   {decisionWorkspaceVendors.map((vendor) => {
                     const linkedTasks = vendorTasksByVendorId[vendor.id] ?? [];
                     const openLinkedTasks = linkedTasks.filter((task) => !task.completed);
+                    const milestones = buildVendorMilestones(vendor, linkedTasks);
+                    const completedMilestones = milestones.filter((milestone) => milestone.status === 'complete').length;
+                    const nextMilestone = milestones.find((milestone) => milestone.status !== 'complete') ?? null;
                     const categoryBenchmark = categoryBenchmarks[benchmarkKey(vendor.category)];
                     const listingBenchmark = vendor.vendor_listing_id ? listingBenchmarks[vendor.vendor_listing_id] : null;
                     const activeBenchmark = listingBenchmark?.benchmark_visible ? listingBenchmark : categoryBenchmark;
@@ -1276,6 +1381,13 @@ export default function Vendors() {
                             Add task
                           </Button>
                         </div>
+                        <div className="mt-3 flex flex-wrap gap-1">
+                          {milestones.map((milestone) => (
+                            <Badge key={`${vendor.id}-${milestone.phase}`} variant={vendorMilestoneTone(milestone.status)} className="text-[10px]">
+                              {milestone.label}
+                            </Badge>
+                          ))}
+                        </div>
                         <div className="mt-3 space-y-1 text-xs text-muted-foreground">
                           <p>Quote: {formatCurrency(vendor.price)}</p>
                           <p>
@@ -1295,6 +1407,8 @@ export default function Vendors() {
                           <p>Owner: {workflowDrafts[vendor.id]?.committeeRoleInCharge === 'unassigned' ? 'Unassigned' : (workflowDrafts[vendor.id]?.committeeRoleInCharge ?? 'Unassigned')}</p>
                           <p>Contract: {contractStatusLabel(workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status)}</p>
                           <p>Open tasks: {openLinkedTasks.length}</p>
+                          <p>Milestones: {completedMilestones}/{milestones.length} complete</p>
+                          <p>Next: {nextMilestone ? nextMilestone.label : 'Workflow complete'}</p>
                           {priceDelta != null && (
                             <p>{Math.abs(priceDelta)}% {priceDelta >= 0 ? 'above' : 'below'} benchmark median</p>
                           )}
@@ -1325,6 +1439,28 @@ export default function Vendors() {
                       {formatCurrency(vendor.amount_paid)}
                     </div>
                   ))}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Milestones</div>
+                  {decisionWorkspaceVendors.map((vendor) => {
+                    const milestones = buildVendorMilestones(vendor, vendorTasksByVendorId[vendor.id] ?? []);
+                    const completedMilestones = milestones.filter((milestone) => milestone.status === 'complete').length;
+                    return (
+                      <div key={`${vendor.id}-milestones`} className="px-4 py-3 text-sm text-foreground">
+                        {completedMilestones}/{milestones.length} complete
+                      </div>
+                    );
+                  })}
+
+                  <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Next milestone</div>
+                  {decisionWorkspaceVendors.map((vendor) => {
+                    const milestones = buildVendorMilestones(vendor, vendorTasksByVendorId[vendor.id] ?? []);
+                    const nextMilestone = milestones.find((milestone) => milestone.status !== 'complete') ?? null;
+                    return (
+                      <div key={`${vendor.id}-next-milestone`} className="px-4 py-3 text-sm text-foreground">
+                        {nextMilestone ? nextMilestone.label : 'Workflow complete'}
+                      </div>
+                    );
+                  })}
 
                   <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Open tasks</div>
                   {decisionWorkspaceVendors.map((vendor) => {
@@ -1420,6 +1556,8 @@ export default function Vendors() {
           const canReview = vendor.status === 'booked' || vendor.status === 'completed';
           const linkedTasks = vendorTasksByVendorId[vendor.id] ?? [];
           const openLinkedTasks = linkedTasks.filter((task) => !task.completed);
+          const milestones = buildVendorMilestones(vendor, linkedTasks);
+          const nextMilestone = milestones.find((milestone) => milestone.status !== 'complete') ?? null;
 
           return (
             <Card key={vendor.id} className="shadow-card">
@@ -1709,11 +1847,11 @@ export default function Vendors() {
                     </div>
                   </div>
 
-                  <div className="mt-4 flex items-center justify-between gap-3">
-                    <p className="text-xs text-muted-foreground">
-                      {vendor.last_payment_at
-                        ? `Last payment update ${new Date(vendor.last_payment_at).toLocaleDateString()}.`
-                        : 'No payment updates recorded yet.'}
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    {vendor.last_payment_at
+                      ? `Last payment update ${new Date(vendor.last_payment_at).toLocaleDateString()}.`
+                      : 'No payment updates recorded yet.'}
                     </p>
                     <Button
                       type="button"
@@ -1726,6 +1864,49 @@ export default function Vendors() {
                       Save Payment Plan
                     </Button>
                   </div>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Milestone workflow</p>
+                      <p className="text-sm text-muted-foreground">
+                        Track this vendor through the spreadsheet phases: research, booking, second payment, and closure.
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {milestones.filter((milestone) => milestone.status === 'complete').length}/{milestones.length} complete
+                    </Badge>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {milestones.map((milestone) => (
+                      <div key={`${vendor.id}-${milestone.phase}-row`} className="flex items-start justify-between gap-3 rounded-md border border-border/70 bg-muted/40 px-3 py-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant={vendorMilestoneTone(milestone.status)} className="text-[10px]">
+                              {milestone.label}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {milestone.openTaskCount > 0
+                                ? `${milestone.openTaskCount} open task${milestone.openTaskCount === 1 ? '' : 's'}`
+                                : milestone.completedTaskCount > 0
+                                  ? 'Milestone task closed'
+                                  : 'No milestone task yet'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {milestone.nextOpenTask?.title ?? (milestone.status === 'complete' ? 'Milestone complete' : 'Bundle tasks to activate this milestone')}
+                          </p>
+                        </div>
+                        <div className="text-right text-xs text-muted-foreground">
+                          {milestone.nextOpenTask?.due_date ? `Due ${new Date(milestone.nextOpenTask.due_date).toLocaleDateString()}` : 'No due date'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Next action: {nextMilestone ? nextMilestone.label : 'Workflow complete'}.
+                  </p>
                 </div>
 
                 <div className="rounded-lg border border-border/70 bg-background px-3 py-3">

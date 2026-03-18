@@ -209,7 +209,7 @@ const coupleOnlyTemplates: WeddingTaskTemplate[] = [
   },
 ];
 
-function buildVendorWorkflowTasks(category: string): WeddingTaskTemplate[] {
+export function getVendorWorkflowTemplates(category: string): WeddingTaskTemplate[] {
   const config = roleByCategory[category] ?? {
     visibility: 'public' as const,
     priorityLevel: 3 as const,
@@ -289,7 +289,7 @@ export function getWeddingTaskTemplates(input: {
   }
 
   for (const category of input.vendorCategories) {
-    templates.push(...buildVendorWorkflowTasks(category));
+    templates.push(...getVendorWorkflowTemplates(category));
   }
 
   return templates;
