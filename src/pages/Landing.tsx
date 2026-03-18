@@ -112,7 +112,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-      <Card className="border-border/40 bg-white/96 shadow-[0_28px_80px_rgba(57,38,31,0.24)] backdrop-blur-sm">
+      <Card className="border-primary/15 bg-white/98 shadow-[0_28px_80px_rgba(57,38,31,0.24)] backdrop-blur-sm">
         <CardContent className="space-y-5 p-7">
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-primary/10 p-2.5">
@@ -120,14 +120,14 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
             </div>
             <div>
               <h3 className="font-display text-[1.9rem] font-semibold leading-none text-foreground">Quick Cost Estimate</h3>
-              <p className="mt-2 text-sm text-muted-foreground">Free, instant, and no sign-up required</p>
+              <p className="mt-2 text-sm font-medium text-foreground/72">Free, instant, and no sign-up required</p>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Number of guests</Label>
+            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/70">Number of guests</Label>
             <Select value={guestCount} onValueChange={setGuestCount}>
-              <SelectTrigger className="h-12 border-border/70 bg-background/90">
+              <SelectTrigger className="h-12 border-border/70 bg-white text-foreground shadow-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -141,20 +141,20 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="hero-county" className="text-xs uppercase tracking-[0.16em] text-muted-foreground">County</Label>
+            <Label htmlFor="hero-county" className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/70">County</Label>
             <Input
               id="hero-county"
               value={county}
               onChange={(e) => setCounty(e.target.value)}
               placeholder="e.g. Nairobi"
-              className="h-12 border-border/70 bg-background/90"
+              className="h-12 border-border/70 bg-white text-foreground placeholder:text-muted-foreground shadow-sm"
             />
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Wedding style</Label>
+            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/70">Wedding style</Label>
             <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
-              <SelectTrigger className="h-12 border-border/70 bg-background/90"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-12 border-border/70 bg-white text-foreground shadow-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="intimate">Intimate & Simple</SelectItem>
                 <SelectItem value="classic">Classic</SelectItem>
@@ -169,21 +169,21 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
             Get Estimate
           </Button>
 
-          <div className="rounded-2xl bg-primary/5 p-4">
-            <p className="text-sm font-medium text-muted-foreground">Estimated total budget</p>
+          <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4">
+            <p className="text-sm font-medium text-foreground/72">Estimated total budget</p>
             <p className="mt-1 font-display text-3xl font-bold text-foreground">{formatCurrency(totals.suggested)}</p>
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="mt-2 text-xs font-medium text-foreground/60">
               Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
             </p>
           </div>
 
-          <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+          <div className="rounded-2xl border border-border/60 bg-[#fdf9f4] p-4">
             <p className="text-sm font-medium text-foreground">What your estimate includes</p>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
               {estimateRows.slice(0, 4).map((row) => (
-                <div key={row.category} className="rounded-xl bg-white px-3 py-2">
+                <div key={row.category} className="rounded-xl border border-border/50 bg-white px-3 py-2">
                   <p className="font-medium text-foreground">{row.category}</p>
-                  <p>{formatCurrency(row.suggested_amount)}</p>
+                  <p className="font-medium text-foreground/70">{formatCurrency(row.suggested_amount)}</p>
                 </div>
               ))}
             </div>
@@ -546,7 +546,7 @@ export default function Landing() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
           <div className="flex items-center gap-3">
             <Heart className="h-5 w-5 text-primary" fill="currentColor" />
-            <span className="font-display text-2xl font-semibold text-foreground">Centerpiece</span>
+            <span className="font-display text-2xl font-semibold text-foreground">Zania</span>
           </div>
           <div className="hidden items-center gap-8 md:flex">
             <Link to="/vendors-directory" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Vendors</Link>
@@ -562,7 +562,7 @@ export default function Landing() {
       <section className="mx-auto max-w-7xl px-6 pt-8 lg:px-8 lg:pt-10">
         <div className="overflow-hidden rounded-[34px] border border-border/40 shadow-[0_30px_80px_rgba(62,39,35,0.18)]">
           <div className="relative min-h-[690px]">
-            <img src={heroImage} alt="Kenyan wedding centerpiece" className="absolute inset-0 h-full w-full object-cover" />
+            <img src={heroImage} alt="Kenyan wedding floral arrangement" className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(42,28,24,0.74)_0%,rgba(42,28,24,0.52)_38%,rgba(42,28,24,0.3)_100%)]" />
             <div className="relative grid min-h-[690px] gap-10 px-8 py-10 lg:grid-cols-[1.08fr_0.92fr] lg:px-16 lg:py-16">
               <div className="flex flex-col justify-center text-primary-foreground">
@@ -592,7 +592,7 @@ export default function Landing() {
                   transition={{ duration: 0.6, delay: 0.2 }}
                   className="mt-6 max-w-2xl text-xl leading-relaxed text-primary-foreground/86"
                 >
-                  Centerpiece helps couples, planners, and committees discover vendors, find planners, and estimate costs in one wedding planning platform built for Kenya.
+                  Zania helps couples, planners, and committees discover vendors, find planners, and estimate costs in one wedding planning platform built for Kenya.
                 </motion.p>
 
                 <motion.div
@@ -743,9 +743,9 @@ export default function Landing() {
 
       <footer className="bg-primary px-6 py-8 text-primary-foreground">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-sm sm:flex-row lg:px-2">
-          <div className="font-display text-2xl font-semibold">Centerpiece</div>
+          <div className="font-display text-2xl font-semibold">Zania</div>
           <div className="text-center text-primary-foreground/80 sm:text-right">
-            © {new Date().getFullYear()} Centerpiece. Wedding planning for Kenya.
+            © {new Date().getFullYear()} Zania. Wedding planning for Kenya.
           </div>
         </div>
       </footer>

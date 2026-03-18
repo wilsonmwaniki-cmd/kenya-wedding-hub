@@ -157,7 +157,7 @@ export default function TimelineShare() {
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-6">
           <div className="flex items-center gap-2 mb-2">
             <Heart className="h-4 w-4 text-primary" fill="currentColor" />
-            <span className="text-xs font-medium text-muted-foreground tracking-wide uppercase">Centerpiece</span>
+            <span className="text-xs font-medium text-muted-foreground tracking-wide uppercase">Zania</span>
           </div>
 
           {/* Personal role-aware heading */}
@@ -305,7 +305,7 @@ export default function TimelineShare() {
         )}
 
         <p className="text-center text-xs text-muted-foreground mt-10">
-          Powered by Centerpiece · This timeline updates in real time
+          Powered by Zania · This timeline updates in real time
         </p>
       </div>
     </div>

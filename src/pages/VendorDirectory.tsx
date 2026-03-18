@@ -145,7 +145,7 @@ export default function VendorDirectory() {
       <nav className="flex items-center justify-between border-b border-border px-6 py-4 lg:px-12">
         <Link to="/" className="flex items-center gap-2">
           <Heart className="h-6 w-6 text-primary" fill="currentColor" />
-          <span className="font-display text-xl font-bold text-foreground">Centerpiece</span>
+          <span className="font-display text-xl font-bold text-foreground">Zania</span>
         </Link>
         <div className="flex items-center gap-3">
           <Link to="/">
@@ -346,7 +346,7 @@ export default function VendorDirectory() {
       <footer className="border-t border-border px-6 py-8 text-center text-sm text-muted-foreground">
         <div className="flex items-center justify-center gap-2">
           <Heart className="h-4 w-4 text-primary" fill="currentColor" />
-          <span>Centerpiece © {new Date().getFullYear()}</span>
+          <span>Zania © {new Date().getFullYear()}</span>
         </div>
       </footer>
     </div>
