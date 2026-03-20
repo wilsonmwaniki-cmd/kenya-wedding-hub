@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, PlannerType, SignupRole } from '@/lib/roles';
@@ -32,7 +32,10 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
+  baseProfile: Profile | null;
   loading: boolean;
+  isSuperAdmin: boolean;
+  rolePreview: RolePreview;
   signUp: (
     email: string,
     password: string,
@@ -44,15 +47,60 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
+  setRolePreview: (role: RolePreview) => void;
+  clearRolePreview: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const ROLE_PREVIEW_STORAGE_KEY = 'zania-admin-role-preview';
+export type RolePreview = 'admin' | 'couple' | 'vendor' | 'planner' | 'committee';
+
+const plannerPreviewExpiry = () => {
+  const nextYear = new Date();
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
+  return nextYear.toISOString();
+};
+
+const buildPreviewProfile = (baseProfile: Profile, preview: RolePreview): Profile => {
+  if (preview === 'admin') return baseProfile;
+
+  if (preview === 'vendor') {
+    return {
+      ...baseProfile,
+      role: 'vendor',
+      company_name: baseProfile.company_name || `${baseProfile.full_name || 'Admin'} Test Vendor`,
+      company_email: baseProfile.company_email || baseProfile.user_id,
+    };
+  }
+
+  if (preview === 'couple') {
+    return {
+      ...baseProfile,
+      role: 'couple',
+      planner_type: null,
+      committee_name: null,
+    };
+  }
+
+  return {
+    ...baseProfile,
+    role: 'planner',
+    planner_type: preview === 'committee' ? 'committee' : 'professional',
+    committee_name: preview === 'committee' ? (baseProfile.committee_name || `${baseProfile.full_name || 'Admin'} Committee`) : null,
+    planner_verified: true,
+    planner_verification_requested: false,
+    planner_verification_requested_at: null,
+    planner_subscription_status: 'active',
+    planner_subscription_expires_at: plannerPreviewExpiry(),
+  };
+};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [baseProfile, setBaseProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rolePreview, setRolePreviewState] = useState<RolePreview>('admin');
 
   const getFallbackFullName = (authUser: User) => {
     const fullName = authUser.user_metadata?.full_name;
@@ -128,16 +176,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error) {
       console.error('Failed to load profile:', error.message);
-      setProfile(null);
+      setBaseProfile(null);
       return null;
     }
 
     if (!data) {
-      setProfile(null);
+      setBaseProfile(null);
       return null;
     }
 
-    setProfile(data as Profile);
+    setBaseProfile(data as Profile);
     return data as Profile;
   };
 
@@ -169,7 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error && error.code !== '23505') {
       console.error('Failed to recover missing profile:', error.message);
       const fallbackProfile = buildFallbackProfile(authUser, role);
-      setProfile(fallbackProfile);
+      setBaseProfile(fallbackProfile);
       return fallbackProfile;
     }
 
@@ -177,7 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (recoveredProfile) return recoveredProfile;
 
     const fallbackProfile = buildFallbackProfile(authUser, role);
-    setProfile(fallbackProfile);
+    setBaseProfile(fallbackProfile);
     return fallbackProfile;
   };
 
@@ -190,7 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setProfile(null);
+    setBaseProfile(null);
   };
 
   const hydrateSessionFromHash = async () => {
@@ -231,6 +279,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }),
     ]);
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedPreview = window.localStorage.getItem(ROLE_PREVIEW_STORAGE_KEY);
+    if (
+      storedPreview === 'admin' ||
+      storedPreview === 'couple' ||
+      storedPreview === 'vendor' ||
+      storedPreview === 'planner' ||
+      storedPreview === 'committee'
+    ) {
+      setRolePreviewState(storedPreview);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(ROLE_PREVIEW_STORAGE_KEY, rolePreview);
+  }, [rolePreview]);
+
+  useEffect(() => {
+    if (!baseProfile) return;
+    if (baseProfile.role === 'admin') return;
+    if (rolePreview !== 'admin') {
+      setRolePreviewState('admin');
+    }
+  }, [baseProfile?.role]);
+
+  const profile = useMemo(() => {
+    if (!baseProfile) return null;
+    if (baseProfile.role !== 'admin') return baseProfile;
+    return buildPreviewProfile(baseProfile, rolePreview);
+  }, [baseProfile, rolePreview]);
+
+  const isSuperAdmin = baseProfile?.role === 'admin';
 
   useEffect(() => {
     let active = true;
@@ -305,6 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    setRolePreviewState('admin');
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
   };
@@ -319,8 +403,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchProfile(user.id);
   };
 
+  const setRolePreview = (role: RolePreview) => {
+    setRolePreviewState(role);
+  };
+
+  const clearRolePreview = () => {
+    setRolePreviewState('admin');
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, signUp, signIn, signInWithGoogle, signOut, updateProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        profile,
+        baseProfile,
+        loading,
+        isSuperAdmin,
+        rolePreview,
+        signUp,
+        signIn,
+        signInWithGoogle,
+        signOut,
+        updateProfile,
+        setRolePreview,
+        clearRolePreview,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
