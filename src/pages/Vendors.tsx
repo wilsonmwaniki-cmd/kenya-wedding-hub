@@ -105,6 +105,14 @@ interface VendorPaymentRecord {
   budget_scope: 'wedding' | 'personal';
 }
 
+interface VendorPaymentForm {
+  payeeName: string;
+  amount: string;
+  paymentDate: string;
+  reference: string;
+  notes: string;
+}
+
 type VendorMilestoneStatus = 'not_started' | 'in_progress' | 'complete';
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
@@ -132,6 +140,10 @@ const issueFlagOptions: Array<{ value: VendorReputationIssueFlag; label: string 
 function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'N/A';
   return `KES ${Number(value).toLocaleString()}`;
+}
+
+function normalizeCategoryName(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function benchmarkKey(category: string) {
@@ -311,6 +323,15 @@ export default function Vendors() {
   const [vendorListView, setVendorListView] = useState<'by_category' | 'by_name'>('by_category');
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [selectedVendorTab, setSelectedVendorTab] = useState<'details' | 'tasks' | 'payments'>('details');
+  const [recordVendorPaymentOpen, setRecordVendorPaymentOpen] = useState(false);
+  const [recordingVendorPayment, setRecordingVendorPayment] = useState(false);
+  const [vendorPaymentForm, setVendorPaymentForm] = useState<VendorPaymentForm>({
+    payeeName: '',
+    amount: '',
+    paymentDate: new Date().toISOString().slice(0, 10),
+    reference: '',
+    notes: '',
+  });
   const [vendorTaskForm, setVendorTaskForm] = useState({
     title: '',
     description: '',
@@ -1181,6 +1202,139 @@ export default function Vendors() {
     }
   }, [selectedVendorId, selectedVendor]);
 
+  useEffect(() => {
+    if (!recordVendorPaymentOpen || !selectedVendor) return;
+
+    setVendorPaymentForm({
+      payeeName: selectedVendor.name,
+      amount: '',
+      paymentDate: new Date().toISOString().slice(0, 10),
+      reference: '',
+      notes: '',
+    });
+  }, [recordVendorPaymentOpen, selectedVendor]);
+
+  const submitVendorPayment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user || !selectedVendor || !dataOrFilter) return;
+
+    const amount = Number(vendorPaymentForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({
+        title: 'Invalid payment amount',
+        description: 'Enter a KES amount greater than zero.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const payeeName = vendorPaymentForm.payeeName.trim() || selectedVendor.name;
+    if (!payeeName) {
+      toast({
+        title: 'Payee required',
+        description: 'Add the payee or vendor name for this payment.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setRecordingVendorPayment(true);
+    try {
+      const { data: categoryRows, error: categoryLoadError } = await supabase
+        .from('budget_categories')
+        .select('*')
+        .or(dataOrFilter)
+        .eq('budget_scope', 'wedding');
+
+      if (categoryLoadError) throw categoryLoadError;
+
+      let selectedCategory = ((categoryRows ?? []) as any[]).find(
+        (category) => normalizeCategoryName(category.name) === normalizeCategoryName(selectedVendor.category),
+      );
+
+      if (!selectedCategory) {
+        const insert: Record<string, unknown> = {
+          user_id: user.id,
+          name: selectedVendor.category,
+          allocated: selectedVendor.price ?? 0,
+          spent: 0,
+          budget_scope: 'wedding',
+          visibility: 'public',
+        };
+
+        if (isPlanner && selectedClient) {
+          insert.client_id = selectedClient.id;
+        }
+
+        const { data: insertedCategory, error: insertCategoryError } = await supabase
+          .from('budget_categories')
+          .insert(insert)
+          .select('*')
+          .single();
+
+        if (insertCategoryError) throw insertCategoryError;
+        selectedCategory = insertedCategory;
+      }
+
+      const { error: insertPaymentError } = await supabase.from('budget_payments').insert({
+        user_id: user.id,
+        client_id: selectedClient?.id ?? null,
+        budget_category_id: selectedCategory.id,
+        vendor_id: selectedVendor.id,
+        budget_scope: 'wedding',
+        category_name: selectedCategory.name,
+        payee_name: payeeName,
+        amount,
+        payment_date: vendorPaymentForm.paymentDate,
+        reference: vendorPaymentForm.reference.trim() || null,
+        notes: vendorPaymentForm.notes.trim() || null,
+      });
+
+      if (insertPaymentError) throw insertPaymentError;
+
+      const nextCategorySpent = Number(selectedCategory.spent ?? 0) + amount;
+      const { error: updateCategoryError } = await supabase
+        .from('budget_categories')
+        .update({ spent: nextCategorySpent })
+        .eq('id', selectedCategory.id);
+
+      if (updateCategoryError) throw updateCategoryError;
+
+      const nextPaid = Number(selectedVendor.amount_paid ?? 0) + amount;
+      const nextStatus: VendorPaymentStatus =
+        selectedVendor.price && nextPaid >= selectedVendor.price
+          ? 'paid_full'
+          : nextPaid > 0
+            ? 'part_paid'
+            : ((selectedVendor.payment_status as VendorPaymentStatus) || 'unpaid');
+
+      await updateVendorPaymentState({
+        vendorId: selectedVendor.id,
+        contractAmount: selectedVendor.price ?? null,
+        depositAmount: Number(selectedVendor.deposit_amount ?? 0),
+        amountPaid: nextPaid,
+        paymentStatus: nextStatus,
+        paymentDueDate: selectedVendor.payment_due_date ?? null,
+      });
+
+      toast({
+        title: 'Payment recorded',
+        description: `${formatCurrency(amount)} was added for ${selectedVendor.name}.`,
+      });
+
+      setRecordVendorPaymentOpen(false);
+      await Promise.all([load(), loadVendorPayments()]);
+    } catch (error: any) {
+      toast({
+        title: 'Failed to record payment',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRecordingVendorPayment(false);
+    }
+  };
+
   const addVendorDialog = (
     <Dialog
       open={open}
@@ -1536,9 +1690,87 @@ export default function Vendors() {
                         <p className="text-2xl font-semibold text-green-600">Total Paid: {formatCurrency(selectedVendorPaymentSummary.totalPaid)}</p>
                         <p className="text-2xl font-semibold text-orange-600">Balance: {formatCurrency(selectedVendorPaymentSummary.balance)}</p>
                       </div>
-                      <Button type="button" variant="outline" onClick={() => navigate('/budget')}>
-                        Record a payment made
-                      </Button>
+                      <Dialog open={recordVendorPaymentOpen} onOpenChange={setRecordVendorPaymentOpen}>
+                        <DialogTrigger asChild>
+                          <Button type="button" variant="outline">
+                            Record a payment made
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-lg">
+                          <DialogHeader>
+                            <DialogTitle className="font-display">Record Vendor Payment</DialogTitle>
+                          </DialogHeader>
+                          <form onSubmit={submitVendorPayment} className="space-y-4">
+                            <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
+                              <p className="text-sm font-medium text-foreground">This payment will update the vendor ledger, budget, and paid/balance totals.</p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                Category: {selectedVendor.category} · Vendor: {selectedVendor.name}
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Payee name</Label>
+                              <Input
+                                value={vendorPaymentForm.payeeName}
+                                onChange={(event) =>
+                                  setVendorPaymentForm((prev) => ({ ...prev, payeeName: event.target.value }))
+                                }
+                                placeholder="e.g. Little Cake Girl"
+                              />
+                            </div>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <div className="space-y-2">
+                                <Label>Amount (KES)</Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={vendorPaymentForm.amount}
+                                  onChange={(event) =>
+                                    setVendorPaymentForm((prev) => ({ ...prev, amount: event.target.value }))
+                                  }
+                                  placeholder="0"
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Payment date</Label>
+                                <Input
+                                  type="date"
+                                  value={vendorPaymentForm.paymentDate}
+                                  onChange={(event) =>
+                                    setVendorPaymentForm((prev) => ({ ...prev, paymentDate: event.target.value }))
+                                  }
+                                  required
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Reference</Label>
+                              <Input
+                                value={vendorPaymentForm.reference}
+                                onChange={(event) =>
+                                  setVendorPaymentForm((prev) => ({ ...prev, reference: event.target.value }))
+                                }
+                                placeholder="e.g. MPESA Ref: ET546GFDC"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Notes (optional)</Label>
+                              <Textarea
+                                value={vendorPaymentForm.notes}
+                                onChange={(event) =>
+                                  setVendorPaymentForm((prev) => ({ ...prev, notes: event.target.value }))
+                                }
+                                placeholder="Deposit, second payment, balance, or delivery notes..."
+                              />
+                            </div>
+                            <Button type="submit" className="w-full gap-2" disabled={recordingVendorPayment}>
+                              {recordingVendorPayment ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                              Record payment
+                            </Button>
+                          </form>
+                        </DialogContent>
+                      </Dialog>
                     </CardContent>
                   </Card>
                 </section>
