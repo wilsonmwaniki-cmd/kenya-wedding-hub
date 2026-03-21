@@ -26,7 +26,7 @@ interface LinkRequest {
 }
 
 export default function PlannerDashboard() {
-  const { user, profile } = useAuth();
+  const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { clients, loadClients, selectClient } = usePlanner();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -120,7 +120,8 @@ export default function PlannerDashboard() {
     navigate('/dashboard');
   };
 
-  const fullPlannerAccess = plannerHasFullAccess(profile);
+  const plannerPreviewMode = isSuperAdmin && (rolePreview === 'planner' || rolePreview === 'committee');
+  const fullPlannerAccess = plannerPreviewMode || plannerHasFullAccess(profile);
   const isCommittee = isCommitteePlanner(profile);
   const workspaceLabel = isCommittee ? 'committee workspace' : 'planner workspace';
   const collectionHeading = isCommittee ? 'Committee Weddings' : 'My Clients';
@@ -154,6 +155,15 @@ export default function PlannerDashboard() {
                 ? 'Committee-to-couple links, vendor outreach, and the shared wedding workspace unlock after verification and active subscription.'
                 : 'Planner-to-couple links, planner-to-vendor outreach, and client workspace management unlock after verification and active subscription.'}
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {plannerPreviewMode && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            You are previewing the {isCommittee ? 'committee' : 'planner'} workspace with admin bypass enabled. Any weddings
+            or linked records you create here will be saved against your current account for testing.
           </CardContent>
         </Card>
       )}

@@ -39,7 +39,7 @@ interface VendorListing {
 }
 
 export default function VendorSettings() {
-  const { user } = useAuth();
+  const { user, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,6 +62,8 @@ export default function VendorSettings() {
   const [reputationLoading, setReputationLoading] = useState(false);
   const [reputationOverview, setReputationOverview] = useState<VendorReputationOverview | null>(null);
   const [requestingVerification, setRequestingVerification] = useState(false);
+
+  const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
 
   useEffect(() => {
     if (!user) return;
@@ -194,8 +196,8 @@ export default function VendorSettings() {
     }
   };
 
-  const subscriptionActive = vendorHasActiveSubscription(listing);
-  const fullAccess = vendorHasFullAccess(listing);
+  const subscriptionActive = vendorPreviewMode || vendorHasActiveSubscription(listing);
+  const fullAccess = vendorPreviewMode || vendorHasFullAccess(listing);
   const verificationRequestOpen = Boolean(listing?.verification_requested);
 
   if (loading) {
@@ -212,6 +214,15 @@ export default function VendorSettings() {
         <h1 className="font-display text-3xl font-bold text-foreground">My Vendor Listing</h1>
         <p className="text-muted-foreground">Manage your business listing on the vendor directory.</p>
       </div>
+
+      {vendorPreviewMode && !listing && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            Admin preview is giving this account full vendor access for testing. Saving this form will create a real vendor
+            listing tied to your email so you can test the full vendor journey with live data.
+          </CardContent>
+        </Card>
+      )}
 
       {/* Status banner */}
       {listing && (

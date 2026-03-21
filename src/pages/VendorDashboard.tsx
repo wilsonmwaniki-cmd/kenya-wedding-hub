@@ -43,7 +43,7 @@ interface VendorListingAccess {
 }
 
 export default function VendorDashboard() {
-  const { user } = useAuth();
+  const { user, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
@@ -51,6 +51,8 @@ export default function VendorDashboard() {
   const [listingId, setListingId] = useState<string | null>(null);
   const [listing, setListing] = useState<VendorListingAccess | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+
+  const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
 
   useEffect(() => {
     if (!user) return;
@@ -65,7 +67,7 @@ export default function VendorDashboard() {
       if (listing) {
         setListing(listing as VendorListingAccess);
         setListingId(listing.id);
-        if (vendorHasFullAccess(listing as VendorListingAccess)) {
+        if (vendorPreviewMode || vendorHasFullAccess(listing as VendorListingAccess)) {
           const { data } = await supabase
             .from('vendors')
             .select('id, name, category, status, price, phone, email, notes, created_at')
@@ -78,11 +80,24 @@ export default function VendorDashboard() {
           setBookings([]);
           setConnectionRequests([]);
         }
+      } else if (vendorPreviewMode) {
+        setListing({
+          id: 'admin-preview-vendor',
+          business_name: 'Admin Preview Vendor',
+          is_approved: true,
+          is_verified: true,
+          verification_requested: false,
+          subscription_status: 'active',
+          subscription_expires_at: null,
+        });
+        setListingId(null);
+        setBookings([]);
+        setConnectionRequests([]);
       }
       setLoading(false);
     };
     load();
-  }, [user]);
+  }, [user, vendorPreviewMode]);
 
   const loadConnectionRequests = async (vendorListingId: string) => {
     const { data: requests } = await supabase
@@ -173,7 +188,7 @@ export default function VendorDashboard() {
     .filter(b => b.status === 'booked' && b.price)
     .reduce((sum, b) => sum + (b.price || 0), 0);
   const pendingRequests = connectionRequests.filter(r => r.status === 'pending');
-  const fullAccess = vendorHasFullAccess(listing);
+  const fullAccess = vendorPreviewMode || vendorHasFullAccess(listing);
 
   if (loading) {
     return (
@@ -198,6 +213,18 @@ export default function VendorDashboard() {
         <h1 className="font-display text-3xl font-bold text-foreground">Dashboard</h1>
         <p className="text-muted-foreground">Track your bookings and client inquiries.</p>
       </div>
+
+      {vendorPreviewMode && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            You are previewing the vendor dashboard with admin bypass enabled. Create a real vendor listing in
+            <Link to="/vendor-settings" className="ml-1 font-medium text-primary underline-offset-4 hover:underline">
+              vendor settings
+            </Link>
+            {' '}if you want this account to save real vendor profile data while testing.
+          </CardContent>
+        </Card>
+      )}
 
       {listing && !fullAccess && (
         <Card className="border-border/70 bg-muted/20">

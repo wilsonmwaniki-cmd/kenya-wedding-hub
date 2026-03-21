@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, type RolePreview } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { getHomeRouteForRole } from '@/lib/roles';
 
 const coupleNavItems = [
   { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
@@ -51,7 +52,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, profile } = useAuth();
+  const { signOut, profile, baseProfile, isSuperAdmin, rolePreview, setRolePreview } = useAuth();
   const { isPlanner, selectedClient, selectClient } = usePlanner();
   const { vendorRequestCount, plannerRequestCount } = useNotifications();
 
@@ -71,6 +72,42 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !selectedClient;
   const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/vendors', '/timeline', '/portfolio'];
+
+  const previewOptions: Array<{ value: RolePreview; label: string }> = [
+    { value: 'admin', label: 'Admin' },
+    { value: 'couple', label: 'Couple' },
+    { value: 'planner', label: 'Planner' },
+    { value: 'committee', label: 'Committee' },
+    { value: 'vendor', label: 'Vendor' },
+  ];
+
+  const handlePreviewSwitch = (nextRole: RolePreview) => {
+    setRolePreview(nextRole);
+    setSidebarOpen(false);
+
+    if (nextRole === 'admin') {
+      if (selectedClient) selectClient(null);
+      navigate('/admin');
+      return;
+    }
+
+    if (nextRole === 'planner') {
+      navigate('/clients');
+      return;
+    }
+
+    if (nextRole === 'committee') {
+      navigate('/dashboard');
+      return;
+    }
+
+    if (nextRole === 'vendor') {
+      navigate('/vendor-settings');
+      return;
+    }
+
+    navigate(getHomeRouteForRole('couple'));
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -111,7 +148,42 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {profile && (
             <div className="border-b border-sidebar-border px-6 py-4">
               <p className="text-sm font-medium text-sidebar-foreground">{profile.full_name || 'Welcome!'}</p>
-              <p className="text-xs text-sidebar-foreground/60 capitalize">{profile.role} Account</p>
+              <p className="text-xs text-sidebar-foreground/60 capitalize">
+                {profile.role} Account
+                {isSuperAdmin && rolePreview !== 'admin' ? ` · previewing as ${rolePreview}` : ''}
+              </p>
+              {isSuperAdmin && baseProfile && (
+                <p className="mt-1 text-[11px] text-sidebar-foreground/50">
+                  Signed in as {baseProfile.full_name || baseProfile.role}
+                </p>
+              )}
+            </div>
+          )}
+
+          {isSuperAdmin && (
+            <div className="border-b border-sidebar-border px-4 py-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/50">
+                Admin role preview
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {previewOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => handlePreviewSwitch(option.value)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                      rolePreview === option.value
+                        ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                        : 'bg-sidebar-accent text-sidebar-foreground/70 hover:text-sidebar-foreground'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-sidebar-foreground/50">
+                Preview keeps your real admin account intact while the app routes and gates like the selected role.
+              </p>
             </div>
           )}
 
@@ -193,6 +265,36 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           )}
         </header>
         <div className="flex-1 p-6 lg:p-8">
+          {isSuperAdmin && (
+            <div className="mb-6 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Admin preview mode
+                    <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                      Viewing as {rolePreview}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Your real database account stays admin. We’re only switching the in-app experience for testing.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {previewOptions.map((option) => (
+                    <Button
+                      key={option.value}
+                      type="button"
+                      size="sm"
+                      variant={rolePreview === option.value ? 'default' : 'outline'}
+                      onClick={() => handlePreviewSwitch(option.value)}
+                    >
+                      {option.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           {children}
         </div>
       </main>
