@@ -251,6 +251,7 @@ export type Database = {
           id: string
           message: string | null
           planner_user_id: string
+          request_source: string
           status: string
           updated_at: string
         }
@@ -260,6 +261,7 @@ export type Database = {
           id?: string
           message?: string | null
           planner_user_id: string
+          request_source?: string
           status?: string
           updated_at?: string
         }
@@ -269,6 +271,7 @@ export type Database = {
           id?: string
           message?: string | null
           planner_user_id?: string
+          request_source?: string
           status?: string
           updated_at?: string
         }
@@ -359,6 +362,7 @@ export type Database = {
         Row: {
           avatar_url: string | null
           bio: string | null
+          collaboration_code: string | null
           company_email: string | null
           company_name: string | null
           company_phone: string | null
@@ -385,6 +389,7 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           bio?: string | null
+          collaboration_code?: string | null
           company_email?: string | null
           company_name?: string | null
           company_phone?: string | null
@@ -411,6 +416,7 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           bio?: string | null
+          collaboration_code?: string | null
           company_email?: string | null
           company_name?: string | null
           company_phone?: string | null
@@ -1298,6 +1304,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      approve_planner_code_link_request: {
+        Args: { request_id_input: string }
+        Returns: string
+      }
       can_access_vendor_price_observation: {
         Args: { _client_id: string | null; _user_id: string }
         Returns: boolean
@@ -1310,6 +1320,10 @@ export type Database = {
           _source_vendor_id: string | null
         }
         Returns: boolean
+      }
+      ensure_my_collaboration_code: {
+        Args: never
+        Returns: string
       }
       get_vendor_price_benchmark: {
         Args: {
@@ -1373,6 +1387,14 @@ export type Database = {
           on_time_rate: number | null
           sample_size: number
         }[]
+      }
+      reject_planner_code_link_request: {
+        Args: { request_id_input: string }
+        Returns: undefined
+      }
+      request_planner_link_by_code: {
+        Args: { collaboration_code_input: string; note?: string | null }
+        Returns: Json
       }
       request_vendor_verification: { Args: never; Returns: undefined }
       request_planner_verification: { Args: never; Returns: undefined }

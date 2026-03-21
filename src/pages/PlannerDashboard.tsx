@@ -8,12 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircle2, XCircle, LockKeyhole, CreditCard, ShieldCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import MyConnections from '@/components/MyConnections';
 import { isCommitteePlanner, plannerAccessMessage, plannerHasFullAccess } from '@/lib/plannerAccess';
+import { requestPlannerLinkByCode } from '@/lib/collaborationCodes';
 
 interface LinkRequest {
   id: string;
@@ -23,6 +25,7 @@ interface LinkRequest {
   message?: string | null;
   couple_name?: string;
   couple_email?: string;
+  request_source?: string;
 }
 
 export default function PlannerDashboard() {
@@ -31,7 +34,11 @@ export default function PlannerDashboard() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [codeDialogOpen, setCodeDialogOpen] = useState(false);
   const [linkRequests, setLinkRequests] = useState<LinkRequest[]>([]);
+  const [collabCode, setCollabCode] = useState('');
+  const [collabNote, setCollabNote] = useState('');
+  const [submittingCode, setSubmittingCode] = useState(false);
   const [form, setForm] = useState({
     client_name: '', partner_name: '', wedding_date: '', wedding_location: '', email: '', phone: '',
   });
@@ -62,6 +69,9 @@ export default function PlannerDashboard() {
 
   useEffect(() => { if (user) loadLinkRequests(); }, [user]);
 
+  const incomingLinkRequests = linkRequests.filter((req) => req.request_source !== 'planner_code');
+  const outgoingCodeRequests = linkRequests.filter((req) => req.request_source === 'planner_code');
+
   const approveRequest = async (req: LinkRequest) => {
     // Create a planner_client record linked to the couple's user id
     if (!user) return;
@@ -85,6 +95,34 @@ export default function PlannerDashboard() {
     await supabase.from('planner_link_requests').update({ status: 'rejected' }).eq('id', req.id);
     toast({ title: 'Request rejected' });
     loadLinkRequests();
+  };
+
+  const submitCodeRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!collabCode.trim()) {
+      toast({ title: 'Add a collaboration code', description: 'Ask the couple to share their Zania collaboration code first.', variant: 'destructive' });
+      return;
+    }
+
+    setSubmittingCode(true);
+    try {
+      const result = await requestPlannerLinkByCode(collabCode, collabNote);
+      if (result.status === 'already_linked') {
+        toast({ title: 'Already linked', description: `${result.couple_name || 'This couple'} is already in your workspace.` });
+      } else if (result.status === 'already_pending') {
+        toast({ title: 'Request already sent', description: `We’re still waiting for ${result.couple_name || 'the couple'} to approve it.` });
+      } else {
+        toast({ title: 'Request sent', description: `${result.couple_name || 'The couple'} can now approve you from their account.` });
+      }
+      setCodeDialogOpen(false);
+      setCollabCode('');
+      setCollabNote('');
+      await loadLinkRequests();
+    } catch (error: any) {
+      toast({ title: 'Could not send request', description: error.message, variant: 'destructive' });
+    } finally {
+      setSubmittingCode(false);
+    }
   };
 
   const addClient = async (e: React.FormEvent) => {
@@ -169,7 +207,7 @@ export default function PlannerDashboard() {
       )}
 
       {/* Pending Link Requests */}
-      {fullPlannerAccess && linkRequests.length > 0 && (
+      {fullPlannerAccess && incomingLinkRequests.length > 0 && (
         <Card className="border-primary/20 bg-primary/5">
           <CardHeader>
             <CardTitle className="font-display text-base flex items-center gap-2">
@@ -178,7 +216,7 @@ export default function PlannerDashboard() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {linkRequests.map(req => (
+            {incomingLinkRequests.map(req => (
               <div key={req.id} className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm text-card-foreground">{req.couple_name}</p>
@@ -203,55 +241,123 @@ export default function PlannerDashboard() {
         </Card>
       )}
 
+      {fullPlannerAccess && outgoingCodeRequests.length > 0 && (
+        <Card className="border-border/70 bg-muted/20">
+          <CardHeader>
+            <CardTitle className="font-display text-base flex items-center gap-2">
+              <LinkIcon className="h-4 w-4 text-primary" />
+              Waiting for Couple Approval
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {outgoingCodeRequests.map((req) => (
+              <div key={req.id} className="rounded-lg border border-border bg-card p-3">
+                <p className="text-sm font-medium text-card-foreground">{req.couple_name}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Code-based link request sent. The couple needs to approve it from their Zania account before they appear in your client list.
+                </p>
+                {req.message && (
+                  <p className="mt-2 text-xs italic text-muted-foreground border-l-2 border-primary/30 pl-2">
+                    "{req.message}"
+                  </p>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Planner's vendor connections */}
       {fullPlannerAccess && <MyConnections />}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-bold text-foreground">{collectionHeading}</h1>
           <p className="text-muted-foreground">{clients.length} wedding{clients.length !== 1 ? 's' : ''} in this {workspaceLabel}</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2" disabled={!fullPlannerAccess || committeeAtCapacity}><Plus className="h-4 w-4" /> {addLabel}</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle className="font-display">{isCommittee ? 'New Wedding Workspace' : 'New Client'}</DialogTitle></DialogHeader>
-            <form onSubmit={addClient} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+        <div className="flex items-center gap-2">
+          <Dialog open={codeDialogOpen} onOpenChange={setCodeDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="gap-2" disabled={!fullPlannerAccess || committeeAtCapacity}>
+                <LinkIcon className="h-4 w-4" />
+                Link by Code
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="font-display">Link an Existing Couple Workspace</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={submitCodeRequest} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Client Name</Label>
-                  <Input value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))} placeholder="e.g. Jane Wanjiku" required />
+                  <Label>Couple Collaboration Code</Label>
+                  <Input
+                    value={collabCode}
+                    onChange={(e) => setCollabCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. ZN-4K7P2Q"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Ask the couple to share the code from their dashboard. Once they approve, their wedding appears here automatically.
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Partner Name</Label>
-                  <Input value={form.partner_name} onChange={e => setForm(f => ({ ...f, partner_name: e.target.value }))} placeholder="e.g. John Kamau" />
+                  <Label>Message (optional)</Label>
+                  <Textarea
+                    value={collabNote}
+                    onChange={(e) => setCollabNote(e.target.value)}
+                    placeholder="Add a short note so the couple knows why you're requesting access."
+                    rows={3}
+                  />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Wedding Date</Label>
-                  <Input type="date" value={form.wedding_date} onChange={e => setForm(f => ({ ...f, wedding_date: e.target.value }))} />
+                <Button type="submit" className="w-full" disabled={submittingCode}>
+                  {submittingCode ? 'Sending request...' : 'Send link request'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2" disabled={!fullPlannerAccess || committeeAtCapacity}><Plus className="h-4 w-4" /> {addLabel}</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader><DialogTitle className="font-display">{isCommittee ? 'New Wedding Workspace' : 'New Client'}</DialogTitle></DialogHeader>
+              <form onSubmit={addClient} className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Client Name</Label>
+                    <Input value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))} placeholder="e.g. Jane Wanjiku" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Partner Name</Label>
+                    <Input value={form.partner_name} onChange={e => setForm(f => ({ ...f, partner_name: e.target.value }))} placeholder="e.g. John Kamau" />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Location</Label>
-                  <Input value={form.wedding_location} onChange={e => setForm(f => ({ ...f, wedding_location: e.target.value }))} placeholder="Nairobi" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Wedding Date</Label>
+                    <Input type="date" value={form.wedding_date} onChange={e => setForm(f => ({ ...f, wedding_date: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Location</Label>
+                    <Input value={form.wedding_location} onChange={e => setForm(f => ({ ...f, wedding_location: e.target.value }))} placeholder="Nairobi" />
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="client@email.com" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Email</Label>
+                    <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="client@email.com" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Phone</Label>
+                    <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+254..." />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Phone</Label>
-                  <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+254..." />
-                </div>
-              </div>
-              <Button type="submit" className="w-full">{addLabel}</Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <Button type="submit" className="w-full">{addLabel}</Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {committeeAtCapacity && (
