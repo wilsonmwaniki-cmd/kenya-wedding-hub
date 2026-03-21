@@ -1455,15 +1455,27 @@ export default function Vendors() {
       >
         <div className="min-w-0">
           <p className="truncate text-xl font-semibold text-foreground">{vendor.name}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <Badge variant="outline">{vendor.category}</Badge>
-            {vendor.phone && <span>{vendor.phone}</span>}
-            {vendor.selection_status === 'final' && <Badge>Final choice</Badge>}
-          </div>
+          {vendorListView === 'by_category' ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              {vendor.phone && <span>{vendor.phone}</span>}
+              {vendor.selection_status === 'final' && <Badge>Final choice</Badge>}
+              {vendor.payment_status !== 'unpaid' && (
+                <Badge variant={vendorPaymentStatusTone(vendor.payment_status)}>
+                  {vendorPaymentStatusLabel(vendor.payment_status)}
+                </Badge>
+              )}
+            </div>
+          ) : null}
         </div>
-        <div className="text-right text-sm text-muted-foreground">
-          <p>{formatCurrency(vendor.price)}</p>
-          <p className="mt-1">{selectedVendorId === vendor.id ? 'Open' : 'View details'}</p>
+        <div className="text-right">
+          {vendorListView === 'by_name' ? (
+            <p className="text-xl font-semibold text-foreground">{vendor.category}</p>
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              <p>{formatCurrency(vendor.price)}</p>
+              <p className="mt-1">{selectedVendorId === vendor.id ? 'Open' : 'View details'}</p>
+            </div>
+          )}
         </div>
       </button>
     );
@@ -1536,8 +1548,8 @@ export default function Vendors() {
                   <ArrowLeft className="h-8 w-8" />
                 </Button>
                 <div>
-                  <h1 className="font-display text-4xl font-bold text-foreground">{selectedVendor.name}</h1>
-                  <p className="mt-2 text-lg text-muted-foreground">{selectedVendor.category}</p>
+                  <h1 className="font-display text-4xl font-bold text-foreground">{selectedVendor.category}</h1>
+                  <p className="mt-2 text-xl font-medium text-foreground">{selectedVendor.name}</p>
                 </div>
               </div>
               <div className="inline-flex rounded-full border border-border bg-background p-1">
@@ -1572,6 +1584,20 @@ export default function Vendors() {
                         <Badge variant={vendorPaymentStatusTone(selectedVendor.payment_status)}>
                           {vendorPaymentStatusLabel(selectedVendor.payment_status)}
                         </Badge>
+                      </div>
+                      <div className="grid gap-3 pt-4 text-sm text-muted-foreground sm:grid-cols-3">
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                          <p className="text-xs uppercase tracking-wide">Linked tasks</p>
+                          <p className="mt-1 text-lg font-semibold text-foreground">{selectedVendorTasks.length}</p>
+                        </div>
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                          <p className="text-xs uppercase tracking-wide">Payments made</p>
+                          <p className="mt-1 text-lg font-semibold text-foreground">{selectedVendorPayments.length}</p>
+                        </div>
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                          <p className="text-xs uppercase tracking-wide">Outstanding</p>
+                          <p className="mt-1 text-lg font-semibold text-foreground">{formatCurrency(selectedVendorPaymentSummary.balance)}</p>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
