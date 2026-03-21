@@ -64,6 +64,76 @@ export type Database = {
           },
         ]
       }
+      budget_payments: {
+        Row: {
+          amount: number
+          budget_category_id: string | null
+          budget_scope: string
+          category_name: string
+          client_id: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          payee_name: string
+          payment_date: string
+          reference: string | null
+          user_id: string
+          vendor_id: string | null
+        }
+        Insert: {
+          amount?: number
+          budget_category_id?: string | null
+          budget_scope?: string
+          category_name: string
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          payee_name: string
+          payment_date?: string
+          reference?: string | null
+          user_id: string
+          vendor_id?: string | null
+        }
+        Update: {
+          amount?: number
+          budget_category_id?: string | null
+          budget_scope?: string
+          category_name?: string
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          payee_name?: string
+          payment_date?: string
+          reference?: string | null
+          user_id?: string
+          vendor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_payments_budget_category_id_fkey"
+            columns: ["budget_category_id"]
+            isOneToOne: false
+            referencedRelation: "budget_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_payments_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_payments_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       guests: {
         Row: {
           category: string | null

@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles, Lock } from 'lucide-react';
+import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles, Lock, CalendarDays } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -54,6 +54,43 @@ interface FinalVendorPayment {
   payment_due_date: string | null;
 }
 
+interface BudgetPaymentRecord {
+  id: string;
+  amount: number;
+  budget_scope: BudgetScope;
+  category_name: string;
+  payee_name: string;
+  payment_date: string;
+  reference: string | null;
+  notes: string | null;
+  vendor_id: string | null;
+  budget_category_id: string | null;
+}
+
+interface BudgetVendorOption {
+  id: string;
+  name: string;
+  category: string;
+  price: number | null;
+  amount_paid: number;
+  payment_status: string;
+  payment_due_date: string | null;
+  selection_status?: string | null;
+}
+
+type BudgetViewMode = 'by_category' | 'payments_made';
+
+interface PaymentLogForm {
+  budgetScope: BudgetScope;
+  budgetCategoryId: string;
+  vendorId: string;
+  payeeName: string;
+  amount: string;
+  paymentDate: string;
+  reference: string;
+  notes: string;
+}
+
 function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'N/A';
   return `KES ${Number(value).toLocaleString()}`;
@@ -86,6 +123,7 @@ export default function Budget() {
   const [selectedTemplateName, setSelectedTemplateName] = useState('');
   const [newCategoryScope, setNewCategoryScope] = useState<BudgetScope>('wedding');
   const [activeBudgetScope, setActiveBudgetScope] = useState<BudgetScope>('wedding');
+  const [budgetViewMode, setBudgetViewMode] = useState<BudgetViewMode>('by_category');
   const [spentDrafts, setSpentDrafts] = useState<Record<string, string>>({});
   const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, BudgetWorkflowDraft>>({});
   const [savingSpentId, setSavingSpentId] = useState<string | null>(null);
@@ -97,11 +135,25 @@ export default function Budget() {
   const [recordingCategory, setRecordingCategory] = useState<BudgetCategory | null>(null);
   const [recordingSpend, setRecordingSpend] = useState(false);
   const [finalVendorPayments, setFinalVendorPayments] = useState<FinalVendorPayment[]>([]);
+  const [vendorOptions, setVendorOptions] = useState<BudgetVendorOption[]>([]);
+  const [paymentRecords, setPaymentRecords] = useState<BudgetPaymentRecord[]>([]);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [recordingPaymentMade, setRecordingPaymentMade] = useState(false);
   const [spendLog, setSpendLog] = useState<SpendLogForm>({
     vendorName: '',
     amount: '',
     notes: '',
     addToSpent: true,
+  });
+  const [paymentLog, setPaymentLog] = useState<PaymentLogForm>({
+    budgetScope: 'wedding',
+    budgetCategoryId: '',
+    vendorId: '',
+    payeeName: '',
+    amount: '',
+    paymentDate: new Date().toISOString().slice(0, 10),
+    reference: '',
+    notes: '',
   });
 
   useEffect(() => {
@@ -122,6 +174,22 @@ export default function Budget() {
       setSelectedTemplateName('');
     }
   }, [open, activeBudgetScope]);
+
+  useEffect(() => {
+    if (paymentDialogOpen) {
+      setPaymentLog((prev) => ({
+        ...prev,
+        budgetScope: activeBudgetScope,
+        budgetCategoryId: '',
+        vendorId: '',
+        payeeName: '',
+        amount: '',
+        paymentDate: new Date().toISOString().slice(0, 10),
+        reference: '',
+        notes: '',
+      }));
+    }
+  }, [paymentDialogOpen, activeBudgetScope]);
 
   useEffect(() => {
     setSelectedTemplateName('');
@@ -206,9 +274,8 @@ export default function Budget() {
 
     const { data, error } = await supabase
       .from('vendors')
-      .select('id, name, category, price, amount_paid, payment_status, payment_due_date')
+      .select('id, name, category, price, amount_paid, payment_status, payment_due_date, selection_status')
       .or(dataOrFilter)
-      .eq('selection_status', 'final')
       .order('category');
 
     if (error) {
@@ -220,17 +287,48 @@ export default function Budget() {
       return;
     }
 
-    setFinalVendorPayments(
+    const normalized = ((data ?? []) as any[]).map((row) => ({
+      ...row,
+      amount_paid: Number(row.amount_paid ?? 0),
+      price: row.price != null ? Number(row.price) : null,
+    }));
+
+    setVendorOptions(normalized);
+    setFinalVendorPayments(normalized.filter((row) => (row as any).selection_status === 'final'));
+  };
+
+  useEffect(() => {
+    void loadFinalVendorPayments();
+  }, [user, selectedClient, dataOrFilter]);
+
+  const loadPaymentRecords = async () => {
+    if (!dataOrFilter) return;
+
+    const { data, error } = await supabase
+      .from('budget_payments')
+      .select('*')
+      .or(dataOrFilter)
+      .order('payment_date', { ascending: false });
+
+    if (error) {
+      toast({
+        title: 'Failed to load payment records',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPaymentRecords(
       ((data ?? []) as any[]).map((row) => ({
         ...row,
-        amount_paid: Number(row.amount_paid ?? 0),
-        price: row.price != null ? Number(row.price) : null,
+        amount: Number(row.amount ?? 0),
       })),
     );
   };
 
   useEffect(() => {
-    void loadFinalVendorPayments();
+    void loadPaymentRecords();
   }, [user, selectedClient, dataOrFilter]);
 
   useEffect(() => {
@@ -326,6 +424,7 @@ export default function Budget() {
   const deleteCategory = async (id: string) => {
     await supabase.from('budget_categories').delete().eq('id', id);
     await load();
+    await loadPaymentRecords();
   };
 
   const saveWorkflow = async (category: BudgetCategory) => {
@@ -449,6 +548,128 @@ export default function Budget() {
     }));
   }, [weddingCategories, categoryBenchmarks]);
 
+  const currentScopeCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
+  const paymentScopeCategories = paymentLog.budgetScope === 'personal' ? personalCategories : weddingCategories;
+  const currentScopePayments = paymentRecords.filter((payment) => payment.budget_scope === activeBudgetScope);
+  const currentScopePaymentTotal = currentScopePayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const invoiceTotal = activeBudgetScope === 'wedding' ? totalFinalVendorContract : visibleAllocated;
+  const totalBalance = Math.max(invoiceTotal - currentScopePaymentTotal, 0);
+  const remainingBudget = Math.max(visibleAllocated - currentScopePaymentTotal, 0);
+
+  const paymentsByCategory = useMemo(() => {
+    return currentScopePayments.reduce<Record<string, BudgetPaymentRecord[]>>((groups, payment) => {
+      const key = payment.category_name || 'Uncategorized';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(payment);
+      return groups;
+    }, {});
+  }, [currentScopePayments]);
+
+  const availableVendorsForPayment = useMemo(() => {
+    if (paymentLog.budgetScope !== 'wedding') return [];
+    const selectedCategory = paymentScopeCategories.find((category) => category.id === paymentLog.budgetCategoryId)?.name;
+    if (!selectedCategory) return vendorOptions;
+    return vendorOptions.filter((vendor) => vendor.category === selectedCategory);
+  }, [paymentLog.budgetScope, paymentScopeCategories, paymentLog.budgetCategoryId, vendorOptions]);
+
+  const recordPaymentMade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    const amount = Number(paymentLog.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({
+        title: 'Invalid payment amount',
+        description: 'Enter a KES amount greater than zero.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const selectedCategory = paymentScopeCategories.find((category) => category.id === paymentLog.budgetCategoryId);
+    if (!selectedCategory) {
+      toast({
+        title: 'Category required',
+        description: 'Choose the budget category this payment belongs to.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const selectedVendor = vendorOptions.find((vendor) => vendor.id === paymentLog.vendorId);
+    const payeeName = paymentLog.payeeName.trim() || selectedVendor?.name;
+    if (!payeeName) {
+      toast({
+        title: 'Payee required',
+        description: 'Enter the vendor or payee name for this payment.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setRecordingPaymentMade(true);
+    try {
+      const { error } = await supabase.from('budget_payments').insert({
+        user_id: user.id,
+        client_id: selectedClient?.id ?? null,
+        budget_category_id: selectedCategory.id,
+        vendor_id: selectedVendor?.id ?? null,
+        budget_scope: paymentLog.budgetScope,
+        category_name: selectedCategory.name,
+        payee_name: payeeName,
+        amount,
+        payment_date: paymentLog.paymentDate,
+        reference: paymentLog.reference.trim() || null,
+        notes: paymentLog.notes.trim() || null,
+      });
+
+      if (error) throw error;
+
+      const { error: categoryError } = await supabase
+        .from('budget_categories')
+        .update({ spent: selectedCategory.spent + amount })
+        .eq('id', selectedCategory.id);
+
+      if (categoryError) throw categoryError;
+
+      if (selectedVendor) {
+        const nextPaid = Number(selectedVendor.amount_paid ?? 0) + amount;
+        const contractAmount = selectedVendor.price ?? null;
+        const nextStatus =
+          contractAmount && nextPaid >= contractAmount
+            ? 'paid_full'
+            : nextPaid > 0
+              ? 'part_paid'
+              : selectedVendor.payment_status;
+
+        await supabase
+          .from('vendors')
+          .update({
+            amount_paid: nextPaid,
+            payment_status: nextStatus,
+            last_payment_at: paymentLog.paymentDate,
+          } as any)
+          .eq('id', selectedVendor.id);
+      }
+
+      toast({
+        title: 'Payment recorded',
+        description: `${formatCurrency(amount)} added to ${selectedCategory.name}.`,
+      });
+
+      setPaymentDialogOpen(false);
+      await Promise.all([load(), loadFinalVendorPayments(), loadPaymentRecords()]);
+    } catch (error: any) {
+      toast({
+        title: 'Failed to record payment',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRecordingPaymentMade(false);
+    }
+  };
+
   const suggestedTemplates = useMemo(() => {
     const existingNames = new Set(
       categories
@@ -492,6 +713,162 @@ export default function Budget() {
               </Button>
             )}
           </div>
+          <div className="flex items-center rounded-full border border-border bg-background p-1">
+            <Button
+              type="button"
+              variant={budgetViewMode === 'payments_made' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setBudgetViewMode('payments_made')}
+            >
+              Payments Made
+            </Button>
+            <Button
+              type="button"
+              variant={budgetViewMode === 'by_category' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setBudgetViewMode('by_category')}
+            >
+              By Category
+            </Button>
+          </div>
+          <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2" variant="outline">
+                <Receipt className="h-4 w-4" />
+                Record Payment Made
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="font-display">Record Payment Made</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={recordPaymentMade} className="space-y-4">
+                {showPersonalBudget && (
+                  <div className="space-y-2">
+                    <Label>Budget Type</Label>
+                    <div className="flex items-center rounded-full border border-border bg-background p-1">
+                      <Button
+                        type="button"
+                        variant={paymentLog.budgetScope === 'wedding' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setPaymentLog((prev) => ({ ...prev, budgetScope: 'wedding', budgetCategoryId: '', vendorId: '' }))}
+                      >
+                        Wedding
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={paymentLog.budgetScope === 'personal' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setPaymentLog((prev) => ({ ...prev, budgetScope: 'personal', budgetCategoryId: '', vendorId: '' }))}
+                      >
+                        Personal
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Select
+                    value={paymentLog.budgetCategoryId}
+                    onValueChange={(value) => setPaymentLog((prev) => ({ ...prev, budgetCategoryId: value, vendorId: '' }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a budget category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paymentScopeCategories.map((category) => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {paymentLog.budgetScope === 'wedding' && (
+                  <div className="space-y-2">
+                    <Label>Link to vendor (optional)</Label>
+                    <Select
+                      value={paymentLog.vendorId || 'none'}
+                      onValueChange={(value) => {
+                        if (value === 'none') {
+                          setPaymentLog((prev) => ({ ...prev, vendorId: '' }));
+                          return;
+                        }
+                        const vendor = vendorOptions.find((item) => item.id === value);
+                        setPaymentLog((prev) => ({
+                          ...prev,
+                          vendorId: value,
+                          payeeName: vendor?.name || prev.payeeName,
+                        }));
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a vendor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No linked vendor</SelectItem>
+                        {availableVendorsForPayment.map((vendor) => (
+                          <SelectItem key={vendor.id} value={vendor.id}>
+                            {vendor.name} · {vendor.category}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Payee name</Label>
+                  <Input
+                    value={paymentLog.payeeName}
+                    onChange={(e) => setPaymentLog((prev) => ({ ...prev, payeeName: e.target.value }))}
+                    placeholder="e.g. Little Cake Girl"
+                    required
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Amount (KES)</Label>
+                    <Input
+                      type="number"
+                      value={paymentLog.amount}
+                      onChange={(e) => setPaymentLog((prev) => ({ ...prev, amount: e.target.value }))}
+                      placeholder="0"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Payment date</Label>
+                    <Input
+                      type="date"
+                      value={paymentLog.paymentDate}
+                      onChange={(e) => setPaymentLog((prev) => ({ ...prev, paymentDate: e.target.value }))}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Reference</Label>
+                  <Input
+                    value={paymentLog.reference}
+                    onChange={(e) => setPaymentLog((prev) => ({ ...prev, reference: e.target.value }))}
+                    placeholder="e.g. MPESA Ref: ET546GFDC"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Notes (optional)</Label>
+                  <Input
+                    value={paymentLog.notes}
+                    onChange={(e) => setPaymentLog((prev) => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Deposit, second payment, balance, etc."
+                  />
+                </div>
+                <Button type="submit" className="w-full gap-2" disabled={recordingPaymentMade}>
+                  {recordingPaymentMade ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                  Record Payment
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
           <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2"><Plus className="h-4 w-4" /> Add Category</Button>
@@ -613,6 +990,41 @@ export default function Budget() {
 
       <Card className="shadow-card">
         <CardContent className="py-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">Spending summary</p>
+              <p className="text-sm text-muted-foreground">
+                {activeBudgetScope === 'wedding'
+                  ? 'Track budget room, vendor commitments, payments made, and balance still outstanding.'
+                  : 'Track private spending against your personal budget and what is still left to cover.'}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Remaining budget</p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(remainingBudget)}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {activeBudgetScope === 'wedding' ? 'Total vendor invoices' : 'Total planned costs'}
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(invoiceTotal)}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-emerald-600">Total payments made</p>
+              <p className="mt-2 text-2xl font-semibold text-emerald-600">{formatCurrency(currentScopePaymentTotal)}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+              <p className="text-xs uppercase tracking-wide text-primary">Total balance</p>
+              <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(totalBalance)}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-card">
+        <CardContent className="py-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-medium text-foreground">
@@ -717,6 +1129,62 @@ export default function Budget() {
         </CardContent>
       </Card>
       )}
+
+      {budgetViewMode === 'payments_made' ? (
+        <Card className="shadow-card">
+          <CardContent className="py-5">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">Payments made</p>
+            </div>
+            {currentScopePayments.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {currentScopePayments.map((payment) => (
+                  <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{payment.payee_name}</p>
+                      <p className="text-xs text-muted-foreground">{payment.category_name}</p>
+                    </div>
+                    <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
+                    <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
+                    <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">
+                No payments recorded yet. Use “Record Payment Made” to start building your payment history.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : currentScopePayments.length > 0 ? (
+        <Card className="shadow-card">
+          <CardContent className="py-5">
+            <div className="flex items-center gap-2">
+              <Receipt className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">Payments by category</p>
+            </div>
+            <div className="mt-4 space-y-6">
+              {Object.entries(paymentsByCategory).map(([categoryName, payments]) => (
+                <div key={categoryName} className="space-y-3">
+                  <div className="border-b border-border pb-2">
+                    <p className="text-lg font-semibold text-foreground">{categoryName}</p>
+                  </div>
+                  {payments.map((payment) => (
+                    <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
+                      <div className="text-sm font-medium text-foreground">{payment.payee_name}</div>
+                      <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
+                      <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
+                      <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {visibleCategories.map((category) => {
