@@ -22,6 +22,14 @@ export interface WeddingTaskTemplate {
   timelineOffsetMonths: number | null;
 }
 
+export interface WeddingTaskCategoryDefaults {
+  category: string;
+  visibility: WeddingTaskVisibility;
+  delegatable: boolean;
+  recommendedRole: string | null;
+  priorityLevel: 1 | 2 | 3 | 4;
+}
+
 interface VendorWorkflowConfig {
   visibility: WeddingTaskVisibility;
   priorityLevel: 1 | 2 | 3 | 4;
@@ -321,4 +329,53 @@ export function buildSeededTasksFromTemplates(input: {
     priority_level: template.priorityLevel,
     template_source: 'planner_spreadsheet_v1',
   }));
+}
+
+export function getTaskCategoryDefaults(input: {
+  category: string;
+  role: string | null | undefined;
+  plannerType?: PlannerType | null;
+}): WeddingTaskCategoryDefaults | null {
+  const templates = getWeddingTaskTemplates({
+    vendorCategories: [input.category],
+    role: input.role,
+    plannerType: input.plannerType,
+  }).filter((template) => template.category === input.category);
+
+  if (!templates.length) return null;
+
+  const [bestTemplate] = templates
+    .slice()
+    .sort((left, right) => {
+      if (left.priorityLevel !== right.priorityLevel) return left.priorityLevel - right.priorityLevel;
+      const leftTimeline = left.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
+      const rightTimeline = right.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
+      if (leftTimeline !== rightTimeline) return rightTimeline - leftTimeline;
+      return left.title.localeCompare(right.title);
+    });
+
+  const recommendedRole =
+    templates.find((template) => template.recommendedRole)?.recommendedRole ?? bestTemplate.recommendedRole ?? null;
+
+  return {
+    category: input.category,
+    visibility: bestTemplate.visibility,
+    delegatable: templates.some((template) => template.delegatable),
+    recommendedRole,
+    priorityLevel: bestTemplate.priorityLevel,
+  };
+}
+
+export function getSuggestedTaskCategories(input: {
+  vendorCategories?: string[];
+  role: string | null | undefined;
+  plannerType?: PlannerType | null;
+}) {
+  const templates = getWeddingTaskTemplates({
+    vendorCategories: input.vendorCategories ?? [],
+    role: input.role,
+    plannerType: input.plannerType,
+  });
+
+  return [...new Set(templates.map((template) => template.category))].sort((left, right) => left.localeCompare(right));
 }

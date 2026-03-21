@@ -18,6 +18,7 @@ import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { createVendorTask } from '@/lib/vendorTasks';
 import { vendorPaymentStatusLabel } from '@/lib/vendorPayments';
 import { cn } from '@/lib/utils';
+import { getSuggestedTaskCategories, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 
 interface Task {
   id: string;
@@ -143,7 +144,7 @@ function sortTasksByDateAndPriority(left: Task, right: Task) {
 }
 
 export default function Tasks() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -212,6 +213,11 @@ export default function Tasks() {
 
   const categoryOptions = useMemo(() => {
     const set = new Map<string, string>();
+    getSuggestedTaskCategories({
+      vendorCategories: vendorOptions.map((vendor) => vendor.category),
+      role: profile?.role,
+      plannerType: profile?.planner_type,
+    }).forEach((category) => set.set(normalizeCategory(category), category));
     budgetCategories.forEach((category) => set.set(normalizeCategory(category.name), category.name));
     vendorOptions.forEach((vendor) => {
       if (!set.has(normalizeCategory(vendor.category))) {
@@ -222,7 +228,29 @@ export default function Tasks() {
     return [...set.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((left, right) => left.label.localeCompare(right.label));
-  }, [budgetCategories, vendorOptions]);
+  }, [budgetCategories, vendorOptions, profile?.role, profile?.planner_type]);
+
+  const selectedCategoryName = useMemo(() => {
+    if (sourceVendorId !== 'none') {
+      const linkedVendor = vendorLookup[sourceVendorId];
+      if (linkedVendor?.category) return linkedVendor.category;
+    }
+
+    if (taskCategory !== 'none') {
+      return categoryOptions.find((category) => category.value === taskCategory)?.label ?? null;
+    }
+
+    return null;
+  }, [sourceVendorId, vendorLookup, taskCategory, categoryOptions]);
+
+  const selectedCategoryDefaults = useMemo(() => {
+    if (!selectedCategoryName) return null;
+    return getTaskCategoryDefaults({
+      category: selectedCategoryName,
+      role: profile?.role,
+      plannerType: profile?.planner_type,
+    });
+  }, [selectedCategoryName, profile?.role, profile?.planner_type]);
 
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -245,6 +273,11 @@ export default function Tasks() {
         clientId: isPlanner && selectedClient ? selectedClient.id : null,
         sourceVendorId: linkedVendor?.id ?? null,
         category: categoryName,
+        visibility: selectedCategoryDefaults?.visibility ?? 'public',
+        priorityLevel: selectedCategoryDefaults?.priorityLevel ?? null,
+        delegatable: selectedCategoryDefaults?.delegatable ?? false,
+        recommendedRole: selectedCategoryDefaults?.recommendedRole ?? null,
+        templateSource: selectedCategoryDefaults ? 'manual_category_template_v1' : null,
       });
       setTitle('');
       setDescription('');
@@ -513,6 +546,21 @@ export default function Tasks() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedCategoryDefaults && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline" className="rounded-full text-[11px]">
+                        {selectedCategoryDefaults.visibility === 'private' ? 'Private' : 'Public'}
+                      </Badge>
+                      <Badge variant="outline" className="rounded-full text-[11px]">
+                        P{selectedCategoryDefaults.priorityLevel} · {priorityLabel(selectedCategoryDefaults.priorityLevel)}
+                      </Badge>
+                      {selectedCategoryDefaults.delegatable && selectedCategoryDefaults.recommendedRole && (
+                        <Badge variant="outline" className="rounded-full text-[11px]">
+                          Delegate to {selectedCategoryDefaults.recommendedRole}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Linked vendor (optional)</Label>
