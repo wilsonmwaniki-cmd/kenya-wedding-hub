@@ -78,11 +78,17 @@ interface BudgetVendorOption {
   selection_status?: string | null;
 }
 
+interface PaymentCategoryOption {
+  value: string;
+  name: string;
+  budgetCategoryId: string | null;
+}
+
 type BudgetViewMode = 'by_category' | 'payments_made';
 
 interface PaymentLogForm {
   budgetScope: BudgetScope;
-  budgetCategoryId: string;
+  categorySelection: string;
   vendorId: string;
   payeeName: string;
   amount: string;
@@ -94,6 +100,10 @@ interface PaymentLogForm {
 function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'N/A';
   return `KES ${Number(value).toLocaleString()}`;
+}
+
+function normalizeCategoryName(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function benchmarkKey(category: string) {
@@ -147,7 +157,7 @@ export default function Budget() {
   });
   const [paymentLog, setPaymentLog] = useState<PaymentLogForm>({
     budgetScope: 'wedding',
-    budgetCategoryId: '',
+    categorySelection: '',
     vendorId: '',
     payeeName: '',
     amount: '',
@@ -180,7 +190,7 @@ export default function Budget() {
       setPaymentLog((prev) => ({
         ...prev,
         budgetScope: activeBudgetScope,
-        budgetCategoryId: '',
+        categorySelection: '',
         vendorId: '',
         payeeName: '',
         amount: '',
@@ -550,6 +560,34 @@ export default function Budget() {
 
   const currentScopeCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
   const paymentScopeCategories = paymentLog.budgetScope === 'personal' ? personalCategories : weddingCategories;
+  const paymentCategoryOptions = useMemo<PaymentCategoryOption[]>(() => {
+    const existingByName = new Map(
+      paymentScopeCategories.map((category) => [normalizeCategoryName(category.name), category]),
+    );
+    const templateSource = paymentLog.budgetScope === 'personal' ? personalBudgetTemplates : weddingBudgetTemplates;
+
+    const options: PaymentCategoryOption[] = paymentScopeCategories.map((category) => ({
+      value: `existing:${category.id}`,
+      name: category.name,
+      budgetCategoryId: category.id,
+    }));
+
+    templateSource.forEach((template) => {
+      const normalizedName = normalizeCategoryName(template.name);
+      if (existingByName.has(normalizedName)) return;
+      options.push({
+        value: `template:${template.name}`,
+        name: template.name,
+        budgetCategoryId: null,
+      });
+    });
+
+    return options.sort((left, right) => left.name.localeCompare(right.name));
+  }, [paymentScopeCategories, paymentLog.budgetScope]);
+
+  const selectedPaymentCategoryOption = paymentCategoryOptions.find(
+    (option) => option.value === paymentLog.categorySelection,
+  );
   const currentScopePayments = paymentRecords.filter((payment) => payment.budget_scope === activeBudgetScope);
   const currentScopePaymentTotal = currentScopePayments.reduce((sum, payment) => sum + payment.amount, 0);
   const invoiceTotal = activeBudgetScope === 'wedding' ? totalFinalVendorContract : visibleAllocated;
@@ -567,10 +605,10 @@ export default function Budget() {
 
   const availableVendorsForPayment = useMemo(() => {
     if (paymentLog.budgetScope !== 'wedding') return [];
-    const selectedCategory = paymentScopeCategories.find((category) => category.id === paymentLog.budgetCategoryId)?.name;
+    const selectedCategory = selectedPaymentCategoryOption?.name;
     if (!selectedCategory) return vendorOptions;
     return vendorOptions.filter((vendor) => vendor.category === selectedCategory);
-  }, [paymentLog.budgetScope, paymentScopeCategories, paymentLog.budgetCategoryId, vendorOptions]);
+  }, [paymentLog.budgetScope, selectedPaymentCategoryOption, vendorOptions]);
 
   const recordPaymentMade = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -586,8 +624,8 @@ export default function Budget() {
       return;
     }
 
-    const selectedCategory = paymentScopeCategories.find((category) => category.id === paymentLog.budgetCategoryId);
-    if (!selectedCategory) {
+    const selectedCategoryOption = selectedPaymentCategoryOption;
+    if (!selectedCategoryOption) {
       toast({
         title: 'Category required',
         description: 'Choose the budget category this payment belongs to.',
@@ -595,6 +633,11 @@ export default function Budget() {
       });
       return;
     }
+
+    let selectedCategory =
+      paymentScopeCategories.find((category) => category.id === selectedCategoryOption.budgetCategoryId) ??
+      paymentScopeCategories.find((category) => normalizeCategoryName(category.name) === normalizeCategoryName(selectedCategoryOption.name)) ??
+      null;
 
     const selectedVendor = vendorOptions.find((vendor) => vendor.id === paymentLog.vendorId);
     const payeeName = paymentLog.payeeName.trim() || selectedVendor?.name;
@@ -609,6 +652,40 @@ export default function Budget() {
 
     setRecordingPaymentMade(true);
     try {
+      if (!selectedCategory) {
+        const insert: Record<string, unknown> = {
+          user_id: user.id,
+          name: selectedCategoryOption.name,
+          allocated: 0,
+          spent: 0,
+          budget_scope: paymentLog.budgetScope,
+          visibility: paymentLog.budgetScope === 'personal' ? 'private' : 'public',
+        };
+
+        if (paymentLog.budgetScope === 'wedding' && isPlanner && selectedClient) {
+          insert.client_id = selectedClient.id;
+        }
+
+        const { data: insertedCategory, error: insertCategoryError } = await supabase
+          .from('budget_categories')
+          .insert(insert)
+          .select('*')
+          .single();
+
+        if (insertCategoryError) throw insertCategoryError;
+
+        selectedCategory = {
+          ...insertedCategory,
+          allocated: Number(insertedCategory.allocated ?? 0),
+          spent: Number(insertedCategory.spent ?? 0),
+          budget_scope: (insertedCategory.budget_scope ?? paymentLog.budgetScope) as BudgetScope,
+          visibility: (insertedCategory.visibility ?? (paymentLog.budgetScope === 'personal' ? 'private' : 'public')) as 'public' | 'private',
+          committee_role_in_charge: insertedCategory.committee_role_in_charge ?? null,
+          contract_status:
+            insertedCategory.contract_status ?? (paymentLog.budgetScope === 'personal' ? 'not_required' : 'not_started'),
+        } as BudgetCategory;
+      }
+
       const { error } = await supabase.from('budget_payments').insert({
         user_id: user.id,
         client_id: selectedClient?.id ?? null,
@@ -751,7 +828,7 @@ export default function Budget() {
                         type="button"
                         variant={paymentLog.budgetScope === 'wedding' ? 'default' : 'ghost'}
                         size="sm"
-                        onClick={() => setPaymentLog((prev) => ({ ...prev, budgetScope: 'wedding', budgetCategoryId: '', vendorId: '' }))}
+                        onClick={() => setPaymentLog((prev) => ({ ...prev, budgetScope: 'wedding', categorySelection: '', vendorId: '' }))}
                       >
                         Wedding
                       </Button>
@@ -759,7 +836,7 @@ export default function Budget() {
                         type="button"
                         variant={paymentLog.budgetScope === 'personal' ? 'default' : 'ghost'}
                         size="sm"
-                        onClick={() => setPaymentLog((prev) => ({ ...prev, budgetScope: 'personal', budgetCategoryId: '', vendorId: '' }))}
+                        onClick={() => setPaymentLog((prev) => ({ ...prev, budgetScope: 'personal', categorySelection: '', vendorId: '' }))}
                       >
                         Personal
                       </Button>
@@ -769,15 +846,15 @@ export default function Budget() {
                 <div className="space-y-2">
                   <Label>Category</Label>
                   <Select
-                    value={paymentLog.budgetCategoryId}
-                    onValueChange={(value) => setPaymentLog((prev) => ({ ...prev, budgetCategoryId: value, vendorId: '' }))}
+                    value={paymentLog.categorySelection}
+                    onValueChange={(value) => setPaymentLog((prev) => ({ ...prev, categorySelection: value, vendorId: '' }))}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Choose a budget category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {paymentScopeCategories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
+                      {paymentCategoryOptions.map((category) => (
+                        <SelectItem key={category.value} value={category.value}>
                           {category.name}
                         </SelectItem>
                       ))}
