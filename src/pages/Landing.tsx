@@ -112,7 +112,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-      <Card className="border-white/15 bg-[rgba(43,28,24,0.62)] shadow-[0_28px_80px_rgba(57,38,31,0.24)] backdrop-blur-md">
+      <Card className="border-white/30 bg-[rgba(43,28,24,0.62)] shadow-[0_28px_80px_rgba(57,38,31,0.24)] backdrop-blur-md">
         <CardContent className="space-y-5 p-7">
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-white/12 p-2.5">
@@ -120,7 +120,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
             </div>
             <div>
               <h3 className="font-display text-[1.9rem] font-semibold leading-none text-white">Quick Cost Estimate</h3>
-              <p className="mt-2 text-sm font-medium text-white/88">Free, instant, and no sign-up required</p>
+              <p className="mt-2 text-sm font-medium text-white">Free, instant, and no sign-up required</p>
             </div>
           </div>
 
@@ -169,21 +169,21 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
             Get Estimate
           </Button>
 
-          <div className="rounded-2xl border border-white/15 bg-black/18 p-4">
-            <p className="text-sm font-medium text-white/88">Estimated total budget</p>
+          <div className="rounded-2xl border border-white/20 bg-black/30 p-4">
+            <p className="text-sm font-medium text-white">Estimated total budget</p>
             <p className="mt-1 font-display text-3xl font-bold text-white">{formatCurrency(totals.suggested)}</p>
-            <p className="mt-2 text-xs font-medium text-white/72">
+            <p className="mt-2 text-xs font-medium text-white/90">
               Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
             </p>
           </div>
 
-          <div className="rounded-2xl border border-border/60 bg-[#fdf9f4] p-4">
-            <p className="text-sm font-medium text-foreground">What your estimate includes</p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+          <div className="rounded-2xl border border-white/20 bg-white/10 p-4">
+            <p className="text-sm font-medium text-white">What your estimate includes</p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white/85">
               {estimateRows.slice(0, 4).map((row) => (
-                <div key={row.category} className="rounded-xl border border-border/50 bg-white px-3 py-2">
-                  <p className="font-medium text-foreground">{row.category}</p>
-                  <p className="font-medium text-foreground/70">{formatCurrency(row.suggested_amount)}</p>
+                <div key={row.category} className="rounded-xl border border-white/20 bg-black/20 px-3 py-2">
+                  <p className="font-medium text-white">{row.category}</p>
+                  <p className="font-medium text-white/90">{formatCurrency(row.suggested_amount)}</p>
                 </div>
               ))}
             </div>
