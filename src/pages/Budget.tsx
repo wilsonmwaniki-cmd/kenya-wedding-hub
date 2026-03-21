@@ -17,6 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
 import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
+import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
+import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
 
 interface BudgetCategory {
   id: string;
@@ -81,6 +83,7 @@ export default function Budget() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [allocated, setAllocated] = useState('');
+  const [selectedTemplateName, setSelectedTemplateName] = useState('');
   const [newCategoryScope, setNewCategoryScope] = useState<BudgetScope>('wedding');
   const [activeBudgetScope, setActiveBudgetScope] = useState<BudgetScope>('wedding');
   const [spentDrafts, setSpentDrafts] = useState<Record<string, string>>({});
@@ -114,8 +117,16 @@ export default function Budget() {
   }, [showPersonalBudget, activeBudgetScope]);
 
   useEffect(() => {
-    if (open) setNewCategoryScope(activeBudgetScope);
+    if (open) {
+      setNewCategoryScope(activeBudgetScope);
+      setSelectedTemplateName('');
+    }
   }, [open, activeBudgetScope]);
+
+  useEffect(() => {
+    setSelectedTemplateName('');
+    setName('');
+  }, [newCategoryScope]);
 
   const load = async () => {
     if (!dataOrFilter) return;
@@ -276,6 +287,7 @@ export default function Budget() {
 
     setName('');
     setAllocated('');
+    setSelectedTemplateName('');
     setOpen(false);
     await load();
   };
@@ -437,6 +449,17 @@ export default function Budget() {
     }));
   }, [weddingCategories, categoryBenchmarks]);
 
+  const suggestedTemplates = useMemo(() => {
+    const existingNames = new Set(
+      categories
+        .filter((category) => category.budget_scope === newCategoryScope)
+        .map((category) => category.name.toLowerCase().trim()),
+    );
+
+    const source = newCategoryScope === 'personal' ? personalBudgetTemplates : weddingBudgetTemplates;
+    return source.filter((template) => !existingNames.has(template.name.toLowerCase().trim()));
+  }, [categories, newCategoryScope]);
+
   if (isPlanner && !selectedClient) return null;
 
   return (
@@ -521,8 +544,48 @@ export default function Budget() {
                 </div>
               )}
               <div className="space-y-2">
-                <Label>Category Name</Label>
-                <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Venue, Catering" required />
+                <Label>Suggested Category</Label>
+                <Select
+                  value={selectedTemplateName || 'custom'}
+                  onValueChange={(value) => {
+                    if (value === 'custom') {
+                      setSelectedTemplateName('');
+                      setName('');
+                      return;
+                    }
+                    setSelectedTemplateName(value);
+                    setName(value);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={`Choose a ${newCategoryScope} budget category`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suggestedTemplates.map((template) => (
+                      <SelectItem key={template.name} value={template.name}>
+                        {template.name}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="custom">Custom category</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Suggestions come from the planner spreadsheet templates we mapped into the app.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>{selectedTemplateName ? 'Selected Category' : 'Category Name'}</Label>
+                <Input
+                  value={name}
+                  onChange={e => {
+                    setName(e.target.value);
+                    if (selectedTemplateName && e.target.value !== selectedTemplateName) {
+                      setSelectedTemplateName('');
+                    }
+                  }}
+                  placeholder={newCategoryScope === 'personal' ? 'e.g. Honeymoon, Wedding Bands' : 'e.g. Venue, Catering'}
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label>Allocated Amount (KES)</Label>
