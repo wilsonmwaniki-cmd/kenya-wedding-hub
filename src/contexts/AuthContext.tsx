@@ -6,6 +6,7 @@ import type { AppRole, PlannerType, SignupRole } from '@/lib/roles';
 interface Profile {
   id: string;
   user_id: string;
+  collaboration_code: string | null;
   full_name: string | null;
   partner_name: string | null;
   wedding_date: string | null;
@@ -141,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const buildFallbackProfile = (authUser: User, role: AppRole): Profile => ({
     id: authUser.id,
     user_id: authUser.id,
+    collaboration_code: null,
     full_name: getFallbackFullName(authUser) || null,
     partner_name: null,
     wedding_date: null,
