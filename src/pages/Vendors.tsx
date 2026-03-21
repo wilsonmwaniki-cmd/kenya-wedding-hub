@@ -1633,7 +1633,37 @@ export default function Vendors() {
             {selectedVendorTab === 'tasks' && (
               <div className="space-y-8">
                 <section className="space-y-4">
-                  <h2 className="text-2xl font-medium text-foreground">Vendor Tasks - To Do</h2>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <h2 className="text-2xl font-medium text-foreground">Vendor Tasks - To Do</h2>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() => {
+                          resetVendorTaskForm();
+                          setVendorTaskDialogVendor(selectedVendor);
+                        }}
+                      >
+                        <ClipboardList className="h-4 w-4" />
+                        Add vendor task
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() => buildVendorTaskBundle(selectedVendor)}
+                        disabled={creatingVendorTaskBundleId === selectedVendor.id}
+                      >
+                        {creatingVendorTaskBundleId === selectedVendor.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <WandSparkles className="h-4 w-4" />
+                        )}
+                        Create task bundle
+                      </Button>
+                    </div>
+                  </div>
                   <div className="space-y-4">
                     {selectedVendorTaskCounts.open.length > 0 ? (
                       selectedVendorTaskCounts.open.map((task) => (
