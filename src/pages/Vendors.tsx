@@ -38,6 +38,7 @@ import {
   type VendorReputationReview,
 } from '@/lib/vendorReputation';
 import { createVendorTask, createVendorTaskBundle } from '@/lib/vendorTasks';
+import { getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 
 interface Vendor {
   amount_paid: number;
@@ -338,6 +339,7 @@ export default function Vendors() {
     dueDate: '',
     assignedTo: '',
   });
+  const [vendorTaskTemplateKey, setVendorTaskTemplateKey] = useState('none');
   const [reviewForm, setReviewForm] = useState({
     overallRating: '5',
     reliabilityRating: '5',
@@ -840,6 +842,7 @@ export default function Vendors() {
   };
 
   const resetVendorTaskForm = () => {
+    setVendorTaskTemplateKey('none');
     setVendorTaskForm({
       title: '',
       description: '',
@@ -870,6 +873,16 @@ export default function Vendors() {
         category: vendor.category,
         clientId: selectedClient?.id ?? null,
         sourceVendorId: vendor.id,
+        phase: selectedVendorTaskTemplate?.phase ?? null,
+        visibility: resolvedVendorTaskDefaults?.visibility ?? 'public',
+        delegatable: resolvedVendorTaskDefaults?.delegatable ?? false,
+        recommendedRole: resolvedVendorTaskDefaults?.recommendedRole ?? null,
+        priorityLevel: resolvedVendorTaskDefaults?.priorityLevel ?? null,
+        templateSource: selectedVendorTaskTemplate?.key
+          ? 'vendor_task_picker_v1'
+          : resolvedVendorTaskDefaults
+            ? 'vendor_category_defaults_v1'
+            : null,
       });
       toast({
         title: 'Vendor task created',
@@ -1158,6 +1171,39 @@ export default function Vendors() {
     () => vendors.find((vendor) => vendor.id === selectedVendorId) ?? null,
     [vendors, selectedVendorId],
   );
+
+  const vendorTaskSuggestedOptions = useMemo(() => {
+    if (!vendorTaskDialogVendor) return [];
+    return getSuggestedTaskTemplates({
+      category: vendorTaskDialogVendor.category,
+      vendorCategories: vendors.map((vendor) => vendor.category),
+      role: profile?.role,
+      plannerType: profile?.planner_type,
+    });
+  }, [vendorTaskDialogVendor, vendors, profile?.role, profile?.planner_type]);
+
+  const selectedVendorTaskTemplate = useMemo(() => {
+    if (vendorTaskTemplateKey === 'none') return null;
+    return vendorTaskSuggestedOptions.find((template) => template.key === vendorTaskTemplateKey) ?? null;
+  }, [vendorTaskTemplateKey, vendorTaskSuggestedOptions]);
+
+  const resolvedVendorTaskDefaults = useMemo(() => {
+    if (selectedVendorTaskTemplate) {
+      return {
+        visibility: selectedVendorTaskTemplate.visibility,
+        delegatable: selectedVendorTaskTemplate.delegatable,
+        recommendedRole: selectedVendorTaskTemplate.recommendedRole,
+        priorityLevel: selectedVendorTaskTemplate.priorityLevel,
+      };
+    }
+
+    if (!vendorTaskDialogVendor) return null;
+    return getTaskCategoryDefaults({
+      category: vendorTaskDialogVendor.category,
+      role: profile?.role,
+      plannerType: profile?.planner_type,
+    });
+  }, [selectedVendorTaskTemplate, vendorTaskDialogVendor, profile?.role, profile?.planner_type]);
 
   const selectedVendorTasks = useMemo(() => {
     if (!selectedVendorId) return [];
@@ -2874,11 +2920,77 @@ export default function Vendors() {
               }}
             >
               <div className="space-y-2">
+                <Label>Vendor category</Label>
+                <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm font-medium text-foreground">
+                  {vendorTaskDialogVendor.category}
+                </div>
+                {resolvedVendorTaskDefaults && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline" className="rounded-full text-[11px]">
+                      {resolvedVendorTaskDefaults.visibility === 'private' ? 'Private' : 'Public'}
+                    </Badge>
+                    <Badge variant="outline" className="rounded-full text-[11px]">
+                      P{resolvedVendorTaskDefaults.priorityLevel}
+                    </Badge>
+                    {resolvedVendorTaskDefaults.delegatable && resolvedVendorTaskDefaults.recommendedRole && (
+                      <Badge variant="outline" className="rounded-full text-[11px]">
+                        Delegate to {resolvedVendorTaskDefaults.recommendedRole}
+                      </Badge>
+                    )}
+                    {selectedVendorTaskTemplate?.timelineLabel && (
+                      <Badge variant="outline" className="rounded-full text-[11px]">
+                        {selectedVendorTaskTemplate.timelineLabel}
+                      </Badge>
+                    )}
+                    {selectedVendorTaskTemplate?.phase && (
+                      <Badge variant="outline" className="rounded-full text-[11px]">
+                        {vendorMilestoneLabel(selectedVendorTaskTemplate.phase)}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Suggested task</Label>
+                <Select
+                  value={vendorTaskTemplateKey}
+                  onValueChange={(value) => {
+                    setVendorTaskTemplateKey(value);
+                    if (value === 'none') return;
+                    const template = vendorTaskSuggestedOptions.find((option) => option.key === value);
+                    if (!template) return;
+                    setVendorTaskForm((prev) => ({
+                      ...prev,
+                      title: template.title,
+                      description: template.description,
+                      assignedTo: prev.assignedTo || template.recommendedRole || '',
+                    }));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a suggested task" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Custom task</SelectItem>
+                    {vendorTaskSuggestedOptions.map((template) => (
+                      <SelectItem key={template.key} value={template.key}>
+                        {template.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedVendorTaskTemplate && (
+                  <p className="text-xs text-muted-foreground">
+                    {selectedVendorTaskTemplate.description}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
                 <Label>Task title</Label>
                 <Input
                   value={vendorTaskForm.title}
                   onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, title: event.target.value }))}
-                  placeholder={`Confirm contract with ${vendorTaskDialogVendor.name}`}
+                  placeholder={selectedVendorTaskTemplate?.title ?? `Confirm contract with ${vendorTaskDialogVendor.name}`}
                   required
                 />
               </div>
