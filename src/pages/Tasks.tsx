@@ -18,7 +18,7 @@ import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { createVendorTask } from '@/lib/vendorTasks';
 import { vendorPaymentStatusLabel } from '@/lib/vendorPayments';
 import { cn } from '@/lib/utils';
-import { getSuggestedTaskCategories, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
+import { getSuggestedTaskCategories, getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 
 interface Task {
   id: string;
@@ -157,6 +157,7 @@ export default function Tasks() {
   const [dueDate, setDueDate] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
   const [taskCategory, setTaskCategory] = useState('none');
+  const [taskTemplateKey, setTaskTemplateKey] = useState('none');
   const [sourceVendorId, setSourceVendorId] = useState<string>('none');
   const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('by_date');
 
@@ -252,16 +253,36 @@ export default function Tasks() {
     });
   }, [selectedCategoryName, profile?.role, profile?.planner_type]);
 
+  const suggestedTaskOptions = useMemo(() => {
+    if (!selectedCategoryName) return [];
+    return getSuggestedTaskTemplates({
+      category: selectedCategoryName,
+      vendorCategories: vendorOptions.map((vendor) => vendor.category),
+      role: profile?.role,
+      plannerType: profile?.planner_type,
+    });
+  }, [selectedCategoryName, vendorOptions, profile?.role, profile?.planner_type]);
+
+  const selectedTaskTemplate = useMemo(() => {
+    if (taskTemplateKey === 'none') return null;
+    return suggestedTaskOptions.find((template) => template.key === taskTemplateKey) ?? null;
+  }, [taskTemplateKey, suggestedTaskOptions]);
+
+  const resolvedTaskDefaults = selectedTaskTemplate
+    ? {
+        visibility: selectedTaskTemplate.visibility,
+        delegatable: selectedTaskTemplate.delegatable,
+        recommendedRole: selectedTaskTemplate.recommendedRole,
+        priorityLevel: selectedTaskTemplate.priorityLevel,
+      }
+    : selectedCategoryDefaults;
+
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
     const linkedVendor = sourceVendorId !== 'none' ? vendorLookup[sourceVendorId] : null;
-    const categoryName =
-      linkedVendor?.category ??
-      (taskCategory !== 'none'
-        ? budgetCategories.find((category) => normalizeCategory(category.name) === taskCategory)?.name ?? null
-        : null);
+    const categoryName = linkedVendor?.category ?? selectedCategoryName ?? null;
 
     try {
       await createVendorTask({
@@ -273,17 +294,19 @@ export default function Tasks() {
         clientId: isPlanner && selectedClient ? selectedClient.id : null,
         sourceVendorId: linkedVendor?.id ?? null,
         category: categoryName,
-        visibility: selectedCategoryDefaults?.visibility ?? 'public',
-        priorityLevel: selectedCategoryDefaults?.priorityLevel ?? null,
-        delegatable: selectedCategoryDefaults?.delegatable ?? false,
-        recommendedRole: selectedCategoryDefaults?.recommendedRole ?? null,
-        templateSource: selectedCategoryDefaults ? 'manual_category_template_v1' : null,
+        phase: selectedTaskTemplate?.phase ?? null,
+        visibility: resolvedTaskDefaults?.visibility ?? 'public',
+        priorityLevel: resolvedTaskDefaults?.priorityLevel ?? null,
+        delegatable: resolvedTaskDefaults?.delegatable ?? false,
+        recommendedRole: resolvedTaskDefaults?.recommendedRole ?? null,
+        templateSource: selectedTaskTemplate?.key ? 'planner_spreadsheet_picker_v1' : selectedCategoryDefaults ? 'manual_category_template_v1' : null,
       });
       setTitle('');
       setDescription('');
       setDueDate('');
       setAssignedTo('');
       setTaskCategory('none');
+      setTaskTemplateKey('none');
       setSourceVendorId('none');
       setOpen(false);
       await load();
@@ -528,12 +551,14 @@ export default function Tasks() {
               <DialogHeader><DialogTitle className="font-display">Add Task</DialogTitle></DialogHeader>
               <form onSubmit={addTask} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Task Title</Label>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Book photographer" required />
-                </div>
-                <div className="space-y-2">
                   <Label>Category (optional)</Label>
-                  <Select value={taskCategory} onValueChange={setTaskCategory}>
+                  <Select
+                    value={taskCategory}
+                    onValueChange={(value) => {
+                      setTaskCategory(value);
+                      setTaskTemplateKey('none');
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Choose a category" />
                     </SelectTrigger>
@@ -546,21 +571,76 @@ export default function Tasks() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {selectedCategoryDefaults && (
+                  {resolvedTaskDefaults && (
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <Badge variant="outline" className="rounded-full text-[11px]">
-                        {selectedCategoryDefaults.visibility === 'private' ? 'Private' : 'Public'}
+                        {resolvedTaskDefaults.visibility === 'private' ? 'Private' : 'Public'}
                       </Badge>
                       <Badge variant="outline" className="rounded-full text-[11px]">
-                        P{selectedCategoryDefaults.priorityLevel} · {priorityLabel(selectedCategoryDefaults.priorityLevel)}
+                        P{resolvedTaskDefaults.priorityLevel} · {priorityLabel(resolvedTaskDefaults.priorityLevel)}
                       </Badge>
-                      {selectedCategoryDefaults.delegatable && selectedCategoryDefaults.recommendedRole && (
+                      {resolvedTaskDefaults.delegatable && resolvedTaskDefaults.recommendedRole && (
                         <Badge variant="outline" className="rounded-full text-[11px]">
-                          Delegate to {selectedCategoryDefaults.recommendedRole}
+                          Delegate to {resolvedTaskDefaults.recommendedRole}
+                        </Badge>
+                      )}
+                      {selectedTaskTemplate?.timelineLabel && (
+                        <Badge variant="outline" className="rounded-full text-[11px]">
+                          {selectedTaskTemplate.timelineLabel}
+                        </Badge>
+                      )}
+                      {selectedTaskTemplate?.phase && (
+                        <Badge variant="outline" className="rounded-full text-[11px]">
+                          {phaseLabel(selectedTaskTemplate.phase)}
                         </Badge>
                       )}
                     </div>
                   )}
+                </div>
+                {selectedCategoryName && (
+                  <div className="space-y-2">
+                    <Label>Suggested Task</Label>
+                    <Select
+                      value={taskTemplateKey}
+                      onValueChange={(value) => {
+                        setTaskTemplateKey(value);
+                        if (value === 'none') return;
+                        const template = suggestedTaskOptions.find((option) => option.key === value);
+                        if (!template) return;
+                        setTitle(template.title);
+                        setDescription(template.description);
+                        if (!assignedTo && template.recommendedRole) {
+                          setAssignedTo(template.recommendedRole);
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a suggested task" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Custom task</SelectItem>
+                        {suggestedTaskOptions.map((template) => (
+                          <SelectItem key={template.key} value={template.key}>
+                            {template.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedTaskTemplate && (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedTaskTemplate.description}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Task Title</Label>
+                  <Input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder={selectedTaskTemplate ? selectedTaskTemplate.title : 'e.g. Book photographer'}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Linked vendor (optional)</Label>
@@ -572,7 +652,10 @@ export default function Tasks() {
                       const vendor = vendorLookup[value];
                       if (!vendor) return;
                       const matchedCategory = categoryOptions.find((category) => category.label.toLowerCase() === vendor.category.toLowerCase());
-                      if (matchedCategory) setTaskCategory(matchedCategory.value);
+                      if (matchedCategory) {
+                        setTaskCategory(matchedCategory.value);
+                        setTaskTemplateKey('none');
+                      }
                     }}
                   >
                     <SelectTrigger>
