@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles, ArrowRightLeft } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles, ArrowRightLeft, ArrowLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
@@ -91,6 +91,18 @@ interface VendorTaskItem {
   phase: WeddingTaskPhase | null;
   visibility: string;
   recommended_role: string | null;
+}
+
+interface VendorPaymentRecord {
+  id: string;
+  amount: number;
+  category_name: string;
+  payee_name: string;
+  payment_date: string;
+  reference: string | null;
+  notes: string | null;
+  vendor_id: string | null;
+  budget_scope: 'wedding' | 'personal';
 }
 
 type VendorMilestoneStatus = 'not_started' | 'in_progress' | 'complete';
@@ -258,7 +270,7 @@ function buildVendorMilestones(vendor: Vendor, tasks: VendorTaskItem[]) {
 }
 
 export default function Vendors() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -292,9 +304,13 @@ export default function Vendors() {
   const [reviewDialogVendor, setReviewDialogVendor] = useState<Vendor | null>(null);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [vendorTasksByVendorId, setVendorTasksByVendorId] = useState<Record<string, VendorTaskItem[]>>({});
+  const [vendorPaymentsByVendorId, setVendorPaymentsByVendorId] = useState<Record<string, VendorPaymentRecord[]>>({});
   const [vendorTaskDialogVendor, setVendorTaskDialogVendor] = useState<Vendor | null>(null);
   const [vendorTaskSubmitting, setVendorTaskSubmitting] = useState(false);
   const [creatingVendorTaskBundleId, setCreatingVendorTaskBundleId] = useState<string | null>(null);
+  const [vendorListView, setVendorListView] = useState<'by_category' | 'by_name'>('by_category');
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [selectedVendorTab, setSelectedVendorTab] = useState<'details' | 'tasks' | 'payments'>('details');
   const [vendorTaskForm, setVendorTaskForm] = useState({
     title: '',
     description: '',
@@ -401,6 +417,38 @@ export default function Vendors() {
 
   useEffect(() => {
     void loadVendorTasks();
+  }, [user, selectedClient, dataOrFilter]);
+
+  const loadVendorPayments = async () => {
+    if (!dataOrFilter) return;
+    const { data, error } = await supabase
+      .from('budget_payments')
+      .select('id, amount, category_name, payee_name, payment_date, reference, notes, vendor_id, budget_scope')
+      .or(dataOrFilter)
+      .not('vendor_id', 'is', null)
+      .order('payment_date', { ascending: false });
+
+    if (error) {
+      toast({
+        title: 'Failed to load vendor payments',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const grouped =
+      (data as VendorPaymentRecord[] | null)?.reduce((summary, payment) => {
+        if (!payment.vendor_id) return summary;
+        summary[payment.vendor_id] = [...(summary[payment.vendor_id] ?? []), payment];
+        return summary;
+      }, {} as Record<string, VendorPaymentRecord[]>) ?? {};
+
+    setVendorPaymentsByVendorId(grouped);
+  };
+
+  useEffect(() => {
+    void loadVendorPayments();
   }, [user, selectedClient, dataOrFilter]);
 
   const loadBenchmarks = async (rows: Vendor[]) => {
@@ -1066,11 +1114,463 @@ export default function Vendors() {
       (vendor) =>
         vendor.category === activeComparisonCategory &&
         vendor.selection_status !== 'declined' &&
-        vendor.status !== 'rejected',
+      vendor.status !== 'rejected',
     );
   }, [activeComparisonCategory, sortedVendors]);
 
+  const isCommitteeWorkspace = profile?.role === 'planner' && profile?.planner_type === 'committee';
+  const showCoupleVendorWorkspace = profile?.role === 'couple' || isCommitteeWorkspace;
+
+  const vendorsByName = useMemo(
+    () => [...vendors].sort((left, right) => left.name.localeCompare(right.name)),
+    [vendors],
+  );
+
+  const vendorsGroupedByCategory = useMemo(() => {
+    return sortedVendors.reduce<Record<string, Vendor[]>>((summary, vendor) => {
+      summary[vendor.category] = [...(summary[vendor.category] ?? []), vendor];
+      return summary;
+    }, {});
+  }, [sortedVendors]);
+
+  const selectedVendor = useMemo(
+    () => vendors.find((vendor) => vendor.id === selectedVendorId) ?? null,
+    [vendors, selectedVendorId],
+  );
+
+  const selectedVendorTasks = useMemo(() => {
+    if (!selectedVendorId) return [];
+    return vendorTasksByVendorId[selectedVendorId] ?? [];
+  }, [selectedVendorId, vendorTasksByVendorId]);
+
+  const selectedVendorPayments = useMemo(() => {
+    if (!selectedVendorId) return [];
+    return vendorPaymentsByVendorId[selectedVendorId] ?? [];
+  }, [selectedVendorId, vendorPaymentsByVendorId]);
+
+  const selectedVendorTaskCounts = useMemo(() => {
+    const open = selectedVendorTasks.filter((task) => !task.completed);
+    const completed = selectedVendorTasks.filter((task) => task.completed);
+    return { open, completed };
+  }, [selectedVendorTasks]);
+
+  const selectedVendorPaymentSummary = useMemo(() => {
+    if (!selectedVendor) {
+      return {
+        invoiceTotal: 0,
+        totalPaid: 0,
+        balance: 0,
+      };
+    }
+
+    const invoiceTotal = selectedVendor.price ?? 0;
+    const totalPaid = selectedVendor.amount_paid ?? 0;
+    const balance = Math.max(invoiceTotal - totalPaid, 0);
+
+    return {
+      invoiceTotal,
+      totalPaid,
+      balance,
+    };
+  }, [selectedVendor]);
+
+  useEffect(() => {
+    if (selectedVendorId && !selectedVendor) {
+      setSelectedVendorId(null);
+      setSelectedVendorTab('details');
+    }
+  }, [selectedVendorId, selectedVendor]);
+
+  const addVendorDialog = (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) {
+          setMode('directory');
+          setDirSearch('');
+          setDirResults([]);
+          setForm({ name: '', category: 'Venue', phone: '', price: '' });
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button className="gap-2"><Plus className="h-4 w-4" /> Add Vendor</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle className="font-display">Add Vendor</DialogTitle></DialogHeader>
+        <div className="flex gap-2 border-b border-border pb-3">
+          <Button variant={mode === 'directory' ? 'default' : 'outline'} size="sm" onClick={() => setMode('directory')} className="gap-1">
+            <Search className="h-3.5 w-3.5" /> From Directory
+          </Button>
+          <Button variant={mode === 'custom' ? 'default' : 'outline'} size="sm" onClick={() => setMode('custom')} className="gap-1">
+            <Plus className="h-3.5 w-3.5" /> Add Custom
+          </Button>
+        </div>
+        {mode === 'directory' ? (
+          <div className="space-y-3">
+            <Input placeholder="Search verified vendors…" value={dirSearch} onChange={(e) => searchDirectory(e.target.value)} autoFocus />
+            {dirLoading && <p className="text-sm text-muted-foreground">Searching…</p>}
+            {dirResults.length > 0 ? (
+              <div className="max-h-60 overflow-y-auto space-y-2">
+                {dirResults.map((dv) => {
+                  const benchmark = categoryBenchmarks[benchmarkKey(dv.category)];
+                  return (
+                    <button key={dv.id} onClick={() => addFromDirectory(dv)} className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left hover:bg-accent/50 transition-colors">
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm text-foreground truncate">{dv.business_name}</span>
+                          {dv.is_verified && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <Badge variant="outline" className="text-xs">{dv.category}</Badge>
+                          {dv.location && <span className="text-xs text-muted-foreground">{dv.location}</span>}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {benchmarkSummary(benchmark)}
+                        </p>
+                      </div>
+                      <Plus className="h-4 w-4 text-muted-foreground shrink-0" />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : dirSearch.trim().length >= 2 && !dirLoading ? (
+              <div className="text-center py-6 space-y-2">
+                <p className="text-sm text-muted-foreground">No vendors found in directory.</p>
+                <Button variant="outline" size="sm" onClick={() => setMode('custom')}>Add Custom Vendor</Button>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">Type at least 2 characters to search.</p>
+            )}
+          </div>
+        ) : (
+          <form onSubmit={addVendor} className="space-y-4">
+            <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                {modalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
+                Market signal for {form.category}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {modalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(modalBenchmark)}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Vendor Name</Label>
+              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Business name" required maxLength={100} />
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={form.category} onValueChange={value => setForm(f => ({ ...f, category: value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {vendorCategories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Phone (optional)</Label>
+              <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+254..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Quoted Price (KES, optional)</Label>
+              <Input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0" />
+              <p className="text-xs text-muted-foreground">
+                Saving a quote here automatically creates an anonymized price observation.
+              </p>
+            </div>
+            <Button type="submit" className="w-full">Add Vendor</Button>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+
   if (isPlanner && !selectedClient) return null;
+
+  if (showCoupleVendorWorkspace) {
+    const renderVendorRow = (vendor: Vendor) => (
+      <button
+        key={vendor.id}
+        type="button"
+        onClick={() => {
+          setSelectedVendorId(vendor.id);
+          setSelectedVendorTab('details');
+        }}
+        className="flex w-full items-center justify-between rounded-[1.75rem] border border-border/70 bg-background px-6 py-5 text-left shadow-sm transition hover:border-primary/40 hover:bg-accent/20"
+      >
+        <div className="min-w-0">
+          <p className="truncate text-xl font-semibold text-foreground">{vendor.name}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <Badge variant="outline">{vendor.category}</Badge>
+            {vendor.phone && <span>{vendor.phone}</span>}
+            {vendor.selection_status === 'final' && <Badge>Final choice</Badge>}
+          </div>
+        </div>
+        <div className="text-right text-sm text-muted-foreground">
+          <p>{formatCurrency(vendor.price)}</p>
+          <p className="mt-1">{selectedVendorId === vendor.id ? 'Open' : 'View details'}</p>
+        </div>
+      </button>
+    );
+
+    return (
+      <div className="space-y-8">
+        {!selectedVendor ? (
+          <>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h1 className="font-display text-4xl font-bold text-foreground">Vendors</h1>
+                <p className="mt-2 text-lg text-muted-foreground">{vendors.length} vendors tracked</p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="inline-flex rounded-full border border-border bg-background p-1">
+                  <Button
+                    type="button"
+                    variant={vendorListView === 'by_category' ? 'default' : 'ghost'}
+                    className="rounded-full px-6"
+                    onClick={() => setVendorListView('by_category')}
+                  >
+                    By Category
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={vendorListView === 'by_name' ? 'default' : 'ghost'}
+                    className="rounded-full px-6"
+                    onClick={() => setVendorListView('by_name')}
+                  >
+                    By Name
+                  </Button>
+                </div>
+                {addVendorDialog}
+              </div>
+            </div>
+
+            {vendorListView === 'by_name' ? (
+              <div className="space-y-4">
+                {vendorsByName.map(renderVendorRow)}
+              </div>
+            ) : (
+              <div className="space-y-7">
+                {Object.entries(vendorsGroupedByCategory).map(([category, group]) => (
+                  <section key={category} className="space-y-4">
+                    <div className="border-t border-border/70 pt-6">
+                      <h2 className="text-3xl font-semibold text-foreground">{category}</h2>
+                    </div>
+                    <div className="space-y-4">
+                      {group.map(renderVendorRow)}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-center gap-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  onClick={() => {
+                    setSelectedVendorId(null);
+                    setSelectedVendorTab('details');
+                  }}
+                >
+                  <ArrowLeft className="h-8 w-8" />
+                </Button>
+                <div>
+                  <h1 className="font-display text-4xl font-bold text-foreground">{selectedVendor.name}</h1>
+                  <p className="mt-2 text-lg text-muted-foreground">{selectedVendor.category}</p>
+                </div>
+              </div>
+              <div className="inline-flex rounded-full border border-border bg-background p-1">
+                {(['details', 'tasks', 'payments'] as const).map((tab) => (
+                  <Button
+                    key={tab}
+                    type="button"
+                    variant={selectedVendorTab === tab ? 'default' : 'ghost'}
+                    className="rounded-full px-8 capitalize"
+                    onClick={() => setSelectedVendorTab(tab)}
+                  >
+                    {tab}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {selectedVendorTab === 'details' && (
+              <div className="space-y-8">
+                <section className="space-y-4">
+                  <h2 className="text-2xl font-medium text-foreground">Vendor Details</h2>
+                  <Card className="shadow-card">
+                    <CardContent className="space-y-3 py-6">
+                      <p className="text-2xl font-semibold text-foreground">{selectedVendor.name}</p>
+                      {selectedVendor.phone && <p className="text-lg text-foreground">{selectedVendor.phone}</p>}
+                      {selectedVendor.email && <p className="text-lg text-foreground">{selectedVendor.email}</p>}
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        <Badge variant="outline">{selectedVendor.category}</Badge>
+                        <Badge variant={vendorSelectionTone(selectedVendor.selection_status)}>
+                          {vendorSelectionLabel(selectedVendor.selection_status)}
+                        </Badge>
+                        <Badge variant={vendorPaymentStatusTone(selectedVendor.payment_status)}>
+                          {vendorPaymentStatusLabel(selectedVendor.payment_status)}
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </section>
+
+                <section className="space-y-4">
+                  <h2 className="text-2xl font-medium text-foreground">Notes</h2>
+                  <Card className="shadow-card">
+                    <CardContent className="space-y-4 py-6">
+                      <Textarea
+                        value={notesDrafts[selectedVendor.id] ?? ''}
+                        onChange={(event) => setNotesDrafts((prev) => ({ ...prev, [selectedVendor.id]: event.target.value }))}
+                        placeholder="Add notes about this vendor, your impressions, or follow-up items..."
+                        className="min-h-40 bg-amber-50/70 text-base"
+                      />
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          className="gap-2"
+                          onClick={() => updateVendorNotes(selectedVendor)}
+                          disabled={savingNotesId === selectedVendor.id}
+                        >
+                          {savingNotesId === selectedVendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          Save Notes
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </section>
+              </div>
+            )}
+
+            {selectedVendorTab === 'tasks' && (
+              <div className="space-y-8">
+                <section className="space-y-4">
+                  <h2 className="text-2xl font-medium text-foreground">Vendor Tasks - To Do</h2>
+                  <div className="space-y-4">
+                    {selectedVendorTaskCounts.open.length > 0 ? (
+                      selectedVendorTaskCounts.open.map((task) => (
+                        <Card key={task.id} className="shadow-card">
+                          <CardContent className="flex items-center justify-between gap-4 py-5">
+                            <div>
+                              <p className="text-xl font-medium text-foreground">{task.title}</p>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                                <Badge variant="outline">{task.visibility === 'private' ? 'Private' : 'Public'}</Badge>
+                                {task.phase && <Badge variant="outline">{vendorMilestoneLabel(task.phase)}</Badge>}
+                                {task.due_date && <span>{new Date(task.due_date).toLocaleDateString()}</span>}
+                                {task.recommended_role && <span>{task.recommended_role}</span>}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    ) : (
+                      <Card className="shadow-card">
+                        <CardContent className="py-5 text-muted-foreground">No open vendor tasks yet.</CardContent>
+                      </Card>
+                    )}
+                    <Card className="shadow-card">
+                      <CardContent className="flex items-center justify-between py-5">
+                        <p className="text-xl font-medium text-foreground">All Tasks</p>
+                        <p className="text-xl text-muted-foreground">{selectedVendorTasks.length} total</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <h2 className="text-2xl font-medium text-foreground">Vendor Tasks - Completed</h2>
+                  <div className="space-y-4">
+                    {selectedVendorTaskCounts.completed.length > 0 ? (
+                      selectedVendorTaskCounts.completed.map((task) => (
+                        <Card key={task.id} className="opacity-60 shadow-card">
+                          <CardContent className="flex items-center justify-between gap-4 py-5">
+                            <div>
+                              <p className="text-xl font-medium line-through text-foreground">{task.title}</p>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                                <Badge variant="outline">{task.visibility === 'private' ? 'Private' : 'Public'}</Badge>
+                                {task.phase && <Badge variant="outline">{vendorMilestoneLabel(task.phase)}</Badge>}
+                                {task.due_date && <span>{new Date(task.due_date).toLocaleDateString()}</span>}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    ) : (
+                      <Card className="shadow-card">
+                        <CardContent className="py-5 text-muted-foreground">No completed vendor tasks yet.</CardContent>
+                      </Card>
+                    )}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {selectedVendorTab === 'payments' && (
+              <div className="space-y-8">
+                <section className="space-y-4">
+                  <h2 className="text-2xl font-medium text-foreground">Payment Details</h2>
+                  <Card className="shadow-card">
+                    <CardContent className="py-6">
+                      <p className="text-2xl font-semibold text-foreground">{selectedVendor.name}</p>
+                      <p className="mt-2 text-lg text-foreground">
+                        {selectedVendor.phone ? `M-PESA / Phone: ${selectedVendor.phone}` : 'No payment contact saved yet'}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </section>
+
+                <section className="space-y-4">
+                  <h2 className="text-2xl font-medium text-foreground">Payment Status</h2>
+                  <Card className="shadow-card">
+                    <CardContent className="flex flex-col gap-4 py-6 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="space-y-2">
+                        <p className="text-2xl text-foreground"><span className="font-semibold">Total Invoice:</span> {formatCurrency(selectedVendorPaymentSummary.invoiceTotal)}</p>
+                        <p className="text-2xl font-semibold text-green-600">Total Paid: {formatCurrency(selectedVendorPaymentSummary.totalPaid)}</p>
+                        <p className="text-2xl font-semibold text-orange-600">Balance: {formatCurrency(selectedVendorPaymentSummary.balance)}</p>
+                      </div>
+                      <Button type="button" variant="outline" onClick={() => navigate('/budget')}>
+                        Record a payment made
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </section>
+
+                <section className="space-y-4">
+                  <h2 className="text-2xl font-medium text-foreground">Payments Made</h2>
+                  <div className="space-y-3">
+                    {selectedVendorPayments.length > 0 ? (
+                      selectedVendorPayments.map((payment) => (
+                        <Card key={payment.id} className="shadow-card">
+                          <CardContent className="grid gap-3 py-5 text-lg text-foreground md:grid-cols-[1.2fr_0.8fr_0.8fr_1fr]">
+                            <p>{payment.payee_name}</p>
+                            <p>{formatCurrency(payment.amount)}</p>
+                            <p>{new Date(payment.payment_date).toLocaleDateString()}</p>
+                            <p>{payment.reference ? `Ref: ${payment.reference}` : 'No reference'}</p>
+                          </CardContent>
+                        </Card>
+                      ))
+                    ) : (
+                      <Card className="shadow-card">
+                        <CardContent className="py-5 text-muted-foreground">No payments recorded for this vendor yet.</CardContent>
+                      </Card>
+                    )}
+                  </div>
+                </section>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -1079,108 +1579,7 @@ export default function Vendors() {
           <h1 className="font-display text-3xl font-bold text-foreground">Vendors</h1>
           <p className="text-muted-foreground">{vendors.length} vendors tracked</p>
         </div>
-        <Dialog
-          open={open}
-          onOpenChange={(nextOpen) => {
-            setOpen(nextOpen);
-            if (!nextOpen) {
-              setMode('directory');
-              setDirSearch('');
-              setDirResults([]);
-              setForm({ name: '', category: 'Venue', phone: '', price: '' });
-            }
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="h-4 w-4" /> Add Vendor</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle className="font-display">Add Vendor</DialogTitle></DialogHeader>
-            <div className="flex gap-2 border-b border-border pb-3">
-              <Button variant={mode === 'directory' ? 'default' : 'outline'} size="sm" onClick={() => setMode('directory')} className="gap-1">
-                <Search className="h-3.5 w-3.5" /> From Directory
-              </Button>
-              <Button variant={mode === 'custom' ? 'default' : 'outline'} size="sm" onClick={() => setMode('custom')} className="gap-1">
-                <Plus className="h-3.5 w-3.5" /> Add Custom
-              </Button>
-            </div>
-            {mode === 'directory' ? (
-              <div className="space-y-3">
-                <Input placeholder="Search verified vendors…" value={dirSearch} onChange={(e) => searchDirectory(e.target.value)} autoFocus />
-                {dirLoading && <p className="text-sm text-muted-foreground">Searching…</p>}
-                {dirResults.length > 0 ? (
-                  <div className="max-h-60 overflow-y-auto space-y-2">
-                    {dirResults.map((dv) => {
-                      const benchmark = categoryBenchmarks[benchmarkKey(dv.category)];
-                      return (
-                        <button key={dv.id} onClick={() => addFromDirectory(dv)} className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left hover:bg-accent/50 transition-colors">
-                          <div className="flex-1 min-w-0 space-y-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm text-foreground truncate">{dv.business_name}</span>
-                              {dv.is_verified && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
-                            </div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <Badge variant="outline" className="text-xs">{dv.category}</Badge>
-                              {dv.location && <span className="text-xs text-muted-foreground">{dv.location}</span>}
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {benchmarkSummary(benchmark)}
-                            </p>
-                          </div>
-                          <Plus className="h-4 w-4 text-muted-foreground shrink-0" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : dirSearch.trim().length >= 2 && !dirLoading ? (
-                  <div className="text-center py-6 space-y-2">
-                    <p className="text-sm text-muted-foreground">No vendors found in directory.</p>
-                    <Button variant="outline" size="sm" onClick={() => setMode('custom')}>Add Custom Vendor</Button>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground text-center py-4">Type at least 2 characters to search.</p>
-                )}
-              </div>
-            ) : (
-              <form onSubmit={addVendor} className="space-y-4">
-                <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    {modalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
-                    Market signal for {form.category}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {modalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(modalBenchmark)}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Vendor Name</Label>
-                  <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Business name" required maxLength={100} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Category</Label>
-                  <Select value={form.category} onValueChange={value => setForm(f => ({ ...f, category: value }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {vendorCategories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Phone (optional)</Label>
-                  <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+254..." />
-                </div>
-                <div className="space-y-2">
-                  <Label>Quoted Price (KES, optional)</Label>
-                  <Input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0" />
-                  <p className="text-xs text-muted-foreground">
-                    Saving a quote here automatically creates an anonymized price observation.
-                  </p>
-                </div>
-                <Button type="submit" className="w-full">Add Vendor</Button>
-              </form>
-            )}
-          </DialogContent>
-        </Dialog>
+        {addVendorDialog}
       </div>
 
       <Card className="shadow-card">
