@@ -15,6 +15,7 @@ import { UserRoleChooserPanel } from '@/components/UserRoleChooser';
 
 export default function Auth() {
   const location = useLocation();
+  const entryState = location.state as { mode?: 'signup' | 'signin'; role?: SignupRole } | null;
   const [isSignUp, setIsSignUp] = useState(false);
   const [isForgot, setIsForgot] = useState(false);
   const [email, setEmail] = useState('');
@@ -28,6 +29,13 @@ export default function Auth() {
   const { signIn, signUp, signInWithGoogle, user, profile, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const selectedRoleLabel = {
+    couple: 'Couple',
+    committee: 'Wedding Committee',
+    planner: 'Planner',
+    vendor: 'Vendor',
+  }[role];
+  const hasHomepageCarryover = Boolean(entryState?.role);
 
   useEffect(() => {
     const state = location.state as { mode?: 'signup' | 'signin'; role?: SignupRole } | null;
@@ -177,6 +185,14 @@ export default function Auth() {
             </form>
           ) : (
             <>
+              {isSignUp && hasHomepageCarryover && (
+                <div className="mb-4 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Continuing from homepage</p>
+                  <p className="mt-1 text-sm text-foreground">
+                    You’re starting as <span className="font-medium">{selectedRoleLabel}</span>. You can change it below anytime.
+                  </p>
+                </div>
+              )}
               <div className="space-y-4">
                 <GoogleAuthButton
                   loading={googleSubmitting}
@@ -209,7 +225,7 @@ export default function Auth() {
                       value={role}
                       onChange={setRole}
                       eyebrow="Start here"
-                      title="How will you use Zania?"
+                      title="Create your account"
                       description="Choose the option that best matches how you want to get started."
                     />
                     {role === 'committee' && (
