@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Heart, Loader2, Users, Briefcase, Store, UserCog } from 'lucide-react';
+import { Heart, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
 import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import { UserRoleChooser } from '@/components/UserRoleChooser';
 
 export default function Auth() {
   const location = useLocation();
@@ -214,72 +215,10 @@ export default function Auth() {
                           Most people pick <span className="font-medium text-foreground">Couple</span> when planning their own wedding, and <span className="font-medium text-foreground">Wedding Committee</span> for a family-led wedding.
                         </p>
                       </div>
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => setRole('couple')}
-                          className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors ${
-                            role === 'couple'
-                              ? 'border-primary bg-primary/5 text-primary'
-                              : 'border-border text-muted-foreground hover:border-primary/50'
-                          }`}
-                        >
-                          <Users className="h-5 w-5" />
-                          <span className="text-sm font-semibold text-foreground">I&apos;m planning my own wedding</span>
-                          <span className="text-xs leading-relaxed text-muted-foreground">
-                            For a bride, groom, or partner keeping track of budget, vendors, tasks, and guests.
-                          </span>
-                          <span className="text-[11px] font-medium text-primary">Choose: Couple</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRole('planner')}
-                          className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors ${
-                            role === 'planner'
-                              ? 'border-primary bg-primary/5 text-primary'
-                              : 'border-border text-muted-foreground hover:border-primary/50'
-                          }`}
-                        >
-                          <Briefcase className="h-5 w-5" />
-                          <span className="text-sm font-semibold text-foreground">I&apos;m a professional planner</span>
-                          <span className="text-xs leading-relaxed text-muted-foreground">
-                            For planners and coordinators managing weddings for clients.
-                          </span>
-                          <span className="text-[11px] font-medium text-primary">Choose: Planner</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRole('committee')}
-                          className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors ${
-                            role === 'committee'
-                              ? 'border-primary bg-primary/5 text-primary'
-                              : 'border-border text-muted-foreground hover:border-primary/50'
-                          }`}
-                        >
-                          <UserCog className="h-5 w-5" />
-                          <span className="text-sm font-semibold text-foreground">I&apos;m part of a wedding committee</span>
-                          <span className="text-xs leading-relaxed text-muted-foreground">
-                            For a chair, sibling, cousin, or family organizer helping run one wedding together.
-                          </span>
-                          <span className="text-[11px] font-medium text-primary">Choose: Wedding Committee</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRole('vendor')}
-                          className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors ${
-                            role === 'vendor'
-                              ? 'border-primary bg-primary/5 text-primary'
-                              : 'border-border text-muted-foreground hover:border-primary/50'
-                          }`}
-                        >
-                          <Store className="h-5 w-5" />
-                          <span className="text-sm font-semibold text-foreground">I&apos;m a vendor</span>
-                          <span className="text-xs leading-relaxed text-muted-foreground">
-                            For photographers, caterers, florists, DJs, venues, decor teams, and other wedding service providers.
-                          </span>
-                          <span className="text-[11px] font-medium text-primary">Choose: Vendor</span>
-                        </button>
-                      </div>
+                      <UserRoleChooser
+                        value={role}
+                        onChange={setRole}
+                      />
                     </div>
                     {role === 'committee' && (
                       <div className="space-y-2">
