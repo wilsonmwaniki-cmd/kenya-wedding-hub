@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserCog } from 'lucide-react';
+import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,6 +15,7 @@ import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
 import { saveEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
+import { UserRoleChooser, UserRoleChooserPanel } from '@/components/UserRoleChooser';
 
 const features = [
   { icon: Wallet, title: 'Budget Tracking', desc: 'Keep your wedding finances organized with category-level tracking.' },
@@ -379,37 +380,6 @@ function InlineAuthForm() {
     }
   };
 
-  const roles = [
-    {
-      value: 'couple' as const,
-      icon: Users,
-      title: "I'm planning my own wedding",
-      description: 'For a bride, groom, or partner managing budget, vendors, guests, and tasks.',
-      helper: 'Choose: Couple',
-    },
-    {
-      value: 'planner' as const,
-      icon: Briefcase,
-      title: "I'm a professional planner",
-      description: 'For planners and coordinators managing weddings for clients.',
-      helper: 'Choose: Planner',
-    },
-    {
-      value: 'committee' as const,
-      icon: UserCog,
-      title: "I'm part of a wedding committee",
-      description: 'For a chair, sibling, cousin, or family organizer helping run one wedding together.',
-      helper: 'Choose: Wedding Committee',
-    },
-    {
-      value: 'vendor' as const,
-      icon: Store,
-      title: "I'm a vendor",
-      description: 'For photographers, caterers, florists, DJs, venues, decor teams, and other service providers.',
-      helper: 'Choose: Vendor',
-    },
-  ];
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -485,25 +455,7 @@ function InlineAuthForm() {
                   Most people choose <span className="font-medium text-foreground">Couple</span> for their own wedding, and <span className="font-medium text-foreground">Wedding Committee</span> for a family-led wedding.
                 </p>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {roles.map((r) => (
-                  <button
-                    key={r.value}
-                    type="button"
-                    onClick={() => setRole(r.value)}
-                    className={`flex flex-col items-start gap-2 rounded-xl border-2 p-3 text-left transition-colors ${
-                      role === r.value
-                        ? 'border-primary bg-primary/5 text-primary'
-                        : 'border-border text-muted-foreground hover:border-primary/50'
-                    }`}
-                  >
-                    <r.icon className="h-4 w-4" />
-                    <span className="text-xs font-semibold leading-tight text-foreground">{r.title}</span>
-                    <span className="text-[10px] leading-relaxed text-muted-foreground">{r.description}</span>
-                    <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-primary">{r.helper}</span>
-                  </button>
-                ))}
-              </div>
+              <UserRoleChooser value={role} onChange={setRole} />
             </div>
             {role === 'committee' && (
               <div className="space-y-1.5">
@@ -561,33 +513,6 @@ function QuickSignupChooser() {
   const navigate = useNavigate();
   const [selectedRole, setSelectedRole] = useState<SignupRole>('couple');
 
-  const options = [
-    {
-      value: 'couple' as const,
-      icon: Users,
-      title: 'Planning my own wedding',
-      helper: 'Couple',
-    },
-    {
-      value: 'committee' as const,
-      icon: UserCog,
-      title: 'Helping run a family wedding',
-      helper: 'Wedding Committee',
-    },
-    {
-      value: 'planner' as const,
-      icon: Briefcase,
-      title: 'Managing weddings for clients',
-      helper: 'Planner',
-    },
-    {
-      value: 'vendor' as const,
-      icon: Store,
-      title: 'Offering wedding services',
-      helper: 'Vendor',
-    },
-  ];
-
   const openAuth = (mode: 'signup' | 'signin') => {
     navigate('/auth', {
       state: {
@@ -602,50 +527,28 @@ function QuickSignupChooser() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: 0.4 }}
-      className="rounded-[28px] border border-white/18 bg-[rgba(35,24,21,0.58)] p-5 shadow-[0_28px_60px_rgba(40,26,22,0.22)] backdrop-blur-md"
     >
-      <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/75">Start here</p>
-        <h3 className="font-display text-2xl font-semibold text-white">Create your account</h3>
-        <p className="text-sm leading-relaxed text-white/78">
-          Pick the option that best matches how you&apos;ll use Zania. Most new users choose Couple or Wedding Committee.
-        </p>
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => setSelectedRole(option.value)}
-            className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
-              selectedRole === option.value
-                ? 'border-white/60 bg-white/16 text-white'
-                : 'border-white/18 bg-black/10 text-white/82 hover:border-white/35 hover:bg-white/10'
-            }`}
+      <UserRoleChooserPanel
+        value={selectedRole}
+        onChange={setSelectedRole}
+        eyebrow="Start here"
+        title="Create your account"
+        description="Choose the option that best matches how you want to get started."
+      >
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button className="flex-1 gap-2" onClick={() => openAuth('signup')}>
+            Create account
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => openAuth('signin')}
           >
-            <option.icon className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              <p className="text-sm font-medium leading-tight">{option.title}</p>
-              <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-white/70">{option.helper}</p>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <Button className="flex-1 gap-2" onClick={() => openAuth('signup')}>
-          Create account
-          <ArrowRight className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="outline"
-          className="flex-1 border-white/30 bg-white/8 text-white hover:bg-white/16 hover:text-white"
-          onClick={() => openAuth('signin')}
-        >
-          I already have an account
-        </Button>
-      </div>
+            I already have an account
+          </Button>
+        </div>
+      </UserRoleChooserPanel>
     </motion.div>
   );
 }
