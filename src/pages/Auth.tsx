@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import GoogleAuthButton from '@/components/GoogleAuthButton';
 import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 
 export default function Auth() {
+  const location = useLocation();
   const [isSignUp, setIsSignUp] = useState(false);
   const [isForgot, setIsForgot] = useState(false);
   const [email, setEmail] = useState('');
@@ -26,6 +27,20 @@ export default function Auth() {
   const { signIn, signUp, signInWithGoogle, user, profile, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const state = location.state as { mode?: 'signup' | 'signin'; role?: SignupRole } | null;
+    if (!state) return;
+
+    if (state.mode) {
+      setIsSignUp(state.mode === 'signup');
+      setIsForgot(false);
+    }
+
+    if (state.role) {
+      setRole(state.role);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     if (loading || !user || !profile?.role || redirecting) return;
