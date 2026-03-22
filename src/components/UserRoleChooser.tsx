@@ -1,4 +1,5 @@
 import { Briefcase, Store, UserCog, Users } from 'lucide-react';
+import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
 import type { SignupRole } from '@/lib/roles';
 
@@ -9,6 +10,7 @@ type UserRoleChooserProps = {
   cardClassName?: string;
   selectedCardClassName?: string;
   unselectedCardClassName?: string;
+  emphasizeSelected?: boolean;
 };
 
 type UserRoleChooserPanelProps = {
@@ -20,6 +22,7 @@ type UserRoleChooserPanelProps = {
   helperText?: ReactNode;
   className?: string;
   children?: ReactNode;
+  emphasizeSelected?: boolean;
 };
 
 const roleOptions = [
@@ -60,21 +63,46 @@ export function UserRoleChooser({
   cardClassName = 'flex flex-col items-start gap-2 rounded-xl border-2 p-3 text-left transition-colors',
   selectedCardClassName = 'border-primary bg-primary/5 text-primary',
   unselectedCardClassName = 'border-border bg-background text-muted-foreground hover:border-primary/50',
+  emphasizeSelected = false,
 }: UserRoleChooserProps) {
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {roleOptions.map((option) => (
-        <button
+        <motion.button
           key={option.value}
           type="button"
           onClick={() => onChange(option.value)}
+          initial={
+            emphasizeSelected && value === option.value
+              ? { scale: 0.96, y: 8, opacity: 0.92, boxShadow: '0 0 0 rgba(0,0,0,0)' }
+              : false
+          }
+          animate={
+            emphasizeSelected && value === option.value
+              ? {
+                  scale: 1,
+                  y: 0,
+                  opacity: 1,
+                  boxShadow: '0 18px 40px rgba(224, 98, 47, 0.18)',
+                }
+              : {
+                  scale: 1,
+                  y: 0,
+                  opacity: 1,
+                  boxShadow: '0 0 0 rgba(0,0,0,0)',
+                }
+          }
+          transition={{
+            duration: emphasizeSelected && value === option.value ? 0.4 : 0.2,
+            ease: [0.22, 1, 0.36, 1],
+          }}
           className={`${cardClassName} ${value === option.value ? selectedCardClassName : unselectedCardClassName}`}
         >
           <option.icon className="h-4 w-4" />
           <span className="text-xs font-semibold leading-tight text-foreground">{option.title}</span>
           <span className="text-[10px] leading-relaxed text-muted-foreground">{option.description}</span>
           <span className={helperClassName}>{option.helper}</span>
-        </button>
+        </motion.button>
       ))}
     </div>
   );
@@ -94,6 +122,7 @@ export function UserRoleChooserPanel({
   ),
   className = '',
   children,
+  emphasizeSelected = false,
 }: UserRoleChooserPanelProps) {
   return (
     <div className={`rounded-[28px] border border-border/60 bg-card/95 p-5 shadow-warm backdrop-blur-sm ${className}`.trim()}>
@@ -105,7 +134,7 @@ export function UserRoleChooserPanel({
       </div>
 
       <div className="mt-4">
-        <UserRoleChooser value={value} onChange={onChange} />
+        <UserRoleChooser value={value} onChange={onChange} emphasizeSelected={emphasizeSelected} />
       </div>
 
       {children ? <div className="mt-4">{children}</div> : null}

@@ -227,6 +227,7 @@ export default function Auth() {
                       eyebrow="Start here"
                       title="Create your account"
                       description="Choose the option that best matches how you want to get started."
+                      emphasizeSelected={hasHomepageCarryover}
                     />
                     {role === 'committee' && (
                       <div className="space-y-2">
