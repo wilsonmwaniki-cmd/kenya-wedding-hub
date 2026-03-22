@@ -180,63 +180,89 @@ export default function Auth() {
                 {isSignUp && (
                   <>
                     <div className="space-y-2">
-                      <Label htmlFor="name">{role === 'committee' ? 'Chairperson Name' : 'Full Name'}</Label>
-                      <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder={role === 'committee' ? 'Committee chair full name' : 'Your full name'} required />
+                      <Label htmlFor="name">{role === 'committee' ? 'Committee Chair Name' : 'Full Name'}</Label>
+                      <Input
+                        id="name"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder={role === 'committee' ? 'The main person coordinating the committee' : 'Your full name'}
+                        required
+                      />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Account Type</Label>
-                      <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <Label>How will you use Zania?</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Choose the option that best matches what you want to do first.
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Most people pick <span className="font-medium text-foreground">Couple</span> when planning their own wedding, and <span className="font-medium text-foreground">Wedding Committee</span> for a family-led wedding.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <button
                           type="button"
                           onClick={() => setRole('couple')}
-                          className={`flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors ${
+                          className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors ${
                             role === 'couple'
                               ? 'border-primary bg-primary/5 text-primary'
                               : 'border-border text-muted-foreground hover:border-primary/50'
                           }`}
                         >
                           <Users className="h-5 w-5" />
-                          <span className="text-sm font-medium">Couple</span>
-                          <span className="text-[10px] text-center leading-tight">Plan your wedding</span>
+                          <span className="text-sm font-semibold text-foreground">I&apos;m planning my own wedding</span>
+                          <span className="text-xs leading-relaxed text-muted-foreground">
+                            For a bride, groom, or partner keeping track of budget, vendors, tasks, and guests.
+                          </span>
+                          <span className="text-[11px] font-medium text-primary">Choose: Couple</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setRole('planner')}
-                          className={`flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors ${
+                          className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors ${
                             role === 'planner'
                               ? 'border-primary bg-primary/5 text-primary'
                               : 'border-border text-muted-foreground hover:border-primary/50'
                           }`}
                         >
                           <Briefcase className="h-5 w-5" />
-                          <span className="text-sm font-medium">Planner</span>
-                          <span className="text-[10px] text-center leading-tight">Manage clients</span>
+                          <span className="text-sm font-semibold text-foreground">I&apos;m a professional planner</span>
+                          <span className="text-xs leading-relaxed text-muted-foreground">
+                            For planners and coordinators managing weddings for clients.
+                          </span>
+                          <span className="text-[11px] font-medium text-primary">Choose: Planner</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setRole('committee')}
-                          className={`flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors ${
+                          className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors ${
                             role === 'committee'
                               ? 'border-primary bg-primary/5 text-primary'
                               : 'border-border text-muted-foreground hover:border-primary/50'
                           }`}
                         >
                           <UserCog className="h-5 w-5" />
-                          <span className="text-sm font-medium">Committee</span>
-                          <span className="text-[10px] text-center leading-tight">Run one wedding together</span>
+                          <span className="text-sm font-semibold text-foreground">I&apos;m part of a wedding committee</span>
+                          <span className="text-xs leading-relaxed text-muted-foreground">
+                            For a chair, sibling, cousin, or family organizer helping run one wedding together.
+                          </span>
+                          <span className="text-[11px] font-medium text-primary">Choose: Wedding Committee</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setRole('vendor')}
-                          className={`flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors ${
+                          className={`flex flex-col items-start gap-2 rounded-xl border-2 p-4 text-left transition-colors ${
                             role === 'vendor'
                               ? 'border-primary bg-primary/5 text-primary'
                               : 'border-border text-muted-foreground hover:border-primary/50'
                           }`}
                         >
                           <Store className="h-5 w-5" />
-                          <span className="text-sm font-medium">Vendor</span>
-                          <span className="text-[10px] text-center leading-tight">List your business</span>
+                          <span className="text-sm font-semibold text-foreground">I&apos;m a vendor</span>
+                          <span className="text-xs leading-relaxed text-muted-foreground">
+                            For photographers, caterers, florists, DJs, venues, decor teams, and other wedding service providers.
+                          </span>
+                          <span className="text-[11px] font-medium text-primary">Choose: Vendor</span>
                         </button>
                       </div>
                     </div>
