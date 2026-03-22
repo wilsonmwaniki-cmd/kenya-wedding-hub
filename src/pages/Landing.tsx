@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserCog } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import heroImage from '@/assets/hero-wedding.jpg';
@@ -558,6 +557,99 @@ function InlineAuthForm() {
   );
 }
 
+function QuickSignupChooser() {
+  const navigate = useNavigate();
+  const [selectedRole, setSelectedRole] = useState<SignupRole>('couple');
+
+  const options = [
+    {
+      value: 'couple' as const,
+      icon: Users,
+      title: 'Planning my own wedding',
+      helper: 'Couple',
+    },
+    {
+      value: 'committee' as const,
+      icon: UserCog,
+      title: 'Helping run a family wedding',
+      helper: 'Wedding Committee',
+    },
+    {
+      value: 'planner' as const,
+      icon: Briefcase,
+      title: 'Managing weddings for clients',
+      helper: 'Planner',
+    },
+    {
+      value: 'vendor' as const,
+      icon: Store,
+      title: 'Offering wedding services',
+      helper: 'Vendor',
+    },
+  ];
+
+  const openAuth = (mode: 'signup' | 'signin') => {
+    navigate('/auth', {
+      state: {
+        mode,
+        role: selectedRole,
+      },
+    });
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, delay: 0.4 }}
+      className="rounded-[28px] border border-white/18 bg-[rgba(35,24,21,0.58)] p-5 shadow-[0_28px_60px_rgba(40,26,22,0.22)] backdrop-blur-md"
+    >
+      <div className="space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/75">Start here</p>
+        <h3 className="font-display text-2xl font-semibold text-white">Create your account</h3>
+        <p className="text-sm leading-relaxed text-white/78">
+          Pick the option that best matches how you&apos;ll use Zania. Most new users choose Couple or Wedding Committee.
+        </p>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setSelectedRole(option.value)}
+            className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
+              selectedRole === option.value
+                ? 'border-white/60 bg-white/16 text-white'
+                : 'border-white/18 bg-black/10 text-white/82 hover:border-white/35 hover:bg-white/10'
+            }`}
+          >
+            <option.icon className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="text-sm font-medium leading-tight">{option.title}</p>
+              <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-white/70">{option.helper}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        <Button className="flex-1 gap-2" onClick={() => openAuth('signup')}>
+          Create account
+          <ArrowRight className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          className="flex-1 border-white/30 bg-white/8 text-white hover:bg-white/16 hover:text-white"
+          onClick={() => openAuth('signin')}
+        >
+          I already have an account
+        </Button>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function Landing() {
   const { user, profile, loading } = useAuth();
 
@@ -594,10 +686,10 @@ export default function Landing() {
 
       <section className="mx-auto max-w-7xl px-6 pt-8 lg:px-8 lg:pt-10">
         <div className="overflow-hidden rounded-[34px] border border-border/40 shadow-[0_30px_80px_rgba(62,39,35,0.18)]">
-          <div className="relative min-h-[690px]">
+          <div className="relative min-h-[760px]">
             <img src={heroImage} alt="Kenyan wedding floral arrangement" className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(42,28,24,0.74)_0%,rgba(42,28,24,0.52)_38%,rgba(42,28,24,0.3)_100%)]" />
-            <div className="relative grid min-h-[690px] gap-10 px-8 py-10 lg:grid-cols-[1.08fr_0.92fr] lg:px-16 lg:py-16">
+            <div className="relative grid min-h-[760px] gap-10 px-8 py-10 lg:grid-cols-[1.02fr_0.98fr] lg:px-16 lg:py-12">
               <div className="flex flex-col justify-center text-primary-foreground">
                 <motion.p
                   initial={{ opacity: 0, y: 16 }}
@@ -653,8 +745,9 @@ export default function Landing() {
               </div>
 
               <div id="cost-estimator" className="flex items-center lg:justify-end">
-                <div className="w-full max-w-[520px]">
+                <div className="w-full max-w-[540px] space-y-4">
                   <PublicBudgetEstimator compact />
+                  <QuickSignupChooser />
                 </div>
               </div>
             </div>
