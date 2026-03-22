@@ -371,6 +371,8 @@ export type Database = {
           full_name: string | null
           id: string
           committee_name: string | null
+          maximum_budget_kes: number | null
+          minimum_budget_kes: number | null
           partner_name: string | null
           planner_type: string | null
           planner_subscription_expires_at: string | null
@@ -379,12 +381,18 @@ export type Database = {
           planner_verification_requested: boolean
           planner_verification_requested_at: string | null
           planner_verified: boolean
+          primary_county: string | null
+          primary_town: string | null
           role: Database["public"]["Enums"]["app_role"]
+          service_areas: string[]
           specialties: string[] | null
+          travel_scope: string
           updated_at: string
           user_id: string
+          wedding_county: string | null
           wedding_date: string | null
           wedding_location: string | null
+          wedding_town: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -398,6 +406,8 @@ export type Database = {
           full_name?: string | null
           id?: string
           committee_name?: string | null
+          maximum_budget_kes?: number | null
+          minimum_budget_kes?: number | null
           partner_name?: string | null
           planner_type?: string | null
           planner_subscription_expires_at?: string | null
@@ -406,12 +416,18 @@ export type Database = {
           planner_verification_requested?: boolean
           planner_verification_requested_at?: string | null
           planner_verified?: boolean
+          primary_county?: string | null
+          primary_town?: string | null
           role?: Database["public"]["Enums"]["app_role"]
+          service_areas?: string[]
           specialties?: string[] | null
+          travel_scope?: string
           updated_at?: string
           user_id: string
+          wedding_county?: string | null
           wedding_date?: string | null
           wedding_location?: string | null
+          wedding_town?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -425,6 +441,8 @@ export type Database = {
           full_name?: string | null
           id?: string
           committee_name?: string | null
+          maximum_budget_kes?: number | null
+          minimum_budget_kes?: number | null
           partner_name?: string | null
           planner_type?: string | null
           planner_subscription_expires_at?: string | null
@@ -433,12 +451,18 @@ export type Database = {
           planner_verification_requested?: boolean
           planner_verification_requested_at?: string | null
           planner_verified?: boolean
+          primary_county?: string | null
+          primary_town?: string | null
           role?: Database["public"]["Enums"]["app_role"]
+          service_areas?: string[]
           specialties?: string[] | null
+          travel_scope?: string
           updated_at?: string
           user_id?: string
+          wedding_county?: string | null
           wedding_date?: string | null
           wedding_location?: string | null
+          wedding_town?: string | null
         }
         Relationships: []
       }
@@ -720,8 +744,13 @@ export type Database = {
           is_approved: boolean
           is_verified: boolean
           location: string | null
+          location_county: string | null
+          location_town: string | null
           logo_url: string | null
+          maximum_budget_kes: number | null
+          minimum_budget_kes: number | null
           phone: string | null
+          service_areas: string[]
           subscription_expires_at: string | null
           subscription_started_at: string | null
           subscription_status: string
@@ -730,6 +759,7 @@ export type Database = {
           social_instagram: string | null
           social_tiktok: string | null
           social_twitter: string | null
+          travel_scope: string
           updated_at: string
           user_id: string
           verification_requested: boolean
@@ -746,8 +776,13 @@ export type Database = {
           is_approved?: boolean
           is_verified?: boolean
           location?: string | null
+          location_county?: string | null
+          location_town?: string | null
           logo_url?: string | null
+          maximum_budget_kes?: number | null
+          minimum_budget_kes?: number | null
           phone?: string | null
+          service_areas?: string[]
           subscription_expires_at?: string | null
           subscription_started_at?: string | null
           subscription_status?: string
@@ -756,6 +791,7 @@ export type Database = {
           social_instagram?: string | null
           social_tiktok?: string | null
           social_twitter?: string | null
+          travel_scope?: string
           updated_at?: string
           user_id: string
           verification_requested?: boolean
@@ -772,8 +808,13 @@ export type Database = {
           is_approved?: boolean
           is_verified?: boolean
           location?: string | null
+          location_county?: string | null
+          location_town?: string | null
           logo_url?: string | null
+          maximum_budget_kes?: number | null
+          minimum_budget_kes?: number | null
           phone?: string | null
+          service_areas?: string[]
           subscription_expires_at?: string | null
           subscription_started_at?: string | null
           subscription_status?: string
@@ -782,6 +823,7 @@ export type Database = {
           social_instagram?: string | null
           social_tiktok?: string | null
           social_twitter?: string | null
+          travel_scope?: string
           updated_at?: string
           user_id?: string
           verification_requested?: boolean
@@ -1202,7 +1244,13 @@ export type Database = {
           company_website: string | null
           full_name: string | null
           id: string | null
+          maximum_budget_kes: number | null
+          minimum_budget_kes: number | null
+          primary_county: string | null
+          primary_town: string | null
+          service_areas: string[] | null
           specialties: string[] | null
+          travel_scope: string | null
           user_id: string | null
         }
         Insert: {
@@ -1214,7 +1262,13 @@ export type Database = {
           company_website?: string | null
           full_name?: string | null
           id?: string | null
+          maximum_budget_kes?: number | null
+          minimum_budget_kes?: number | null
+          primary_county?: string | null
+          primary_town?: string | null
+          service_areas?: string[] | null
           specialties?: string[] | null
+          travel_scope?: string | null
           user_id?: string | null
         }
         Update: {
@@ -1226,7 +1280,13 @@ export type Database = {
           company_website?: string | null
           full_name?: string | null
           id?: string | null
+          maximum_budget_kes?: number | null
+          minimum_budget_kes?: number | null
+          primary_county?: string | null
+          primary_town?: string | null
+          service_areas?: string[] | null
           specialties?: string[] | null
+          travel_scope?: string | null
           user_id?: string | null
         }
         Relationships: []

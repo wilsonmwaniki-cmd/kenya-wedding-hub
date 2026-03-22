@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Heart, Search, ArrowRight, Loader2, UserCircle, ArrowLeft } from 'lucide-react';
+import { Heart, Search, ArrowRight, Loader2, UserCircle, ArrowLeft, MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { formatBudgetBand, getBudgetFit, getLocationMatch } from '@/lib/kenyaLocations';
 
 interface PlannerItem {
   id: string;
@@ -19,23 +21,47 @@ interface PlannerItem {
   company_email: string | null;
   company_phone: string | null;
   company_website: string | null;
+  primary_county: string | null;
+  primary_town: string | null;
+  service_areas: string[] | null;
+  travel_scope: string | null;
+  minimum_budget_kes: number | null;
+  maximum_budget_kes: number | null;
 }
 
 export default function PlannerDirectory() {
+  const { user, profile } = useAuth();
   const [planners, setPlanners] = useState<PlannerItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [weddingBudgetTotal, setWeddingBudgetTotal] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
       const { data } = await supabase
         .from('public_planner_profiles')
-        .select('id, full_name, company_name, avatar_url, bio, specialties, company_email, company_phone, company_website');
+        .select('id, full_name, company_name, avatar_url, bio, specialties, company_email, company_phone, company_website, primary_county, primary_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes');
       setPlanners((data as PlannerItem[]) || []);
       setLoading(false);
     };
     load();
   }, []);
+
+  useEffect(() => {
+    const isCouple = profile?.role === 'couple';
+    const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
+    if (!user || (!isCouple && !isCommittee)) return;
+    const loadBudgetTotal = async () => {
+      const { data } = await supabase
+        .from('budget_categories')
+        .select('allocated')
+        .eq('user_id', user.id)
+        .eq('budget_scope', 'wedding');
+      const total = (data || []).reduce((sum, item) => sum + Number(item.allocated || 0), 0);
+      setWeddingBudgetTotal(total || null);
+    };
+    void loadBudgetTotal();
+  }, [user, profile?.role, profile?.planner_type]);
 
   const filtered = planners.filter((p) => {
     if (!search.trim()) return true;
@@ -45,6 +71,29 @@ export default function PlannerDirectory() {
       p.company_name?.toLowerCase().includes(q) ||
       p.specialties?.some((s) => s.toLowerCase().includes(q))
     );
+  }).sort((a, b) => {
+    const aLocation = getLocationMatch({
+      weddingCounty: profile?.wedding_county,
+      weddingTown: profile?.wedding_town,
+      primaryCounty: a.primary_county,
+      primaryTown: a.primary_town,
+      serviceAreas: a.service_areas,
+      travelScope: a.travel_scope,
+    });
+    const bLocation = getLocationMatch({
+      weddingCounty: profile?.wedding_county,
+      weddingTown: profile?.wedding_town,
+      primaryCounty: b.primary_county,
+      primaryTown: b.primary_town,
+      serviceAreas: b.service_areas,
+      travelScope: b.travel_scope,
+    });
+    const aBudget = getBudgetFit(weddingBudgetTotal, a.minimum_budget_kes, a.maximum_budget_kes);
+    const bBudget = getBudgetFit(weddingBudgetTotal, b.minimum_budget_kes, b.maximum_budget_kes);
+    const scoreA = aLocation.score + aBudget.score;
+    const scoreB = bLocation.score + bBudget.score;
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    return (a.company_name || a.full_name || '').localeCompare(b.company_name || b.full_name || '');
   });
 
   return (
@@ -144,6 +193,31 @@ export default function PlannerDirectory() {
                       {p.bio && (
                         <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{p.bio}</p>
                       )}
+                      {(p.primary_town || p.primary_county) && (
+                        <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                          <MapPin className="h-3 w-3" />
+                          {[p.primary_town, p.primary_county].filter(Boolean).join(', ')}
+                        </p>
+                      )}
+                      {profile?.wedding_county && (
+                        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                          {getLocationMatch({
+                            weddingCounty: profile.wedding_county,
+                            weddingTown: profile.wedding_town,
+                            primaryCounty: p.primary_county,
+                            primaryTown: p.primary_town,
+                            serviceAreas: p.service_areas,
+                            travelScope: p.travel_scope,
+                          }).reasons.map((reason) => (
+                            <Badge key={reason} variant="outline" className="text-[10px]">{reason}</Badge>
+                          ))}
+                          {getBudgetFit(weddingBudgetTotal, p.minimum_budget_kes, p.maximum_budget_kes).label && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {getBudgetFit(weddingBudgetTotal, p.minimum_budget_kes, p.maximum_budget_kes).label}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
                       {p.specialties && p.specialties.length > 0 && (
                         <div className="mt-3 flex flex-wrap justify-center gap-1.5">
                           {p.specialties.slice(0, 3).map((s) => (
@@ -153,6 +227,11 @@ export default function PlannerDirectory() {
                             <Badge variant="secondary" className="text-xs">+{p.specialties.length - 3}</Badge>
                           )}
                         </div>
+                      )}
+                      {formatBudgetBand(p.minimum_budget_kes, p.maximum_budget_kes) && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Typical wedding size: {formatBudgetBand(p.minimum_budget_kes, p.maximum_budget_kes)}
+                        </p>
                       )}
                       <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
                         View Profile <ArrowRight className="h-3.5 w-3.5" />

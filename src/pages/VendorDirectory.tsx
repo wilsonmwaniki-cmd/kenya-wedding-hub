@@ -13,6 +13,7 @@ import { motion } from 'framer-motion';
 import VendorInterestButton from '@/components/VendorInterestButton';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { vendorHasFullAccess } from '@/lib/vendorAccess';
+import { formatBudgetBand, getBudgetFit, getLocationMatch } from '@/lib/kenyaLocations';
 
 const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -23,6 +24,12 @@ interface VendorListing {
   description: string | null;
   logo_url: string | null;
   location: string | null;
+  location_county: string | null;
+  location_town: string | null;
+  service_areas: string[];
+  travel_scope: string;
+  minimum_budget_kes: number | null;
+  maximum_budget_kes: number | null;
   services: string[] | null;
   is_verified: boolean;
   subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
@@ -42,13 +49,14 @@ export default function VendorDirectory() {
   const [vendorRatings, setVendorRatings] = useState<Record<string, { avg: number; count: number }>>({});
   const [trustLoading, setTrustLoading] = useState(false);
   const [vendorTrust, setVendorTrust] = useState<Record<string, VendorReputationOverview>>({});
+  const [weddingBudgetTotal, setWeddingBudgetTotal] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
       const [listingsRes, ratingsRes] = await Promise.all([
         supabase
           .from('vendor_listings')
-          .select('id, business_name, category, description, logo_url, location, services, is_verified, subscription_status, subscription_expires_at, phone, email, website')
+          .select('id, business_name, category, description, logo_url, location, location_county, location_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes, services, is_verified, subscription_status, subscription_expires_at, phone, email, website')
           .eq('is_approved', true)
           .order('is_verified', { ascending: false }),
         supabase
@@ -74,6 +82,22 @@ export default function VendorDirectory() {
     };
     load();
   }, []);
+
+  useEffect(() => {
+    const isCouple = profile?.role === 'couple';
+    const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
+    if (!user || (!isCouple && !isCommittee)) return;
+    const loadBudgetTotal = async () => {
+      const { data } = await supabase
+        .from('budget_categories')
+        .select('allocated')
+        .eq('user_id', user.id)
+        .eq('budget_scope', 'wedding');
+      const total = (data || []).reduce((sum, item) => sum + Number(item.allocated || 0), 0);
+      setWeddingBudgetTotal(total || null);
+    };
+    void loadBudgetTotal();
+  }, [user, profile?.role, profile?.planner_type]);
 
   useEffect(() => {
     const canSeeTrust = profile?.role === 'planner' || profile?.role === 'admin';
@@ -136,6 +160,32 @@ export default function VendorDirectory() {
       v.location?.toLowerCase().includes(q) ||
       v.services?.some((s) => s.toLowerCase().includes(q))
     );
+  }).sort((a, b) => {
+    const aLocation = getLocationMatch({
+      weddingCounty: profile?.wedding_county,
+      weddingTown: profile?.wedding_town,
+      primaryCounty: a.location_county,
+      primaryTown: a.location_town,
+      serviceAreas: a.service_areas,
+      travelScope: a.travel_scope,
+    });
+    const bLocation = getLocationMatch({
+      weddingCounty: profile?.wedding_county,
+      weddingTown: profile?.wedding_town,
+      primaryCounty: b.location_county,
+      primaryTown: b.location_town,
+      serviceAreas: b.service_areas,
+      travelScope: b.travel_scope,
+    });
+
+    const aBudget = getBudgetFit(weddingBudgetTotal, a.minimum_budget_kes, a.maximum_budget_kes);
+    const bBudget = getBudgetFit(weddingBudgetTotal, b.minimum_budget_kes, b.maximum_budget_kes);
+
+    const scoreA = aLocation.score + aBudget.score + (a.is_verified ? 1 : 0);
+    const scoreB = bLocation.score + bBudget.score + (b.is_verified ? 1 : 0);
+
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    return a.business_name.localeCompare(b.business_name);
   });
 
   const showPlannerTrust = profile?.role === 'planner' || profile?.role === 'admin';
@@ -257,6 +307,30 @@ export default function VendorDirectory() {
                     {v.location && (
                       <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                         <MapPin className="h-3 w-3" /> {v.location}
+                      </p>
+                    )}
+                    {profile?.wedding_county && (
+                      <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                        {getLocationMatch({
+                          weddingCounty: profile.wedding_county,
+                          weddingTown: profile.wedding_town,
+                          primaryCounty: v.location_county,
+                          primaryTown: v.location_town,
+                          serviceAreas: v.service_areas,
+                          travelScope: v.travel_scope,
+                        }).reasons.map((reason) => (
+                          <Badge key={reason} variant="outline" className="text-[10px]">{reason}</Badge>
+                        ))}
+                        {getBudgetFit(weddingBudgetTotal, v.minimum_budget_kes, v.maximum_budget_kes).label && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {getBudgetFit(weddingBudgetTotal, v.minimum_budget_kes, v.maximum_budget_kes).label}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                    {formatBudgetBand(v.minimum_budget_kes, v.maximum_budget_kes) && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Typical budget: {formatBudgetBand(v.minimum_budget_kes, v.maximum_budget_kes)}
                       </p>
                     )}
                     {v.description && (

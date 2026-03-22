@@ -13,6 +13,7 @@ import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
 import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 import { UserRoleChooserPanel } from '@/components/UserRoleChooser';
+import KenyaLocationFields from '@/components/KenyaLocationFields';
 
 export default function Auth() {
   const location = useLocation();
@@ -24,6 +25,10 @@ export default function Auth() {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<SignupRole>('couple');
   const [committeeName, setCommitteeName] = useState('');
+  const [weddingCounty, setWeddingCounty] = useState('');
+  const [weddingTown, setWeddingTown] = useState('');
+  const [primaryCounty, setPrimaryCounty] = useState('');
+  const [primaryTown, setPrimaryTown] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
@@ -146,6 +151,10 @@ export default function Auth() {
       if (isSignUp) {
         await signUp(email, password, fullName, role, {
           committeeName: role === 'committee' ? committeeName : null,
+          weddingCounty: role === 'couple' || role === 'committee' ? weddingCounty : null,
+          weddingTown: role === 'couple' || role === 'committee' ? weddingTown : null,
+          primaryCounty: role === 'planner' || role === 'vendor' ? primaryCounty : null,
+          primaryTown: role === 'planner' || role === 'vendor' ? primaryTown : null,
         });
         toast({ title: 'Account created!', description: 'Check your email to confirm your account.' });
       } else {
@@ -260,6 +269,42 @@ export default function Auth() {
                           onChange={(e) => setCommitteeName(e.target.value)}
                           placeholder="e.g. Mary & James Wedding Committee"
                           required
+                        />
+                      </div>
+                    )}
+                    {(role === 'couple' || role === 'committee') && (
+                      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">Where will the wedding happen?</p>
+                          <p className="text-xs text-muted-foreground">
+                            We’ll use this to match you with planners and vendors in the right area.
+                          </p>
+                        </div>
+                        <KenyaLocationFields
+                          county={weddingCounty}
+                          town={weddingTown}
+                          onCountyChange={setWeddingCounty}
+                          onTownChange={setWeddingTown}
+                          countyLabel="Wedding county"
+                          townLabel="Wedding town / area"
+                        />
+                      </div>
+                    )}
+                    {(role === 'planner' || role === 'vendor') && (
+                      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">Where is your business based?</p>
+                          <p className="text-xs text-muted-foreground">
+                            Couples will use this to find professionals near their wedding location.
+                          </p>
+                        </div>
+                        <KenyaLocationFields
+                          county={primaryCounty}
+                          town={primaryTown}
+                          onCountyChange={setPrimaryCounty}
+                          onTownChange={setPrimaryTown}
+                          countyLabel="Business county"
+                          townLabel="Town / area"
                         />
                       </div>
                     )}

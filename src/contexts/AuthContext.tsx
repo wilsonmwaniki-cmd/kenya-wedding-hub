@@ -11,6 +11,8 @@ interface Profile {
   partner_name: string | null;
   wedding_date: string | null;
   wedding_location: string | null;
+  wedding_county: string | null;
+  wedding_town: string | null;
   role: AppRole;
   company_name: string | null;
   company_email: string | null;
@@ -27,6 +29,12 @@ interface Profile {
   planner_subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
   planner_subscription_started_at: string | null;
   planner_subscription_expires_at: string | null;
+  primary_county: string | null;
+  primary_town: string | null;
+  service_areas: string[] | null;
+  travel_scope: 'local_only' | 'selected_counties' | 'nationwide' | null;
+  minimum_budget_kes: number | null;
+  maximum_budget_kes: number | null;
 }
 
 interface AuthContextType {
@@ -42,7 +50,13 @@ interface AuthContextType {
     password: string,
     fullName: string,
     role?: SignupRole,
-    options?: { committeeName?: string | null }
+    options?: {
+      committeeName?: string | null;
+      weddingCounty?: string | null;
+      weddingTown?: string | null;
+      primaryCounty?: string | null;
+      primaryTown?: string | null;
+    }
   ) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -147,6 +161,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     partner_name: null,
     wedding_date: null,
     wedding_location: null,
+    wedding_county: null,
+    wedding_town: null,
     role,
     company_name: null,
     company_email: authUser.email ?? null,
@@ -167,6 +183,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     planner_subscription_status: 'inactive',
     planner_subscription_started_at: null,
     planner_subscription_expires_at: null,
+    primary_county: null,
+    primary_town: null,
+    service_areas: [],
+    travel_scope: 'selected_counties',
+    minimum_budget_kes: null,
+    maximum_budget_kes: null,
   });
 
   const fetchProfile = async (userId: string) => {
@@ -355,9 +377,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     fullName: string,
     role: SignupRole = 'couple',
-    options?: { committeeName?: string | null },
+    options?: {
+      committeeName?: string | null;
+      weddingCounty?: string | null;
+      weddingTown?: string | null;
+      primaryCounty?: string | null;
+      primaryTown?: string | null;
+    },
   ) => {
     const isCommittee = role === 'committee';
+    const weddingCounty = options?.weddingCounty?.trim() || null;
+    const weddingTown = options?.weddingTown?.trim() || null;
+    const primaryCounty = options?.primaryCounty?.trim() || null;
+    const primaryTown = options?.primaryTown?.trim() || null;
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -367,6 +399,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: isCommittee ? 'planner' : role,
           planner_type: isCommittee ? 'committee' : role === 'planner' ? 'professional' : null,
           committee_name: isCommittee ? options?.committeeName ?? null : null,
+          wedding_county: weddingCounty,
+          wedding_town: weddingTown,
+          wedding_location: weddingTown || weddingCounty ? [weddingTown, weddingCounty].filter(Boolean).join(', ') : null,
+          primary_county: primaryCounty,
+          primary_town: primaryTown,
         },
         emailRedirectTo: window.location.origin,
       },

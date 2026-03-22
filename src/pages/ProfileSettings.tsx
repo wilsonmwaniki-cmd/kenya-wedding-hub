@@ -13,6 +13,8 @@ import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyh
 import AvatarUpload from '@/components/AvatarUpload';
 import { committeeResponsibilityOptions } from '@/lib/committeeRoles';
 import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
+import KenyaLocationFields from '@/components/KenyaLocationFields';
+import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 
@@ -34,6 +36,7 @@ export default function ProfileSettings() {
     responsibility: committeeResponsibilityOptions[0],
     permission_level: 'member' as CommitteeMember['permission_level'],
   });
+  const [serviceAreaDraft, setServiceAreaDraft] = useState('');
 
   const isPlanner = profile?.role === 'planner';
   const isVendor = profile?.role === 'vendor';
@@ -46,6 +49,8 @@ export default function ProfileSettings() {
     partner_name: '',
     wedding_date: '',
     wedding_location: '',
+    wedding_county: '',
+    wedding_town: '',
     company_name: '',
     company_email: '',
     company_phone: '',
@@ -53,6 +58,12 @@ export default function ProfileSettings() {
     bio: '',
     specialties: [] as string[],
     committee_name: '',
+    primary_county: '',
+    primary_town: '',
+    service_areas: [] as string[],
+    travel_scope: 'selected_counties',
+    minimum_budget_kes: '',
+    maximum_budget_kes: '',
   });
 
   useEffect(() => {
@@ -62,6 +73,8 @@ export default function ProfileSettings() {
         partner_name: profile.partner_name || '',
         wedding_date: profile.wedding_date || '',
         wedding_location: profile.wedding_location || '',
+        wedding_county: profile.wedding_county || '',
+        wedding_town: profile.wedding_town || '',
         company_name: profile.company_name || '',
         company_email: profile.company_email || '',
         company_phone: profile.company_phone || '',
@@ -69,6 +82,12 @@ export default function ProfileSettings() {
         bio: profile.bio || '',
         specialties: profile.specialties || [],
         committee_name: profile.committee_name || '',
+        primary_county: profile.primary_county || '',
+        primary_town: profile.primary_town || '',
+        service_areas: profile.service_areas || [],
+        travel_scope: profile.travel_scope || 'selected_counties',
+        minimum_budget_kes: profile.minimum_budget_kes != null ? String(profile.minimum_budget_kes) : '',
+        maximum_budget_kes: profile.maximum_budget_kes != null ? String(profile.maximum_budget_kes) : '',
       });
     }
   }, [profile]);
@@ -110,12 +129,23 @@ export default function ProfileSettings() {
         updates.company_website = form.company_website;
         updates.bio = form.bio;
         updates.specialties = form.specialties;
+        updates.primary_county = form.primary_county || null;
+        updates.primary_town = form.primary_town || null;
+        updates.service_areas = form.service_areas;
+        updates.travel_scope = form.travel_scope;
+        updates.minimum_budget_kes = form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null;
+        updates.maximum_budget_kes = form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null;
       } else if (isCommittee) {
         updates.committee_name = form.committee_name;
+        updates.wedding_county = form.wedding_county || null;
+        updates.wedding_town = form.wedding_town || null;
+        updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
       } else if (!isVendor && !isAdmin) {
         updates.partner_name = form.partner_name;
         updates.wedding_date = form.wedding_date;
-        updates.wedding_location = form.wedding_location;
+        updates.wedding_county = form.wedding_county || null;
+        updates.wedding_town = form.wedding_town || null;
+        updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
       }
       await updateProfile(updates);
       toast({ title: 'Profile updated!' });
@@ -136,6 +166,16 @@ export default function ProfileSettings() {
 
   const removeSpecialty = (s: string) => {
     setForm(f => ({ ...f, specialties: f.specialties.filter(x => x !== s) }));
+  };
+
+  const addServiceArea = () => {
+    if (!serviceAreaDraft || form.service_areas.includes(serviceAreaDraft)) return;
+    setForm((prev) => ({ ...prev, service_areas: [...prev.service_areas, serviceAreaDraft] }));
+    setServiceAreaDraft('');
+  };
+
+  const removeServiceArea = (county: string) => {
+    setForm((prev) => ({ ...prev, service_areas: prev.service_areas.filter((area) => area !== county) }));
   };
 
   const profileUrl = profile ? `${window.location.origin}/planner/${profile.id}` : '';
@@ -349,6 +389,14 @@ export default function ProfileSettings() {
                     <Input value={form.company_website} onChange={e => setForm(f => ({ ...f, company_website: e.target.value }))} placeholder="https://yourcompany.com" />
                   </div>
                 </div>
+                <KenyaLocationFields
+                  county={form.primary_county}
+                  town={form.primary_town}
+                  onCountyChange={(value) => setForm((f) => ({ ...f, primary_county: value }))}
+                  onTownChange={(value) => setForm((f) => ({ ...f, primary_town: value }))}
+                  countyLabel="Primary county"
+                  townLabel="Primary town / area"
+                />
               </CardContent>
             </Card>
 
@@ -394,6 +442,86 @@ export default function ProfileSettings() {
                     </div>
                   )}
                 </div>
+                <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-4">
+                  <div className="space-y-1">
+                    <Label>Service Areas</Label>
+                    <p className="text-xs text-muted-foreground">Choose counties where you are willing to take weddings.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      value={serviceAreaDraft}
+                      onChange={(e) => setServiceAreaDraft(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">Select county</option>
+                      {kenyaCounties
+                        .filter((county) => !form.service_areas.includes(county))
+                        .map((county) => (
+                          <option key={county} value={county}>{county}</option>
+                        ))}
+                    </select>
+                    <Button type="button" variant="outline" onClick={addServiceArea} disabled={!serviceAreaDraft}>
+                      Add
+                    </Button>
+                  </div>
+                  {form.service_areas.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {form.service_areas.map((county) => (
+                        <Badge key={county} variant="secondary" className="gap-1 pr-1">
+                          {county}
+                          <button type="button" onClick={() => removeServiceArea(county)} className="ml-1 rounded-full hover:bg-muted p-0.5">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label>Travel Scope</Label>
+                      <select
+                        value={form.travel_scope}
+                        onChange={(e) => setForm((prev) => ({ ...prev, travel_scope: e.target.value }))}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        {travelScopeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Minimum Budget (KES)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={form.minimum_budget_kes}
+                        onChange={(e) => setForm((prev) => ({ ...prev, minimum_budget_kes: e.target.value }))}
+                        placeholder="e.g. 150000"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Maximum Budget (KES)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={form.maximum_budget_kes}
+                        onChange={(e) => setForm((prev) => ({ ...prev, maximum_budget_kes: e.target.value }))}
+                        placeholder="e.g. 800000"
+                      />
+                    </div>
+                  </div>
+                  {formatBudgetBand(
+                    form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null,
+                    form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null,
+                  ) && (
+                    <p className="text-xs text-muted-foreground">
+                      Public budget band: {formatBudgetBand(
+                        form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null,
+                        form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null,
+                      )}
+                    </p>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </>
@@ -413,6 +541,14 @@ export default function ProfileSettings() {
                     placeholder="e.g. Mary & James Wedding Committee"
                   />
                 </div>
+                <KenyaLocationFields
+                  county={form.wedding_county}
+                  town={form.wedding_town}
+                  onCountyChange={(value) => setForm((f) => ({ ...f, wedding_county: value }))}
+                  onTownChange={(value) => setForm((f) => ({ ...f, wedding_town: value }))}
+                  countyLabel="Wedding county"
+                  townLabel="Wedding town / area"
+                />
               </CardContent>
             </Card>
 
@@ -537,10 +673,14 @@ export default function ProfileSettings() {
                 <Label>Wedding Date</Label>
                 <Input type="date" value={form.wedding_date} onChange={e => setForm(f => ({ ...f, wedding_date: e.target.value }))} />
               </div>
-              <div className="space-y-2">
-                <Label>Wedding Location</Label>
-                <Input value={form.wedding_location} onChange={e => setForm(f => ({ ...f, wedding_location: e.target.value }))} placeholder="e.g. Nairobi, Mombasa, Naivasha" />
-              </div>
+              <KenyaLocationFields
+                county={form.wedding_county}
+                town={form.wedding_town}
+                onCountyChange={(value) => setForm((f) => ({ ...f, wedding_county: value }))}
+                onTownChange={(value) => setForm((f) => ({ ...f, wedding_town: value }))}
+                countyLabel="Wedding county"
+                townLabel="Wedding town / area"
+              />
             </CardContent>
           </Card>
         ) : null}

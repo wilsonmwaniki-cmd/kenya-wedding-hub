@@ -12,6 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole } from 'lucide-react';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { vendorAccessMessage, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
+import KenyaLocationFields from '@/components/KenyaLocationFields';
+import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -36,6 +38,12 @@ interface VendorListing {
   social_facebook: string | null;
   social_tiktok: string | null;
   social_twitter: string | null;
+  location_county: string | null;
+  location_town: string | null;
+  service_areas: string[];
+  travel_scope: 'local_only' | 'selected_counties' | 'nationwide';
+  minimum_budget_kes: number | null;
+  maximum_budget_kes: number | null;
 }
 
 export default function VendorSettings() {
@@ -52,13 +60,20 @@ export default function VendorSettings() {
     email: '',
     website: '',
     location: '',
+    location_county: '',
+    location_town: '',
     services: [] as string[],
     social_instagram: '',
     social_facebook: '',
     social_tiktok: '',
     social_twitter: '',
+    service_areas: [] as string[],
+    travel_scope: 'selected_counties' as const,
+    minimum_budget_kes: '',
+    maximum_budget_kes: '',
   });
   const [newService, setNewService] = useState('');
+  const [serviceAreaDraft, setServiceAreaDraft] = useState('');
   const [reputationLoading, setReputationLoading] = useState(false);
   const [reputationOverview, setReputationOverview] = useState<VendorReputationOverview | null>(null);
   const [requestingVerification, setRequestingVerification] = useState(false);
@@ -83,11 +98,17 @@ export default function VendorSettings() {
           email: data.email || '',
           website: data.website || '',
           location: data.location || '',
+          location_county: (data as any).location_county || '',
+          location_town: (data as any).location_town || '',
           services: (data.services as string[]) || [],
           social_instagram: (data as any).social_instagram || '',
           social_facebook: (data as any).social_facebook || '',
           social_tiktok: (data as any).social_tiktok || '',
           social_twitter: (data as any).social_twitter || '',
+          service_areas: ((data as any).service_areas as string[]) || [],
+          travel_scope: ((data as any).travel_scope as VendorListing['travel_scope']) || 'selected_counties',
+          minimum_budget_kes: (data as any).minimum_budget_kes != null ? String((data as any).minimum_budget_kes) : '',
+          maximum_budget_kes: (data as any).maximum_budget_kes != null ? String((data as any).maximum_budget_kes) : '',
         });
       }
       setLoading(false);
@@ -133,12 +154,18 @@ export default function VendorSettings() {
       phone: form.phone || null,
       email: form.email || null,
       website: form.website || null,
-      location: form.location || null,
+      location: buildKenyaLocationLabel(form.location_county, form.location_town),
+      location_county: form.location_county || null,
+      location_town: form.location_town || null,
       services: form.services,
       social_instagram: form.social_instagram || null,
       social_facebook: form.social_facebook || null,
       social_tiktok: form.social_tiktok || null,
       social_twitter: form.social_twitter || null,
+      service_areas: form.service_areas,
+      travel_scope: form.travel_scope,
+      minimum_budget_kes: form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null,
+      maximum_budget_kes: form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null,
     };
 
     let error;
@@ -169,6 +196,16 @@ export default function VendorSettings() {
 
   const removeService = (s: string) => {
     setForm((f) => ({ ...f, services: f.services.filter((x) => x !== s) }));
+  };
+
+  const addServiceArea = () => {
+    if (!serviceAreaDraft || form.service_areas.includes(serviceAreaDraft)) return;
+    setForm((prev) => ({ ...prev, service_areas: [...prev.service_areas, serviceAreaDraft] }));
+    setServiceAreaDraft('');
+  };
+
+  const removeServiceArea = (county: string) => {
+    setForm((prev) => ({ ...prev, service_areas: prev.service_areas.filter((item) => item !== county) }));
   };
 
   const handleRequestVerification = async () => {
@@ -455,10 +492,19 @@ export default function VendorSettings() {
                 <Input value={form.website} onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} placeholder="https://..." />
               </div>
               <div className="space-y-2">
-                <Label>Location</Label>
-                <Input value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} placeholder="Nairobi, Kenya" />
+                <Label>Displayed location</Label>
+                <Input value={buildKenyaLocationLabel(form.location_county, form.location_town) || ''} readOnly placeholder="Choose county and town below" />
               </div>
             </div>
+
+            <KenyaLocationFields
+              county={form.location_county}
+              town={form.location_town}
+              onCountyChange={(value) => setForm((f) => ({ ...f, location_county: value }))}
+              onTownChange={(value) => setForm((f) => ({ ...f, location_town: value }))}
+              countyLabel="Primary county"
+              townLabel="Town / area"
+            />
 
             <div className="space-y-2">
               <Label>Services / Tags</Label>
@@ -482,6 +528,90 @@ export default function VendorSettings() {
                     </Badge>
                   ))}
                 </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-4">
+              <div className="space-y-1">
+                <Label>Service Areas & Budget Fit</Label>
+                <p className="text-xs text-muted-foreground">
+                  This helps couples find vendors near their wedding location and within budget.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <select
+                  value={serviceAreaDraft}
+                  onChange={(e) => setServiceAreaDraft(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Select county</option>
+                  {kenyaCounties
+                    .filter((county) => !form.service_areas.includes(county))
+                    .map((county) => (
+                      <option key={county} value={county}>{county}</option>
+                    ))}
+                </select>
+                <Button type="button" variant="outline" onClick={addServiceArea} disabled={!serviceAreaDraft}>
+                  Add
+                </Button>
+              </div>
+              {form.service_areas.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {form.service_areas.map((county) => (
+                    <Badge key={county} variant="secondary" className="gap-1">
+                      {county}
+                      <button type="button" onClick={() => removeServiceArea(county)}>
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Travel Scope</Label>
+                  <select
+                    value={form.travel_scope}
+                    onChange={(e) => setForm((prev) => ({ ...prev, travel_scope: e.target.value as VendorListing['travel_scope'] }))}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {travelScopeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Minimum Job Budget (KES)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={form.minimum_budget_kes}
+                    onChange={(e) => setForm((prev) => ({ ...prev, minimum_budget_kes: e.target.value }))}
+                    placeholder="e.g. 60000"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Maximum Job Budget (KES)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={form.maximum_budget_kes}
+                    onChange={(e) => setForm((prev) => ({ ...prev, maximum_budget_kes: e.target.value }))}
+                    placeholder="e.g. 300000"
+                  />
+                </div>
+              </div>
+              {formatBudgetBand(
+                form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null,
+                form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null,
+              ) && (
+                <p className="text-xs text-muted-foreground">
+                  Public budget band: {formatBudgetBand(
+                    form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null,
+                    form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null,
+                  )}
+                </p>
               )}
             </div>
 
