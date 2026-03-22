@@ -381,10 +381,34 @@ function InlineAuthForm() {
   };
 
   const roles = [
-    { value: 'couple' as const, icon: Users, label: 'Couple', sub: 'Plan your wedding' },
-    { value: 'planner' as const, icon: Briefcase, label: 'Planner', sub: 'Manage clients' },
-    { value: 'committee' as const, icon: UserCog, label: 'Committee', sub: 'Run one wedding together' },
-    { value: 'vendor' as const, icon: Store, label: 'Vendor', sub: 'List your business' },
+    {
+      value: 'couple' as const,
+      icon: Users,
+      title: "I'm planning my own wedding",
+      description: 'For a bride, groom, or partner managing budget, vendors, guests, and tasks.',
+      helper: 'Choose: Couple',
+    },
+    {
+      value: 'planner' as const,
+      icon: Briefcase,
+      title: "I'm a professional planner",
+      description: 'For planners and coordinators managing weddings for clients.',
+      helper: 'Choose: Planner',
+    },
+    {
+      value: 'committee' as const,
+      icon: UserCog,
+      title: "I'm part of a wedding committee",
+      description: 'For a chair, sibling, cousin, or family organizer helping run one wedding together.',
+      helper: 'Choose: Wedding Committee',
+    },
+    {
+      value: 'vendor' as const,
+      icon: Store,
+      title: "I'm a vendor",
+      description: 'For photographers, caterers, florists, DJs, venues, decor teams, and other service providers.',
+      helper: 'Choose: Vendor',
+    },
   ];
 
   return (
@@ -442,33 +466,42 @@ function InlineAuthForm() {
         {isSignUp && (
           <>
           <div className="space-y-1.5">
-              <Label htmlFor="hero-name" className="text-xs">{role === 'committee' ? 'Chairperson Name' : 'Full Name'}</Label>
+              <Label htmlFor="hero-name" className="text-xs">{role === 'committee' ? 'Committee Chair Name' : 'Full Name'}</Label>
               <Input
                 id="hero-name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder={role === 'committee' ? 'Committee chair full name' : 'Your full name'}
+                placeholder={role === 'committee' ? 'The main person coordinating the committee' : 'Your full name'}
                 required
                 className="h-9 text-sm"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Account Type</Label>
-              <div className="grid grid-cols-2 gap-1.5">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs">How will you use Zania?</Label>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Pick the option that best matches what you want to do first.
+                </p>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Most people choose <span className="font-medium text-foreground">Couple</span> for their own wedding, and <span className="font-medium text-foreground">Wedding Committee</span> for a family-led wedding.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {roles.map((r) => (
                   <button
                     key={r.value}
                     type="button"
                     onClick={() => setRole(r.value)}
-                    className={`flex flex-col items-center gap-1 rounded-lg border-2 p-2 transition-colors ${
+                    className={`flex flex-col items-start gap-2 rounded-xl border-2 p-3 text-left transition-colors ${
                       role === r.value
                         ? 'border-primary bg-primary/5 text-primary'
                         : 'border-border text-muted-foreground hover:border-primary/50'
                     }`}
                   >
                     <r.icon className="h-4 w-4" />
-                    <span className="text-xs font-medium">{r.label}</span>
-                    <span className="text-[10px] leading-tight text-center opacity-80">{r.sub}</span>
+                    <span className="text-xs font-semibold leading-tight text-foreground">{r.title}</span>
+                    <span className="text-[10px] leading-relaxed text-muted-foreground">{r.description}</span>
+                    <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-primary">{r.helper}</span>
                   </button>
                 ))}
               </div>
