@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { motion } from 'framer-motion';
 import { Heart, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
@@ -26,6 +27,7 @@ export default function Auth() {
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+  const rolePanelRef = useRef<HTMLDivElement | null>(null);
   const { signIn, signUp, signInWithGoogle, user, profile, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -50,6 +52,19 @@ export default function Auth() {
       setRole(state.role);
     }
   }, [location.state]);
+
+  useEffect(() => {
+    if (!hasHomepageCarryover || !isSignUp || !rolePanelRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      rolePanelRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 220);
+
+    return () => window.clearTimeout(timer);
+  }, [hasHomepageCarryover, isSignUp]);
 
   useEffect(() => {
     if (loading || !user || !profile?.role || redirecting) return;
@@ -221,14 +236,21 @@ export default function Auth() {
                         required
                       />
                     </div>
-                    <UserRoleChooserPanel
-                      value={role}
-                      onChange={setRole}
-                      eyebrow="Start here"
-                      title="Create your account"
-                      description="Choose the option that best matches how you want to get started."
-                      emphasizeSelected={hasHomepageCarryover}
-                    />
+                    <motion.div
+                      ref={rolePanelRef}
+                      initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
+                      animate={hasHomepageCarryover ? { opacity: 1, y: 0, scale: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                      <UserRoleChooserPanel
+                        value={role}
+                        onChange={setRole}
+                        eyebrow="Start here"
+                        title="Create your account"
+                        description="Choose the option that best matches how you want to get started."
+                        emphasizeSelected={hasHomepageCarryover}
+                      />
+                    </motion.div>
                     {role === 'committee' && (
                       <div className="space-y-2">
                         <Label htmlFor="committee-name">Committee Name</Label>
