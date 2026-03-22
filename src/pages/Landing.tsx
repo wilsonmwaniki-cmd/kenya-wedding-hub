@@ -15,7 +15,7 @@ import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
 import { saveEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
-import { UserRoleChooser } from '@/components/UserRoleChooser';
+import { UserRoleChooser, UserRoleChooserPanel } from '@/components/UserRoleChooser';
 
 const features = [
   { icon: Wallet, title: 'Budget Tracking', desc: 'Keep your wedding finances organized with category-level tracking.' },
@@ -527,33 +527,28 @@ function QuickSignupChooser() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: 0.4 }}
-      className="rounded-[28px] border border-border/60 bg-card/95 p-5 shadow-warm backdrop-blur-sm"
     >
-      <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Start here</p>
-        <h3 className="font-display text-2xl font-semibold text-card-foreground">Create your account</h3>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Pick the option that best matches how you&apos;ll use Zania. Most new users choose Couple or Wedding Committee.
-        </p>
-      </div>
-
-      <div className="mt-4">
-        <UserRoleChooser value={selectedRole} onChange={setSelectedRole} />
-      </div>
-
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <Button className="flex-1 gap-2" onClick={() => openAuth('signup')}>
-          Create account
-          <ArrowRight className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="outline"
-          className="flex-1"
-          onClick={() => openAuth('signin')}
-        >
-          I already have an account
-        </Button>
-      </div>
+      <UserRoleChooserPanel
+        value={selectedRole}
+        onChange={setSelectedRole}
+        eyebrow="Start here"
+        title="Create your account"
+        description="Choose the option that best matches how you want to get started."
+      >
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button className="flex-1 gap-2" onClick={() => openAuth('signup')}>
+            Create account
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => openAuth('signin')}
+          >
+            I already have an account
+          </Button>
+        </div>
+      </UserRoleChooserPanel>
     </motion.div>
   );
 }

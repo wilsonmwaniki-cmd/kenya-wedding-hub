@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
 import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
-import { UserRoleChooser } from '@/components/UserRoleChooser';
+import { UserRoleChooserPanel } from '@/components/UserRoleChooser';
 
 export default function Auth() {
   const location = useLocation();
@@ -205,21 +205,13 @@ export default function Auth() {
                         required
                       />
                     </div>
-                    <div className="space-y-3">
-                      <div className="space-y-1">
-                        <Label>How will you use Zania?</Label>
-                        <p className="text-sm text-muted-foreground">
-                          Choose the option that best matches what you want to do first.
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Most people pick <span className="font-medium text-foreground">Couple</span> when planning their own wedding, and <span className="font-medium text-foreground">Wedding Committee</span> for a family-led wedding.
-                        </p>
-                      </div>
-                      <UserRoleChooser
-                        value={role}
-                        onChange={setRole}
-                      />
-                    </div>
+                    <UserRoleChooserPanel
+                      value={role}
+                      onChange={setRole}
+                      eyebrow="Start here"
+                      title="How will you use Zania?"
+                      description="Choose the option that best matches how you want to get started."
+                    />
                     {role === 'committee' && (
                       <div className="space-y-2">
                         <Label htmlFor="committee-name">Committee Name</Label>

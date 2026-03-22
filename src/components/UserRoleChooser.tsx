@@ -1,4 +1,5 @@
 import { Briefcase, Store, UserCog, Users } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { SignupRole } from '@/lib/roles';
 
 type UserRoleChooserProps = {
@@ -8,6 +9,17 @@ type UserRoleChooserProps = {
   cardClassName?: string;
   selectedCardClassName?: string;
   unselectedCardClassName?: string;
+};
+
+type UserRoleChooserPanelProps = {
+  value: SignupRole;
+  onChange: (role: SignupRole) => void;
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+  helperText?: ReactNode;
+  className?: string;
+  children?: ReactNode;
 };
 
 const roleOptions = [
@@ -68,3 +80,35 @@ export function UserRoleChooser({
   );
 }
 
+export function UserRoleChooserPanel({
+  value,
+  onChange,
+  eyebrow = 'Start here',
+  title = 'How will you use Zania?',
+  description = 'Choose the option that best matches what you want to do first.',
+  helperText = (
+    <>
+      Most people choose <span className="font-medium text-foreground">Couple</span> for their own wedding, and{' '}
+      <span className="font-medium text-foreground">Wedding Committee</span> for a family-led wedding.
+    </>
+  ),
+  className = '',
+  children,
+}: UserRoleChooserPanelProps) {
+  return (
+    <div className={`rounded-[28px] border border-border/60 bg-card/95 p-5 shadow-warm backdrop-blur-sm ${className}`.trim()}>
+      <div className="space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">{eyebrow}</p>
+        <h3 className="font-display text-2xl font-semibold text-card-foreground">{title}</h3>
+        <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{helperText}</p>
+      </div>
+
+      <div className="mt-4">
+        <UserRoleChooser value={value} onChange={onChange} />
+      </div>
+
+      {children ? <div className="mt-4">{children}</div> : null}
+    </div>
+  );
+}
