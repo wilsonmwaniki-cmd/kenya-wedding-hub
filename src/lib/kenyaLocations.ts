@@ -151,13 +151,13 @@ export function getLocationMatch(input: LocationMatchInput) {
     reasons.push('Near your wedding location');
   } else if (primaryCounty && weddingCounty.toLowerCase() === primaryCounty.toLowerCase()) {
     score += 4;
-    reasons.push('Based in your wedding county');
+    reasons.push('Serves your county');
   } else if (serviceAreas.some((area) => area.toLowerCase() === weddingCounty.toLowerCase())) {
     score += 3;
-    reasons.push('Works in your county');
+    reasons.push('Serves your county');
   } else if (input.travelScope === 'nationwide') {
     score += 1;
-    reasons.push('Travels nationwide');
+    reasons.push('Available nationwide');
   }
 
   return { score, reasons };
@@ -191,4 +191,3 @@ export function formatBudgetBand(minimumBudgetKes?: number | null, maximumBudget
   if (minimumBudgetKes != null) return `From ${min}`;
   return `Up to ${max}`;
 }
-

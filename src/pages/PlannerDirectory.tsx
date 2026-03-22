@@ -7,9 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Heart, Search, ArrowRight, Loader2, UserCircle, ArrowLeft, MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { formatBudgetBand, getBudgetFit, getLocationMatch } from '@/lib/kenyaLocations';
+import { formatBudgetBand, getBudgetFit, getLocationMatch, getTownsForCounty, kenyaCounties } from '@/lib/kenyaLocations';
 
 interface PlannerItem {
   id: string;
@@ -34,6 +35,8 @@ export default function PlannerDirectory() {
   const [planners, setPlanners] = useState<PlannerItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [locationCounty, setLocationCounty] = useState('all');
+  const [locationTown, setLocationTown] = useState('all');
   const [weddingBudgetTotal, setWeddingBudgetTotal] = useState<number | null>(null);
 
   useEffect(() => {
@@ -63,7 +66,17 @@ export default function PlannerDirectory() {
     void loadBudgetTotal();
   }, [user, profile?.role, profile?.planner_type]);
 
+  const availableTowns = locationCounty === 'all' ? [] : getTownsForCounty(locationCounty);
+
   const filtered = planners.filter((p) => {
+    if (locationCounty !== 'all') {
+      const servesCounty =
+        p.primary_county?.toLowerCase() === locationCounty.toLowerCase() ||
+        p.service_areas?.some((area) => area.toLowerCase() === locationCounty.toLowerCase()) ||
+        p.travel_scope === 'nationwide';
+      if (!servesCounty) return false;
+    }
+    if (locationTown !== 'all' && p.primary_town?.toLowerCase() !== locationTown.toLowerCase()) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -137,9 +150,9 @@ export default function PlannerDirectory() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="mx-auto mt-8 max-w-md"
+          className="mx-auto mt-8 flex max-w-5xl flex-col gap-3 md:flex-row"
         >
-          <div className="relative">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search by name or specialty…"
@@ -148,6 +161,34 @@ export default function PlannerDirectory() {
               className="pl-10"
             />
           </div>
+          <Select
+            value={locationCounty}
+            onValueChange={(value) => {
+              setLocationCounty(value);
+              setLocationTown('all');
+            }}
+          >
+            <SelectTrigger className="w-full md:w-44">
+              <SelectValue placeholder="All counties" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All counties</SelectItem>
+              {kenyaCounties.map((county) => (
+                <SelectItem key={county} value={county}>{county}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={locationTown} onValueChange={setLocationTown} disabled={locationCounty === 'all'}>
+            <SelectTrigger className="w-full md:w-40">
+              <SelectValue placeholder="All towns" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All towns</SelectItem>
+              {availableTowns.map((town) => (
+                <SelectItem key={town} value={town}>{town}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </motion.div>
       </section>
 
@@ -159,11 +200,28 @@ export default function PlannerDirectory() {
           </div>
         ) : filtered.length === 0 ? (
           <p className="py-20 text-center text-muted-foreground">
-            {search ? 'No planners match your search.' : 'No planners have registered yet.'}
+            {search || locationCounty !== 'all' || locationTown !== 'all'
+              ? 'No planners match your search or location filters.'
+              : 'No planners have registered yet.'}
           </p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((p, i) => (
+              (() => {
+                const locationMatch = getLocationMatch({
+                  weddingCounty: profile?.wedding_county,
+                  weddingTown: profile?.wedding_town,
+                  primaryCounty: p.primary_county,
+                  primaryTown: p.primary_town,
+                  serviceAreas: p.service_areas,
+                  travelScope: p.travel_scope,
+                });
+                const budgetFit = getBudgetFit(weddingBudgetTotal, p.minimum_budget_kes, p.maximum_budget_kes);
+                const matchReasons = [...locationMatch.reasons];
+                if (budgetFit.label) matchReasons.push(budgetFit.label);
+                const uniqueReasons = [...new Set(matchReasons)];
+
+                return (
               <motion.div
                 key={p.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -199,23 +257,14 @@ export default function PlannerDirectory() {
                           {[p.primary_town, p.primary_county].filter(Boolean).join(', ')}
                         </p>
                       )}
-                      {profile?.wedding_county && (
-                        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                          {getLocationMatch({
-                            weddingCounty: profile.wedding_county,
-                            weddingTown: profile.wedding_town,
-                            primaryCounty: p.primary_county,
-                            primaryTown: p.primary_town,
-                            serviceAreas: p.service_areas,
-                            travelScope: p.travel_scope,
-                          }).reasons.map((reason) => (
-                            <Badge key={reason} variant="outline" className="text-[10px]">{reason}</Badge>
-                          ))}
-                          {getBudgetFit(weddingBudgetTotal, p.minimum_budget_kes, p.maximum_budget_kes).label && (
-                            <Badge variant="outline" className="text-[10px]">
-                              {getBudgetFit(weddingBudgetTotal, p.minimum_budget_kes, p.maximum_budget_kes).label}
-                            </Badge>
-                          )}
+                      {uniqueReasons.length > 0 && (
+                        <div className="mt-2 w-full rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-left">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Why this match
+                          </p>
+                          <p className="mt-1 text-xs text-foreground">
+                            {uniqueReasons.join(' · ')}
+                          </p>
                         </div>
                       )}
                       {p.specialties && p.specialties.length > 0 && (
@@ -240,6 +289,8 @@ export default function PlannerDirectory() {
                   </Card>
                 </Link>
               </motion.div>
+                );
+              })()
             ))}
           </div>
         )}

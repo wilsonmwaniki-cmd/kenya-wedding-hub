@@ -13,7 +13,7 @@ import { motion } from 'framer-motion';
 import VendorInterestButton from '@/components/VendorInterestButton';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { vendorHasFullAccess } from '@/lib/vendorAccess';
-import { formatBudgetBand, getBudgetFit, getLocationMatch } from '@/lib/kenyaLocations';
+import { formatBudgetBand, getBudgetFit, getLocationMatch, getTownsForCounty, kenyaCounties } from '@/lib/kenyaLocations';
 
 const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -45,6 +45,8 @@ export default function VendorDirectory() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
+  const [locationCounty, setLocationCounty] = useState('all');
+  const [locationTown, setLocationTown] = useState('all');
   const [requestStatuses, setRequestStatuses] = useState<Record<string, string>>({});
   const [vendorRatings, setVendorRatings] = useState<Record<string, { avg: number; count: number }>>({});
   const [trustLoading, setTrustLoading] = useState(false);
@@ -150,8 +152,18 @@ export default function VendorDirectory() {
     loadStatuses();
   }, [user]);
 
+  const availableTowns = locationCounty === 'all' ? [] : getTownsForCounty(locationCounty);
+
   const filtered = vendors.filter((v) => {
     if (category !== 'All' && v.category !== category) return false;
+    if (locationCounty !== 'all') {
+      const servesCounty =
+        v.location_county?.toLowerCase() === locationCounty.toLowerCase() ||
+        v.service_areas?.some((area) => area.toLowerCase() === locationCounty.toLowerCase()) ||
+        v.travel_scope === 'nationwide';
+      if (!servesCounty) return false;
+    }
+    if (locationTown !== 'all' && v.location_town?.toLowerCase() !== locationTown.toLowerCase()) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (
@@ -232,7 +244,7 @@ export default function VendorDirectory() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="mx-auto mt-8 flex max-w-lg gap-3"
+          className="mx-auto mt-8 flex max-w-5xl flex-col gap-3 md:flex-row"
         >
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -244,12 +256,40 @@ export default function VendorDirectory() {
             />
           </div>
           <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-full md:w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {vendorCategories.map((c) => (
                 <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={locationCounty}
+            onValueChange={(value) => {
+              setLocationCounty(value);
+              setLocationTown('all');
+            }}
+          >
+            <SelectTrigger className="w-full md:w-44">
+              <SelectValue placeholder="All counties" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All counties</SelectItem>
+              {kenyaCounties.map((county) => (
+                <SelectItem key={county} value={county}>{county}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={locationTown} onValueChange={setLocationTown} disabled={locationCounty === 'all'}>
+            <SelectTrigger className="w-full md:w-40">
+              <SelectValue placeholder="All towns" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All towns</SelectItem>
+              {availableTowns.map((town) => (
+                <SelectItem key={town} value={town}>{town}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -273,11 +313,28 @@ export default function VendorDirectory() {
           </div>
         ) : filtered.length === 0 ? (
           <p className="py-20 text-center text-muted-foreground">
-            {search || category !== 'All' ? 'No vendors match your search.' : 'No vendors listed yet. Be the first!'}
+            {search || category !== 'All' || locationCounty !== 'all' || locationTown !== 'all'
+              ? 'No vendors match your search or location filters.'
+              : 'No vendors listed yet. Be the first!'}
           </p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((v, i) => (
+              (() => {
+                const locationMatch = getLocationMatch({
+                  weddingCounty: profile?.wedding_county,
+                  weddingTown: profile?.wedding_town,
+                  primaryCounty: v.location_county,
+                  primaryTown: v.location_town,
+                  serviceAreas: v.service_areas,
+                  travelScope: v.travel_scope,
+                });
+                const budgetFit = getBudgetFit(weddingBudgetTotal, v.minimum_budget_kes, v.maximum_budget_kes);
+                const matchReasons = [...locationMatch.reasons];
+                if (budgetFit.label) matchReasons.push(budgetFit.label);
+                const uniqueReasons = [...new Set(matchReasons)];
+
+                return (
               <motion.div
                 key={v.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -309,23 +366,14 @@ export default function VendorDirectory() {
                         <MapPin className="h-3 w-3" /> {v.location}
                       </p>
                     )}
-                    {profile?.wedding_county && (
-                      <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                        {getLocationMatch({
-                          weddingCounty: profile.wedding_county,
-                          weddingTown: profile.wedding_town,
-                          primaryCounty: v.location_county,
-                          primaryTown: v.location_town,
-                          serviceAreas: v.service_areas,
-                          travelScope: v.travel_scope,
-                        }).reasons.map((reason) => (
-                          <Badge key={reason} variant="outline" className="text-[10px]">{reason}</Badge>
-                        ))}
-                        {getBudgetFit(weddingBudgetTotal, v.minimum_budget_kes, v.maximum_budget_kes).label && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {getBudgetFit(weddingBudgetTotal, v.minimum_budget_kes, v.maximum_budget_kes).label}
-                          </Badge>
-                        )}
+                    {uniqueReasons.length > 0 && (
+                      <div className="mt-2 w-full rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-left">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Why this match
+                        </p>
+                        <p className="mt-1 text-xs text-foreground">
+                          {uniqueReasons.join(' · ')}
+                        </p>
                       </div>
                     )}
                     {formatBudgetBand(v.minimum_budget_kes, v.maximum_budget_kes) && (
@@ -412,6 +460,8 @@ export default function VendorDirectory() {
                   </CardContent>
                 </Card>
               </motion.div>
+                );
+              })()
             ))}
           </div>
         )}
