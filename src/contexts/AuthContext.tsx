@@ -70,6 +70,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const ROLE_PREVIEW_STORAGE_KEY = 'zania-admin-role-preview';
 export type RolePreview = 'admin' | 'couple' | 'vendor' | 'planner' | 'committee';
 
+type RequestedSignupState = {
+  role: AppRole;
+  plannerType: PlannerType | null;
+  committeeName: string | null;
+} | null;
+
 const plannerPreviewExpiry = () => {
   const nextYear = new Date();
   nextYear.setFullYear(nextYear.getFullYear() + 1);
@@ -153,6 +159,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .role as AppRole;
   };
 
+  const getRequestedSignupState = (authUser: User): RequestedSignupState => {
+    const requestedRole = authUser.user_metadata?.role;
+    const requestedPlannerType = authUser.user_metadata?.planner_type;
+    const requestedCommitteeName = authUser.user_metadata?.committee_name;
+
+    if (
+      requestedRole !== 'admin' &&
+      requestedRole !== 'couple' &&
+      requestedRole !== 'vendor' &&
+      requestedRole !== 'planner' &&
+      requestedRole !== 'committee'
+    ) {
+      return null;
+    }
+
+    const resolvedRole: AppRole = requestedRole === 'committee' ? 'planner' : requestedRole;
+    const resolvedPlannerType: PlannerType | null = requestedRole === 'committee'
+      ? 'committee'
+      : requestedRole === 'planner'
+        ? requestedPlannerType === 'committee'
+          ? 'committee'
+          : 'professional'
+        : null;
+
+    return {
+      role: resolvedRole,
+      plannerType: resolvedPlannerType,
+      committeeName: resolvedPlannerType === 'committee'
+        ? (typeof requestedCommitteeName === 'string' && requestedCommitteeName.trim().length > 0
+          ? requestedCommitteeName.trim()
+          : null)
+        : null,
+    };
+  };
+
   const buildFallbackProfile = (authUser: User, role: AppRole): Profile => ({
     id: authUser.id,
     user_id: authUser.id,
@@ -213,9 +254,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data as Profile;
   };
 
+  const reconcileRequestedSignupState = async (
+    authUser: User,
+    existingProfile: Profile,
+  ): Promise<Profile> => {
+    const requestedSignupState = getRequestedSignupState(authUser);
+    if (!requestedSignupState) return existingProfile;
+
+    const needsRoleSync = existingProfile.role !== requestedSignupState.role;
+    const needsPlannerTypeSync = (existingProfile.planner_type ?? null) !== requestedSignupState.plannerType;
+    const needsCommitteeNameSync = requestedSignupState.plannerType === 'committee'
+      && (existingProfile.committee_name ?? null) !== requestedSignupState.committeeName;
+
+    if (!needsRoleSync && !needsPlannerTypeSync && !needsCommitteeNameSync) {
+      return existingProfile;
+    }
+
+    try {
+      const { error } = await supabase.rpc('sync_current_user_signup_role');
+      if (error) throw error;
+
+      const syncedProfile = await fetchProfile(authUser.id);
+      if (syncedProfile) return syncedProfile;
+    } catch (error) {
+      console.error('Failed to sync signup role from auth metadata:', error);
+    }
+
+    try {
+      const fallbackUpdates: Partial<Profile> = {
+        role: requestedSignupState.role,
+        planner_type: requestedSignupState.plannerType,
+        committee_name: requestedSignupState.plannerType === 'committee'
+          ? requestedSignupState.committeeName
+          : null,
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(fallbackUpdates)
+        .eq('user_id', authUser.id);
+
+      if (error) throw error;
+
+      const patchedProfile = await fetchProfile(authUser.id);
+      if (patchedProfile) return patchedProfile;
+    } catch (error) {
+      console.error('Failed to patch mismatched signup role on profile:', error);
+    }
+
+    const fallbackProfile: Profile = {
+      ...existingProfile,
+      role: requestedSignupState.role,
+      planner_type: requestedSignupState.plannerType,
+      committee_name: requestedSignupState.plannerType === 'committee'
+        ? requestedSignupState.committeeName
+        : null,
+    };
+    setBaseProfile(fallbackProfile);
+    return fallbackProfile;
+  };
+
   const ensureProfile = async (authUser: User) => {
     const existingProfile = await fetchProfile(authUser.id);
-    if (existingProfile) return existingProfile;
+    if (existingProfile) {
+      return await reconcileRequestedSignupState(authUser, existingProfile);
+    }
 
     const role = await getFallbackRole(authUser);
     const fullName = getFallbackFullName(authUser);
