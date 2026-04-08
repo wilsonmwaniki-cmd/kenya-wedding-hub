@@ -11,6 +11,8 @@ interface Profile {
   partner_name: string | null;
   wedding_date: string | null;
   wedding_location: string | null;
+  wedding_county: string | null;
+  wedding_town: string | null;
   role: AppRole;
   company_name: string | null;
   company_email: string | null;
@@ -27,6 +29,12 @@ interface Profile {
   planner_subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
   planner_subscription_started_at: string | null;
   planner_subscription_expires_at: string | null;
+  primary_county: string | null;
+  primary_town: string | null;
+  service_areas: string[] | null;
+  travel_scope: 'local_only' | 'selected_counties' | 'nationwide' | null;
+  minimum_budget_kes: number | null;
+  maximum_budget_kes: number | null;
 }
 
 interface AuthContextType {
@@ -42,7 +50,13 @@ interface AuthContextType {
     password: string,
     fullName: string,
     role?: SignupRole,
-    options?: { committeeName?: string | null }
+    options?: {
+      committeeName?: string | null;
+      weddingCounty?: string | null;
+      weddingTown?: string | null;
+      primaryCounty?: string | null;
+      primaryTown?: string | null;
+    }
   ) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -55,6 +69,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const ROLE_PREVIEW_STORAGE_KEY = 'zania-admin-role-preview';
 export type RolePreview = 'admin' | 'couple' | 'vendor' | 'planner' | 'committee';
+
+type RequestedSignupState = {
+  role: AppRole;
+  plannerType: PlannerType | null;
+  committeeName: string | null;
+} | null;
 
 const plannerPreviewExpiry = () => {
   const nextYear = new Date();
@@ -139,6 +159,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .role as AppRole;
   };
 
+  const getRequestedSignupState = (authUser: User): RequestedSignupState => {
+    const requestedRole = authUser.user_metadata?.role;
+    const requestedPlannerType = authUser.user_metadata?.planner_type;
+    const requestedCommitteeName = authUser.user_metadata?.committee_name;
+
+    if (
+      requestedRole !== 'admin' &&
+      requestedRole !== 'couple' &&
+      requestedRole !== 'vendor' &&
+      requestedRole !== 'planner' &&
+      requestedRole !== 'committee'
+    ) {
+      return null;
+    }
+
+    const resolvedRole: AppRole = requestedRole === 'committee' ? 'planner' : requestedRole;
+    const resolvedPlannerType: PlannerType | null = requestedRole === 'committee'
+      ? 'committee'
+      : requestedRole === 'planner'
+        ? requestedPlannerType === 'committee'
+          ? 'committee'
+          : 'professional'
+        : null;
+
+    return {
+      role: resolvedRole,
+      plannerType: resolvedPlannerType,
+      committeeName: resolvedPlannerType === 'committee'
+        ? (typeof requestedCommitteeName === 'string' && requestedCommitteeName.trim().length > 0
+          ? requestedCommitteeName.trim()
+          : null)
+        : null,
+    };
+  };
+
   const buildFallbackProfile = (authUser: User, role: AppRole): Profile => ({
     id: authUser.id,
     user_id: authUser.id,
@@ -147,6 +202,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     partner_name: null,
     wedding_date: null,
     wedding_location: null,
+    wedding_county: null,
+    wedding_town: null,
     role,
     company_name: null,
     company_email: authUser.email ?? null,
@@ -167,6 +224,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     planner_subscription_status: 'inactive',
     planner_subscription_started_at: null,
     planner_subscription_expires_at: null,
+    primary_county: null,
+    primary_town: null,
+    service_areas: [],
+    travel_scope: 'selected_counties',
+    minimum_budget_kes: null,
+    maximum_budget_kes: null,
   });
 
   const fetchProfile = async (userId: string) => {
@@ -191,9 +254,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data as Profile;
   };
 
+  const reconcileRequestedSignupState = async (
+    authUser: User,
+    existingProfile: Profile,
+  ): Promise<Profile> => {
+    const requestedSignupState = getRequestedSignupState(authUser);
+    if (!requestedSignupState) return existingProfile;
+
+    const needsRoleSync = existingProfile.role !== requestedSignupState.role;
+    const needsPlannerTypeSync = (existingProfile.planner_type ?? null) !== requestedSignupState.plannerType;
+    const needsCommitteeNameSync = requestedSignupState.plannerType === 'committee'
+      && (existingProfile.committee_name ?? null) !== requestedSignupState.committeeName;
+
+    if (!needsRoleSync && !needsPlannerTypeSync && !needsCommitteeNameSync) {
+      return existingProfile;
+    }
+
+    try {
+      const { error } = await supabase.rpc('sync_current_user_signup_role');
+      if (error) throw error;
+
+      const syncedProfile = await fetchProfile(authUser.id);
+      if (syncedProfile) return syncedProfile;
+    } catch (error) {
+      console.error('Failed to sync signup role from auth metadata:', error);
+    }
+
+    try {
+      const fallbackUpdates: Partial<Profile> = {
+        role: requestedSignupState.role,
+        planner_type: requestedSignupState.plannerType,
+        committee_name: requestedSignupState.plannerType === 'committee'
+          ? requestedSignupState.committeeName
+          : null,
+      };
+
+      const { error } = await supabase
+        .from('profiles')
+        .update(fallbackUpdates)
+        .eq('user_id', authUser.id);
+
+      if (error) throw error;
+
+      const patchedProfile = await fetchProfile(authUser.id);
+      if (patchedProfile) return patchedProfile;
+    } catch (error) {
+      console.error('Failed to patch mismatched signup role on profile:', error);
+    }
+
+    const fallbackProfile: Profile = {
+      ...existingProfile,
+      role: requestedSignupState.role,
+      planner_type: requestedSignupState.plannerType,
+      committee_name: requestedSignupState.plannerType === 'committee'
+        ? requestedSignupState.committeeName
+        : null,
+    };
+    setBaseProfile(fallbackProfile);
+    return fallbackProfile;
+  };
+
   const ensureProfile = async (authUser: User) => {
     const existingProfile = await fetchProfile(authUser.id);
-    if (existingProfile) return existingProfile;
+    if (existingProfile) {
+      return await reconcileRequestedSignupState(authUser, existingProfile);
+    }
 
     const role = await getFallbackRole(authUser);
     const fullName = getFallbackFullName(authUser);
@@ -355,9 +480,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     fullName: string,
     role: SignupRole = 'couple',
-    options?: { committeeName?: string | null },
+    options?: {
+      committeeName?: string | null;
+      weddingCounty?: string | null;
+      weddingTown?: string | null;
+      primaryCounty?: string | null;
+      primaryTown?: string | null;
+    },
   ) => {
     const isCommittee = role === 'committee';
+    const weddingCounty = options?.weddingCounty?.trim() || null;
+    const weddingTown = options?.weddingTown?.trim() || null;
+    const primaryCounty = options?.primaryCounty?.trim() || null;
+    const primaryTown = options?.primaryTown?.trim() || null;
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -367,6 +502,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: isCommittee ? 'planner' : role,
           planner_type: isCommittee ? 'committee' : role === 'planner' ? 'professional' : null,
           committee_name: isCommittee ? options?.committeeName ?? null : null,
+          wedding_county: weddingCounty,
+          wedding_town: weddingTown,
+          wedding_location: weddingTown || weddingCounty ? [weddingTown, weddingCounty].filter(Boolean).join(', ') : null,
+          primary_county: primaryCounty,
+          primary_town: primaryTown,
         },
         emailRedirectTo: window.location.origin,
       },

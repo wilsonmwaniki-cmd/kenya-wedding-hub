@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Heart, Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, CheckCircle2, Clock, Sparkles } from 'lucide-react';
+import { Heart, Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, CheckCircle2, Clock, Sparkles, MapPin } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,6 +23,12 @@ interface PlannerData {
   company_website: string | null;
   bio: string | null;
   specialties: string[] | null;
+  primary_county: string | null;
+  primary_town: string | null;
+  service_areas: string[] | null;
+  travel_scope: string | null;
+  minimum_budget_kes: number | null;
+  maximum_budget_kes: number | null;
 }
 
 export default function PlannerProfile() {
@@ -44,7 +50,7 @@ export default function PlannerProfile() {
       const load = async () => {
       const { data, error } = await supabase
         .from('public_planner_profiles')
-        .select('id, user_id, full_name, company_name, company_email, company_phone, company_website, bio, specialties, avatar_url')
+        .select('id, user_id, full_name, company_name, company_email, company_phone, company_website, bio, specialties, avatar_url, primary_county, primary_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes')
         .eq('id', id)
         .single();
       if (error || !data) {
@@ -237,6 +243,41 @@ export default function PlannerProfile() {
                   <Globe className="h-4 w-4 text-primary" />
                   {planner.company_website.replace(/^https?:\/\//, '')}
                 </a>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {(planner.primary_county || planner.primary_town || planner.minimum_budget_kes != null || planner.maximum_budget_kes != null) && (
+          <Card className="shadow-card">
+            <CardHeader>
+              <CardTitle className="font-display text-base">Location & Fit</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              {(planner.primary_town || planner.primary_county) && (
+                <div className="flex items-center gap-3">
+                  <MapPin className="h-4 w-4 text-primary" />
+                  <span>{[planner.primary_town, planner.primary_county].filter(Boolean).join(', ')}</span>
+                </div>
+              )}
+              {planner.service_areas && planner.service_areas.length > 0 && (
+                <div>
+                  <p className="font-medium text-foreground">Service areas</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {planner.service_areas.map((area) => (
+                      <Badge key={area} variant="secondary" className="text-xs">{area}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(planner.minimum_budget_kes != null || planner.maximum_budget_kes != null) && (
+                <p>
+                  Typical budget range:{' '}
+                  <span className="font-medium text-foreground">
+                    {planner.minimum_budget_kes != null ? `KES ${Number(planner.minimum_budget_kes).toLocaleString()}` : 'Flexible'}
+                    {planner.maximum_budget_kes != null ? ` - KES ${Number(planner.maximum_budget_kes).toLocaleString()}` : '+'}
+                  </span>
+                </p>
               )}
             </CardContent>
           </Card>

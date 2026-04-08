@@ -16,8 +16,14 @@ export default function ProtectedRoute({
   const inferredRole = (() => {
     if (profile?.role) return profile.role;
     const requestedRole = user?.user_metadata?.role;
+    if (requestedRole === 'committee') {
+      return 'planner' as AppRole;
+    }
     if (requestedRole === 'admin' || requestedRole === 'vendor' || requestedRole === 'planner' || requestedRole === 'couple') {
       return requestedRole as AppRole;
+    }
+    if (user?.user_metadata?.planner_type === 'committee' || user?.user_metadata?.planner_type === 'professional') {
+      return 'planner' as AppRole;
     }
     return 'couple' as AppRole;
   })();
