@@ -19,6 +19,8 @@ import { createVendorTask } from '@/lib/vendorTasks';
 import { vendorPaymentStatusLabel } from '@/lib/vendorPayments';
 import { cn } from '@/lib/utils';
 import { getSuggestedTaskCategories, getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 
 interface Task {
   id: string;
@@ -57,6 +59,7 @@ interface BudgetCategoryOption {
 }
 
 type TaskViewMode = 'by_date' | 'by_category' | 'completed';
+type TaskPickerMode = 'suggested' | 'custom';
 
 function selectionLabel(status?: string | null) {
   switch (status) {
@@ -158,8 +161,10 @@ export default function Tasks() {
   const [assignedTo, setAssignedTo] = useState('');
   const [taskCategory, setTaskCategory] = useState('none');
   const [taskTemplateKey, setTaskTemplateKey] = useState('none');
+  const [taskPickerMode, setTaskPickerMode] = useState<TaskPickerMode>('suggested');
   const [sourceVendorId, setSourceVendorId] = useState<string>('none');
   const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('by_date');
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) navigate('/clients');
@@ -268,6 +273,27 @@ export default function Tasks() {
     return suggestedTaskOptions.find((template) => template.key === taskTemplateKey) ?? null;
   }, [taskTemplateKey, suggestedTaskOptions]);
 
+  const applySuggestedTemplate = (templateKey: string) => {
+    if (templateKey === 'none') {
+      setTaskTemplateKey('none');
+      setTaskPickerMode('custom');
+      setTitle('');
+      setDescription('');
+      return;
+    }
+
+    const template = suggestedTaskOptions.find((option) => option.key === templateKey);
+    if (!template) return;
+
+    setTaskPickerMode('suggested');
+    setTaskTemplateKey(template.key);
+    setTitle(template.title);
+    setDescription(template.description);
+    if (!assignedTo && template.recommendedRole) {
+      setAssignedTo(template.recommendedRole);
+    }
+  };
+
   const resolvedTaskDefaults = selectedTaskTemplate
     ? {
         visibility: selectedTaskTemplate.visibility,
@@ -307,6 +333,7 @@ export default function Tasks() {
       setAssignedTo('');
       setTaskCategory('none');
       setTaskTemplateKey('none');
+      setTaskPickerMode('suggested');
       setSourceVendorId('none');
       setOpen(false);
       await load();
@@ -334,6 +361,12 @@ export default function Tasks() {
   const vendorLinkedTasks = tasks.filter((task) => task.source_vendor_id);
   const openVendorTaskCount = vendorLinkedTasks.filter((task) => !task.completed).length;
   const privateTaskCount = pending.filter((task) => task.visibility === 'private').length;
+  const calendarFeature = profile?.role === 'planner'
+    ? profile?.planner_type === 'committee'
+      ? 'committee.calendar_sync'
+      : 'planner.calendar_sync'
+    : 'couple.calendar_sync';
+  const calendarDecision = getEntitlementDecision(calendarFeature, { profile });
   const delegatedTaskCount = pending.filter((task) => task.delegatable).length;
   const vendorsWithOpenTasks = new Set(
     vendorLinkedTasks.filter((task) => !task.completed && task.source_vendor_id).map((task) => task.source_vendor_id as string),
@@ -471,26 +504,37 @@ export default function Tasks() {
             {t.description && <p className="mt-2 text-sm text-muted-foreground">{t.description}</p>}
           </div>
           {t.due_date && (
-            <a
-              href={buildGoogleCalendarUrl({
-                title: t.title,
-                date: t.due_date,
-                description: [
-                  linkedVendor ? `Vendor: ${linkedVendor.name}` : null,
-                  t.category ? `Category: ${t.category}` : null,
-                  t.description,
-                  t.assigned_to ? `Assigned to: ${t.assigned_to}` : null,
-                ]
-                  .filter(Boolean)
-                  .join('\n'),
-              })}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 text-muted-foreground transition-colors hover:text-primary"
-              title="Add to Google Calendar"
-            >
-              <CalendarPlus className="h-4 w-4" />
-            </a>
+            calendarDecision.allowed ? (
+              <a
+                href={buildGoogleCalendarUrl({
+                  title: t.title,
+                  date: t.due_date,
+                  description: [
+                    linkedVendor ? `Vendor: ${linkedVendor.name}` : null,
+                    t.category ? `Category: ${t.category}` : null,
+                    t.description,
+                    t.assigned_to ? `Assigned to: ${t.assigned_to}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join('\n'),
+                })}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 text-muted-foreground transition-colors hover:text-primary"
+                title="Add to Google Calendar"
+              >
+                <CalendarPlus className="h-4 w-4" />
+              </a>
+            ) : (
+              <button
+                type="button"
+                className="mt-1 text-muted-foreground transition-colors hover:text-primary"
+                title="Upgrade to unlock Google Calendar sync"
+                onClick={() => setUpgradeOpen(true)}
+              >
+                <CalendarPlus className="h-4 w-4" />
+              </button>
+            )
           )}
           <button onClick={() => deleteTask(t.id)} className="mt-1 text-muted-foreground transition-colors hover:text-destructive">
             <Trash2 className="h-4 w-4" />
@@ -502,19 +546,19 @@ export default function Tasks() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-foreground">Tasks</h1>
           <p className="text-muted-foreground">{pending.length} pending, {done.length} completed</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center rounded-full border border-border bg-background p-1 shadow-sm">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
+          <div className="flex w-full items-center rounded-full border border-border bg-background p-1 shadow-sm sm:w-auto">
             <Button
               type="button"
               size="sm"
               onClick={() => setTaskViewMode('by_date')}
               className={cn(
-                'rounded-full px-7',
+                'flex-1 rounded-full px-4 sm:flex-none sm:px-7',
                 taskViewMode === 'by_date' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-transparent text-foreground hover:bg-muted',
               )}
             >
@@ -525,7 +569,7 @@ export default function Tasks() {
               size="sm"
               onClick={() => setTaskViewMode('by_category')}
               className={cn(
-                'rounded-full px-7',
+                'flex-1 rounded-full px-4 sm:flex-none sm:px-7',
                 taskViewMode === 'by_category' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-transparent text-foreground hover:bg-muted',
               )}
             >
@@ -536,27 +580,63 @@ export default function Tasks() {
               size="sm"
               onClick={() => setTaskViewMode('completed')}
               className={cn(
-                'rounded-full px-7',
+                'flex-1 rounded-full px-4 sm:flex-none sm:px-7',
                 taskViewMode === 'completed' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-transparent text-foreground hover:bg-muted',
               )}
             >
               Completed
             </Button>
           </div>
+          <UpgradePromptDialog
+            open={upgradeOpen}
+            onOpenChange={setUpgradeOpen}
+            decision={calendarDecision.allowed ? null : calendarDecision}
+          />
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2"><Plus className="h-4 w-4" /> Add Task</Button>
+              <Button className="w-full gap-2 sm:w-auto"><Plus className="h-4 w-4" /> Add Task</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
               <DialogHeader><DialogTitle className="font-display">Add Task</DialogTitle></DialogHeader>
               <form onSubmit={addTask} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Category (optional)</Label>
+                  <Label>Checklist Category</Label>
                   <Select
                     value={taskCategory}
                     onValueChange={(value) => {
                       setTaskCategory(value);
-                      setTaskTemplateKey('none');
+                      if (value === 'none') {
+                        setTaskTemplateKey('none');
+                        setTaskPickerMode('custom');
+                        setTitle('');
+                        setDescription('');
+                        return;
+                      }
+
+                      const nextCategoryName = categoryOptions.find((category) => category.value === value)?.label ?? null;
+                      const nextTemplates = nextCategoryName
+                        ? getSuggestedTaskTemplates({
+                            category: nextCategoryName,
+                            vendorCategories: vendorOptions.map((vendor) => vendor.category),
+                            role: profile?.role,
+                            plannerType: profile?.planner_type,
+                          })
+                        : [];
+
+                      if (nextTemplates.length) {
+                        setTaskPickerMode('suggested');
+                        setTaskTemplateKey(nextTemplates[0].key);
+                        setTitle(nextTemplates[0].title);
+                        setDescription(nextTemplates[0].description);
+                        if (!assignedTo && nextTemplates[0].recommendedRole) {
+                          setAssignedTo(nextTemplates[0].recommendedRole);
+                        }
+                      } else {
+                        setTaskTemplateKey('none');
+                        setTaskPickerMode('custom');
+                        setTitle('');
+                        setDescription('');
+                      }
                     }}
                   >
                     <SelectTrigger>
@@ -599,26 +679,25 @@ export default function Tasks() {
                 </div>
                 {selectedCategoryName && (
                   <div className="space-y-2">
-                    <Label>Suggested Task</Label>
+                    <Label>Checklist Task</Label>
                     <Select
-                      value={taskTemplateKey}
+                      value={taskPickerMode === 'custom' ? 'custom' : taskTemplateKey}
                       onValueChange={(value) => {
-                        setTaskTemplateKey(value);
-                        if (value === 'none') return;
-                        const template = suggestedTaskOptions.find((option) => option.key === value);
-                        if (!template) return;
-                        setTitle(template.title);
-                        setDescription(template.description);
-                        if (!assignedTo && template.recommendedRole) {
-                          setAssignedTo(template.recommendedRole);
+                        if (value === 'custom') {
+                          setTaskTemplateKey('none');
+                          setTaskPickerMode('custom');
+                          setTitle('');
+                          setDescription('');
+                          return;
                         }
+                        applySuggestedTemplate(value);
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Choose a suggested task" />
+                        <SelectValue placeholder="Choose a checklist task" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">Custom task</SelectItem>
+                        <SelectItem value="custom">Custom task</SelectItem>
                         {suggestedTaskOptions.map((template) => (
                           <SelectItem key={template.key} value={template.key}>
                             {template.title}
@@ -627,21 +706,27 @@ export default function Tasks() {
                       </SelectContent>
                     </Select>
                     {selectedTaskTemplate && (
-                      <p className="text-xs text-muted-foreground">
-                        {selectedTaskTemplate.description}
-                      </p>
+                      <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">
+                        <p className="text-sm font-medium text-foreground">{selectedTaskTemplate.title}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{selectedTaskTemplate.description}</p>
+                      </div>
                     )}
                   </div>
                 )}
-                <div className="space-y-2">
-                  <Label>Task Title</Label>
-                  <Input
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder={selectedTaskTemplate ? selectedTaskTemplate.title : 'e.g. Book photographer'}
-                    required
-                  />
-                </div>
+                {taskPickerMode === 'custom' && (
+                  <div className="space-y-2">
+                    <Label>Custom Task Title</Label>
+                    <Input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. Confirm ushers transport plan"
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Use this only if the checklist task you want is not in the suggested list above.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>Linked vendor (optional)</Label>
                   <Select
@@ -654,7 +739,24 @@ export default function Tasks() {
                       const matchedCategory = categoryOptions.find((category) => category.label.toLowerCase() === vendor.category.toLowerCase());
                       if (matchedCategory) {
                         setTaskCategory(matchedCategory.value);
-                        setTaskTemplateKey('none');
+                        const nextTemplates = getSuggestedTaskTemplates({
+                          category: matchedCategory.label,
+                          vendorCategories: vendorOptions.map((option) => option.category),
+                          role: profile?.role,
+                          plannerType: profile?.planner_type,
+                        });
+                        if (nextTemplates.length) {
+                          setTaskPickerMode('suggested');
+                          setTaskTemplateKey(nextTemplates[0].key);
+                          setTitle(nextTemplates[0].title);
+                          setDescription(nextTemplates[0].description);
+                          if (!assignedTo && nextTemplates[0].recommendedRole) {
+                            setAssignedTo(nextTemplates[0].recommendedRole);
+                          }
+                        } else {
+                          setTaskTemplateKey('none');
+                          setTaskPickerMode('custom');
+                        }
                       }
                     }}
                   >

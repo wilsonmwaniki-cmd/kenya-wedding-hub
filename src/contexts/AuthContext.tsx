@@ -29,6 +29,9 @@ interface Profile {
   planner_subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
   planner_subscription_started_at: string | null;
   planner_subscription_expires_at: string | null;
+  planning_pass_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
+  planning_pass_started_at: string | null;
+  planning_pass_expires_at: string | null;
   primary_county: string | null;
   primary_town: string | null;
   service_areas: string[] | null;
@@ -224,6 +227,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     planner_subscription_status: 'inactive',
     planner_subscription_started_at: null,
     planner_subscription_expires_at: null,
+    planning_pass_status: 'inactive',
+    planning_pass_started_at: null,
+    planning_pass_expires_at: null,
     primary_county: null,
     primary_town: null,
     service_areas: [],
