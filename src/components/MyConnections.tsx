@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sparkles, Clock, CheckCircle2, XCircle, Store, Users, X, Loader2, Copy, Link2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import {
   approvePlannerCodeLinkRequest,
   ensureMyCollaborationCode,
@@ -49,8 +51,10 @@ export default function MyConnections() {
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [collaborationCode, setCollaborationCode] = useState<string | null>(profile?.collaboration_code ?? null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   const effectiveCoupleView = profile?.role === 'couple' || (isSuperAdmin && rolePreview === 'couple');
+  const plannerConnectDecision = getEntitlementDecision('couple.connect_planners', { profile, bypass: isSuperAdmin && rolePreview === 'couple' });
 
   const loadConnections = async () => {
     if (!user) return;
@@ -265,7 +269,7 @@ export default function MyConnections() {
                     </Button>
                     <Button
                       size="sm"
-                      onClick={() => approvePlannerRequest(conn.id)}
+                      onClick={() => (plannerConnectDecision.allowed ? approvePlannerRequest(conn.id) : setUpgradeOpen(true))}
                       disabled={cancelling === conn.id}
                     >
                       {cancelling === conn.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Approve'}
@@ -292,6 +296,11 @@ export default function MyConnections() {
         })}
         </CardContent>
       </Card>
+      <UpgradePromptDialog
+        open={upgradeOpen}
+        onOpenChange={setUpgradeOpen}
+        decision={plannerConnectDecision.allowed ? null : plannerConnectDecision}
+      />
     </div>
   );
 }

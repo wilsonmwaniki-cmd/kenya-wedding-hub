@@ -14,8 +14,10 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import MyConnections from '@/components/MyConnections';
-import { isCommitteePlanner, plannerAccessMessage, plannerHasFullAccess } from '@/lib/plannerAccess';
+import { isCommitteePlanner } from '@/lib/plannerAccess';
 import { requestPlannerLinkByCode } from '@/lib/collaborationCodes';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 
 interface LinkRequest {
   id: string;
@@ -35,6 +37,7 @@ export default function PlannerDashboard() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [codeDialogOpen, setCodeDialogOpen] = useState(false);
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
   const [linkRequests, setLinkRequests] = useState<LinkRequest[]>([]);
   const [collabCode, setCollabCode] = useState('');
   const [collabNote, setCollabNote] = useState('');
@@ -159,8 +162,18 @@ export default function PlannerDashboard() {
   };
 
   const plannerPreviewMode = isSuperAdmin && (rolePreview === 'planner' || rolePreview === 'committee');
-  const fullPlannerAccess = plannerPreviewMode || plannerHasFullAccess(profile);
   const isCommittee = isCommitteePlanner(profile);
+  const workspaceDecision = getEntitlementDecision(isCommittee ? 'committee.connect_couples' : 'planner.full_workspace', {
+    profile,
+    activeWeddingCount: clients.length,
+    bypass: plannerPreviewMode,
+  });
+  const addWeddingDecision = getEntitlementDecision('planner.additional_weddings', {
+    profile,
+    activeWeddingCount: clients.length,
+    bypass: plannerPreviewMode,
+  });
+  const fullPlannerAccess = workspaceDecision.allowed;
   const workspaceLabel = isCommittee ? 'committee workspace' : 'planner workspace';
   const collectionHeading = isCommittee ? 'Committee Weddings' : 'My Clients';
   const addLabel = isCommittee ? 'Add Wedding' : 'Add Client';
@@ -169,32 +182,7 @@ export default function PlannerDashboard() {
   return (
     <div className="space-y-6">
       {!fullPlannerAccess && (
-        <Card className="border-border/70 bg-muted/20">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              <LockKeyhole className="h-5 w-5 text-primary" />
-              Full planner workspace is locked
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={profile?.planner_subscription_status === 'active' ? 'secondary' : 'outline'}>
-                <CreditCard className="mr-1 h-3 w-3" />
-                {profile?.planner_subscription_status || 'inactive'}
-              </Badge>
-              <Badge variant={profile?.planner_verified ? 'secondary' : 'outline'}>
-                <ShieldCheck className="mr-1 h-3 w-3" />
-                {profile?.planner_verified ? 'Verified' : profile?.planner_verification_requested ? 'Verification requested' : 'Unverified'}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">{plannerAccessMessage(profile)}</p>
-            <p className="text-sm text-muted-foreground">
-              {isCommittee
-                ? 'Committee-to-couple links, vendor outreach, and the shared wedding workspace unlock after verification and active subscription.'
-                : 'Planner-to-couple links, planner-to-vendor outreach, and client workspace management unlock after verification and active subscription.'}
-            </p>
-          </CardContent>
-        </Card>
+        <InlineUpgradePrompt decision={workspaceDecision} />
       )}
 
       {plannerPreviewMode && (
@@ -270,20 +258,23 @@ export default function PlannerDashboard() {
       {/* Planner's vendor connections */}
       {fullPlannerAccess && <MyConnections />}
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-foreground">{collectionHeading}</h1>
           <p className="text-muted-foreground">{clients.length} wedding{clients.length !== 1 ? 's' : ''} in this {workspaceLabel}</p>
         </div>
         <div className="flex items-center gap-2">
           <Dialog open={codeDialogOpen} onOpenChange={setCodeDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="gap-2" disabled={!fullPlannerAccess || committeeAtCapacity}>
-                <LinkIcon className="h-4 w-4" />
-                Link by Code
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={committeeAtCapacity}
+              onClick={() => (addWeddingDecision.allowed ? setCodeDialogOpen(true) : setUpgradeDialogOpen(true))}
+            >
+              <LinkIcon className="h-4 w-4" />
+              Link by Code
+            </Button>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="font-display">Link an Existing Couple Workspace</DialogTitle>
               </DialogHeader>
@@ -317,13 +308,17 @@ export default function PlannerDashboard() {
           </Dialog>
 
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2" disabled={!fullPlannerAccess || committeeAtCapacity}><Plus className="h-4 w-4" /> {addLabel}</Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <Button
+              className="gap-2"
+              disabled={committeeAtCapacity}
+              onClick={() => (addWeddingDecision.allowed ? setOpen(true) : setUpgradeDialogOpen(true))}
+            >
+              <Plus className="h-4 w-4" /> {addLabel}
+            </Button>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
               <DialogHeader><DialogTitle className="font-display">{isCommittee ? 'New Wedding Workspace' : 'New Client'}</DialogTitle></DialogHeader>
               <form onSubmit={addClient} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Client Name</Label>
                     <Input value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))} placeholder="e.g. Jane Wanjiku" required />
@@ -333,7 +328,7 @@ export default function PlannerDashboard() {
                     <Input value={form.partner_name} onChange={e => setForm(f => ({ ...f, partner_name: e.target.value }))} placeholder="e.g. John Kamau" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Wedding Date</Label>
                     <Input type="date" value={form.wedding_date} onChange={e => setForm(f => ({ ...f, wedding_date: e.target.value }))} />
@@ -343,7 +338,7 @@ export default function PlannerDashboard() {
                     <Input value={form.wedding_location} onChange={e => setForm(f => ({ ...f, wedding_location: e.target.value }))} placeholder="Nairobi" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Email</Label>
                     <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="client@email.com" />
@@ -359,6 +354,12 @@ export default function PlannerDashboard() {
           </Dialog>
         </div>
       </div>
+
+      <UpgradePromptDialog
+        open={upgradeDialogOpen}
+        onOpenChange={setUpgradeDialogOpen}
+        decision={addWeddingDecision.allowed ? null : addWeddingDecision}
+      />
 
       {committeeAtCapacity && (
         <Card className="border-border/70 bg-muted/20">

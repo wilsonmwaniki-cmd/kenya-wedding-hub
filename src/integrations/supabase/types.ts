@@ -374,6 +374,9 @@ export type Database = {
           maximum_budget_kes: number | null
           minimum_budget_kes: number | null
           partner_name: string | null
+          planning_pass_expires_at: string | null
+          planning_pass_started_at: string | null
+          planning_pass_status: string
           planner_type: string | null
           planner_subscription_expires_at: string | null
           planner_subscription_started_at: string | null
@@ -409,6 +412,9 @@ export type Database = {
           maximum_budget_kes?: number | null
           minimum_budget_kes?: number | null
           partner_name?: string | null
+          planning_pass_expires_at?: string | null
+          planning_pass_started_at?: string | null
+          planning_pass_status?: string
           planner_type?: string | null
           planner_subscription_expires_at?: string | null
           planner_subscription_started_at?: string | null
@@ -444,6 +450,9 @@ export type Database = {
           maximum_budget_kes?: number | null
           minimum_budget_kes?: number | null
           partner_name?: string | null
+          planning_pass_expires_at?: string | null
+          planning_pass_started_at?: string | null
+          planning_pass_status?: string
           planner_type?: string | null
           planner_subscription_expires_at?: string | null
           planner_subscription_started_at?: string | null

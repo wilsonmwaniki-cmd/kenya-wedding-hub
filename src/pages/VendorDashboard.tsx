@@ -7,7 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, Sparkles, X, Check, LockKeyhole, ShieldCheck, CreditCard } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { vendorAccessMessage, vendorHasFullAccess } from '@/lib/vendorAccess';
+import { vendorHasFullAccess } from '@/lib/vendorAccess';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 
 interface Booking {
   id: string;
@@ -188,7 +190,11 @@ export default function VendorDashboard() {
     .filter(b => b.status === 'booked' && b.price)
     .reduce((sum, b) => sum + (b.price || 0), 0);
   const pendingRequests = connectionRequests.filter(r => r.status === 'pending');
-  const fullAccess = vendorPreviewMode || vendorHasFullAccess(listing);
+  const workspaceDecision = getEntitlementDecision('vendor.direct_leads', {
+    vendorListing: listing,
+    bypass: vendorPreviewMode,
+  });
+  const fullAccess = workspaceDecision.allowed;
 
   if (loading) {
     return (
@@ -227,38 +233,7 @@ export default function VendorDashboard() {
       )}
 
       {listing && !fullAccess && (
-        <Card className="border-border/70 bg-muted/20">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              <LockKeyhole className="h-5 w-5 text-primary" />
-              Full vendor dashboard is locked
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={listing.is_approved ? 'secondary' : 'outline'}>
-                {listing.is_approved ? 'Approved' : 'Approval pending'}
-              </Badge>
-              <Badge variant={listing.subscription_status === 'active' ? 'secondary' : 'outline'}>
-                <CreditCard className="mr-1 h-3 w-3" />
-                {listing.subscription_status}
-              </Badge>
-              <Badge variant={listing.is_verified ? 'secondary' : 'outline'}>
-                <ShieldCheck className="mr-1 h-3 w-3" />
-                {listing.is_verified ? 'Verified' : listing.verification_requested ? 'Verification requested' : 'Unverified'}
-              </Badge>
-            </div>
-
-            <p className="text-sm text-muted-foreground">{vendorAccessMessage(listing)}</p>
-            <p className="text-sm text-muted-foreground">
-              Planner connections, booking requests, and backend statistics only unlock after active subscription and verification.
-            </p>
-
-            <Button asChild>
-              <Link to="/vendor-settings">Open vendor settings</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <InlineUpgradePrompt decision={workspaceDecision} />
       )}
 
       {/* Stats */}

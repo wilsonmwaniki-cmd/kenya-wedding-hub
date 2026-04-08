@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 
 interface PlannerData {
   id: string;
@@ -41,9 +43,11 @@ export default function PlannerProfile() {
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [message, setMessage] = useState('');
 
   const isCouple = profile?.role === 'couple';
+  const connectDecision = getEntitlementDecision('couple.connect_planners', { profile });
 
   useEffect(() => {
     if (!id) return;
@@ -182,7 +186,11 @@ export default function PlannerProfile() {
                     <p className="font-medium text-card-foreground">Work with this planner</p>
                     <p className="text-sm text-muted-foreground">Send a connection request to share your wedding progress.</p>
                   </div>
-                  <Button onClick={() => setDialogOpen(true)} size="sm" className="gap-1.5">
+                  <Button
+                    onClick={() => (connectDecision.allowed ? setDialogOpen(true) : setUpgradeOpen(true))}
+                    size="sm"
+                    className="gap-1.5"
+                  >
                     <Sparkles className="h-3.5 w-3.5" /> Interested
                   </Button>
                 </>
@@ -218,6 +226,12 @@ export default function PlannerProfile() {
             </div>
           </DialogContent>
         </Dialog>
+
+        <UpgradePromptDialog
+          open={upgradeOpen}
+          onOpenChange={setUpgradeOpen}
+          decision={connectDecision.allowed ? null : connectDecision}
+        />
 
         {/* Contact Card */}
         {(planner.company_email || planner.company_phone || planner.company_website) && (

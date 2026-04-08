@@ -7,7 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Sparkles, Check, Loader2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { plannerHasFullAccess } from '@/lib/plannerAccess';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 
 interface VendorInterestButtonProps {
   vendorListingId: string;
@@ -31,12 +32,19 @@ export default function VendorInterestButton({
   const { toast } = useToast();
   const [status, setStatus] = useState<string | null>(existingStatus);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // Only couples and planners can send interest
   if (!user || !profile || profile.role === 'vendor') return null;
-  if (profile.role === 'planner' && !plannerHasFullAccess(profile as any)) return null;
+
+  const connectDecision = profile.role === 'planner'
+    ? getEntitlementDecision(
+        profile.planner_type === 'committee' ? 'committee.connect_vendors' : 'planner.vendor_outreach',
+        { profile },
+      )
+    : getEntitlementDecision('couple.connect_vendors', { profile });
 
   const handleSendInterest = async () => {
     setSubmitting(true);
@@ -102,6 +110,20 @@ export default function VendorInterestButton({
 
   return (
     <>
+      {!connectDecision.allowed ? (
+        <>
+          <Button
+            variant="outline"
+            size={size}
+            onClick={(e) => { e.stopPropagation(); setUpgradeOpen(true); }}
+            className="gap-1.5 hover:border-primary hover:text-primary transition-colors"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Upgrade to Connect
+          </Button>
+          <UpgradePromptDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} decision={connectDecision} />
+        </>
+      ) : (
+        <>
       <Button
         variant="outline"
         size={size}
@@ -137,6 +159,8 @@ export default function VendorInterestButton({
           </div>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </>
   );
 }
