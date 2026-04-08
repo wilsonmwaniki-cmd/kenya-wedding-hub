@@ -24,7 +24,7 @@ export function InlineUpgradePrompt({ decision }: { decision: EntitlementDecisio
           </ul>
         )}
         <Button asChild size="sm" className="gap-2">
-          <Link to="/pricing">
+          <Link to={decision.pricingHref}>
             {decision.ctaLabel}
             <ArrowRight className="h-4 w-4" />
           </Link>
@@ -70,7 +70,7 @@ export function UpgradePromptDialog({
         )}
         <DialogFooter>
           <Button asChild className="w-full gap-2 sm:w-auto">
-            <Link to="/pricing">
+            <Link to={decision.pricingHref}>
               {decision.ctaLabel}
               <ArrowRight className="h-4 w-4" />
             </Link>

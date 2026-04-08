@@ -71,9 +71,22 @@ interface AdminPlannerRow {
   updated_at: string;
 }
 
+interface AdminCouplePassRow {
+  profile_id: string;
+  user_id: string;
+  full_name: string | null;
+  wedding_location: string | null;
+  wedding_date: string | null;
+  planning_pass_status: "inactive" | "active" | "past_due" | "cancelled";
+  planning_pass_expires_at: string | null;
+  updated_at: string;
+  email: string | null;
+}
+
 type UserRoleFilter = "all" | AppRole;
 type VendorStatusFilter = "all" | "pending" | "approved";
 type PlannerVerificationFilter = "all" | "pending" | "verified" | "requested";
+type PlanningPassFilter = "all" | "inactive" | "active" | "past_due" | "cancelled";
 type ReputationIssueFilter = "all" | "flagged" | "clean";
 type ReputationVisibilityFilter = "all" | "private" | "planner_network" | "admin_only";
 
@@ -121,6 +134,7 @@ export default function AdminPortal() {
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [vendors, setVendors] = useState<AdminVendorRow[]>([]);
   const [planners, setPlanners] = useState<AdminPlannerRow[]>([]);
+  const [couples, setCouples] = useState<AdminCouplePassRow[]>([]);
   const [reputationMetrics, setReputationMetrics] = useState<AdminReputationMetrics | null>(null);
   const [reputationReviews, setReputationReviews] = useState<AdminReputationRow[]>([]);
   const [roleDrafts, setRoleDrafts] = useState<Record<string, AppRole>>({});
@@ -129,6 +143,8 @@ export default function AdminPortal() {
   const [plannerSubscriptionDrafts, setPlannerSubscriptionDrafts] = useState<Record<string, AdminPlannerRow["planner_subscription_status"]>>({});
   const [plannerSubscriptionExpiryDrafts, setPlannerSubscriptionExpiryDrafts] = useState<Record<string, string>>({});
   const [plannerVerificationDrafts, setPlannerVerificationDrafts] = useState<Record<string, boolean>>({});
+  const [planningPassDrafts, setPlanningPassDrafts] = useState<Record<string, AdminCouplePassRow["planning_pass_status"]>>({});
+  const [planningPassExpiryDrafts, setPlanningPassExpiryDrafts] = useState<Record<string, string>>({});
   const [reviewVisibilityDrafts, setReviewVisibilityDrafts] = useState<Record<string, ReputationVisibilityFilter>>({});
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [savingVendorId, setSavingVendorId] = useState<string | null>(null);
@@ -140,6 +156,8 @@ export default function AdminPortal() {
   const [vendorStatusFilter, setVendorStatusFilter] = useState<VendorStatusFilter>("pending");
   const [plannerSearch, setPlannerSearch] = useState("");
   const [plannerVerificationFilter, setPlannerVerificationFilter] = useState<PlannerVerificationFilter>("all");
+  const [coupleSearch, setCoupleSearch] = useState("");
+  const [planningPassFilter, setPlanningPassFilter] = useState<PlanningPassFilter>("all");
   const [reputationSearch, setReputationSearch] = useState("");
   const [reputationIssueFilter, setReputationIssueFilter] = useState<ReputationIssueFilter>("flagged");
   const [reputationVisibilityFilter, setReputationVisibilityFilter] = useState<ReputationVisibilityFilter>("all");
@@ -259,11 +277,33 @@ export default function AdminPortal() {
     });
   };
 
+  const loadCouples = async () => {
+    const { data, error } = await supabase.rpc("admin_list_couple_planning_passes" as any, {
+      search_query: coupleSearch.trim() || null,
+      status_filter: planningPassFilter,
+      limit_rows: 100,
+      offset_rows: 0,
+    });
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as AdminCouplePassRow[];
+    setCouples(rows);
+    setPlanningPassDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.planning_pass_status;
+      return next;
+    });
+    setPlanningPassExpiryDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.planning_pass_expires_at ? row.planning_pass_expires_at.slice(0, 10) : "";
+      return next;
+    });
+  };
+
   const loadAll = async (showFullLoader = false) => {
     if (showFullLoader) setLoading(true);
     else setRefreshing(true);
     try {
-      await Promise.all([loadMetrics(), loadUsers(), loadVendors(), loadPlanners(), loadReputationMetrics(), loadReputationReviews()]);
+      await Promise.all([loadMetrics(), loadUsers(), loadVendors(), loadPlanners(), loadCouples(), loadReputationMetrics(), loadReputationReviews()]);
     } catch (error: any) {
       toast({
         title: "Failed to load admin portal",
@@ -310,6 +350,18 @@ export default function AdminPortal() {
     } catch (error: any) {
       toast({
         title: "Failed to load planners",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const applyCoupleFilters = async () => {
+    try {
+      await loadCouples();
+    } catch (error: any) {
+      toast({
+        title: "Failed to load Planning Pass records",
         description: error.message,
         variant: "destructive",
       });
@@ -467,6 +519,37 @@ export default function AdminPortal() {
     }
   };
 
+  const handlePlanningPassUpdate = async (targetUserId: string) => {
+    const nextStatus = planningPassDrafts[targetUserId];
+    const nextExpiry = planningPassExpiryDrafts[targetUserId]?.trim() || null;
+    if (!nextStatus) return;
+
+    setSavingUserId(targetUserId);
+    try {
+      const { error } = await supabase.rpc("admin_set_couple_planning_pass" as any, {
+        target_user_id: targetUserId,
+        new_planning_pass_status: nextStatus,
+        new_planning_pass_expires_at: nextExpiry ? new Date(`${nextExpiry}T23:59:59Z`).toISOString() : null,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Planning Pass updated",
+        description: `Couple Planning Pass is now ${nextStatus}.`,
+      });
+
+      await loadCouples();
+    } catch (error: any) {
+      toast({
+        title: "Planning Pass update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingUserId(null);
+    }
+  };
+
   const handleReputationVisibilityUpdate = async (reviewId: string) => {
     const nextVisibility = reviewVisibilityDrafts[reviewId];
     const target = reputationReviews.find((item) => item.review_id === reviewId);
@@ -567,9 +650,10 @@ export default function AdminPortal() {
       </div>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
+        <TabsList className="h-auto w-full flex-wrap justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="users">Users & Roles</TabsTrigger>
+          <TabsTrigger value="couples">Planning Passes</TabsTrigger>
           <TabsTrigger value="planners">Planner Moderation</TabsTrigger>
           <TabsTrigger value="vendors">Vendor Moderation</TabsTrigger>
           <TabsTrigger value="reputation">Reputation Oversight</TabsTrigger>
@@ -742,6 +826,125 @@ export default function AdminPortal() {
                       </TableRow>
                     );
                   })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="couples" className="space-y-4">
+          <Card>
+            <CardHeader className="space-y-3">
+              <CardTitle className="text-base">Couple Planning Pass Access</CardTitle>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={coupleSearch}
+                  onChange={(e) => setCoupleSearch(e.target.value)}
+                  placeholder="Search by couple name, email, or wedding location"
+                />
+                <Select value={planningPassFilter} onValueChange={(value) => setPlanningPassFilter(value as PlanningPassFilter)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                    <SelectItem value="past_due">Past due</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={() => applyCoupleFilters()}>
+                  Apply
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Couple</TableHead>
+                    <TableHead>Wedding</TableHead>
+                    <TableHead>Planning Pass</TableHead>
+                    <TableHead>Last Updated</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {couples.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        No couples matched your filters.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {couples.map((item) => (
+                    <TableRow key={item.user_id}>
+                      <TableCell>
+                        <p className="font-medium">{item.full_name || "Unnamed Couple"}</p>
+                        <p className="text-xs text-muted-foreground">{item.email || item.user_id}</p>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-sm">{item.wedding_location || "Location not set"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.wedding_date ? new Date(item.wedding_date).toLocaleDateString() : "Wedding date not set"}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <Select
+                            value={planningPassDrafts[item.user_id] ?? item.planning_pass_status}
+                            onValueChange={(value) =>
+                              setPlanningPassDrafts((prev) => ({
+                                ...prev,
+                                [item.user_id]: value as AdminCouplePassRow["planning_pass_status"],
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-[150px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="inactive">inactive</SelectItem>
+                              <SelectItem value="active">active</SelectItem>
+                              <SelectItem value="past_due">past_due</SelectItem>
+                              <SelectItem value="cancelled">cancelled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="date"
+                            value={planningPassExpiryDrafts[item.user_id] ?? ""}
+                            onChange={(e) =>
+                              setPlanningPassExpiryDrafts((prev) => ({
+                                ...prev,
+                                [item.user_id]: e.target.value,
+                              }))
+                            }
+                            className="w-[150px]"
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={savingUserId === item.user_id}
+                            onClick={() => handlePlanningPassUpdate(item.user_id)}
+                          >
+                            Save pass
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(item.updated_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant={item.planning_pass_status === "active" ? "secondary" : "outline"}>
+                          {item.planning_pass_status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </CardContent>

@@ -1,4 +1,4 @@
-import { audiencePlans, type PricingAudience } from '@/lib/pricingPlans';
+import { buildPricingHref, getAudiencePlan, type PricingAudience } from '@/lib/pricingPlans';
 import { isCommitteePlanner, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
 import { vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 
@@ -8,13 +8,16 @@ export type EntitlementFeature =
   | 'couple.connect_vendors'
   | 'couple.connect_planners'
   | 'couple.calendar_sync'
+  | 'couple.export_progress'
   | 'committee.connect_vendors'
   | 'committee.connect_couples'
   | 'committee.calendar_sync'
+  | 'committee.export_progress'
   | 'planner.additional_weddings'
   | 'planner.vendor_outreach'
   | 'planner.calendar_sync'
   | 'planner.full_workspace'
+  | 'planner.export_progress'
   | 'vendor.direct_leads'
   | 'vendor.analytics';
 
@@ -42,6 +45,13 @@ export interface EntitlementDecision {
   audience: PricingAudience;
   feature: EntitlementFeature;
   planName: string;
+  entitlementCode: string;
+  billingCadence: 'one_time' | 'monthly' | 'annual' | 'monthly_or_annual';
+  stripeProductKey: string;
+  stripeMonthlyLookupKey: string | null;
+  stripeAnnualLookupKey: string | null;
+  stripeOneTimeLookupKey: string | null;
+  pricingHref: string;
   title: string;
   description: string;
   ctaLabel: string;
@@ -56,7 +66,7 @@ interface EntitlementContext {
 }
 
 function planForAudience(audience: PricingAudience) {
-  return audiencePlans.find((plan) => plan.audience === audience)!;
+  return getAudiencePlan(audience);
 }
 
 function isActiveStatus(status?: string | null, expiresAt?: string | null) {
@@ -118,6 +128,13 @@ function buildDecision(
     audience,
     feature,
     planName: plan.paidTierName,
+    entitlementCode: plan.entitlementCode,
+    billingCadence: plan.billingCadence,
+    stripeProductKey: plan.stripeProductKey,
+    stripeMonthlyLookupKey: plan.stripeMonthlyLookupKey,
+    stripeAnnualLookupKey: plan.stripeAnnualLookupKey,
+    stripeOneTimeLookupKey: plan.stripeOneTimeLookupKey,
+    pricingHref: buildPricingHref(audience, feature),
     title: overrides?.title ?? `Upgrade to ${plan.paidTierName}`,
     description: overrides?.description ?? `Unlock ${plan.paidTierName} to continue.`,
     ctaLabel: overrides?.ctaLabel ?? 'View pricing',
@@ -153,14 +170,29 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
         description: 'Planning Pass unlocks Google Calendar syncing and other execution tools once you move from exploration into active planning.',
         reasons: planningPassReasons(),
       });
+    case 'couple.export_progress':
+      return buildDecision(feature, 'couple', hasActivePlanningPass(context.profile), {
+        title: 'Upgrade to export your planning progress',
+        description: 'Planning Pass unlocks budget exports, task exports, and progress reports once you are actively coordinating the wedding.',
+        reasons: planningPassReasons(),
+      });
     case 'committee.connect_vendors':
     case 'committee.connect_couples':
     case 'committee.calendar_sync':
+    case 'committee.export_progress':
       return buildDecision(feature, 'committee', plannerHasFullAccess(context.profile), {
-        title: feature === 'committee.calendar_sync' ? 'Upgrade to sync committee schedules' : 'Upgrade to unlock full committee coordination',
-        description: feature === 'committee.calendar_sync'
-          ? 'Committee Pass unlocks Google Calendar syncing and the full shared execution workflow.'
-          : 'Committee Pass unlocks vendor and couple coordination, delegated execution, and the shared wedding workspace.',
+        title:
+          feature === 'committee.calendar_sync'
+            ? 'Upgrade to sync committee schedules'
+            : feature === 'committee.export_progress'
+              ? 'Upgrade to export committee progress'
+              : 'Upgrade to unlock full committee coordination',
+        description:
+          feature === 'committee.calendar_sync'
+            ? 'Committee Pass unlocks Google Calendar syncing and the full shared execution workflow.'
+            : feature === 'committee.export_progress'
+              ? 'Committee Pass unlocks exports, reporting, and the shareable progress views that matter once execution is underway.'
+              : 'Committee Pass unlocks vendor and couple coordination, delegated execution, and the shared wedding workspace.',
         reasons: plannerReasons(context.profile),
       });
     case 'planner.additional_weddings':
@@ -183,6 +215,12 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
         title: 'Upgrade to sync planner schedules',
         description: 'Planner Pro unlocks Google Calendar syncing, exports, and the scheduling tools that matter once you are operating at scale.',
         reasons: plannerHasActiveSubscription(context.profile) ? [] : ['Planner calendar sync is part of Planner Pro.'],
+      });
+    case 'planner.export_progress':
+      return buildDecision(feature, 'planner', plannerHasActiveSubscription(context.profile), {
+        title: 'Upgrade to export client progress',
+        description: 'Planner Pro unlocks client exports, handoff reports, and the shareable planning documents that matter once you manage weddings professionally.',
+        reasons: plannerHasActiveSubscription(context.profile) ? [] : ['Planner exports are part of Planner Pro.'],
       });
     case 'vendor.direct_leads':
       return buildDecision(feature, 'vendor', vendorHasFullAccess(context.vendorListing), {

@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles, Lock, CalendarDays } from 'lucide-react';
+import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles, Lock, CalendarDays, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,6 +19,9 @@ import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPrice
 import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { UpgradePromptDialog } from '@/components/UpgradePrompt';
+import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 
 interface BudgetCategory {
   id: string;
@@ -122,7 +125,7 @@ function benchmarkSummary(benchmark?: VendorPriceBenchmark | null) {
 }
 
 export default function Budget() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -149,6 +152,7 @@ export default function Budget() {
   const [paymentRecords, setPaymentRecords] = useState<BudgetPaymentRecord[]>([]);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [recordingPaymentMade, setRecordingPaymentMade] = useState(false);
+  const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [spendLog, setSpendLog] = useState<SpendLogForm>({
     vendorName: '',
     amount: '',
@@ -171,6 +175,12 @@ export default function Budget() {
   }, [isPlanner, selectedClient, navigate]);
 
   const showPersonalBudget = !isPlanner;
+  const exportFeature = isPlanner
+    ? profile?.planner_type === 'committee'
+      ? 'committee.export_progress'
+      : 'planner.export_progress'
+    : 'couple.export_progress';
+  const exportDecision = getEntitlementDecision(exportFeature, { profile });
 
   useEffect(() => {
     if (!showPersonalBudget && activeBudgetScope === 'personal') {
@@ -758,19 +768,51 @@ export default function Budget() {
     return source.filter((template) => !existingNames.has(template.name.toLowerCase().trim()));
   }, [categories, newCategoryScope]);
 
+  const exportBudgetData = () => {
+    const rows = visibleCategories.map((category) => ({
+      scope: category.budget_scope,
+      category: category.name,
+      allocated_kes: category.allocated,
+      spent_kes: category.spent,
+      remaining_kes: Math.max(category.allocated - category.spent, 0),
+      visibility: category.visibility,
+      committee_role_in_charge: category.committee_role_in_charge ?? '',
+      contract_status: category.contract_status,
+    }));
+
+    const paymentRows = currentScopePayments.map((payment) => ({
+      scope: payment.budget_scope,
+      category: payment.category_name,
+      payee_name: payment.payee_name,
+      amount_kes: payment.amount,
+      payment_date: safeDateLabel(payment.payment_date),
+      reference: payment.reference ?? '',
+      notes: payment.notes ?? '',
+    }));
+
+    downloadCsv(
+      `zania-${activeBudgetScope}-budget-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        ...rows,
+        ...(paymentRows.length ? [{ scope: '', category: '', allocated_kes: '', spent_kes: '', remaining_kes: '', visibility: '', committee_role_in_charge: '', contract_status: '' }] : []),
+        ...paymentRows,
+      ],
+    );
+  };
+
   if (isPlanner && !selectedClient) return null;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-foreground">Budget</h1>
           <p className="text-muted-foreground">
             Split your shared wedding spend from the couple-only personal budget.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center rounded-full border border-border bg-background p-1">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
+          <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
             <Button
               type="button"
               variant={activeBudgetScope === 'wedding' ? 'default' : 'ghost'}
@@ -790,7 +832,7 @@ export default function Budget() {
               </Button>
             )}
           </div>
-          <div className="flex items-center rounded-full border border-border bg-background p-1">
+          <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
             <Button
               type="button"
               variant={budgetViewMode === 'payments_made' ? 'default' : 'ghost'}
@@ -810,12 +852,12 @@ export default function Budget() {
           </div>
           <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2" variant="outline">
+              <Button className="w-full gap-2 sm:w-auto" variant="outline">
                 <Receipt className="h-4 w-4" />
                 Record Payment Made
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
               <DialogHeader>
                 <DialogTitle className="font-display">Record Payment Made</DialogTitle>
               </DialogHeader>
@@ -823,7 +865,7 @@ export default function Budget() {
                 {showPersonalBudget && (
                   <div className="space-y-2">
                     <Label>Budget Type</Label>
-                    <div className="flex items-center rounded-full border border-border bg-background p-1">
+                    <div className="flex flex-wrap items-center rounded-full border border-border bg-background p-1">
                       <Button
                         type="button"
                         variant={paymentLog.budgetScope === 'wedding' ? 'default' : 'ghost'}
@@ -946,6 +988,21 @@ export default function Budget() {
               </form>
             </DialogContent>
           </Dialog>
+          <Button
+            type="button"
+            className="w-full gap-2 sm:w-auto"
+            variant="outline"
+            onClick={() => {
+              if (!exportDecision.allowed) {
+                setExportUpgradeOpen(true);
+                return;
+              }
+              exportBudgetData();
+            }}
+          >
+            <Download className="h-4 w-4" />
+            Export Budget
+          </Button>
           <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2"><Plus className="h-4 w-4" /> Add Category</Button>
@@ -1049,6 +1106,11 @@ export default function Budget() {
             </form>
           </DialogContent>
           </Dialog>
+          <UpgradePromptDialog
+            open={exportUpgradeOpen}
+            onOpenChange={setExportUpgradeOpen}
+            decision={exportDecision.allowed ? null : exportDecision}
+          />
         </div>
       </div>
 

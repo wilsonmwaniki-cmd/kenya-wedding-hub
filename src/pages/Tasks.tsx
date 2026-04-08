@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2 } from 'lucide-react';
+import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { getSuggestedTaskCategories, getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
+import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 
 interface Task {
   id: string;
@@ -165,6 +166,7 @@ export default function Tasks() {
   const [sourceVendorId, setSourceVendorId] = useState<string>('none');
   const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('by_date');
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) navigate('/clients');
@@ -367,6 +369,12 @@ export default function Tasks() {
       : 'planner.calendar_sync'
     : 'couple.calendar_sync';
   const calendarDecision = getEntitlementDecision(calendarFeature, { profile });
+  const exportFeature = profile?.role === 'planner'
+    ? profile?.planner_type === 'committee'
+      ? 'committee.export_progress'
+      : 'planner.export_progress'
+    : 'couple.export_progress';
+  const exportDecision = getEntitlementDecision(exportFeature, { profile });
   const delegatedTaskCount = pending.filter((task) => task.delegatable).length;
   const vendorsWithOpenTasks = new Set(
     vendorLinkedTasks.filter((task) => !task.completed && task.source_vendor_id).map((task) => task.source_vendor_id as string),
@@ -426,6 +434,34 @@ export default function Tasks() {
   }, [done, vendorLookup]);
 
   if (isPlanner && !selectedClient) return null;
+
+  const exportTasks = () => {
+    downloadCsv(
+      `zania-tasks-${new Date().toISOString().slice(0, 10)}.csv`,
+      tasks.map((task) => {
+        const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+        const resolvedCategory = task.category || linkedVendor?.category || '';
+        const linkedBudget = resolvedCategory ? budgetLookup[normalizeCategory(resolvedCategory)] : null;
+
+        return {
+          title: task.title,
+          category: resolvedCategory,
+          due_date: safeDateLabel(task.due_date),
+          completed: task.completed ? 'Yes' : 'No',
+          priority: task.priority_level ?? '',
+          priority_label: priorityLabel(task.priority_level) ?? '',
+          visibility: task.visibility,
+          phase: phaseLabel(task.phase) ?? '',
+          assigned_to: task.assigned_to ?? '',
+          linked_vendor: linkedVendor?.name ?? '',
+          vendor_payment_status: linkedVendor ? vendorPaymentStatusLabel(linkedVendor.payment_status) : '',
+          linked_budget_scope: linkedBudget?.budget_scope ?? '',
+          linked_budget_remaining_kes: linkedBudget ? linkedBudget.allocated - linkedBudget.spent : '',
+          description: task.description ?? '',
+        };
+      }),
+    );
+  };
 
   const TaskCard = ({ t, isDone }: { t: Task; isDone: boolean }) => {
     const linkedVendor = t.source_vendor_id ? vendorLookup[t.source_vendor_id] : null;
@@ -592,6 +628,26 @@ export default function Tasks() {
             onOpenChange={setUpgradeOpen}
             decision={calendarDecision.allowed ? null : calendarDecision}
           />
+          <UpgradePromptDialog
+            open={exportUpgradeOpen}
+            onOpenChange={setExportUpgradeOpen}
+            decision={exportDecision.allowed ? null : exportDecision}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-2 sm:w-auto"
+            onClick={() => {
+              if (!exportDecision.allowed) {
+                setExportUpgradeOpen(true);
+                return;
+              }
+              exportTasks();
+            }}
+          >
+            <Download className="h-4 w-4" />
+            Export Tasks
+          </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button className="w-full gap-2 sm:w-auto"><Plus className="h-4 w-4" /> Add Task</Button>
