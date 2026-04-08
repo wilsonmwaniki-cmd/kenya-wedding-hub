@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles, ArrowRightLeft, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles, ArrowRightLeft, ArrowLeft, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
@@ -39,6 +39,9 @@ import {
 } from '@/lib/vendorReputation';
 import { createVendorTask, createVendorTaskBundle } from '@/lib/vendorTasks';
 import { getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { UpgradePromptDialog } from '@/components/UpgradePrompt';
+import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 
 interface Vendor {
   amount_paid: number;
@@ -322,6 +325,7 @@ export default function Vendors() {
   const [vendorTaskSubmitting, setVendorTaskSubmitting] = useState(false);
   const [creatingVendorTaskBundleId, setCreatingVendorTaskBundleId] = useState<string | null>(null);
   const [vendorListView, setVendorListView] = useState<'by_category' | 'by_name'>('by_category');
+  const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [selectedVendorTab, setSelectedVendorTab] = useState<'details' | 'tasks' | 'payments'>('details');
   const [recordVendorPaymentOpen, setRecordVendorPaymentOpen] = useState(false);
@@ -1154,6 +1158,12 @@ export default function Vendors() {
 
   const isCommitteeWorkspace = profile?.role === 'planner' && profile?.planner_type === 'committee';
   const showCoupleVendorWorkspace = profile?.role === 'couple' || isCommitteeWorkspace;
+  const exportFeature = profile?.role === 'planner'
+    ? profile?.planner_type === 'committee'
+      ? 'committee.export_progress'
+      : 'planner.export_progress'
+    : 'couple.export_progress';
+  const exportDecision = getEntitlementDecision(exportFeature, { profile });
 
   const vendorsByName = useMemo(
     () => [...vendors].sort((left, right) => left.name.localeCompare(right.name)),
@@ -1397,7 +1407,7 @@ export default function Vendors() {
       <DialogTrigger asChild>
         <Button className="gap-2"><Plus className="h-4 w-4" /> Add Vendor</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader><DialogTitle className="font-display">Add Vendor</DialogTitle></DialogHeader>
         <div className="flex gap-2 border-b border-border pb-3">
           <Button variant={mode === 'directory' ? 'default' : 'outline'} size="sm" onClick={() => setMode('directory')} className="gap-1">
@@ -1489,6 +1499,33 @@ export default function Vendors() {
   if (isPlanner && !selectedClient) return null;
 
   if (showCoupleVendorWorkspace) {
+    const exportVendorData = () => {
+      downloadCsv(
+        `zania-vendors-${new Date().toISOString().slice(0, 10)}.csv`,
+        vendors.map((vendor) => {
+          const vendorTasks = vendorTasksByVendorId[vendor.id] ?? [];
+          const vendorPayments = vendorPaymentsByVendorId[vendor.id] ?? [];
+          return {
+            vendor_name: vendor.name,
+            category: vendor.category,
+            phone: vendor.phone ?? '',
+            email: vendor.email ?? '',
+            selection_status: vendor.selection_status,
+            payment_status: vendor.payment_status,
+            contract_status: vendor.contract_status,
+            quoted_price_kes: vendor.price ?? '',
+            amount_paid_kes: vendor.amount_paid,
+            outstanding_kes: vendor.price != null ? Math.max(vendor.price - vendor.amount_paid, 0) : '',
+            payment_due_date: safeDateLabel(vendor.payment_due_date),
+            open_tasks: vendorTasks.filter((task) => !task.completed).length,
+            completed_tasks: vendorTasks.filter((task) => task.completed).length,
+            payment_count: vendorPayments.length,
+            notes: notesDrafts[vendor.id] ?? vendor.notes ?? '',
+          };
+        }),
+      );
+    };
+
     const renderVendorRow = (vendor: Vendor) => (
       <button
         key={vendor.id}
@@ -1497,7 +1534,7 @@ export default function Vendors() {
           setSelectedVendorId(vendor.id);
           setSelectedVendorTab('details');
         }}
-        className="flex w-full items-center justify-between rounded-[1.75rem] border border-border/70 bg-background px-6 py-5 text-left shadow-sm transition hover:border-primary/40 hover:bg-accent/20"
+        className="flex w-full flex-col gap-3 rounded-[1.5rem] border border-border/70 bg-background px-4 py-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-accent/20 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5 sm:rounded-[1.75rem]"
       >
         <div className="min-w-0">
           <p className="truncate text-xl font-semibold text-foreground">{vendor.name}</p>
@@ -1513,7 +1550,7 @@ export default function Vendors() {
             </div>
           ) : null}
         </div>
-        <div className="text-right">
+        <div className="text-left sm:text-right">
           {vendorListView === 'by_name' ? (
             <p className="text-xl font-semibold text-foreground">{vendor.category}</p>
           ) : (
@@ -1536,11 +1573,11 @@ export default function Vendors() {
                 <p className="mt-2 text-lg text-muted-foreground">{vendors.length} vendors tracked</p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="inline-flex rounded-full border border-border bg-background p-1">
+                <div className="grid w-full grid-cols-2 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
                   <Button
                     type="button"
                     variant={vendorListView === 'by_category' ? 'default' : 'ghost'}
-                    className="rounded-full px-6"
+                    className="rounded-full px-4 sm:px-6"
                     onClick={() => setVendorListView('by_category')}
                   >
                     By Category
@@ -1548,12 +1585,32 @@ export default function Vendors() {
                   <Button
                     type="button"
                     variant={vendorListView === 'by_name' ? 'default' : 'ghost'}
-                    className="rounded-full px-6"
+                    className="rounded-full px-4 sm:px-6"
                     onClick={() => setVendorListView('by_name')}
                   >
                     By Name
                   </Button>
                 </div>
+                <UpgradePromptDialog
+                  open={exportUpgradeOpen}
+                  onOpenChange={setExportUpgradeOpen}
+                  decision={exportDecision.allowed ? null : exportDecision}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => {
+                    if (!exportDecision.allowed) {
+                      setExportUpgradeOpen(true);
+                      return;
+                    }
+                    exportVendorData();
+                  }}
+                >
+                  <Download className="h-4 w-4" />
+                  Export Vendors
+                </Button>
                 {addVendorDialog}
               </div>
             </div>
@@ -1598,13 +1655,13 @@ export default function Vendors() {
                   <p className="mt-2 text-xl font-medium text-foreground">{selectedVendor.name}</p>
                 </div>
               </div>
-              <div className="inline-flex rounded-full border border-border bg-background p-1">
+              <div className="grid w-full grid-cols-3 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
                 {(['details', 'tasks', 'payments'] as const).map((tab) => (
                   <Button
                     key={tab}
                     type="button"
                     variant={selectedVendorTab === tab ? 'default' : 'ghost'}
-                    className="rounded-full px-8 capitalize"
+                    className="rounded-full px-3 capitalize sm:px-8"
                     onClick={() => setSelectedVendorTab(tab)}
                   >
                     {tab}
@@ -1714,7 +1771,7 @@ export default function Vendors() {
                     {selectedVendorTaskCounts.open.length > 0 ? (
                       selectedVendorTaskCounts.open.map((task) => (
                         <Card key={task.id} className="shadow-card">
-                          <CardContent className="flex items-center justify-between gap-4 py-5">
+                          <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                             <div>
                               <p className="text-xl font-medium text-foreground">{task.title}</p>
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -1733,7 +1790,7 @@ export default function Vendors() {
                       </Card>
                     )}
                     <Card className="shadow-card">
-                      <CardContent className="flex items-center justify-between py-5">
+                      <CardContent className="flex flex-col gap-2 py-5 sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-xl font-medium text-foreground">All Tasks</p>
                         <p className="text-xl text-muted-foreground">{selectedVendorTasks.length} total</p>
                       </CardContent>
@@ -1747,7 +1804,7 @@ export default function Vendors() {
                     {selectedVendorTaskCounts.completed.length > 0 ? (
                       selectedVendorTaskCounts.completed.map((task) => (
                         <Card key={task.id} className="opacity-60 shadow-card">
-                          <CardContent className="flex items-center justify-between gap-4 py-5">
+                          <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                             <div>
                               <p className="text-xl font-medium line-through text-foreground">{task.title}</p>
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -1798,7 +1855,7 @@ export default function Vendors() {
                             Record a payment made
                           </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-lg">
+                        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
                           <DialogHeader>
                             <DialogTitle className="font-display">Record Vendor Payment</DialogTitle>
                           </DialogHeader>
@@ -1908,12 +1965,52 @@ export default function Vendors() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-foreground">Vendors</h1>
           <p className="text-muted-foreground">{vendors.length} vendors tracked</p>
         </div>
-        {addVendorDialog}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <UpgradePromptDialog
+            open={exportUpgradeOpen}
+            onOpenChange={setExportUpgradeOpen}
+            decision={exportDecision.allowed ? null : exportDecision}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            onClick={() => {
+              if (!exportDecision.allowed) {
+                setExportUpgradeOpen(true);
+                return;
+              }
+              downloadCsv(
+                `zania-vendors-${new Date().toISOString().slice(0, 10)}.csv`,
+                vendors.map((vendor) => ({
+                  vendor_name: vendor.name,
+                  category: vendor.category,
+                  phone: vendor.phone ?? '',
+                  email: vendor.email ?? '',
+                  selection_status: vendor.selection_status,
+                  payment_status: vendor.payment_status,
+                  contract_status: vendor.contract_status,
+                  quoted_price_kes: vendor.price ?? '',
+                  amount_paid_kes: vendor.amount_paid,
+                  outstanding_kes: vendor.price != null ? Math.max(vendor.price - vendor.amount_paid, 0) : '',
+                  payment_due_date: safeDateLabel(vendor.payment_due_date),
+                  open_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => !task.completed).length,
+                  completed_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => task.completed).length,
+                  notes: notesDrafts[vendor.id] ?? vendor.notes ?? '',
+                })),
+              );
+            }}
+          >
+            <Download className="h-4 w-4" />
+            Export Vendors
+          </Button>
+          {addVendorDialog}
+        </div>
       </div>
 
       <Card className="shadow-card">
@@ -2089,7 +2186,7 @@ export default function Vendors() {
 
           {decisionWorkspaceVendors.length > 0 ? (
             <div className="mt-4 overflow-x-auto">
-              <div className="min-w-[860px] rounded-xl border border-border/70 bg-background">
+              <div className="min-w-[720px] rounded-xl border border-border/70 bg-background lg:min-w-[860px]">
                 <div
                   className="grid"
                   style={{ gridTemplateColumns: `180px repeat(${decisionWorkspaceVendors.length}, minmax(200px, 1fr))` }}
@@ -2905,7 +3002,7 @@ export default function Vendors() {
           }
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display">
               Add task for {vendorTaskDialogVendor?.name}
@@ -3037,7 +3134,7 @@ export default function Vendors() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="font-display">
               Review {reviewDialogVendor?.name}

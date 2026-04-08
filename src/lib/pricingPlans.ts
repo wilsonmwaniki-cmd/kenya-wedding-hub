@@ -6,8 +6,16 @@ export type AudiencePlan = {
   title: string;
   subtitle: string;
   pricingModel: string;
+  billingCadence: 'one_time' | 'monthly' | 'annual' | 'monthly_or_annual';
   freeTierName: string;
   paidTierName: string;
+  entitlementCode: string;
+  stripeProductKey: string;
+  stripeMonthlyLookupKey: string | null;
+  stripeAnnualLookupKey: string | null;
+  stripeOneTimeLookupKey: string | null;
+  successPath: string;
+  cancelPath: string;
   freeIncludes: string[];
   paidUnlocks: string[];
   upgradeMoments: string[];
@@ -26,8 +34,16 @@ export const audiencePlans: AudiencePlan[] = [
     title: 'Couples',
     subtitle: 'Free to explore, pay when you are ready to actively coordinate your wedding.',
     pricingModel: 'One-time wedding pass',
+    billingCadence: 'one_time',
     freeTierName: 'Explore',
     paidTierName: 'Planning Pass',
+    entitlementCode: 'planning_pass',
+    stripeProductKey: 'planning_pass',
+    stripeMonthlyLookupKey: null,
+    stripeAnnualLookupKey: null,
+    stripeOneTimeLookupKey: 'planning_pass_one_time',
+    successPath: '/budget?upgrade=success',
+    cancelPath: '/pricing?upgrade=cancelled',
     freeIncludes: [
       'Sign up and create a wedding workspace',
       'Use the cost estimator',
@@ -55,8 +71,16 @@ export const audiencePlans: AudiencePlan[] = [
     title: 'Wedding Committees',
     subtitle: 'Built like a couple pass, but for families and committee-led weddings.',
     pricingModel: 'One-time wedding pass',
+    billingCadence: 'one_time',
     freeTierName: 'Explore',
     paidTierName: 'Committee Pass',
+    entitlementCode: 'committee_pass',
+    stripeProductKey: 'committee_pass',
+    stripeMonthlyLookupKey: null,
+    stripeAnnualLookupKey: null,
+    stripeOneTimeLookupKey: 'committee_pass_one_time',
+    successPath: '/planner?upgrade=success',
+    cancelPath: '/pricing?upgrade=cancelled',
     freeIncludes: [
       'Create a committee-led wedding workspace',
       'Estimate costs and draft the initial plan',
@@ -83,8 +107,16 @@ export const audiencePlans: AudiencePlan[] = [
     title: 'Professional Planners',
     subtitle: 'Let planners test the system free, then pay as soon as they need to operate at scale.',
     pricingModel: 'Monthly or annual subscription',
+    billingCadence: 'monthly_or_annual',
     freeTierName: 'Starter',
     paidTierName: 'Planner Pro',
+    entitlementCode: 'planner_pro',
+    stripeProductKey: 'planner_pro',
+    stripeMonthlyLookupKey: 'planner_pro_monthly',
+    stripeAnnualLookupKey: 'planner_pro_annual',
+    stripeOneTimeLookupKey: null,
+    successPath: '/planner?upgrade=success',
+    cancelPath: '/pricing?upgrade=cancelled',
     freeIncludes: [
       'Create a planner profile',
       'Manage 1 active wedding',
@@ -111,8 +143,16 @@ export const audiencePlans: AudiencePlan[] = [
     title: 'Vendors',
     subtitle: 'Free listings help discovery. Paid access starts when leads and business tools become valuable.',
     pricingModel: 'Monthly subscription',
+    billingCadence: 'monthly',
     freeTierName: 'Listing',
     paidTierName: 'Vendor Pro',
+    entitlementCode: 'vendor_pro',
+    stripeProductKey: 'vendor_pro',
+    stripeMonthlyLookupKey: 'vendor_pro_monthly',
+    stripeAnnualLookupKey: null,
+    stripeOneTimeLookupKey: null,
+    successPath: '/vendor-dashboard?upgrade=success',
+    cancelPath: '/pricing?upgrade=cancelled',
     freeIncludes: [
       'Create a vendor profile and listing',
       'Appear in the directory',
@@ -161,3 +201,24 @@ export const accessControlImplementationSteps = [
   'Use upgrade prompts at the action point where value starts, such as connecting, exporting, syncing, or adding another active wedding.',
   'Add billing webhooks later to update entitlement state without changing the product rules defined here.',
 ];
+
+export function getAudiencePlan(audience: PricingAudience) {
+  return audiencePlans.find((plan) => plan.audience === audience)!;
+}
+
+export function buildPricingHref(audience: PricingAudience, feature?: string) {
+  const plan = getAudiencePlan(audience);
+  const params = new URLSearchParams({
+    audience,
+    plan: plan.entitlementCode,
+  });
+
+  if (feature) params.set('feature', feature);
+  if (plan.stripeOneTimeLookupKey) params.set('oneTimeLookupKey', plan.stripeOneTimeLookupKey);
+  if (plan.stripeMonthlyLookupKey) params.set('monthlyLookupKey', plan.stripeMonthlyLookupKey);
+  if (plan.stripeAnnualLookupKey) params.set('annualLookupKey', plan.stripeAnnualLookupKey);
+  params.set('successPath', plan.successPath);
+  params.set('cancelPath', plan.cancelPath);
+
+  return `/pricing?${params.toString()}`;
+}
