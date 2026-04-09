@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -8,8 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole, Eye, Globe, Mail, MapPin, Phone, ExternalLink } from 'lucide-react';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { vendorAccessMessage, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
@@ -19,6 +21,7 @@ const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Fl
 
 interface VendorListing {
   id: string;
+  logo_url: string | null;
   business_name: string;
   category: string;
   description: string;
@@ -77,6 +80,7 @@ export default function VendorSettings() {
   const [reputationLoading, setReputationLoading] = useState(false);
   const [reputationOverview, setReputationOverview] = useState<VendorReputationOverview | null>(null);
   const [requestingVerification, setRequestingVerification] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
 
@@ -236,6 +240,21 @@ export default function VendorSettings() {
   const subscriptionActive = vendorPreviewMode || vendorHasActiveSubscription(listing);
   const fullAccess = vendorPreviewMode || vendorHasFullAccess(listing);
   const verificationRequestOpen = Boolean(listing?.verification_requested);
+  const previewLocation = buildKenyaLocationLabel(form.location_county, form.location_town);
+  const previewBudgetBand = formatBudgetBand(
+    form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null,
+    form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null,
+  );
+  const previewSocialLinks = useMemo(
+    () =>
+      [
+        { label: 'Instagram', value: form.social_instagram },
+        { label: 'Facebook', value: form.social_facebook },
+        { label: 'TikTok', value: form.social_tiktok },
+        { label: 'X (Twitter)', value: form.social_twitter },
+      ].filter((item) => item.value.trim()),
+    [form.social_facebook, form.social_instagram, form.social_tiktok, form.social_twitter],
+  );
 
   if (loading) {
     return (
@@ -641,10 +660,185 @@ export default function VendorSettings() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              {listing ? 'Update Listing' : 'Submit for Review'}
-            </Button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+                <DialogTrigger asChild>
+                  <Button type="button" variant="outline" className="w-full sm:w-auto">
+                    <Eye className="mr-2 h-4 w-4" />
+                    Preview Listing
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+                  <DialogHeader>
+                    <DialogTitle className="font-display flex items-center gap-2">
+                      <Eye className="h-5 w-5 text-primary" />
+                      Directory Listing Preview
+                    </DialogTitle>
+                    <DialogDescription>
+                      This preview uses your current draft so you can see how couples will experience your listing before you save it.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="space-y-6">
+                    <div>
+                      <p className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Directory card</p>
+                      <Card className="shadow-card">
+                        <CardContent className="flex flex-col items-center p-6 text-center">
+                          <div className="relative">
+                            <Avatar className="h-16 w-16 border-2 border-border">
+                              <AvatarImage src={listing?.logo_url ?? undefined} alt={form.business_name || 'Vendor preview'} />
+                              <AvatarFallback className="bg-primary/10 text-lg text-primary">
+                                {(form.business_name || 'VP').split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            {(listing?.is_verified || vendorPreviewMode) && (
+                              <CheckCircle2 className="absolute -bottom-1 -right-1 h-5 w-5 text-primary fill-background" />
+                            )}
+                          </div>
+                          <h3 className="mt-4 font-display text-lg font-semibold text-card-foreground">
+                            {form.business_name || 'Your business name'}
+                          </h3>
+                          <Badge variant="outline" className="mt-1 text-xs">{form.category}</Badge>
+                          {previewLocation && (
+                            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                              <MapPin className="h-3 w-3" /> {previewLocation}
+                            </p>
+                          )}
+                          {previewBudgetBand && (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              Typical budget: {previewBudgetBand}
+                            </p>
+                          )}
+                          {form.description && (
+                            <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{form.description}</p>
+                          )}
+                          {form.services.length > 0 && (
+                            <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                              {form.services.slice(0, 3).map((service) => (
+                                <Badge key={service} variant="secondary" className="text-xs">{service}</Badge>
+                              ))}
+                              {form.services.length > 3 && (
+                                <Badge variant="secondary" className="text-xs">+{form.services.length - 3}</Badge>
+                              )}
+                            </div>
+                          )}
+                          {(listing?.is_verified || vendorPreviewMode) && (
+                            <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
+                              <CheckCircle2 className="h-3 w-3" /> Verified Vendor
+                            </span>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div>
+                      <p className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Expanded details</p>
+                      <Card className="shadow-card">
+                        <CardHeader>
+                          <CardTitle className="font-display text-2xl">{form.business_name || 'Your business name'}</CardTitle>
+                          <CardDescription>
+                            {form.category} {previewLocation ? `· ${previewLocation}` : ''}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-5">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {form.phone && (
+                              <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Phone</p>
+                                <p className="mt-2 flex items-center gap-2 text-sm text-foreground">
+                                  <Phone className="h-4 w-4 text-primary" />
+                                  {form.phone}
+                                </p>
+                              </div>
+                            )}
+                            {form.email && (
+                              <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email</p>
+                                <p className="mt-2 flex items-center gap-2 text-sm text-foreground break-all">
+                                  <Mail className="h-4 w-4 text-primary" />
+                                  {form.email}
+                                </p>
+                              </div>
+                            )}
+                            {form.website && (
+                              <div className="rounded-xl border border-border/70 bg-muted/20 p-4 sm:col-span-2">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website</p>
+                                <p className="mt-2 flex items-center gap-2 text-sm text-foreground break-all">
+                                  <Globe className="h-4 w-4 text-primary" />
+                                  {form.website}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {form.description && (
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">About this vendor</p>
+                              <p className="mt-2 text-sm leading-7 text-foreground/85">{form.description}</p>
+                            </div>
+                          )}
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Service Areas</p>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {form.service_areas.length > 0 ? (
+                                  form.service_areas.map((county) => (
+                                    <Badge key={county} variant="secondary">{county}</Badge>
+                                  ))
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">No service areas added yet.</p>
+                                )}
+                              </div>
+                              <p className="mt-3 text-sm text-muted-foreground">Travel scope: {travelScopeOptions.find((option) => option.value === form.travel_scope)?.label || form.travel_scope}</p>
+                            </div>
+
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Budget Fit</p>
+                              <p className="mt-3 text-sm text-foreground">{previewBudgetBand || 'No public budget band added yet.'}</p>
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                Couples use this to understand whether your pricing fits their wedding plan.
+                              </p>
+                            </div>
+                          </div>
+
+                          {form.services.length > 0 && (
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Services & tags</p>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {form.services.map((service) => (
+                                  <Badge key={service} variant="secondary">{service}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {previewSocialLinks.length > 0 && (
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Social media</p>
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                {previewSocialLinks.map((link) => (
+                                  <div key={link.label} className="flex items-center gap-2 text-sm text-foreground break-all">
+                                    <ExternalLink className="h-4 w-4 text-primary" />
+                                    <span className="font-medium">{link.label}:</span>
+                                    <span>{link.value}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                {listing ? 'Update Listing' : 'Submit for Review'}
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
