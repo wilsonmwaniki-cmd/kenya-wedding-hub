@@ -5,7 +5,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, Sparkles, X, Check, LockKeyhole, ShieldCheck, CreditCard, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, Sparkles, X, Check, LockKeyhole, ShieldCheck, CreditCard, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { vendorHasFullAccess } from '@/lib/vendorAccess';
 import { getEntitlementDecision } from '@/lib/entitlements';
@@ -49,6 +51,30 @@ interface VendorPaymentSummary {
   latestPaymentDate: string | null;
 }
 
+interface VendorTaskDetail {
+  id: string;
+  title: string;
+  due_date: string | null;
+  completed: boolean;
+  description: string | null;
+  visibility: string | null;
+  priority_level: string | null;
+  phase: string | null;
+  recommended_role: string | null;
+  source_vendor_id: string | null;
+}
+
+interface VendorPaymentDetail {
+  id: string;
+  amount: number;
+  payment_date: string | null;
+  reference: string | null;
+  notes: string | null;
+  payee_name: string | null;
+  category_name: string | null;
+  vendor_id: string | null;
+}
+
 interface ConnectionRequest {
   id: string;
   requester_user_id: string;
@@ -80,9 +106,12 @@ export default function VendorDashboard() {
   const [listing, setListing] = useState<VendorListingAccess | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [calendarBookingId, setCalendarBookingId] = useState<string | null>(null);
+  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [profilesByUserId, setProfilesByUserId] = useState<Record<string, BookingProfile>>({});
   const [taskSummaryByBookingId, setTaskSummaryByBookingId] = useState<Record<string, VendorTaskSummary>>({});
   const [paymentSummaryByBookingId, setPaymentSummaryByBookingId] = useState<Record<string, VendorPaymentSummary>>({});
+  const [taskDetailsByBookingId, setTaskDetailsByBookingId] = useState<Record<string, VendorTaskDetail[]>>({});
+  const [paymentDetailsByBookingId, setPaymentDetailsByBookingId] = useState<Record<string, VendorPaymentDetail[]>>({});
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
 
@@ -118,6 +147,8 @@ export default function VendorDashboard() {
             setProfilesByUserId({});
             setTaskSummaryByBookingId({});
             setPaymentSummaryByBookingId({});
+            setTaskDetailsByBookingId({});
+            setPaymentDetailsByBookingId({});
           }
 
           await loadConnectionRequests(listing.id);
@@ -158,13 +189,13 @@ export default function VendorDashboard() {
       bookingIds.length
         ? supabase
             .from('tasks')
-            .select('id, due_date, completed, source_vendor_id')
+            .select('id, title, due_date, completed, description, visibility, priority_level, phase, recommended_role, source_vendor_id')
             .in('source_vendor_id', bookingIds)
         : Promise.resolve({ data: [], error: null } as any),
       bookingIds.length
         ? supabase
             .from('budget_payments')
-            .select('vendor_id, amount, payment_date')
+            .select('id, vendor_id, amount, payment_date, reference, notes, payee_name, category_name')
             .in('vendor_id', bookingIds)
         : Promise.resolve({ data: [], error: null } as any),
     ]);
@@ -181,6 +212,7 @@ export default function VendorDashboard() {
     setProfilesByUserId(nextProfiles);
 
     const nextTaskSummary: Record<string, VendorTaskSummary> = {};
+    const nextTaskDetails: Record<string, VendorTaskDetail[]> = {};
     ((tasksRes.data as any[]) || []).forEach((task) => {
       if (!task.source_vendor_id) return;
       const current = nextTaskSummary[task.source_vendor_id] ?? {
@@ -199,10 +231,35 @@ export default function VendorDashboard() {
         }
       }
       nextTaskSummary[task.source_vendor_id] = current;
+      const currentDetails = nextTaskDetails[task.source_vendor_id] ?? [];
+      currentDetails.push({
+        id: task.id,
+        title: task.title,
+        due_date: task.due_date ?? null,
+        completed: Boolean(task.completed),
+        description: task.description ?? null,
+        visibility: task.visibility ?? null,
+        priority_level: task.priority_level ?? null,
+        phase: task.phase ?? null,
+        recommended_role: task.recommended_role ?? null,
+        source_vendor_id: task.source_vendor_id ?? null,
+      });
+      nextTaskDetails[task.source_vendor_id] = currentDetails;
     });
     setTaskSummaryByBookingId(nextTaskSummary);
+    Object.values(nextTaskDetails).forEach((tasks) =>
+      tasks.sort((a, b) => {
+        if (a.completed !== b.completed) return Number(a.completed) - Number(b.completed);
+        if (a.due_date && b.due_date && a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
+        if (a.due_date && !b.due_date) return -1;
+        if (!a.due_date && b.due_date) return 1;
+        return a.title.localeCompare(b.title);
+      }),
+    );
+    setTaskDetailsByBookingId(nextTaskDetails);
 
     const nextPaymentSummary: Record<string, VendorPaymentSummary> = {};
+    const nextPaymentDetails: Record<string, VendorPaymentDetail[]> = {};
     ((paymentsRes.data as any[]) || []).forEach((payment) => {
       if (!payment.vendor_id) return;
       const current = nextPaymentSummary[payment.vendor_id] ?? {
@@ -216,8 +273,30 @@ export default function VendorDashboard() {
         current.latestPaymentDate = payment.payment_date;
       }
       nextPaymentSummary[payment.vendor_id] = current;
+
+      const currentDetails = nextPaymentDetails[payment.vendor_id] ?? [];
+      currentDetails.push({
+        id: payment.id,
+        amount: Number(payment.amount ?? 0),
+        payment_date: payment.payment_date ?? null,
+        reference: payment.reference ?? null,
+        notes: payment.notes ?? null,
+        payee_name: payment.payee_name ?? null,
+        category_name: payment.category_name ?? null,
+        vendor_id: payment.vendor_id ?? null,
+      });
+      nextPaymentDetails[payment.vendor_id] = currentDetails;
     });
     setPaymentSummaryByBookingId(nextPaymentSummary);
+    Object.values(nextPaymentDetails).forEach((payments) =>
+      payments.sort((a, b) => {
+        if (a.payment_date && b.payment_date && a.payment_date !== b.payment_date) return b.payment_date.localeCompare(a.payment_date);
+        if (a.payment_date && !b.payment_date) return -1;
+        if (!a.payment_date && b.payment_date) return 1;
+        return b.amount - a.amount;
+      }),
+    );
+    setPaymentDetailsByBookingId(nextPaymentDetails);
   };
 
   const loadConnectionRequests = async (vendorListingId: string) => {
@@ -328,6 +407,10 @@ export default function VendorDashboard() {
       }),
     [bookings, profilesByUserId],
   );
+  const selectedBooking = selectedBookingId ? bookings.find((booking) => booking.id === selectedBookingId) ?? null : null;
+  const selectedProfile = selectedBooking ? profilesByUserId[selectedBooking.user_id] : null;
+  const selectedTaskDetails = selectedBooking ? taskDetailsByBookingId[selectedBooking.id] ?? [] : [];
+  const selectedPaymentDetails = selectedBooking ? paymentDetailsByBookingId[selectedBooking.id] ?? [] : [];
 
   if (loading) {
     return (
@@ -344,6 +427,18 @@ export default function VendorDashboard() {
       case 'rejected': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
       default: return 'bg-muted text-muted-foreground';
     }
+  };
+  const formatShortDate = (value: string | null) => {
+    if (!value) return 'Not set';
+    return new Date(value).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const openBookingDetail = (bookingId: string) => {
+    setSelectedBookingId(bookingId);
   };
 
   const handleAddBookingToCalendar = async (booking: Booking) => {
@@ -597,9 +692,23 @@ export default function VendorDashboard() {
                   : null;
 
                 return (
-                  <Card key={b.id} className="overflow-hidden border-border/70 shadow-card">
+                  <Card
+                    key={b.id}
+                    className="overflow-hidden border-border/70 shadow-card transition hover:border-primary/40 hover:shadow-md"
+                  >
                     <CardContent className="p-5">
-                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                      <div
+                        className="flex cursor-pointer flex-col gap-4 xl:flex-row xl:items-start xl:justify-between"
+                        onClick={() => openBookingDetail(b.id)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            openBookingDetail(b.id);
+                          }
+                        }}
+                      >
                         <div className="min-w-0 flex-1 space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-display text-xl font-semibold text-foreground">
@@ -684,7 +793,10 @@ export default function VendorDashboard() {
                           <Button
                             type="button"
                             className="w-full gap-2"
-                            onClick={() => handleAddBookingToCalendar(b)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleAddBookingToCalendar(b);
+                            }}
                             disabled={!profile?.wedding_date || calendarBookingId === b.id}
                           >
                             {calendarBookingId === b.id ? (
@@ -740,6 +852,234 @@ export default function VendorDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(selectedBooking)} onOpenChange={(open) => !open && setSelectedBookingId(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+          {selectedBooking && (
+            <>
+              <DialogHeader className="space-y-3 pr-8">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">{selectedBooking.category}</Badge>
+                  <Badge className={statusColor(selectedBooking.status)}>{selectedBooking.status || 'unknown'}</Badge>
+                  {selectedBooking.vendor_calendar_synced_at && (
+                    <Badge variant="secondary" className="gap-1">
+                      <CheckCheck className="h-3.5 w-3.5 text-primary" />
+                      In Google Calendar
+                    </Badge>
+                  )}
+                </div>
+                <DialogTitle className="font-display text-3xl text-foreground">
+                  {selectedProfile?.full_name || 'Couple account'}
+                </DialogTitle>
+                <DialogDescription>
+                  Review the full booking context, payment trail, vendor-linked tasks, and quick contact actions without leaving your dashboard.
+                </DialogDescription>
+              </DialogHeader>
+
+              <Tabs defaultValue="overview" className="space-y-4">
+                <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-xl border border-border/70 bg-muted/20 p-1">
+                  <TabsTrigger value="overview">Couple Overview</TabsTrigger>
+                  <TabsTrigger value="payments">Payment History</TabsTrigger>
+                  <TabsTrigger value="tasks">Task List</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="overview" className="space-y-4">
+                  <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                    <Card className="shadow-card">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="font-display text-xl">Wedding Snapshot</CardTitle>
+                      </CardHeader>
+                      <CardContent className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Wedding date</p>
+                          <p className="mt-2 flex items-center gap-2 text-sm text-foreground">
+                            <CalendarDays className="h-4 w-4 text-primary" />
+                            {formatShortDate(selectedProfile?.wedding_date ?? null)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Location</p>
+                          <p className="mt-2 flex items-center gap-2 text-sm text-foreground">
+                            <MapPin className="h-4 w-4 text-primary" />
+                            {selectedProfile?.wedding_location || 'Not shared yet'}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quoted amount</p>
+                          <p className="mt-2 text-sm font-medium text-foreground">
+                            KES {(selectedBooking.price ?? 0).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Outstanding balance</p>
+                          <p className="mt-2 text-sm font-medium text-amber-700">
+                            KES {Math.max((selectedBooking.price ?? 0) - ((paymentSummaryByBookingId[selectedBooking.id]?.totalPaid || 0)), 0).toLocaleString()}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="shadow-card">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="font-display text-xl">Contact Actions</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <a
+                          href={selectedBooking.phone ? `tel:${selectedBooking.phone}` : undefined}
+                          className={`flex items-center justify-between rounded-xl border border-border/70 p-4 text-sm transition ${
+                            selectedBooking.phone
+                              ? 'bg-background hover:border-primary/40 hover:bg-primary/5'
+                              : 'cursor-not-allowed bg-muted/20 text-muted-foreground'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Phone className="h-4 w-4 text-primary" />
+                            {selectedBooking.phone || 'No phone saved'}
+                          </span>
+                          {selectedBooking.phone && <ExternalLink className="h-4 w-4 text-muted-foreground" />}
+                        </a>
+                        <a
+                          href={selectedBooking.email ? `mailto:${selectedBooking.email}` : undefined}
+                          className={`flex items-center justify-between rounded-xl border border-border/70 p-4 text-sm transition ${
+                            selectedBooking.email
+                              ? 'bg-background hover:border-primary/40 hover:bg-primary/5'
+                              : 'cursor-not-allowed bg-muted/20 text-muted-foreground'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 break-all">
+                            <Mail className="h-4 w-4 text-primary" />
+                            {selectedBooking.email || 'No email saved'}
+                          </span>
+                          {selectedBooking.email && <ExternalLink className="h-4 w-4 text-muted-foreground" />}
+                        </a>
+                        <Button
+                          type="button"
+                          className="w-full gap-2"
+                          onClick={() => handleAddBookingToCalendar(selectedBooking)}
+                          disabled={!selectedProfile?.wedding_date || calendarBookingId === selectedBooking.id}
+                        >
+                          {calendarBookingId === selectedBooking.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CalendarPlus className="h-4 w-4" />
+                          )}
+                          Add to Google Calendar
+                        </Button>
+                        <p className="text-xs text-muted-foreground">
+                          Zania is prefixed in the event title so vendor bookings stay easy to spot in a busy calendar.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <Card className="shadow-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="font-display text-xl">Notes</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {selectedBooking.notes ? (
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm leading-6 text-foreground/85">
+                          {selectedBooking.notes}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                          No notes were added to this booking yet.
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="payments" className="space-y-4">
+                  <Card className="shadow-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="font-display text-xl">Full Payment History</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {selectedPaymentDetails.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                          No payments have been recorded for this booking yet.
+                        </div>
+                      ) : (
+                        selectedPaymentDetails.map((payment) => (
+                          <div key={payment.id} className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="space-y-1">
+                                <p className="text-sm font-semibold text-foreground">
+                                  KES {payment.amount.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {payment.payee_name || selectedBooking.name}
+                                  {payment.category_name ? ` · ${payment.category_name}` : ''}
+                                </p>
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {formatShortDate(payment.payment_date)}
+                              </div>
+                            </div>
+                            <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                              <div className="rounded-lg border border-border/60 bg-background p-3">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reference</p>
+                                <p className="mt-1 text-foreground">{payment.reference || 'No payment reference saved'}</p>
+                              </div>
+                              <div className="rounded-lg border border-border/60 bg-background p-3">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notes</p>
+                                <p className="mt-1 text-foreground">{payment.notes || 'No payment notes saved'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="tasks" className="space-y-4">
+                  <Card className="shadow-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="font-display text-xl">Full Task List</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {selectedTaskDetails.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                          No tasks are linked to this booking yet.
+                        </div>
+                      ) : (
+                        selectedTaskDetails.map((task) => (
+                          <div key={task.id} className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className={`text-sm font-semibold ${task.completed ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                                    {task.title}
+                                  </p>
+                                  <Badge variant={task.completed ? 'secondary' : 'outline'}>
+                                    {task.completed ? 'Completed' : 'Open'}
+                                  </Badge>
+                                  {task.visibility && <Badge variant="outline">{task.visibility}</Badge>}
+                                  {task.priority_level && <Badge variant="outline">{task.priority_level}</Badge>}
+                                </div>
+                                {task.description && (
+                                  <p className="text-sm leading-6 text-muted-foreground">{task.description}</p>
+                                )}
+                              </div>
+                              <div className="space-y-1 text-sm text-muted-foreground sm:text-right">
+                                <p>{task.due_date ? `Due ${formatShortDate(task.due_date)}` : 'No due date set'}</p>
+                                {task.phase && <p>Phase: {task.phase.replaceAll('_', ' ')}</p>}
+                                {task.recommended_role && <p>Suggested owner: {task.recommended_role}</p>}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
