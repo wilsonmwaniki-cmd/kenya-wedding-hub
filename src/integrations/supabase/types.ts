@@ -389,6 +389,7 @@ export type Database = {
           role: Database["public"]["Enums"]["app_role"]
           service_areas: string[]
           specialties: string[] | null
+          stripe_customer_id: string | null
           travel_scope: string
           updated_at: string
           user_id: string
@@ -427,6 +428,7 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           service_areas?: string[]
           specialties?: string[] | null
+          stripe_customer_id?: string | null
           travel_scope?: string
           updated_at?: string
           user_id: string
@@ -465,6 +467,7 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           service_areas?: string[]
           specialties?: string[] | null
+          stripe_customer_id?: string | null
           travel_scope?: string
           updated_at?: string
           user_id?: string
@@ -1117,6 +1120,7 @@ export type Database = {
           selection_updated_at: string
           status: string | null
           user_id: string
+          vendor_internal_notes: string | null
           vendor_listing_id: string | null
         }
         Insert: {
@@ -1140,6 +1144,7 @@ export type Database = {
           selection_updated_at?: string
           status?: string | null
           user_id: string
+          vendor_internal_notes?: string | null
           vendor_listing_id?: string | null
         }
         Update: {
@@ -1163,6 +1168,7 @@ export type Database = {
           selection_updated_at?: string
           status?: string | null
           user_id?: string
+          vendor_internal_notes?: string | null
           vendor_listing_id?: string | null
         }
         Relationships: [
@@ -1590,8 +1596,16 @@ export type Database = {
           selection_updated_at: string
           status: string | null
           user_id: string
+          vendor_internal_notes: string | null
           vendor_listing_id: string | null
         }
+      }
+      update_vendor_booking_internal_notes: {
+        Args: {
+          internal_notes_input?: string | null
+          target_vendor_id: string
+        }
+        Returns: string
       }
       require_planner_or_admin: { Args: never; Returns: undefined }
       can_manage_committee_members: {
