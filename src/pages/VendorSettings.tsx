@@ -49,6 +49,31 @@ interface VendorListing {
   maximum_budget_kes: number | null;
 }
 
+function normalizeExternalUrl(value: string) {
+  if (!value.trim()) return '';
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
+function displayUrl(value: string) {
+  return value.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+}
+
+function XSocialIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M18.9 2H22l-6.77 7.73L23.2 22h-6.24l-4.9-7.42L5.56 22H2.44l7.24-8.27L1.8 2h6.4l4.43 6.8L18.9 2Zm-1.1 18h1.73L7.24 3.9H5.38L17.8 20Z" />
+    </svg>
+  );
+}
+
+function TikTokSocialIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M14.5 2c.33 1.93 1.49 3.79 3.35 4.8 1.06.58 2.16.83 3.15.86v3.09c-1.38-.05-2.77-.39-4.04-1.05a8.94 8.94 0 0 1-1.58-1.05v6.23c0 3.62-2.87 6.55-6.42 6.55a6.35 6.35 0 0 1-5.57-3.31 6.64 6.64 0 0 1-.8-3.24c0-3.62 2.87-6.55 6.42-6.55.29 0 .57.02.85.06v3.18a3.32 3.32 0 0 0-.85-.11c-1.8 0-3.27 1.49-3.27 3.33 0 1.24.66 2.32 1.64 2.9.48.29 1.04.44 1.63.44 1.76 0 3.2-1.43 3.27-3.2L12.4 2h2.1Z" />
+    </svg>
+  );
+}
+
 export default function VendorSettings() {
   const { user, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
@@ -245,13 +270,16 @@ export default function VendorSettings() {
     form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null,
     form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null,
   );
+  const previewPhoneHref = form.phone ? `tel:${form.phone.replace(/[^\d+]/g, '')}` : '';
+  const previewEmailHref = form.email ? `mailto:${form.email}` : '';
+  const previewWebsiteHref = form.website ? normalizeExternalUrl(form.website) : '';
   const previewSocialLinks = useMemo(
     () =>
       [
-        { label: 'Instagram', value: form.social_instagram },
-        { label: 'Facebook', value: form.social_facebook },
-        { label: 'TikTok', value: form.social_tiktok },
-        { label: 'X (Twitter)', value: form.social_twitter },
+        { label: 'Instagram', value: form.social_instagram, href: normalizeExternalUrl(form.social_instagram), theme: 'from-pink-500/15 to-orange-500/10', icon: 'instagram' as const },
+        { label: 'Facebook', value: form.social_facebook, href: normalizeExternalUrl(form.social_facebook), theme: 'from-blue-500/15 to-sky-500/10', icon: 'facebook' as const },
+        { label: 'TikTok', value: form.social_tiktok, href: normalizeExternalUrl(form.social_tiktok), theme: 'from-slate-900/10 to-emerald-400/10', icon: 'tiktok' as const },
+        { label: 'X (Twitter)', value: form.social_twitter, href: normalizeExternalUrl(form.social_twitter), theme: 'from-slate-950/10 to-slate-500/10', icon: 'x' as const },
       ].filter((item) => item.value.trim()),
     [form.social_facebook, form.social_instagram, form.social_tiktok, form.social_twitter],
   );
@@ -745,28 +773,39 @@ export default function VendorSettings() {
                             {form.phone && (
                               <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Phone</p>
-                                <p className="mt-2 flex items-center gap-2 text-sm text-foreground">
+                                <a
+                                  href={previewPhoneHref}
+                                  className="mt-2 flex items-center gap-2 text-sm text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                                >
                                   <Phone className="h-4 w-4 text-primary" />
                                   {form.phone}
-                                </p>
+                                </a>
                               </div>
                             )}
                             {form.email && (
                               <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email</p>
-                                <p className="mt-2 flex items-center gap-2 text-sm text-foreground break-all">
+                                <a
+                                  href={previewEmailHref}
+                                  className="mt-2 flex items-center gap-2 break-all text-sm text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                                >
                                   <Mail className="h-4 w-4 text-primary" />
                                   {form.email}
-                                </p>
+                                </a>
                               </div>
                             )}
                             {form.website && (
                               <div className="rounded-xl border border-border/70 bg-muted/20 p-4 sm:col-span-2">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website</p>
-                                <p className="mt-2 flex items-center gap-2 text-sm text-foreground break-all">
+                                <a
+                                  href={previewWebsiteHref}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="mt-2 flex items-center gap-2 break-all text-sm text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                                >
                                   <Globe className="h-4 w-4 text-primary" />
-                                  {form.website}
-                                </p>
+                                  {displayUrl(previewWebsiteHref)}
+                                </a>
                               </div>
                             )}
                           </div>
@@ -816,13 +855,29 @@ export default function VendorSettings() {
                           {previewSocialLinks.length > 0 && (
                             <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Social media</p>
-                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
                                 {previewSocialLinks.map((link) => (
-                                  <div key={link.label} className="flex items-center gap-2 text-sm text-foreground break-all">
-                                    <ExternalLink className="h-4 w-4 text-primary" />
-                                    <span className="font-medium">{link.label}:</span>
-                                    <span>{link.value}</span>
-                                  </div>
+                                  <a
+                                    key={link.label}
+                                    href={link.href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`group flex items-center gap-3 rounded-xl border border-border/70 bg-gradient-to-r ${link.theme} p-3 text-sm text-foreground transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm`}
+                                  >
+                                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-background/90 text-primary shadow-sm">
+                                      {link.icon === 'instagram' && <Instagram className="h-4 w-4" />}
+                                      {link.icon === 'facebook' && <Facebook className="h-4 w-4" />}
+                                      {link.icon === 'tiktok' && <TikTokSocialIcon className="h-4 w-4" />}
+                                      {link.icon === 'x' && <XSocialIcon className="h-4 w-4" />}
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block font-medium text-foreground">{link.label}</span>
+                                      <span className="block truncate text-xs text-muted-foreground group-hover:text-foreground/80">
+                                        {displayUrl(link.href)}
+                                      </span>
+                                    </span>
+                                    <ExternalLink className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+                                  </a>
                                 ))}
                               </div>
                             </div>
