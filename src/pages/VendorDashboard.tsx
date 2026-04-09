@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, Sparkles, X, Check, LockKeyhole, ShieldCheck, CreditCard, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText } from 'lucide-react';
@@ -24,6 +25,7 @@ interface Booking {
   phone: string | null;
   email: string | null;
   notes: string | null;
+  vendor_internal_notes: string | null;
   payment_status: string | null;
   amount_paid: number | null;
   payment_due_date: string | null;
@@ -106,12 +108,14 @@ export default function VendorDashboard() {
   const [listing, setListing] = useState<VendorListingAccess | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [calendarBookingId, setCalendarBookingId] = useState<string | null>(null);
+  const [savingInternalNotesId, setSavingInternalNotesId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [profilesByUserId, setProfilesByUserId] = useState<Record<string, BookingProfile>>({});
   const [taskSummaryByBookingId, setTaskSummaryByBookingId] = useState<Record<string, VendorTaskSummary>>({});
   const [paymentSummaryByBookingId, setPaymentSummaryByBookingId] = useState<Record<string, VendorPaymentSummary>>({});
   const [taskDetailsByBookingId, setTaskDetailsByBookingId] = useState<Record<string, VendorTaskDetail[]>>({});
   const [paymentDetailsByBookingId, setPaymentDetailsByBookingId] = useState<Record<string, VendorPaymentDetail[]>>({});
+  const [internalNoteDrafts, setInternalNoteDrafts] = useState<Record<string, string>>({});
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
 
@@ -131,7 +135,7 @@ export default function VendorDashboard() {
         if (vendorPreviewMode || vendorHasFullAccess(listing as VendorListingAccess)) {
           const { data } = await supabase
             .from('vendors')
-            .select('id, user_id, name, category, status, price, phone, email, notes, payment_status, amount_paid, payment_due_date, vendor_calendar_synced_at, created_at')
+            .select('id, user_id, name, category, status, price, phone, email, notes, vendor_internal_notes, payment_status, amount_paid, payment_due_date, vendor_calendar_synced_at, created_at')
             .eq('vendor_listing_id', listing.id)
             .order('created_at', { ascending: false });
           if (data) {
@@ -141,6 +145,9 @@ export default function VendorDashboard() {
               amount_paid: d.amount_paid != null ? Number(d.amount_paid) : null,
             })) as Booking[];
             setBookings(rows);
+            setInternalNoteDrafts(
+              Object.fromEntries(rows.map((row) => [row.id, row.vendor_internal_notes ?? ''])),
+            );
             await loadBookingContext(rows);
           } else {
             setBookings([]);
@@ -149,6 +156,7 @@ export default function VendorDashboard() {
             setPaymentSummaryByBookingId({});
             setTaskDetailsByBookingId({});
             setPaymentDetailsByBookingId({});
+            setInternalNoteDrafts({});
           }
 
           await loadConnectionRequests(listing.id);
@@ -439,6 +447,38 @@ export default function VendorDashboard() {
 
   const openBookingDetail = (bookingId: string) => {
     setSelectedBookingId(bookingId);
+  };
+
+  const handleSaveInternalNotes = async (bookingId: string) => {
+    const nextNotes = (internalNoteDrafts[bookingId] ?? '').trim();
+    setSavingInternalNotesId(bookingId);
+    const { data, error } = await (supabase.rpc as any)('update_vendor_booking_internal_notes', {
+      target_vendor_id: bookingId,
+      internal_notes_input: nextNotes || null,
+    });
+
+    if (error) {
+      toast({
+        title: 'Could not save internal notes',
+        description: error.message,
+        variant: 'destructive',
+      });
+      setSavingInternalNotesId(null);
+      return;
+    }
+
+    const savedNotes = typeof data === 'string' || data === null ? data : nextNotes || null;
+    setBookings((prev) =>
+      prev.map((booking) =>
+        booking.id === bookingId ? { ...booking, vendor_internal_notes: savedNotes } : booking,
+      ),
+    );
+    setInternalNoteDrafts((prev) => ({ ...prev, [bookingId]: savedNotes ?? '' }));
+    toast({
+      title: 'Internal notes saved',
+      description: 'These notes stay private to your vendor workspace.',
+    });
+    setSavingInternalNotesId(null);
   };
 
   const handleAddBookingToCalendar = async (booking: Booking) => {
@@ -974,7 +1014,7 @@ export default function VendorDashboard() {
 
                   <Card className="shadow-card">
                     <CardHeader className="pb-3">
-                      <CardTitle className="font-display text-xl">Notes</CardTitle>
+                      <CardTitle className="font-display text-xl">Shared Booking Notes</CardTitle>
                     </CardHeader>
                     <CardContent>
                       {selectedBooking.notes ? (
@@ -986,6 +1026,49 @@ export default function VendorDashboard() {
                           No notes were added to this booking yet.
                         </div>
                       )}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="shadow-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="font-display flex items-center gap-2 text-xl">
+                        <MessageSquareText className="h-5 w-5 text-primary" />
+                        Vendor Internal Notes
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Keep your own private reminders here. These notes are not shown to the couple, planner, or committee.
+                      </p>
+                      <Textarea
+                        value={internalNoteDrafts[selectedBooking.id] ?? ''}
+                        onChange={(event) =>
+                          setInternalNoteDrafts((prev) => ({
+                            ...prev,
+                            [selectedBooking.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Add your private follow-up notes, prep reminders, call outcomes, or delivery concerns..."
+                        rows={6}
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-xs text-muted-foreground">
+                          Last saved notes stay attached to this booking in your vendor workspace.
+                        </p>
+                        <Button
+                          type="button"
+                          onClick={() => handleSaveInternalNotes(selectedBooking.id)}
+                          disabled={savingInternalNotesId === selectedBooking.id}
+                          className="gap-2"
+                        >
+                          {savingInternalNotesId === selectedBooking.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <MessageSquareText className="h-4 w-4" />
+                          )}
+                          Save Internal Notes
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 </TabsContent>
