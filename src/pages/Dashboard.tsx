@@ -764,7 +764,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-3">
+              <div className="grid gap-4 xl:grid-cols-3">
                 <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 text-primary" />
@@ -801,7 +801,7 @@ export default function Dashboard() {
                     {!overspentWeddingCategories[0] && !overspentPersonalCategories[0] && !nearLimitCategories[0] && (
                       <p className="text-sm text-muted-foreground">No urgent budget pressure right now.</p>
                     )}
-                    <Button asChild variant="outline" size="sm" className="w-full justify-start gap-2">
+                    <Button asChild variant="outline" size="sm" className="h-auto w-full justify-start gap-2 whitespace-normal py-2 text-left">
                       <Link to="/budget">
                         <Wallet className="h-4 w-4" />
                         Review budgets
@@ -829,7 +829,7 @@ export default function Dashboard() {
                     ) : (
                       <p className="text-sm text-muted-foreground">No unresolved vendor categories right now.</p>
                     )}
-                    <Button asChild variant="outline" size="sm" className="w-full justify-start gap-2">
+                    <Button asChild variant="outline" size="sm" className="h-auto w-full justify-start gap-2 whitespace-normal py-2 text-left">
                       <Link to="/vendors">
                         <Store className="h-4 w-4" />
                         Open decision workspace
@@ -868,14 +868,14 @@ export default function Dashboard() {
                         {paymentsDueSoon.length > 0 ? `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due in 14 days` : 'No payment deadlines in the next 14 days'}
                       </p>
                     </div>
-                    <div className="flex gap-2">
-                      <Button asChild variant="outline" size="sm" className="flex-1 justify-start gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button asChild variant="outline" size="sm" className="h-auto flex-1 justify-start gap-2 whitespace-normal py-2 text-left">
                         <Link to="/tasks">
                           <CheckSquare className="h-4 w-4" />
                           Open tasks
                         </Link>
                       </Button>
-                      <Button asChild variant="outline" size="sm" className="flex-1 justify-start gap-2">
+                      <Button asChild variant="outline" size="sm" className="h-auto flex-1 justify-start gap-2 whitespace-normal py-2 text-left">
                         <Link to="/vendors">
                           <EyeOff className="h-4 w-4" />
                           Review payments
