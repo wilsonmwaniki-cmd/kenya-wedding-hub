@@ -445,6 +445,81 @@ type ToolContext = {
   profile: Record<string, any> | null;
 };
 
+type PendingWriteAction = {
+  toolName: string;
+  args: Record<string, any>;
+  summary: string;
+  destructive: boolean;
+};
+
+const WRITE_TOOL_NAMES = new Set([
+  "create_task",
+  "complete_task",
+  "delete_task",
+  "add_budget_category",
+  "update_budget_spent",
+  "record_budget_payment",
+  "add_guest",
+  "update_guest_rsvp",
+  "remove_guest",
+  "add_vendor",
+  "update_vendor_status",
+  "update_vendor_price",
+  "remove_vendor",
+  "create_timeline_event",
+  "update_vendor_internal_notes",
+  "create_vendor_follow_up_reminder",
+  "update_vendor_follow_up_reminder_status",
+  "update_vendor_booking_status",
+]);
+
+function isWriteTool(name: string) {
+  return WRITE_TOOL_NAMES.has(name);
+}
+
+function summarizePendingAction(name: string, args: Record<string, any>) {
+  switch (name) {
+    case "create_task":
+      return `Create task "${args.title}"${args.due_date ? ` due ${args.due_date}` : ""}${args.category ? ` in ${args.category}` : ""}`;
+    case "complete_task":
+      return `Mark task "${args.title}" as completed`;
+    case "delete_task":
+      return `Delete task "${args.title}"`;
+    case "add_budget_category":
+      return `Add budget category "${args.name}" with ${formatCurrency(args.allocated)}`;
+    case "update_budget_spent":
+      return `Update budget spent for "${args.name}" to ${formatCurrency(args.spent)}`;
+    case "record_budget_payment":
+      return `Record ${formatCurrency(args.amount)} against "${args.category_name}"${args.vendor_name ? ` for ${args.vendor_name}` : ""}`;
+    case "add_guest":
+      return `Add guest "${args.name}"`;
+    case "update_guest_rsvp":
+      return `Update RSVP for "${args.name}" to ${args.rsvp_status}`;
+    case "remove_guest":
+      return `Remove guest "${args.name}"`;
+    case "add_vendor":
+      return `Add vendor "${args.name}" in ${args.category}`;
+    case "update_vendor_status":
+      return `Update vendor "${args.name}" to ${args.status}`;
+    case "update_vendor_price":
+      return `Update vendor "${args.name}" quote to ${formatCurrency(args.price)}`;
+    case "remove_vendor":
+      return `Remove vendor "${args.name}"`;
+    case "create_timeline_event":
+      return `Add timeline event "${args.title}" at ${args.event_time}`;
+    case "update_vendor_internal_notes":
+      return `Save private internal notes for ${args.couple_name}`;
+    case "create_vendor_follow_up_reminder":
+      return `Create follow-up reminder "${args.title}" for ${args.couple_name}${args.due_date ? ` due ${args.due_date}` : ""}`;
+    case "update_vendor_follow_up_reminder_status":
+      return `Mark follow-up reminder "${args.title}" as ${args.status} for ${args.couple_name}`;
+    case "update_vendor_booking_status":
+      return `Update booking status for ${args.couple_name} to ${args.status}`;
+    default:
+      return `Run ${name}`;
+  }
+}
+
 async function executeTool(name: string, args: Record<string, any>, context: ToolContext): Promise<string> {
   const { supabase, userId, role, plannerType, vendorListingId, workspaceOrFilter, writeClientId, today, profile } = context;
   const planningWriteBlock = getPlanningWriteBlock(role, plannerType, writeClientId);
@@ -877,8 +952,9 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4.1-mini";
+    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -925,7 +1001,7 @@ serve(async (req) => {
       global: { headers: { Authorization: `Bearer ${accessToken}` } },
     });
 
-    const { messages, selectedClientId } = await req.json();
+    const { messages, selectedClientId, allowWriteActions = false, confirmedActions = [] } = await req.json();
     const today = new Date().toISOString().slice(0, 10);
 
     const { data: profile } = await supabase
@@ -1321,6 +1397,8 @@ Operating rules:
 - When a requested action is not supported by tools, explain the exact Zania section they should use next.
 - Be warm, concise, practical, and Kenyan-wedding aware.
 - Use markdown when it improves clarity.
+- Format answers for fast scanning: use short headings, short paragraphs, and bullet points for action lists.
+- When advising on priorities, prefer this structure: "What stands out", "What to do next", and "What I can do for you".
 - Always use KES for money.`;
 
     const aiMessages: any[] = [{ role: "system", content: systemPrompt }, ...messages];
@@ -1338,42 +1416,68 @@ Operating rules:
 
     const MAX_TOOL_ROUNDS = 5;
     let finalContent = "";
+    let pendingActions: PendingWriteAction[] = [];
 
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    if (Array.isArray(confirmedActions) && confirmedActions.length > 0) {
+      const results: string[] = [];
+      for (const action of confirmedActions) {
+        const toolName = String(action?.toolName || "");
+        const toolArgs = action && typeof action.args === "object" && action.args ? action.args : {};
+        if (!toolName || !isWriteTool(toolName)) continue;
+        const result = await executeTool(toolName, toolArgs, toolContext);
+        results.push(`- ${result}`);
+      }
+
+      finalContent = results.length
+        ? `## Action completed\n\n${results.join("\n")}\n\nAnything else you want me to update?`
+        : "I couldn't find any confirmed actions to run.";
+    }
+
+    for (let round = 0; round < MAX_TOOL_ROUNDS && !finalContent; round++) {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
+          model: OPENAI_MODEL,
           messages: aiMessages,
           tools,
+          tool_choice: "auto",
           stream: false,
         }),
       });
 
       if (!response.ok) {
+        const text = await response.text();
+        const details = text.trim().slice(0, 500);
+        let parsedError: Record<string, any> | null = null;
+        try {
+          parsedError = JSON.parse(text);
+        } catch {
+          parsedError = null;
+        }
+
         if (response.status === 429) {
+          const quotaMessage =
+            parsedError?.error?.type === "insufficient_quota" ||
+            /insufficient_quota|quota/i.test(details);
+          if (quotaMessage) {
+            return new Response(JSON.stringify({ error: "OpenAI credits exhausted. Please top up later.", details, usage: usageStatus }), {
+              status: 402,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
           return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment.", usage: usageStatus }), {
             status: 429,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        if (response.status === 402) {
-          return new Response(JSON.stringify({ error: "AI credits exhausted. Please top up later.", usage: usageStatus }), {
-            status: 402,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const text = await response.text();
-        const details = text.trim().slice(0, 500);
-        console.error("AI gateway error:", response.status, details);
+        console.error("OpenAI API error:", response.status, details);
         return new Response(JSON.stringify({
           error: "AI service unavailable",
-          details: `Gateway returned ${response.status}${details ? `: ${details}` : ""}`,
+          details: `OpenAI returned ${response.status}${details ? `: ${details}` : ""}`,
           usage: usageStatus,
         }), {
           status: 500,
@@ -1389,6 +1493,35 @@ Operating rules:
       aiMessages.push(message);
 
       if (message.tool_calls?.length) {
+        const toolCalls = message.tool_calls.map((toolCall: any) => {
+          let functionArgs: Record<string, any> = {};
+          try {
+            functionArgs = JSON.parse(toolCall.function.arguments);
+          } catch {
+            functionArgs = {};
+          }
+          return {
+            tool_call_id: toolCall.id,
+            functionName: toolCall.function.name,
+            functionArgs,
+          };
+        });
+
+        const writeActions = toolCalls
+          .filter((toolCall: any) => isWriteTool(toolCall.functionName))
+          .map((toolCall: any) => ({
+            toolName: toolCall.functionName,
+            args: toolCall.functionArgs,
+            summary: summarizePendingAction(toolCall.functionName, toolCall.functionArgs),
+            destructive: ["delete_task", "remove_guest", "remove_vendor"].includes(toolCall.functionName),
+          }));
+
+        if (writeActions.length > 0 && !allowWriteActions) {
+          pendingActions = writeActions;
+          finalContent = `## Ready to run ${writeActions.length === 1 ? "this action" : "these actions"}\n\n${writeActions.map((action) => `- ${action.summary}`).join("\n")}\n\nUse **Run this action** to apply the change${writeActions.length > 1 ? "s" : ""}.`;
+          break;
+        }
+
         for (const toolCall of message.tool_calls) {
           const functionName = toolCall.function.name;
           let functionArgs: Record<string, any> = {};
@@ -1425,7 +1558,7 @@ Operating rules:
       }
     }
 
-    return new Response(JSON.stringify({ content: finalContent, usage: finalUsage, assistantRole: assistantRoleLabel }), {
+    return new Response(JSON.stringify({ content: finalContent, usage: finalUsage, assistantRole: assistantRoleLabel, pendingActions }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
