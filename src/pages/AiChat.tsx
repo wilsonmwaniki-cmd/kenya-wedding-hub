@@ -342,7 +342,21 @@ export default function AiChat() {
         const rawError = await resp.text();
         const err = (() => {
           try {
-            return JSON.parse(rawError);
+            const parsed = JSON.parse(rawError);
+            if (parsed && typeof parsed === 'object') {
+              const primaryMessage =
+                typeof parsed.error === 'string'
+                  ? parsed.error
+                  : typeof parsed.message === 'string'
+                    ? parsed.message
+                    : typeof parsed.details === 'string'
+                      ? parsed.details
+                      : null;
+
+              return primaryMessage ? { ...parsed, error: primaryMessage } : parsed;
+            }
+
+            return parsed;
           } catch {
             if (rawError.trim()) {
               return { error: rawError.trim() };
@@ -373,7 +387,7 @@ export default function AiChat() {
               : resp.status === 429
                 ? 'Monthly AI limit reached'
                 : 'AI Error',
-          description: err.error || 'Something went wrong',
+          description: err.error || err.message || err.details || 'Something went wrong',
           variant: 'destructive',
         });
         return;
