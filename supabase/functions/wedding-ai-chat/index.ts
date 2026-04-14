@@ -888,26 +888,41 @@ serve(async (req) => {
       });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
-    if (!supabaseUrl || !supabaseKey) {
+    const accessToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (!accessToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? new URL(req.url).origin;
+    const userScopedKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !userScopedKey) {
       throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY or SUPABASE_PUBLISHABLE_KEY must be configured");
     }
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+
+    // Validate the incoming JWT with a management-capable auth client, but keep
+    // all workspace reads/writes on the user-scoped client so RLS still applies.
+    const authClient = createClient(supabaseUrl, serviceRoleKey ?? userScopedKey);
 
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser();
+    } = await authClient.auth.getUser(accessToken);
 
     if (authError || !user) {
+      console.error("auth.getUser failed:", authError);
       return new Response(JSON.stringify({ error: authError?.message || "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const supabase = createClient(supabaseUrl, userScopedKey, {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    });
 
     const { messages, selectedClientId } = await req.json();
     const today = new Date().toISOString().slice(0, 10);
