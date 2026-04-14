@@ -877,8 +877,9 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4.1-mini";
+    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -1340,40 +1341,50 @@ Operating rules:
     let finalContent = "";
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
+          model: OPENAI_MODEL,
           messages: aiMessages,
           tools,
+          tool_choice: "auto",
           stream: false,
         }),
       });
 
       if (!response.ok) {
+        const text = await response.text();
+        const details = text.trim().slice(0, 500);
+        let parsedError: Record<string, any> | null = null;
+        try {
+          parsedError = JSON.parse(text);
+        } catch {
+          parsedError = null;
+        }
+
         if (response.status === 429) {
+          const quotaMessage =
+            parsedError?.error?.type === "insufficient_quota" ||
+            /insufficient_quota|quota/i.test(details);
+          if (quotaMessage) {
+            return new Response(JSON.stringify({ error: "OpenAI credits exhausted. Please top up later.", details, usage: usageStatus }), {
+              status: 402,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
           return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment.", usage: usageStatus }), {
             status: 429,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        if (response.status === 402) {
-          return new Response(JSON.stringify({ error: "AI credits exhausted. Please top up later.", usage: usageStatus }), {
-            status: 402,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        const text = await response.text();
-        const details = text.trim().slice(0, 500);
-        console.error("AI gateway error:", response.status, details);
+        console.error("OpenAI API error:", response.status, details);
         return new Response(JSON.stringify({
           error: "AI service unavailable",
-          details: `Gateway returned ${response.status}${details ? `: ${details}` : ""}`,
+          details: `OpenAI returned ${response.status}${details ? `: ${details}` : ""}`,
           usage: usageStatus,
         }), {
           status: 500,
