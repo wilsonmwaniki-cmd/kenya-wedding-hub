@@ -372,6 +372,13 @@ export default function AiChat() {
             return { error: 'Request failed' };
           }
         })();
+        const fallbackError =
+          err.error ||
+          err.message ||
+          err.details ||
+          (rawError.trim()
+            ? rawError.trim()
+            : `Request failed with status ${resp.status}${resp.statusText ? ` (${resp.statusText})` : ''}`);
         if (err.usage) {
           setUsage(err.usage as AiUsageStatus);
         }
@@ -387,7 +394,7 @@ export default function AiChat() {
               : resp.status === 429
                 ? 'Monthly AI limit reached'
                 : 'AI Error',
-          description: err.error || err.message || err.details || 'Something went wrong',
+          description: fallbackError,
           variant: 'destructive',
         });
         return;
