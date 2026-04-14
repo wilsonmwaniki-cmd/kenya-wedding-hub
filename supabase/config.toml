@@ -1,1 +1,4 @@
-project_id = "ypchzbnceiwhbrxwring"
+project_id = "csrrnirpgkqjhvqcyxjp"
+
+[functions.wedding-ai-chat]
+verify_jwt = false

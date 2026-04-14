@@ -7,19 +7,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-function decodeJwtPayload(token: string): Record<string, any> | null {
-  const parts = token.split(".");
-  if (parts.length < 2) return null;
-
-  try {
-    const normalized = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
-}
-
 const tools = [
   {
     type: "function",
@@ -911,17 +898,24 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? new URL(req.url).origin;
     const userScopedKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !userScopedKey) {
       throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY or SUPABASE_PUBLISHABLE_KEY must be configured");
     }
 
-    // The gateway already requires an authenticated JWT for this function.
-    // Decode the token locally to recover the authenticated user id, then keep
-    // all data access on the user-scoped client so RLS remains the real guardrail.
-    const jwtPayload = decodeJwtPayload(accessToken);
-    const userId = typeof jwtPayload?.sub === "string" ? jwtPayload.sub : null;
-    if (!userId) {
-      return new Response(JSON.stringify({ error: "Invalid JWT" }), {
+    if (!serviceRoleKey) {
+      throw new Error("SUPABASE_SERVICE_ROLE_KEY must be configured");
+    }
+
+    const authClient = createClient(supabaseUrl, serviceRoleKey);
+    const {
+      data: { user },
+      error: authError,
+    } = await authClient.auth.getUser(accessToken);
+
+    if (authError || !user?.id) {
+      console.error("auth.getUser failed:", authError);
+      return new Response(JSON.stringify({ error: authError?.message || "Invalid JWT" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -937,7 +931,7 @@ serve(async (req) => {
     const { data: profile } = await supabase
       .from("profiles")
       .select("*")
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .single();
 
     const role = profile?.role || "couple";
@@ -947,7 +941,7 @@ serve(async (req) => {
       ? await supabase
         .from("planner_clients")
         .select("*")
-        .eq("planner_user_id", userId)
+        .eq("planner_user_id", user.id)
         .order("created_at", { ascending: false })
       : { data: [] as any[] };
 
@@ -955,7 +949,7 @@ serve(async (req) => {
       ? await supabase
         .from("planner_clients")
         .select("id, planner_user_id, client_name, partner_name, wedding_date, wedding_location, linked_user_id")
-        .eq("linked_user_id", userId)
+        .eq("linked_user_id", user.id)
         .limit(1)
         .maybeSingle()
       : { data: null as any };
@@ -965,7 +959,7 @@ serve(async (req) => {
       const { data } = await supabase
         .from("vendor_listings")
         .select("*")
-        .eq("user_id", userId)
+        .eq("user_id", user.id)
         .maybeSingle();
       vendorListing = data;
     }
