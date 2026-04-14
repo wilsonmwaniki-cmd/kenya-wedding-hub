@@ -897,11 +897,15 @@ serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? new URL(req.url).origin;
-    const supabaseKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
-    if (!supabaseUrl || !supabaseKey) {
+    const userScopedKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !userScopedKey) {
       throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY or SUPABASE_PUBLISHABLE_KEY must be configured");
     }
-    const authClient = createClient(supabaseUrl, supabaseKey);
+
+    // Validate the incoming JWT with a management-capable auth client, but keep
+    // all workspace reads/writes on the user-scoped client so RLS still applies.
+    const authClient = createClient(supabaseUrl, serviceRoleKey ?? userScopedKey);
 
     const {
       data: { user },
@@ -916,7 +920,7 @@ serve(async (req) => {
       });
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey, {
+    const supabase = createClient(supabaseUrl, userScopedKey, {
       global: { headers: { Authorization: `Bearer ${accessToken}` } },
     });
 
