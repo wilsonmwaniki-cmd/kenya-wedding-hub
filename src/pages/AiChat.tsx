@@ -51,8 +51,6 @@ interface AssistantExperience {
   }>;
 }
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wedding-ai-chat`;
-
 function getAssistantFeature(profileRole?: string | null, plannerType?: string | null): EntitlementFeature {
   if (profileRole === 'vendor') return 'vendor.ai_assistant';
   if (profileRole === 'planner' && plannerType === 'committee') return 'committee.ai_assistant';
@@ -335,72 +333,69 @@ export default function AiChat() {
     setLoading(true);
 
     try {
-      const resp = await fetch(CHAT_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('wedding-ai-chat', {
+        body: {
           messages: updatedMessages.map((message) => ({ role: message.role, content: message.content })),
           selectedClientId: isPlanner ? selectedClient?.id ?? null : null,
-        }),
+        },
       });
 
-      if (!resp.ok) {
-        const rawError = await resp.text();
-        const err = (() => {
-          try {
-            const parsed = JSON.parse(rawError);
-            if (parsed && typeof parsed === 'object') {
-              const primaryMessage =
-                typeof parsed.error === 'string'
-                  ? parsed.error
-                  : typeof parsed.message === 'string'
-                    ? parsed.message
-                    : typeof parsed.details === 'string'
-                      ? parsed.details
-                      : null;
+      if (error) {
+        let parsedError: any = null;
+        let statusCode: number | null = null;
+        let fallbackError = error.message || 'Request failed';
 
-              return primaryMessage ? { ...parsed, error: primaryMessage } : parsed;
+        const maybeContext = (error as { context?: Response }).context;
+        if (maybeContext instanceof Response) {
+          statusCode = maybeContext.status;
+          const rawError = await maybeContext.text();
+
+          parsedError = (() => {
+            try {
+              const parsed = JSON.parse(rawError);
+              if (parsed && typeof parsed === 'object') {
+                const primaryMessage =
+                  typeof parsed.error === 'string'
+                    ? parsed.error
+                    : typeof parsed.message === 'string'
+                      ? parsed.message
+                      : typeof parsed.details === 'string'
+                        ? parsed.details
+                        : null;
+
+                return primaryMessage ? { ...parsed, error: primaryMessage } : parsed;
+              }
+
+              return parsed;
+            } catch {
+              return rawError.trim() ? { error: rawError.trim() } : null;
             }
+          })();
 
-            return parsed;
-          } catch {
-            if (rawError.trim()) {
-              return { error: rawError.trim() };
-            }
-
-            if (resp.status >= 500) {
-              return {
-                error:
-                  'The AI function returned a server error. If this is a new Supabase project, confirm the LOVABLE_API_KEY secret is set for the wedding-ai-chat function.',
-              };
-            }
-
-            return { error: 'Request failed' };
-          }
-        })();
-        const fallbackError =
-          err.error ||
-          err.message ||
-          err.details ||
-          (rawError.trim()
-            ? rawError.trim()
-            : `Request failed with status ${resp.status}${resp.statusText ? ` (${resp.statusText})` : ''}`);
-        if (err.usage) {
-          setUsage(err.usage as AiUsageStatus);
+          fallbackError =
+            parsedError?.error ||
+            parsedError?.message ||
+            parsedError?.details ||
+            (rawError.trim()
+              ? rawError.trim()
+              : `Request failed with status ${maybeContext.status}${maybeContext.statusText ? ` (${maybeContext.statusText})` : ''}`);
+        } else if (fallbackError === 'Failed to send a request to the Edge Function') {
+          fallbackError = 'Could not reach the AI function. Please try again in a few moments.';
         }
 
-        if (resp.status === 402 || resp.status === 403) {
+        if (parsedError?.usage) {
+          setUsage(parsedError.usage as AiUsageStatus);
+        }
+
+        if (statusCode === 402 || statusCode === 403) {
           setUpgradeOpen(true);
         }
 
         toast({
           title:
-            resp.status === 402
+            statusCode === 402
               ? 'Premium feature'
-              : resp.status === 429
+              : statusCode === 429
                 ? 'Monthly AI limit reached'
                 : 'AI Error',
           description: fallbackError,
@@ -409,7 +404,6 @@ export default function AiChat() {
         return;
       }
 
-      const data = await resp.json();
       const content = data.content || 'Sorry, I could not generate a response.';
       if (data.usage) {
         setUsage(data.usage as AiUsageStatus);
