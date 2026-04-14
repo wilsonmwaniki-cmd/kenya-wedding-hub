@@ -1369,8 +1369,13 @@ Operating rules:
         }
 
         const text = await response.text();
-        console.error("AI gateway error:", response.status, text);
-        return new Response(JSON.stringify({ error: "AI service unavailable", usage: usageStatus }), {
+        const details = text.trim().slice(0, 500);
+        console.error("AI gateway error:", response.status, details);
+        return new Response(JSON.stringify({
+          error: "AI service unavailable",
+          details: `Gateway returned ${response.status}${details ? `: ${details}` : ""}`,
+          usage: usageStatus,
+        }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
