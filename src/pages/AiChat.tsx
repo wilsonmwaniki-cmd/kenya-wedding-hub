@@ -305,6 +305,15 @@ export default function AiChat() {
   const sendMessage = async (nextInput: string) => {
     if (!nextInput.trim() || loading) return;
 
+    if (!session?.access_token) {
+      toast({
+        title: 'Sign in again',
+        description: 'Your session is missing or expired for this workspace. Please sign out and sign back in.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (!decision?.allowed) {
       setUpgradeOpen(true);
       return;
@@ -330,7 +339,7 @@ export default function AiChat() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           messages: updatedMessages.map((message) => ({ role: message.role, content: message.content })),
