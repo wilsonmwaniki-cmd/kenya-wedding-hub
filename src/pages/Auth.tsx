@@ -22,7 +22,12 @@ import {
   type WeddingSignupIntent,
 } from '@/lib/weddingWorkspace';
 
-type AuthEntryState = { mode?: 'signup' | 'signin'; role?: SignupRole } | null;
+type AuthEntryState = {
+  mode?: 'signup' | 'signin';
+  role?: SignupRole;
+  signupPath?: WeddingSignupIntent;
+  professionalRole?: ProfessionalSignupRole;
+} | null;
 type ProfessionalSignupRole = 'planner' | 'vendor';
 
 const signupTrackMeta: Record<
@@ -137,6 +142,14 @@ export default function Auth() {
     if (state.mode) {
       setIsSignUp(state.mode === 'signup');
       setIsForgot(false);
+    }
+
+    if (state.signupPath) {
+      setSignupPath(state.signupPath);
+      if (state.professionalRole) {
+        setProfessionalRole(state.professionalRole);
+      }
+      return;
     }
 
     if (state.role) {
