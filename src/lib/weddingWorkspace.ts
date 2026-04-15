@@ -38,6 +38,11 @@ type CreateWeddingWorkspaceRow = {
   partner_invite_id: string | null;
 };
 
+type SendInviteResult = {
+  success?: boolean;
+  error?: string;
+};
+
 type PreviewJoinWeddingRow = {
   wedding_id: string;
   wedding_name: string;
@@ -54,6 +59,22 @@ type PreviewJoinWeddingRow = {
 };
 
 const normalizeEmail = (value: string | null | undefined) => value?.trim().toLowerCase() || null;
+
+export async function sendWeddingInviteEmail(inviteId: string) {
+  const { data, error } = await supabase.functions.invoke<SendInviteResult>('send-wedding-invite', {
+    body: { inviteId },
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Could not send invite email right now.');
+  }
+
+  if (!data?.success) {
+    throw new Error(data?.error || 'Could not send invite email right now.');
+  }
+
+  return data;
+}
 
 export function persistPendingWeddingSetup(payload: PendingWeddingSetup) {
   if (typeof window === 'undefined') return;
@@ -188,6 +209,7 @@ export async function completePendingWeddingSetup(user: User): Promise<{
   weddingName?: string | null;
   proposedRole?: string | null;
   partnerInviteQueued?: boolean;
+  partnerInviteSent?: boolean;
 }> {
   const pendingSetup = getPendingWeddingSetup(user.user_metadata, user.email ?? null);
   if (!pendingSetup) {
@@ -226,6 +248,16 @@ export async function completePendingWeddingSetup(user: User): Promise<{
       if (error) throw error;
 
       const row = (Array.isArray(data) ? data[0] : data) as CreateWeddingWorkspaceRow | null;
+      let partnerInviteSent = false;
+      if (row?.partner_invite_id) {
+        try {
+          await sendWeddingInviteEmail(row.partner_invite_id);
+          partnerInviteSent = true;
+        } catch (inviteError) {
+          console.error('Partner invite email could not be sent after wedding creation:', inviteError);
+        }
+      }
+
       await markWeddingSetupComplete(user, {
         role: 'couple',
         planner_type: null,
@@ -238,6 +270,7 @@ export async function completePendingWeddingSetup(user: User): Promise<{
         action: 'created',
         weddingName: pendingSetup.weddingName ?? null,
         partnerInviteQueued: Boolean(row?.partner_invite_id),
+        partnerInviteSent,
       };
     }
 
@@ -252,6 +285,7 @@ export async function completePendingWeddingSetup(user: User): Promise<{
       action: 'created',
       weddingName: pendingSetup.weddingName ?? null,
       partnerInviteQueued: Boolean(pendingSetup.partnerEmail),
+      partnerInviteSent: false,
     };
   }
 

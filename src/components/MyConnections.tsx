@@ -7,10 +7,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sparkles, Clock, CheckCircle2, XCircle, Store, Users, X, Loader2, Copy, Link2, HeartHandshake } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
+import { sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
 import {
   approvePlannerCodeLinkRequest,
   ensureMyCollaborationCode,
@@ -48,6 +50,30 @@ interface OwnedWeddingWorkspace {
   partnerInviteExpiresAt: string | null;
 }
 
+type CommitteeInviteRole = 'committee_member' | 'committee_chair';
+
+interface CommitteeMembershipRecord {
+  id: string;
+  email: string;
+  role: CommitteeInviteRole;
+  membership_status: 'invited' | 'active' | 'revoked';
+}
+
+interface CommitteeInviteRecord {
+  id: string;
+  email: string;
+  proposed_role: CommitteeInviteRole;
+  expires_at: string | null;
+}
+
+interface CommitteeWorkspaceAccess {
+  enabled: boolean;
+  seatsRemaining: number;
+  seatLimit: number | null;
+  members: CommitteeMembershipRecord[];
+  pendingInvites: CommitteeInviteRecord[];
+}
+
 const statusConfig: Record<string, { label: string; icon: typeof Clock; className: string }> = {
   pending: { label: 'Pending', icon: Clock, className: 'text-muted-foreground' },
   approved: { label: 'Connected', icon: CheckCircle2, className: 'text-primary' },
@@ -68,9 +94,75 @@ export default function MyConnections() {
   const [ownedWedding, setOwnedWedding] = useState<OwnedWeddingWorkspace | null>(null);
   const [partnerEmailInput, setPartnerEmailInput] = useState('');
   const [partnerInviteSubmitting, setPartnerInviteSubmitting] = useState(false);
+  const [committeeWorkspace, setCommitteeWorkspace] = useState<CommitteeWorkspaceAccess | null>(null);
+  const [committeeEmailInput, setCommitteeEmailInput] = useState('');
+  const [committeeInviteRole, setCommitteeInviteRole] = useState<CommitteeInviteRole>('committee_member');
+  const [committeeInviteSubmitting, setCommitteeInviteSubmitting] = useState(false);
 
   const effectiveCoupleView = profile?.role === 'couple' || (isSuperAdmin && rolePreview === 'couple');
   const plannerConnectDecision = getEntitlementDecision('couple.connect_planners', { profile, bypass: isSuperAdmin && rolePreview === 'couple' });
+
+  const loadCommitteeWorkspaceAccess = async (weddingId: string) => {
+    const db = supabase as any;
+
+    const [
+      entitlementResult,
+      bundleResult,
+      seatsResult,
+      membershipResult,
+      inviteResult,
+    ] = await Promise.all([
+      db
+        .from('wedding_entitlements')
+        .select('id, effective_from, effective_to, status')
+        .eq('wedding_id', weddingId)
+        .eq('feature_key', 'committee_collaboration')
+        .eq('status', 'active')
+        .order('effective_from', { ascending: false }),
+      db
+        .from('wedding_subscription_bundles')
+        .select('seat_limit')
+        .eq('wedding_id', weddingId)
+        .eq('bundle_type', 'committee_bundle')
+        .in('status', ['active', 'grace'])
+        .order('seat_limit', { ascending: false })
+        .limit(1),
+      db.rpc('available_committee_seats', { target_wedding_id: weddingId }),
+      db
+        .from('wedding_memberships')
+        .select('id, email, role, membership_status')
+        .eq('wedding_id', weddingId)
+        .in('role', ['committee_member', 'committee_chair'])
+        .in('membership_status', ['invited', 'active'])
+        .order('created_at', { ascending: true }),
+      db
+        .from('wedding_invites')
+        .select('id, email, proposed_role, expires_at')
+        .eq('wedding_id', weddingId)
+        .eq('invite_type', 'committee')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false }),
+    ]);
+
+    const now = Date.now();
+    const enabled = Boolean(
+      (entitlementResult.data ?? []).find((row: { effective_from: string; effective_to: string | null }) => {
+        const effectiveFrom = new Date(row.effective_from).getTime();
+        const effectiveTo = row.effective_to ? new Date(row.effective_to).getTime() : null;
+        return effectiveFrom <= now && (effectiveTo == null || effectiveTo > now);
+      }),
+    );
+    const seatLimit = bundleResult.data?.[0]?.seat_limit ?? null;
+    const seatsRemaining = typeof seatsResult.data === 'number' ? seatsResult.data : 0;
+
+    setCommitteeWorkspace({
+      enabled,
+      seatLimit,
+      seatsRemaining,
+      members: (membershipResult.data ?? []) as CommitteeMembershipRecord[],
+      pendingInvites: (inviteResult.data ?? []) as CommitteeInviteRecord[],
+    });
+  };
 
   const loadOwnedWeddingWorkspace = async () => {
     if (!user || !effectiveCoupleView) {
@@ -252,6 +344,15 @@ export default function MyConnections() {
       });
   }, [user, effectiveCoupleView, profile?.collaboration_code]);
 
+  useEffect(() => {
+    if (!ownedWedding) {
+      setCommitteeWorkspace(null);
+      return;
+    }
+
+    void loadCommitteeWorkspaceAccess(ownedWedding.weddingId);
+  }, [ownedWedding?.weddingId]);
+
   if (loading) return null;
   if (connections.length === 0 && !(effectiveCoupleView && (collaborationCode || ownedWedding))) return null;
 
@@ -308,17 +409,29 @@ export default function MyConnections() {
     setPartnerInviteSubmitting(true);
 
     try {
-      const { error } = await (supabase as any).rpc('upsert_partner_invite', {
+      const { data, error } = await (supabase as any).rpc('upsert_partner_invite', {
         target_wedding_id: ownedWedding.weddingId,
         partner_email_input: partnerEmailInput.trim().toLowerCase(),
       });
 
       if (error) throw error;
 
+      const inviteRow = Array.isArray(data) ? data[0] : data;
+      let deliveryDescription = 'Your wedding co-owner can join using the invite email or the wedding code.';
+      if (inviteRow?.invite_id) {
+        try {
+          await sendWeddingInviteEmail(inviteRow.invite_id);
+          deliveryDescription = 'The partner invite email has been sent and they can also use the wedding code.';
+        } catch (inviteError: any) {
+          deliveryDescription = 'The invite was created, but the email could not be delivered. You can resend it from here.';
+          console.error('Partner invite email delivery failed:', inviteError);
+        }
+      }
+
       await loadOwnedWeddingWorkspace();
       toast({
         title: ownedWedding.partnerStatus === 'pending' ? 'Partner invite refreshed' : 'Partner invite sent',
-        description: 'Your wedding co-owner can join using the invite email or the wedding code.',
+        description: deliveryDescription,
       });
     } catch (error: any) {
       toast({
@@ -328,6 +441,48 @@ export default function MyConnections() {
       });
     } finally {
       setPartnerInviteSubmitting(false);
+    }
+  };
+
+  const sendCommitteeInvite = async () => {
+    if (!ownedWedding) return;
+    setCommitteeInviteSubmitting(true);
+
+    try {
+      const { data, error } = await (supabase as any).rpc('upsert_committee_invite', {
+        target_wedding_id: ownedWedding.weddingId,
+        committee_email_input: committeeEmailInput.trim().toLowerCase(),
+        committee_role_input: committeeInviteRole,
+      });
+
+      if (error) throw error;
+
+      const inviteRow = Array.isArray(data) ? data[0] : data;
+      let description = 'Committee seat reserved and invite stored in the wedding workspace.';
+      if (inviteRow?.invite_id) {
+        try {
+          await sendWeddingInviteEmail(inviteRow.invite_id);
+          description = 'Committee invite email sent successfully.';
+        } catch (inviteError: any) {
+          description = 'Committee seat reserved, but the email delivery failed. You can resend later once email is configured.';
+          console.error('Committee invite email delivery failed:', inviteError);
+        }
+      }
+
+      setCommitteeEmailInput('');
+      await loadCommitteeWorkspaceAccess(ownedWedding.weddingId);
+      toast({
+        title: committeeInviteRole === 'committee_chair' ? 'Committee chair invited' : 'Committee member invited',
+        description,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not send committee invite',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setCommitteeInviteSubmitting(false);
     }
   };
 
@@ -341,7 +496,7 @@ export default function MyConnections() {
               Wedding Ownership
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="space-y-2">
                 <p className="text-sm font-medium text-foreground">{ownedWedding.weddingName}</p>
@@ -391,6 +546,134 @@ export default function MyConnections() {
                   </p>
                 </div>
               </div>
+            </div>
+
+            <div className="rounded-xl border border-border/80 bg-background/80 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Committee collaboration</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={committeeWorkspace?.enabled ? 'default' : 'secondary'}>
+                      {committeeWorkspace?.enabled ? 'Committee bundle active' : 'Committee bundle not active'}
+                    </Badge>
+                    <Badge variant="outline">
+                      {committeeWorkspace?.seatLimit == null ? 'No seats configured' : `${committeeWorkspace.seatsRemaining}/${committeeWorkspace.seatLimit} seats left`}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Invite your chair and committee members using the same wedding workspace. Seat limits come from the wedding-level committee bundle.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.8fr_auto]">
+                <div className="space-y-2">
+                  <Label htmlFor="committee-email-input">Committee email</Label>
+                  <Input
+                    id="committee-email-input"
+                    type="email"
+                    placeholder="committee.member@example.com"
+                    value={committeeEmailInput}
+                    onChange={(event) => setCommitteeEmailInput(event.target.value)}
+                    disabled={!committeeWorkspace?.enabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select
+                    value={committeeInviteRole}
+                    onValueChange={(value) => setCommitteeInviteRole(value as CommitteeInviteRole)}
+                    disabled={!committeeWorkspace?.enabled}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="committee_member">Committee member</SelectItem>
+                      <SelectItem value="committee_chair">Committee chair</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    className="w-full lg:w-auto"
+                    disabled={
+                      committeeInviteSubmitting ||
+                      !committeeWorkspace?.enabled ||
+                      !committeeEmailInput.trim() ||
+                      committeeWorkspace.seatsRemaining <= 0
+                    }
+                    onClick={sendCommitteeInvite}
+                  >
+                    {committeeInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Send committee invite
+                  </Button>
+                </div>
+              </div>
+
+              {!committeeWorkspace?.enabled && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Committee invites unlock when this wedding has an active committee collaboration entitlement and a committee bundle.
+                </p>
+              )}
+
+              {committeeWorkspace && (
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Active committee roster</p>
+                    <div className="space-y-2">
+                      {committeeWorkspace.members.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+                          No committee seats are filled yet.
+                        </div>
+                      ) : (
+                        committeeWorkspace.members.map((member) => (
+                          <div key={member.id} className="rounded-lg border border-border bg-background p-3 text-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-medium text-foreground">{member.email}</span>
+                              <div className="flex flex-wrap gap-2">
+                                <Badge variant="outline" className="capitalize">
+                                  {member.role.replace('_', ' ')}
+                                </Badge>
+                                <Badge variant={member.membership_status === 'active' ? 'default' : 'secondary'}>
+                                  {member.membership_status}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Pending committee invites</p>
+                    <div className="space-y-2">
+                      {committeeWorkspace.pendingInvites.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+                          No pending committee invites right now.
+                        </div>
+                      ) : (
+                        committeeWorkspace.pendingInvites.map((invite) => (
+                          <div key={invite.id} className="rounded-lg border border-border bg-background p-3 text-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-medium text-foreground">{invite.email}</span>
+                              <Badge variant="secondary" className="capitalize">
+                                {invite.proposed_role.replace('_', ' ')}
+                              </Badge>
+                            </div>
+                            {invite.expires_at && (
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                Expires on {new Date(invite.expires_at).toLocaleDateString()}.
+                              </p>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -147,6 +147,27 @@ export default function Auth() {
   }, [location.state]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const flow = params.get('flow');
+    const code = params.get('code');
+    const invitedEmail = params.get('email');
+
+    if (flow === 'join_wedding') {
+      setSignupPath('join_wedding');
+      setIsSignUp(true);
+      setIsForgot(false);
+    }
+
+    if (code) {
+      setWeddingCode(normalizeJoinCode(code));
+    }
+
+    if (invitedEmail) {
+      setEmail(invitedEmail.trim().toLowerCase());
+    }
+  }, [location.search]);
+
+  useEffect(() => {
     if (signupPath === 'professional') return;
     if (!isSignUp && !hasHomepageCarryover) return;
 
@@ -176,9 +197,11 @@ export default function Auth() {
           if (completion.action === 'created') {
             toast({
               title: 'Wedding created',
-              description: completion.partnerInviteQueued
-                ? 'Your wedding workspace is ready and the partner invite is queued.'
-                : 'Your wedding workspace is ready. You can invite your partner from the dashboard anytime.',
+              description: completion.partnerInviteSent
+                ? 'Your wedding workspace is ready and the partner invite email has been sent.'
+                : completion.partnerInviteQueued
+                  ? 'Your wedding workspace is ready. The partner invite is stored and can be resent from the dashboard.'
+                  : 'Your wedding workspace is ready. You can invite your partner from the dashboard anytime.',
             });
           }
 
