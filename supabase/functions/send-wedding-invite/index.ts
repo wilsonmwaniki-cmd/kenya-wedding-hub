@@ -38,9 +38,8 @@ const friendlyRole = (role: string) => {
     case 'committee_member':
       return 'Committee Member';
     default:
-      return role.replace(/_/g, ' ');
+      return role.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
   }
-    .replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
 const formatWeddingDate = (dateValue: string | null) => {
