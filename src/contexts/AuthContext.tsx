@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, ReactNode } fr
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, PlannerType, SignupRole } from '@/lib/roles';
+import type { WeddingOwnerRole, WeddingSignupIntent } from '@/lib/weddingWorkspace';
 
 interface Profile {
   id: string;
@@ -18,6 +19,7 @@ interface Profile {
   company_email: string | null;
   company_phone: string | null;
   company_website: string | null;
+  stripe_customer_id: string | null;
   bio: string | null;
   specialties: string[] | null;
   avatar_url: string | null;
@@ -54,6 +56,12 @@ interface AuthContextType {
     fullName: string,
     role?: SignupRole,
     options?: {
+      signupIntent?: WeddingSignupIntent | null;
+      weddingOwnerRole?: WeddingOwnerRole | null;
+      partnerEmail?: string | null;
+      weddingName?: string | null;
+      weddingCode?: string | null;
+      weddingDate?: string | null;
       committeeName?: string | null;
       weddingCounty?: string | null;
       weddingTown?: string | null;
@@ -212,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     company_email: authUser.email ?? null,
     company_phone: null,
     company_website: null,
+    stripe_customer_id: null,
     bio: null,
     specialties: null,
     avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null,
@@ -487,6 +496,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fullName: string,
     role: SignupRole = 'couple',
     options?: {
+      signupIntent?: WeddingSignupIntent | null;
+      weddingOwnerRole?: WeddingOwnerRole | null;
+      partnerEmail?: string | null;
+      weddingName?: string | null;
+      weddingCode?: string | null;
+      weddingDate?: string | null;
       committeeName?: string | null;
       weddingCounty?: string | null;
       weddingTown?: string | null;
@@ -499,6 +514,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const weddingTown = options?.weddingTown?.trim() || null;
     const primaryCounty = options?.primaryCounty?.trim() || null;
     const primaryTown = options?.primaryTown?.trim() || null;
+    const partnerEmail = options?.partnerEmail?.trim().toLowerCase() || null;
+    const weddingName = options?.weddingName?.trim() || null;
+    const weddingCode = options?.weddingCode?.trim().toUpperCase() || null;
+    const signupIntent = options?.signupIntent ?? 'professional';
+    const weddingDate = options?.weddingDate?.trim() || null;
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -508,13 +528,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: isCommittee ? 'planner' : role,
           planner_type: isCommittee ? 'committee' : role === 'planner' ? 'professional' : null,
           committee_name: isCommittee ? options?.committeeName ?? null : null,
+          signup_intent: signupIntent,
+          wedding_setup_completed: signupIntent === 'professional',
+          wedding_owner_role: options?.weddingOwnerRole ?? null,
+          partner_email: partnerEmail,
+          wedding_name: weddingName,
+          wedding_code: weddingCode,
           wedding_county: weddingCounty,
           wedding_town: weddingTown,
+          wedding_date: weddingDate,
           wedding_location: weddingTown || weddingCounty ? [weddingTown, weddingCounty].filter(Boolean).join(', ') : null,
           primary_county: primaryCounty,
           primary_town: primaryTown,
         },
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
     if (error) throw error;

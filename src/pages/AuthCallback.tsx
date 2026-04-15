@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { getHomeRouteForRole, type AppRole, type PlannerType } from '@/lib/roles';
 import { hasPendingEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
+import { completePendingWeddingSetup, getPendingWeddingSetup } from '@/lib/weddingWorkspace';
 
 function getAuthTargetFromMetadata(
   userMetadata: Record<string, unknown> | null | undefined,
@@ -77,6 +78,15 @@ export default function AuthCallback() {
         }
 
         const { data: { user } } = await supabase.auth.getUser();
+        const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
+
+        if (user && pendingWeddingSetup) {
+          const completion = await completePendingWeddingSetup(user);
+          if (!active) return;
+          navigate(completion.route, { replace: true });
+          return;
+        }
+
         const resolvedFromSession = getAuthTargetFromMetadata(user?.user_metadata);
         const { role, plannerType } = resolvedFromSession ?? getAuthTargetFromUserMetadata();
         window.history.replaceState({}, document.title, '/auth/callback');
