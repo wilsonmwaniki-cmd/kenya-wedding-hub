@@ -5,15 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles } from 'lucide-react';
+import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserRoundPlus, LogIn, Mail, HeartHandshake } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import heroImage from '@/assets/hero-wedding.jpg';
-import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
+import { getHomeRouteForRole } from '@/lib/roles';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
 import { saveEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
-import { UserRoleChooserPanel } from '@/components/UserRoleChooser';
 
 const features = [
   { icon: Wallet, title: 'Budget Tracking', desc: 'Keep your wedding finances organized with category-level tracking.' },
@@ -321,14 +320,56 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
 
 function QuickSignupChooser() {
   const navigate = useNavigate();
-  const [selectedRole, setSelectedRole] = useState<SignupRole>('couple');
+  const [selectedTrack, setSelectedTrack] = useState<'create_wedding' | 'join_wedding' | 'planner' | 'vendor'>('create_wedding');
+
+  const chooserCards = [
+    {
+      value: 'create_wedding' as const,
+      icon: HeartHandshake,
+      title: 'Create a wedding',
+      description: 'Start your wedding workspace as the bride or groom, then invite your partner to co-own it.',
+      helper: 'Bride or groom',
+    },
+    {
+      value: 'join_wedding' as const,
+      icon: Users,
+      title: 'Join a wedding',
+      description: 'Use the wedding code from your invite email to join an existing wedding as partner or committee.',
+      helper: 'Code + invite',
+    },
+    {
+      value: 'planner' as const,
+      icon: Briefcase,
+      title: 'Professional planner',
+      description: 'Create your planner workspace to manage weddings, clients, and collaboration from one place.',
+      helper: 'Planner account',
+    },
+    {
+      value: 'vendor' as const,
+      icon: Store,
+      title: 'Vendor business',
+      description: 'Create your business account to publish your listing, manage bookings, and follow up faster.',
+      helper: 'Vendor account',
+    },
+  ];
+
+  const selectedCard = chooserCards.find((card) => card.value === selectedTrack) ?? chooserCards[0];
 
   const openAuth = (mode: 'signup' | 'signin') => {
+    const authState =
+      selectedTrack === 'planner' || selectedTrack === 'vendor'
+        ? {
+            mode,
+            signupPath: 'professional' as const,
+            professionalRole: selectedTrack,
+          }
+        : {
+            mode,
+            signupPath: selectedTrack,
+          };
+
     navigate('/auth', {
-      state: {
-        mode,
-        role: selectedRole,
-      },
+      state: authState,
     });
   };
 
@@ -338,27 +379,85 @@ function QuickSignupChooser() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: 0.4 }}
     >
-      <UserRoleChooserPanel
-        value={selectedRole}
-        onChange={setSelectedRole}
-        eyebrow="Start here"
-        title="Create your account"
-        description="Choose the option that best matches how you want to get started."
-      >
+      <div className="rounded-[28px] border border-border/60 bg-card/95 p-5 shadow-warm backdrop-blur-sm">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Start here</p>
+          <h3 className="font-display text-2xl font-semibold text-card-foreground">Create your account</h3>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Start by choosing whether you are creating a new wedding, joining one by invite code, or opening a professional workspace.
+          </p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Couples now own the wedding workspace. Partners, committees, planners, and vendors join or collaborate from there.
+          </p>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {chooserCards.map((card) => {
+            const selected = card.value === selectedTrack;
+            const Icon = card.icon;
+
+            return (
+              <motion.button
+                key={card.value}
+                type="button"
+                onClick={() => setSelectedTrack(card.value)}
+                initial={selected ? { scale: 0.97, y: 8, opacity: 0.92 } : false}
+                animate={selected ? { scale: 1, y: 0, opacity: 1, boxShadow: '0 18px 40px rgba(224, 98, 47, 0.18)' } : { scale: 1, y: 0, opacity: 1, boxShadow: '0 0 0 rgba(0,0,0,0)' }}
+                transition={{ duration: selected ? 0.35 : 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className={`flex flex-col items-start gap-2 rounded-xl border-2 p-3 text-left transition-colors ${
+                  selected ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-background text-muted-foreground hover:border-primary/50'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span className="text-xs font-semibold leading-tight text-foreground">{card.title}</span>
+                <span className="text-[10px] leading-relaxed text-muted-foreground">{card.description}</span>
+                <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-primary">{card.helper}</span>
+              </motion.button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-4">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-primary/10 p-2">
+              <selectedCard.icon className="h-4 w-4 text-primary" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">{selectedCard.title}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{selectedCard.description}</p>
+            </div>
+          </div>
+        </div>
+
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button className="flex-1 gap-2" onClick={() => openAuth('signup')}>
-            Create account
+            <UserRoundPlus className="h-4 w-4" />
+            {selectedTrack === 'join_wedding' ? 'Join with a code' : 'Continue'}
             <ArrowRight className="h-4 w-4" />
           </Button>
           <Button
             variant="outline"
-            className="flex-1"
+            className="flex-1 gap-2"
             onClick={() => openAuth('signin')}
           >
+            <LogIn className="h-4 w-4" />
             I already have an account
           </Button>
         </div>
-      </UserRoleChooserPanel>
+        {selectedTrack === 'join_wedding' ? (
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            Use the wedding code from your email invite. If you have not received one yet, ask the couple to resend it.
+          </p>
+        ) : selectedTrack === 'create_wedding' ? (
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            You will choose whether you are the bride or groom during signup, then Zania will help you invite your partner into the wedding.
+          </p>
+        ) : (
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            Professional accounts do not create a wedding at signup. They connect into weddings through collaboration later.
+          </p>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -386,16 +485,17 @@ export default function Landing() {
             <Heart className="h-5 w-5 text-primary" fill="currentColor" />
             <span className="font-display text-2xl font-semibold text-foreground">Zania</span>
           </div>
-          <a href="#auth" className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 md:hidden">
+          <Link to="/auth" className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 md:hidden">
             Sign In
-          </a>
+          </Link>
           <div className="hidden items-center gap-8 md:flex">
             <Link to="/vendors-directory" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Vendors</Link>
             <Link to="/planners" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Planners</Link>
+            <Link to="/pricing" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Pricing</Link>
             <a href="#cost-estimator" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Cost Estimator</a>
-            <a href="#auth" className="inline-flex h-10 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
+            <Link to="/auth" className="inline-flex h-10 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
               Sign In
-            </a>
+            </Link>
           </div>
         </div>
       </nav>
@@ -562,7 +662,15 @@ export default function Landing() {
       <footer className="bg-primary px-6 py-8 text-primary-foreground">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-sm sm:flex-row lg:px-2">
           <div className="font-display text-2xl font-semibold">Zania</div>
-          <div className="text-center text-primary-foreground/80 sm:text-right">
+          <div className="flex flex-col items-center gap-2 text-center text-primary-foreground/80 sm:items-end sm:text-right">
+            <div className="flex items-center gap-4 text-xs uppercase tracking-[0.14em]">
+              <Link to="/pricing" className="transition-opacity hover:opacity-100">
+                Pricing
+              </Link>
+              <Link to="/auth" className="transition-opacity hover:opacity-100">
+                Sign In
+              </Link>
+            </div>
             © {new Date().getFullYear()} Zania. Wedding planning for Kenya.
           </div>
         </div>
