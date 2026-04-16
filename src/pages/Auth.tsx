@@ -127,7 +127,7 @@ export default function Auth() {
   const showWeddingDetails = signupPath === 'create_wedding';
   const showJoinDetails = signupPath === 'join_wedding';
   const showProfessionalDetails = signupPath === 'professional';
-  const showGoogleAuth = !isSignUp || signupPath === 'professional';
+  const showGoogleAuth = !isForgot;
 
   const carryoverLabel = useMemo(() => {
     if (signupPath === 'create_wedding') return 'Create a wedding';
@@ -298,6 +298,24 @@ export default function Auth() {
     });
   };
 
+  const validateGoogleSignupIntent = () => {
+    if (!isSignUp) return;
+
+    if (signupPath === 'create_wedding') {
+      if (!weddingName.trim()) {
+        throw new Error('Add a wedding name before continuing with Google.');
+      }
+
+      if (!weddingOwnerRole) {
+        throw new Error('Choose whether the bride or groom is creating this wedding first.');
+      }
+    }
+
+    if (signupPath === 'join_wedding' && !normalizeJoinCode(weddingCode)) {
+      throw new Error('Enter the wedding code from the invitation before continuing with Google.');
+    }
+  };
+
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -379,6 +397,7 @@ export default function Auth() {
   const handleGoogleSignIn = async () => {
     setGoogleSubmitting(true);
     try {
+      validateGoogleSignupIntent();
       persistWeddingIntentIfNeeded();
       await signInWithGoogle();
     } catch (err: any) {
@@ -492,6 +511,16 @@ export default function Auth() {
 
               {showGoogleAuth && (
                 <div className="space-y-4">
+                  {isSignUp && signupPath === 'join_wedding' && (
+                    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                      Use the same Google email that received the wedding invite. We’ll match it to the invitation code after sign-in.
+                    </div>
+                  )}
+                  {isSignUp && signupPath === 'create_wedding' && (
+                    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                      You can continue with Google here. We’ll create the wedding workspace and queue the partner invite after you come back from Google.
+                    </div>
+                  )}
                   <GoogleAuthButton
                     loading={googleSubmitting}
                     disabled={submitting || googleSubmitting}
@@ -505,12 +534,6 @@ export default function Auth() {
                       <span className="bg-card px-2 text-muted-foreground">or use email</span>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {!showGoogleAuth && (
-                <div className="mb-4 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                  We keep wedding creation and join flows on email sign-up so we can safely match the right partner and invitation code to the right wedding.
                 </div>
               )}
 
