@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sparkles, Clock, CheckCircle2, XCircle, Store, Users, X, Loader2, Copy, Link2, HeartHandshake } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
 import {
@@ -84,6 +85,7 @@ const statusConfig: Record<string, { label: string; icon: typeof Clock; classNam
 
 export default function MyConnections() {
   const { user, profile, rolePreview, isSuperAdmin } = useAuth();
+  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const { loadLinkedPlanner } = usePlanner();
   const { toast } = useToast();
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -100,7 +102,7 @@ export default function MyConnections() {
   const [committeeInviteSubmitting, setCommitteeInviteSubmitting] = useState(false);
 
   const effectiveCoupleView = profile?.role === 'couple' || (isSuperAdmin && rolePreview === 'couple');
-  const plannerConnectDecision = getEntitlementDecision('couple.connect_planners', { profile, bypass: isSuperAdmin && rolePreview === 'couple' });
+  const plannerConnectDecision = getEntitlementDecision('couple.connect_planners', { profile, weddingEntitlements, couplePlanTier, bypass: isSuperAdmin && rolePreview === 'couple' });
 
   const loadCommitteeWorkspaceAccess = async (weddingId: string) => {
     const db = supabase as any;

@@ -1,5 +1,34 @@
 export type PricingAudience = 'couple' | 'committee' | 'planner' | 'vendor';
 export type AccessLevel = 'free' | 'paid';
+export type PricingCheckoutCadence = 'one_time' | 'monthly' | 'annual';
+export type CouplePlanTier = 'free' | 'basic' | 'premium';
+export type CouplePlanCadence = 'monthly' | 'annual';
+export type CoupleAddonCode = 'gift_registry_addon' | 'guest_rsvp_management_addon';
+
+export type CouplePlanDefinition = {
+  tier: CouplePlanTier;
+  title: string;
+  tagline: string;
+  supportCopy: string;
+  annualPriceKes: number | null;
+  monthlyPriceKes: number | null;
+  bundleType: 'couple_plan';
+  bundleCode: string | null;
+  stripeMonthlyLookupKey: string | null;
+  stripeAnnualLookupKey: string | null;
+  includedFeatures: string[];
+  ctaLabel: string;
+};
+
+export type CoupleAddonDefinition = {
+  code: CoupleAddonCode;
+  title: string;
+  supportCopy: string;
+  bundleType: 'wedding_addon';
+  bundleCode: CoupleAddonCode;
+  stripeMonthlyLookupKey: string | null;
+  stripeAnnualLookupKey: string | null;
+};
 
 export type AudiencePlan = {
   audience: PricingAudience;
@@ -28,6 +57,161 @@ export type FeatureGateRow = {
   paid: string;
 };
 
+export type CoupleFeatureMatrixRow = {
+  feature: string;
+  free: string;
+  basic: string;
+  premium: string;
+};
+
+export const couplePlanDefinitions: CouplePlanDefinition[] = [
+  {
+    tier: 'free',
+    title: 'Free',
+    tagline: 'Plan your wedding on your own',
+    supportCopy: 'Best for couples getting started with budgeting, vendor discovery, guests, and early planning.',
+    annualPriceKes: null,
+    monthlyPriceKes: null,
+    bundleType: 'couple_plan',
+    bundleCode: null,
+    stripeMonthlyLookupKey: null,
+    stripeAnnualLookupKey: null,
+    includedFeatures: [
+      'Task list',
+      'Cost estimator',
+      'Budget tracking',
+      'Vendor directory',
+      'Vendor management',
+      'Guest list',
+    ],
+    ctaLabel: 'Start free',
+  },
+  {
+    tier: 'basic',
+    title: 'Basic',
+    tagline: 'Plan together',
+    supportCopy: 'Stop planning alone. Bring your committee, family, planner, and vendors into one shared wedding workspace.',
+    annualPriceKes: 5000,
+    monthlyPriceKes: 750,
+    bundleType: 'couple_plan',
+    bundleCode: 'couple_basic_annual',
+    stripeMonthlyLookupKey: 'couple_basic_monthly',
+    stripeAnnualLookupKey: 'couple_basic_annual',
+    includedFeatures: [
+      'Everything in Free',
+      'Planner collaboration',
+      'Vendor collaboration',
+      'Committee collaboration up to 10 people',
+      'Family collaboration up to 10 people',
+    ],
+    ctaLabel: 'Upgrade to Basic',
+  },
+  {
+    tier: 'premium',
+    title: 'Premium',
+    tagline: 'Run the whole wedding in one place',
+    supportCopy: 'Turn your wedding into a fully coordinated workspace with AI support, collaborative timelines, and richer vendor and planner coordination.',
+    annualPriceKes: 15000,
+    monthlyPriceKes: 2000,
+    bundleType: 'couple_plan',
+    bundleCode: 'couple_premium_annual',
+    stripeMonthlyLookupKey: 'couple_premium_monthly',
+    stripeAnnualLookupKey: 'couple_premium_annual',
+    includedFeatures: [
+      'Everything in Basic',
+      'Committee collaboration up to 20 people',
+      'Family collaboration up to 20 people',
+      'AI Wedding Assistant',
+      'Vendor collaboration tools',
+      'Planner collaboration tools',
+      'Timeline management',
+    ],
+    ctaLabel: 'Go Premium',
+  },
+];
+
+export const coupleAddonDefinitions: CoupleAddonDefinition[] = [
+  {
+    code: 'gift_registry_addon',
+    title: 'Gift Registry',
+    supportCopy: 'Let guests buy directly from your wedding wishlist. Purchased items are automatically marked off so there are no duplicates.',
+    bundleType: 'wedding_addon',
+    bundleCode: 'gift_registry_addon',
+    stripeMonthlyLookupKey: 'gift_registry_addon',
+    stripeAnnualLookupKey: null,
+  },
+  {
+    code: 'guest_rsvp_management_addon',
+    title: 'Guest RSVP & Management',
+    supportCopy: 'Collect RSVPs, track attendance, and manage guest coordination beyond a simple guest list.',
+    bundleType: 'wedding_addon',
+    bundleCode: 'guest_rsvp_management_addon',
+    stripeMonthlyLookupKey: 'guest_rsvp_management_addon',
+    stripeAnnualLookupKey: null,
+  },
+];
+
+export const coupleFeatureMatrix: CoupleFeatureMatrixRow[] = [
+  { feature: 'Task list', free: 'Included', basic: 'Included', premium: 'Included' },
+  { feature: 'Cost estimator', free: 'Included', basic: 'Included', premium: 'Included' },
+  { feature: 'Budget tracking', free: 'Included', basic: 'Included', premium: 'Included' },
+  { feature: 'Vendor directory', free: 'Included', basic: 'Included', premium: 'Included' },
+  { feature: 'Vendor management', free: 'Included', basic: 'Included', premium: 'Included' },
+  { feature: 'Guest list', free: 'Included', basic: 'Included', premium: 'Included' },
+  { feature: 'Planner collaboration', free: 'Not included', basic: 'Included', premium: 'Included' },
+  { feature: 'Vendor collaboration', free: 'Not included', basic: 'Included', premium: 'Included' },
+  { feature: 'Committee collaboration', free: 'Not included', basic: 'Up to 10 people', premium: 'Up to 20 people' },
+  { feature: 'Family collaboration', free: 'Not included', basic: 'Up to 10 people', premium: 'Up to 20 people' },
+  { feature: 'AI Wedding Assistant', free: 'Not included', basic: 'Not included', premium: 'Included' },
+  { feature: 'Timeline management', free: 'Not included', basic: 'Not included', premium: 'Included' },
+  { feature: 'Gift Registry', free: 'Add-on', basic: 'Add-on', premium: 'Add-on' },
+  { feature: 'Guest RSVP & Management', free: 'Add-on', basic: 'Add-on', premium: 'Add-on' },
+];
+
+export const coupleEntitlementKeys = [
+  'wedding_collaboration',
+  'planner_collaboration',
+  'vendor_collaboration',
+  'committee_collaboration',
+  'family_collaboration',
+  'timeline_management',
+  'ai_wedding_assistant',
+  'gift_registry',
+  'guest_rsvp_management',
+] as const;
+
+export type CoupleEntitlementKey = (typeof coupleEntitlementKeys)[number];
+
+export const couplePlanEntitlementMap: Record<Exclude<CouplePlanTier, 'free'>, CoupleEntitlementKey[]> = {
+  basic: [
+    'wedding_collaboration',
+    'planner_collaboration',
+    'vendor_collaboration',
+    'committee_collaboration',
+    'family_collaboration',
+  ],
+  premium: [
+    'wedding_collaboration',
+    'planner_collaboration',
+    'vendor_collaboration',
+    'committee_collaboration',
+    'family_collaboration',
+    'timeline_management',
+    'ai_wedding_assistant',
+  ],
+};
+
+export const couplePlanSeatLimits: Record<CouplePlanTier, { committee: number; family: number }> = {
+  free: { committee: 0, family: 0 },
+  basic: { committee: 10, family: 10 },
+  premium: { committee: 20, family: 20 },
+};
+
+export const coupleAddonEntitlementMap: Record<CoupleAddonCode, CoupleEntitlementKey> = {
+  gift_registry_addon: 'gift_registry',
+  guest_rsvp_management_addon: 'guest_rsvp_management',
+};
+
 export const audiencePlans: AudiencePlan[] = [
   {
     audience: 'couple',
@@ -52,6 +236,7 @@ export const audiencePlans: AudiencePlan[] = [
       'Draft budget, tasks, and guest planning',
     ],
     paidUnlocks: [
+      'AI wedding assistant with workspace-aware guidance and actions',
       'Connect with vendors and planners',
       'Track vendor payments and balances',
       'Collaborate with committee members or a planner',
@@ -59,6 +244,7 @@ export const audiencePlans: AudiencePlan[] = [
       'Push schedules to Google Calendar',
     ],
     upgradeMoments: [
+      'Opening the AI assistant',
       'Trying to contact a vendor',
       'Trying to connect to a planner',
       'Inviting collaborators',
@@ -89,6 +275,7 @@ export const audiencePlans: AudiencePlan[] = [
       'Assign internal planning responsibilities',
     ],
     paidUnlocks: [
+      'AI committee assistant for planning and delegated execution',
       'Connect with vendors and planners',
       'Committee collaboration and delegated task ownership',
       'Vendor payment tracking',
@@ -96,6 +283,7 @@ export const audiencePlans: AudiencePlan[] = [
       'Google Calendar schedule sync',
     ],
     upgradeMoments: [
+      'Opening the AI assistant',
       'Trying to connect with a vendor',
       'Trying to collaborate at full committee level',
       'Recording detailed execution progress',
@@ -125,6 +313,7 @@ export const audiencePlans: AudiencePlan[] = [
       'Invite one client into a shared workflow',
     ],
     paidUnlocks: [
+      'AI planner assistant across clients, budgets, vendors, and timelines',
       'Manage multiple active weddings',
       'Expanded planner dashboard and exports',
       'Calendar sync and scheduling tools',
@@ -132,6 +321,7 @@ export const audiencePlans: AudiencePlan[] = [
       'Premium workflow and reporting tools',
     ],
     upgradeMoments: [
+      'Opening the AI assistant',
       'Trying to add a second active wedding',
       'Trying to export client progress',
       'Trying to use premium planner reporting',
@@ -160,6 +350,7 @@ export const audiencePlans: AudiencePlan[] = [
       'Be discovered through search and matching',
     ],
     paidUnlocks: [
+      'AI vendor assistant for listing and booking operations',
       'Receive direct connection requests',
       'Respond to leads',
       'Unlock analytics and performance insights',
@@ -167,6 +358,7 @@ export const audiencePlans: AudiencePlan[] = [
       'Improve visibility and verified trust signals',
     ],
     upgradeMoments: [
+      'Opening the AI assistant',
       'Trying to receive or respond to direct leads',
       'Trying to access analytics',
       'Trying to unlock premium visibility and growth tools',
@@ -178,17 +370,21 @@ export const featureGateRows: FeatureGateRow[] = [
   { role: 'couple', feature: 'Cost estimator', free: 'Included', paid: 'Included' },
   { role: 'couple', feature: 'Vendor and planner browsing', free: 'Included', paid: 'Included' },
   { role: 'couple', feature: 'Vendor/planner connection', free: 'Locked', paid: 'Included' },
+  { role: 'couple', feature: 'AI wedding assistant', free: 'Locked', paid: 'Included' },
   { role: 'couple', feature: 'Committee/planner collaboration', free: 'Locked', paid: 'Included' },
   { role: 'couple', feature: 'Exports and Google Calendar sync', free: 'Locked', paid: 'Included' },
   { role: 'committee', feature: 'Committee-led wedding planning', free: 'Included', paid: 'Included' },
+  { role: 'committee', feature: 'AI committee assistant', free: 'Locked', paid: 'Included' },
   { role: 'committee', feature: 'Vendor and planner connection', free: 'Locked', paid: 'Included' },
   { role: 'committee', feature: 'Full committee collaboration', free: 'Locked', paid: 'Included' },
   { role: 'committee', feature: 'Exports and Google Calendar sync', free: 'Locked', paid: 'Included' },
   { role: 'planner', feature: '1 active wedding', free: 'Included', paid: 'Included' },
+  { role: 'planner', feature: 'AI planner assistant', free: 'Locked', paid: 'Included' },
   { role: 'planner', feature: 'Additional active weddings', free: 'Locked', paid: 'Included' },
   { role: 'planner', feature: 'Planner exports and advanced reporting', free: 'Locked', paid: 'Included' },
   { role: 'planner', feature: 'Planner calendar sync', free: 'Locked', paid: 'Included' },
   { role: 'vendor', feature: 'Directory listing', free: 'Included', paid: 'Included' },
+  { role: 'vendor', feature: 'AI vendor assistant', free: 'Locked', paid: 'Included' },
   { role: 'vendor', feature: 'Direct lead access', free: 'Locked', paid: 'Included' },
   { role: 'vendor', feature: 'Analytics and premium tools', free: 'Locked', paid: 'Included' },
 ];
@@ -204,6 +400,76 @@ export const accessControlImplementationSteps = [
 
 export function getAudiencePlan(audience: PricingAudience) {
   return audiencePlans.find((plan) => plan.audience === audience)!;
+}
+
+export function getAvailableCheckoutCadences(plan: AudiencePlan): PricingCheckoutCadence[] {
+  switch (plan.billingCadence) {
+    case 'one_time':
+      return ['one_time'];
+    case 'monthly':
+      return ['monthly'];
+    case 'annual':
+      return ['annual'];
+    case 'monthly_or_annual':
+      return ['monthly', 'annual'];
+    default:
+      return ['one_time'];
+  }
+}
+
+export function getCouplePlanDefinition(tier: CouplePlanTier) {
+  return couplePlanDefinitions.find((plan) => plan.tier === tier)!;
+}
+
+export function getCoupleAddonDefinition(code: CoupleAddonCode) {
+  return coupleAddonDefinitions.find((addon) => addon.code === code)!;
+}
+
+export function getLookupKeyForCadence(
+  plan: AudiencePlan,
+  cadence: PricingCheckoutCadence,
+  overrides?: Partial<Record<'one_time' | 'monthly' | 'annual', string | null>>,
+) {
+  if (cadence === 'one_time') {
+    return overrides?.one_time ?? plan.stripeOneTimeLookupKey;
+  }
+  if (cadence === 'monthly') {
+    return overrides?.monthly ?? plan.stripeMonthlyLookupKey;
+  }
+  return overrides?.annual ?? plan.stripeAnnualLookupKey;
+}
+
+export function formatEntitlementFeatureLabel(feature?: string | null) {
+  if (!feature) return null;
+
+  const knownLabels: Record<string, string> = {
+    'couple.connect_vendors': 'connect with vendors',
+    'couple.connect_planners': 'connect with planners',
+    'couple.ai_assistant': 'unlock the AI wedding assistant',
+    'couple.calendar_sync': 'sync your wedding schedule',
+    'couple.export_progress': 'export your planning progress',
+    'committee.ai_assistant': 'unlock the AI committee assistant',
+    'committee.connect_vendors': 'connect with vendors',
+    'committee.connect_couples': 'unlock full committee coordination',
+    'committee.calendar_sync': 'sync committee schedules',
+    'committee.export_progress': 'export committee progress',
+    'planner.ai_assistant': 'unlock the AI planner assistant',
+    'planner.additional_weddings': 'add another active wedding',
+    'planner.vendor_outreach': 'reach out to vendors',
+    'planner.calendar_sync': 'sync planner schedules',
+    'planner.full_workspace': 'unlock the full planner workspace',
+    'planner.export_progress': 'export client progress',
+    'vendor.ai_assistant': 'unlock the AI vendor assistant',
+    'vendor.direct_leads': 'receive direct leads',
+    'vendor.analytics': 'unlock vendor analytics',
+  };
+
+  if (knownLabels[feature]) return knownLabels[feature];
+
+  return feature
+    .replace(/^[^.]+\./, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 export function buildPricingHref(audience: PricingAudience, feature?: string) {

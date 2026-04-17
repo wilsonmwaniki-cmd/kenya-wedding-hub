@@ -20,6 +20,7 @@ import { vendorPaymentStatusLabel } from '@/lib/vendorPayments';
 import { cn } from '@/lib/utils';
 import { getSuggestedTaskCategories, getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 import { getEntitlementDecision } from '@/lib/entitlements';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 
@@ -150,6 +151,7 @@ function sortTasksByDateAndPriority(left: Task, right: Task) {
 export default function Tasks() {
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
+  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -368,13 +370,13 @@ export default function Tasks() {
       ? 'committee.calendar_sync'
       : 'planner.calendar_sync'
     : 'couple.calendar_sync';
-  const calendarDecision = getEntitlementDecision(calendarFeature, { profile });
+  const calendarDecision = getEntitlementDecision(calendarFeature, { profile, weddingEntitlements, couplePlanTier });
   const exportFeature = profile?.role === 'planner'
     ? profile?.planner_type === 'committee'
       ? 'committee.export_progress'
       : 'planner.export_progress'
     : 'couple.export_progress';
-  const exportDecision = getEntitlementDecision(exportFeature, { profile });
+  const exportDecision = getEntitlementDecision(exportFeature, { profile, weddingEntitlements, couplePlanTier });
   const delegatedTaskCount = pending.filter((task) => task.delegatable).length;
   const vendorsWithOpenTasks = new Set(
     vendorLinkedTasks.filter((task) => !task.completed && task.source_vendor_id).map((task) => task.source_vendor_id as string),

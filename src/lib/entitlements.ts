@@ -1,23 +1,34 @@
-import { buildPricingHref, getAudiencePlan, type PricingAudience } from '@/lib/pricingPlans';
+import {
+  buildPricingHref,
+  getAudiencePlan,
+  getCouplePlanDefinition,
+  type CoupleEntitlementKey,
+  type CouplePlanTier,
+  type PricingAudience,
+} from '@/lib/pricingPlans';
 import { isCommitteePlanner, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
 import { vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 
 export type PlanningPassStatus = 'inactive' | 'active' | 'past_due' | 'cancelled';
 
 export type EntitlementFeature =
+  | 'couple.ai_assistant'
   | 'couple.connect_vendors'
   | 'couple.connect_planners'
   | 'couple.calendar_sync'
   | 'couple.export_progress'
+  | 'committee.ai_assistant'
   | 'committee.connect_vendors'
   | 'committee.connect_couples'
   | 'committee.calendar_sync'
   | 'committee.export_progress'
+  | 'planner.ai_assistant'
   | 'planner.additional_weddings'
   | 'planner.vendor_outreach'
   | 'planner.calendar_sync'
   | 'planner.full_workspace'
   | 'planner.export_progress'
+  | 'vendor.ai_assistant'
   | 'vendor.direct_leads'
   | 'vendor.analytics';
 
@@ -62,6 +73,8 @@ interface EntitlementContext {
   profile?: EntitlementProfileLike | null;
   vendorListing?: EntitlementVendorLike | null;
   activeWeddingCount?: number;
+  weddingEntitlements?: Partial<Record<CoupleEntitlementKey, boolean>> | null;
+  couplePlanTier?: CouplePlanTier | null;
   bypass?: boolean;
 }
 
@@ -116,6 +129,38 @@ function planningPassReasons() {
   return ['Your Planning Pass is not active yet.'];
 }
 
+function hasWeddingEntitlement(context: EntitlementContext, entitlementKey: CoupleEntitlementKey) {
+  const explicitValue = context.weddingEntitlements?.[entitlementKey];
+  if (typeof explicitValue === 'boolean') return explicitValue;
+  return hasActivePlanningPass(context.profile);
+}
+
+function getEffectiveCouplePlanTier(context: EntitlementContext, requiredTier: Exclude<CouplePlanTier, 'free'>) {
+  if (context.couplePlanTier) {
+    return requiredTier === 'basic' || context.couplePlanTier === 'premium'
+      ? context.couplePlanTier
+      : requiredTier;
+  }
+
+  return hasActivePlanningPass(context.profile) ? 'premium' : requiredTier;
+}
+
+function buildCouplePricingHref(tier: Exclude<CouplePlanTier, 'free'>, feature?: string) {
+  const plan = getCouplePlanDefinition(tier);
+  const params = new URLSearchParams({
+    audience: 'couple',
+    plan: `couple_${tier}`,
+    successPath: '/budget?upgrade=success',
+    cancelPath: '/pricing?upgrade=cancelled',
+  });
+
+  if (feature) params.set('feature', feature);
+  if (plan.stripeMonthlyLookupKey) params.set('monthlyLookupKey', plan.stripeMonthlyLookupKey);
+  if (plan.stripeAnnualLookupKey) params.set('annualLookupKey', plan.stripeAnnualLookupKey);
+
+  return `/pricing?${params.toString()}`;
+}
+
 function buildDecision(
   feature: EntitlementFeature,
   audience: PricingAudience,
@@ -142,6 +187,32 @@ function buildDecision(
   };
 }
 
+function buildCoupleDecision(
+  feature: EntitlementFeature,
+  tier: Exclude<CouplePlanTier, 'free'>,
+  allowed: boolean,
+  overrides?: Partial<Pick<EntitlementDecision, 'title' | 'description' | 'ctaLabel' | 'reasons'>>,
+): EntitlementDecision {
+  const plan = getCouplePlanDefinition(tier);
+  return {
+    allowed,
+    audience: 'couple',
+    feature,
+    planName: plan.title,
+    entitlementCode: `couple_${tier}`,
+    billingCadence: 'monthly_or_annual',
+    stripeProductKey: `couple_${tier}`,
+    stripeMonthlyLookupKey: plan.stripeMonthlyLookupKey,
+    stripeAnnualLookupKey: plan.stripeAnnualLookupKey,
+    stripeOneTimeLookupKey: null,
+    pricingHref: buildCouplePricingHref(tier, feature),
+    title: overrides?.title ?? `Upgrade to ${plan.title}`,
+    description: overrides?.description ?? `Unlock ${plan.title} to continue.`,
+    ctaLabel: overrides?.ctaLabel ?? 'View pricing',
+    reasons: overrides?.reasons ?? [],
+  };
+}
+
 export function getEntitlementDecision(feature: EntitlementFeature, context: EntitlementContext): EntitlementDecision {
   if (context.bypass) {
     const audience = getPricingAudience(context.profile);
@@ -152,29 +223,45 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
   const activeWeddingCount = context.activeWeddingCount ?? 0;
 
   switch (feature) {
+    case 'couple.ai_assistant':
+      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'premium'), hasWeddingEntitlement(context, 'ai_wedding_assistant'), {
+        title: 'Upgrade to unlock the AI Wedding Assistant',
+        description: 'Premium unlocks an AI planning copilot that can read your workspace, answer planning questions, and help manage tasks, vendors, guests, budget, and timelines for your wedding.',
+        reasons: hasWeddingEntitlement(context, 'ai_wedding_assistant')
+          ? []
+          : ['AI Wedding Assistant is part of Premium.'],
+      });
     case 'couple.connect_vendors':
-      return buildDecision(feature, 'couple', hasActivePlanningPass(context.profile), {
-        title: 'Upgrade to connect with vendors',
-        description: 'You can shortlist and compare vendors for free. Upgrade to Planning Pass to send direct requests, track payments, and coordinate the wedding in one place.',
-        reasons: planningPassReasons(),
+      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'basic'), hasWeddingEntitlement(context, 'vendor_collaboration'), {
+        title: 'Upgrade to collaborate with vendors',
+        description: 'You can shortlist and compare vendors for free. Upgrade to Basic to share briefs, coordinate updates, and manage vendor collaboration in one workspace.',
+        reasons: hasWeddingEntitlement(context, 'vendor_collaboration')
+          ? []
+          : ['Vendor collaboration is part of Basic.'],
       });
     case 'couple.connect_planners':
-      return buildDecision(feature, 'couple', hasActivePlanningPass(context.profile), {
+      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'basic'), hasWeddingEntitlement(context, 'planner_collaboration'), {
         title: 'Upgrade to work with a planner',
-        description: 'Unlock Planning Pass to connect with planners, share your progress, and keep your wedding workspace collaborative.',
-        reasons: planningPassReasons(),
+        description: 'Upgrade to Basic to invite a planner, share your progress, and keep your wedding workspace collaborative.',
+        reasons: hasWeddingEntitlement(context, 'planner_collaboration')
+          ? []
+          : ['Planner collaboration is part of Basic.'],
       });
     case 'couple.calendar_sync':
-      return buildDecision(feature, 'couple', hasActivePlanningPass(context.profile), {
-        title: 'Upgrade to sync schedules',
-        description: 'Planning Pass unlocks Google Calendar syncing and other execution tools once you move from exploration into active planning.',
-        reasons: planningPassReasons(),
+      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'premium'), hasWeddingEntitlement(context, 'timeline_management'), {
+        title: 'Upgrade to sync your wedding timeline',
+        description: 'Premium unlocks collaborative timeline management, calendar syncing, and execution tools once your wedding moves into active coordination.',
+        reasons: hasWeddingEntitlement(context, 'timeline_management')
+          ? []
+          : ['Timeline management and calendar sync are part of Premium.'],
       });
     case 'couple.export_progress':
-      return buildDecision(feature, 'couple', hasActivePlanningPass(context.profile), {
-        title: 'Upgrade to export your planning progress',
-        description: 'Planning Pass unlocks budget exports, task exports, and progress reports once you are actively coordinating the wedding.',
-        reasons: planningPassReasons(),
+      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'premium'), hasWeddingEntitlement(context, 'timeline_management'), {
+        title: 'Upgrade to export wedding progress',
+        description: 'Premium unlocks budget exports, task exports, and shareable planning reports once you are actively coordinating the wedding.',
+        reasons: hasWeddingEntitlement(context, 'timeline_management')
+          ? []
+          : ['Advanced exports are part of Premium.'],
       });
     case 'committee.connect_vendors':
     case 'committee.connect_couples':
@@ -194,6 +281,18 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
               ? 'Committee Pass unlocks exports, reporting, and the shareable progress views that matter once execution is underway.'
               : 'Committee Pass unlocks vendor and couple coordination, delegated execution, and the shared wedding workspace.',
         reasons: plannerReasons(context.profile),
+      });
+    case 'committee.ai_assistant':
+      return buildDecision(feature, 'committee', plannerHasActiveSubscription(context.profile), {
+        title: 'Upgrade to unlock the AI committee assistant',
+        description: 'Committee Pass unlocks an AI assistant that understands delegated planning, vendors, budgets, tasks, and wedding execution across the committee workspace.',
+        reasons: plannerHasActiveSubscription(context.profile) ? [] : ['AI committee support is part of Committee Pass.'],
+      });
+    case 'planner.ai_assistant':
+      return buildDecision(feature, 'planner', plannerHasActiveSubscription(context.profile), {
+        title: 'Upgrade to unlock the AI planner assistant',
+        description: 'Planner Pro unlocks an AI assistant that can reason across client tasks, vendors, timelines, budgets, and payment workflows while helping you operate faster.',
+        reasons: plannerHasActiveSubscription(context.profile) ? [] : ['AI planning support is part of Planner Pro.'],
       });
     case 'planner.additional_weddings':
       return buildDecision(feature, 'planner', activeWeddingCount < 1 || plannerHasActiveSubscription(context.profile), {
@@ -221,6 +320,12 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
         title: 'Upgrade to export client progress',
         description: 'Planner Pro unlocks client exports, handoff reports, and the shareable planning documents that matter once you manage weddings professionally.',
         reasons: plannerHasActiveSubscription(context.profile) ? [] : ['Planner exports are part of Planner Pro.'],
+      });
+    case 'vendor.ai_assistant':
+      return buildDecision(feature, 'vendor', vendorHasActiveSubscription(context.vendorListing), {
+        title: 'Upgrade to unlock the AI vendor assistant',
+        description: 'Vendor Pro unlocks an AI assistant that can help you improve your listing, understand bookings, review tasks, and manage client-facing work more efficiently.',
+        reasons: vendorHasActiveSubscription(context.vendorListing) ? [] : ['AI vendor support is part of Vendor Pro.'],
       });
     case 'vendor.direct_leads':
       return buildDecision(feature, 'vendor', vendorHasFullAccess(context.vendorListing), {

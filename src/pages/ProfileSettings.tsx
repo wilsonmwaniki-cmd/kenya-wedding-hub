@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
@@ -13,6 +14,9 @@ import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyh
 import AvatarUpload from '@/components/AvatarUpload';
 import { committeeResponsibilityOptions } from '@/lib/committeeRoles';
 import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 
@@ -22,6 +26,7 @@ const committeePermissionOptions = ['chair', 'member', 'viewer'] as const;
 export default function ProfileSettings() {
   const { profile, updateProfile } = useAuth();
   const { toast } = useToast();
+  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const [saving, setSaving] = useState(false);
   const [newSpecialty, setNewSpecialty] = useState('');
   const [requestingVerification, setRequestingVerification] = useState(false);
@@ -201,6 +206,12 @@ export default function ProfileSettings() {
 
   const plannerSubscriptionActive = plannerHasActiveSubscription(profile);
   const plannerFullAccess = plannerHasFullAccess(profile);
+  const coupleExportDecision = !isPlanner && !isVendor && !isAdmin
+    ? getEntitlementDecision('couple.export_progress', { profile, weddingEntitlements, couplePlanTier })
+    : null;
+  const committeeExportDecision = isCommittee
+    ? getEntitlementDecision('committee.export_progress', { profile })
+    : null;
 
   const addCommitteeMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -341,6 +352,108 @@ export default function ProfileSettings() {
         </Card>
       )}
 
+      {!isPlanner && !isVendor && !isAdmin && profile && coupleExportDecision && (
+        <Card className={coupleExportDecision?.allowed ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
+          <CardHeader>
+            <CardTitle className="font-display flex items-center gap-2">
+              {coupleExportDecision?.allowed ? <ShieldCheck className="h-5 w-5 text-primary" /> : <LockKeyhole className="h-5 w-5 text-primary" />}
+              Wedding Plan & Exports
+            </CardTitle>
+            <CardDescription>
+              Your wedding plan controls exports, collaboration, and the active coordination tools inside your wedding workspace.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={coupleExportDecision?.allowed ? 'secondary' : 'outline'}>
+                <CreditCard className="mr-1 h-3 w-3" />
+                {couplePlanTier ? couplePlanTier.charAt(0).toUpperCase() + couplePlanTier.slice(1) : 'Free'}
+              </Badge>
+              <Badge variant={coupleExportDecision?.allowed ? 'secondary' : 'outline'}>
+                <ShieldCheck className="mr-1 h-3 w-3" />
+                {coupleExportDecision?.allowed ? 'Exports enabled' : 'Exports locked'}
+              </Badge>
+            </div>
+
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Current access status</p>
+              <p className="mt-1">
+                {coupleExportDecision?.allowed
+                  ? 'Your current wedding plan includes exports. Budget, task, and vendor progress exports are available across your workspace.'
+                  : 'You are still on the free plan. Exports, planner/vendor collaboration, and richer coordination tools unlock with Basic or Premium.'}
+              </p>
+              {profile.planning_pass_expires_at && (
+                <p className="mt-1 text-xs">
+                  Plan expiry: {new Date(profile.planning_pass_expires_at).toLocaleDateString()}
+                </p>
+              )}
+              <p className="mt-1 text-xs">Admins can still manage legacy billing records from the admin portal while the wedding plan model rolls out.</p>
+            </div>
+
+            {!coupleExportDecision?.allowed ? (
+              <InlineUpgradePrompt decision={coupleExportDecision} />
+            ) : (
+              <Button asChild variant="outline">
+                <Link to={coupleExportDecision.pricingHref}>View plan details</Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {isCommittee && profile && committeeExportDecision && (
+        <Card className={committeeExportDecision.allowed ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
+          <CardHeader>
+            <CardTitle className="font-display flex items-center gap-2">
+              {committeeExportDecision.allowed ? <ShieldCheck className="h-5 w-5 text-primary" /> : <LockKeyhole className="h-5 w-5 text-primary" />}
+              Committee Pass & Exports
+            </CardTitle>
+            <CardDescription>
+              Committee exports and calendar sync are tied to your Committee Pass, which is controlled through subscription and verification.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={plannerSubscriptionActive ? 'secondary' : 'outline'}>
+                <CreditCard className="mr-1 h-3 w-3" />
+                {profile.planner_subscription_status}
+              </Badge>
+              <Badge variant={profile.planner_verified ? 'secondary' : 'outline'}>
+                <ShieldCheck className="mr-1 h-3 w-3" />
+                {profile.planner_verified ? 'Verified' : 'Verification pending'}
+              </Badge>
+              <Badge variant={committeeExportDecision.allowed ? 'secondary' : 'outline'}>
+                <ShieldCheck className="mr-1 h-3 w-3" />
+                {committeeExportDecision.allowed ? 'Exports enabled' : 'Exports locked'}
+              </Badge>
+            </div>
+
+            <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Current access status</p>
+              <p className="mt-1">
+                {committeeExportDecision.allowed
+                  ? 'Committee exports and shared execution tools are active. You can export progress and sync schedules from the main workspace.'
+                  : 'Exports stay locked until your Committee Pass is active and the workspace is verified.'}
+              </p>
+              {profile.planner_subscription_expires_at && (
+                <p className="mt-1 text-xs">
+                  Plan expiry: {new Date(profile.planner_subscription_expires_at).toLocaleDateString()}
+                </p>
+              )}
+              <p className="mt-1 text-xs">Admin manages committee pass status from planner access controls.</p>
+            </div>
+
+            {!committeeExportDecision.allowed ? (
+              <InlineUpgradePrompt decision={committeeExportDecision} />
+            ) : (
+              <Button asChild variant="outline">
+                <Link to={committeeExportDecision.pricingHref}>View plan details</Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <form onSubmit={handleSave} className="space-y-6">
         {/* Personal Details */}
         <Card className="shadow-card">
@@ -379,7 +492,7 @@ export default function ProfileSettings() {
                   <Label>Business Email</Label>
                   <Input type="email" value={form.company_email} onChange={e => setForm(f => ({ ...f, company_email: e.target.value }))} placeholder="info@yourcompany.com" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Business Phone</Label>
                     <Input value={form.company_phone} onChange={e => setForm(f => ({ ...f, company_phone: e.target.value }))} placeholder="+254 7XX XXX XXX" />
