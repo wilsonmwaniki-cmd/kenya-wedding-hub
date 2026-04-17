@@ -126,7 +126,7 @@ function vendorReasons(vendorListing?: EntitlementVendorLike | null) {
 }
 
 function planningPassReasons() {
-  return ['Your Planning Pass is not active yet.'];
+  return ['Your Wedding Plan is not active yet.'];
 }
 
 function hasWeddingEntitlement(context: EntitlementContext, entitlementKey: CoupleEntitlementKey) {

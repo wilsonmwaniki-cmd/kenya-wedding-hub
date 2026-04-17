@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning } from "lucide-react";
+import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +89,8 @@ type PlannerVerificationFilter = "all" | "pending" | "verified" | "requested";
 type PlanningPassFilter = "all" | "inactive" | "active" | "past_due" | "cancelled";
 type ReputationIssueFilter = "all" | "flagged" | "clean";
 type ReputationVisibilityFilter = "all" | "private" | "planner_network" | "admin_only";
+type AiAudience = "couple" | "committee" | "planner" | "vendor";
+type AiAudienceFilter = "all" | AiAudience;
 
 interface AdminReputationMetrics {
   total_reviews: number;
@@ -118,6 +120,38 @@ interface AdminReputationRow {
   private_notes: string | null;
 }
 
+interface AdminAiUsageMetrics {
+  total_messages: number;
+  active_users: number;
+  couple_messages: number;
+  committee_messages: number;
+  planner_messages: number;
+  vendor_messages: number;
+}
+
+interface AdminAiUsageRow {
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+  audience: AiAudience;
+  role: string;
+  month_start: string;
+  messages_used: number;
+  monthly_message_cap: number;
+  remaining_messages: number;
+  ai_enabled: boolean;
+}
+
+interface AdminAiPlanConfigRow {
+  audience: AiAudience;
+  monthly_message_cap: number;
+  ai_enabled: boolean;
+  add_on_separate: boolean;
+  add_on_lookup_key: string | null;
+  add_on_annual_lookup_key: string | null;
+  updated_at: string;
+}
+
 const roleOptions: AppRole[] = ["couple", "planner", "vendor", "admin"];
 
 function countLabel(value?: number) {
@@ -137,6 +171,9 @@ export default function AdminPortal() {
   const [couples, setCouples] = useState<AdminCouplePassRow[]>([]);
   const [reputationMetrics, setReputationMetrics] = useState<AdminReputationMetrics | null>(null);
   const [reputationReviews, setReputationReviews] = useState<AdminReputationRow[]>([]);
+  const [aiUsageMetrics, setAiUsageMetrics] = useState<AdminAiUsageMetrics | null>(null);
+  const [aiUsageRows, setAiUsageRows] = useState<AdminAiUsageRow[]>([]);
+  const [aiPlanConfigs, setAiPlanConfigs] = useState<AdminAiPlanConfigRow[]>([]);
   const [roleDrafts, setRoleDrafts] = useState<Record<string, AppRole>>({});
   const [subscriptionDrafts, setSubscriptionDrafts] = useState<Record<string, AdminVendorRow["subscription_status"]>>({});
   const [subscriptionExpiryDrafts, setSubscriptionExpiryDrafts] = useState<Record<string, string>>({});
@@ -146,9 +183,15 @@ export default function AdminPortal() {
   const [planningPassDrafts, setPlanningPassDrafts] = useState<Record<string, AdminCouplePassRow["planning_pass_status"]>>({});
   const [planningPassExpiryDrafts, setPlanningPassExpiryDrafts] = useState<Record<string, string>>({});
   const [reviewVisibilityDrafts, setReviewVisibilityDrafts] = useState<Record<string, ReputationVisibilityFilter>>({});
+  const [aiCapDrafts, setAiCapDrafts] = useState<Record<string, string>>({});
+  const [aiEnabledDrafts, setAiEnabledDrafts] = useState<Record<string, boolean>>({});
+  const [aiAddonSeparateDrafts, setAiAddonSeparateDrafts] = useState<Record<string, boolean>>({});
+  const [aiAddonLookupDrafts, setAiAddonLookupDrafts] = useState<Record<string, string>>({});
+  const [aiAddonAnnualLookupDrafts, setAiAddonAnnualLookupDrafts] = useState<Record<string, string>>({});
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [savingVendorId, setSavingVendorId] = useState<string | null>(null);
   const [savingReviewId, setSavingReviewId] = useState<string | null>(null);
+  const [savingAiAudience, setSavingAiAudience] = useState<string | null>(null);
 
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState<UserRoleFilter>("all");
@@ -161,6 +204,8 @@ export default function AdminPortal() {
   const [reputationSearch, setReputationSearch] = useState("");
   const [reputationIssueFilter, setReputationIssueFilter] = useState<ReputationIssueFilter>("flagged");
   const [reputationVisibilityFilter, setReputationVisibilityFilter] = useState<ReputationVisibilityFilter>("all");
+  const [aiUsageSearch, setAiUsageSearch] = useState("");
+  const [aiAudienceFilter, setAiAudienceFilter] = useState<AiAudienceFilter>("all");
 
   const loadMetrics = async () => {
     const { data, error } = await supabase.rpc("admin_dashboard_metrics" as any);
@@ -299,11 +344,72 @@ export default function AdminPortal() {
     });
   };
 
+  const loadAiUsageMetrics = async () => {
+    const { data, error } = await supabase.rpc("admin_ai_usage_metrics" as any);
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    setAiUsageMetrics((row ?? null) as unknown as AdminAiUsageMetrics | null);
+  };
+
+  const loadAiUsageRows = async () => {
+    const { data, error } = await supabase.rpc("admin_list_ai_usage" as any, {
+      search_query: aiUsageSearch.trim() || null,
+      audience_filter: aiAudienceFilter,
+      limit_rows: 100,
+      offset_rows: 0,
+    });
+    if (error) throw error;
+    setAiUsageRows((data ?? []) as unknown as AdminAiUsageRow[]);
+  };
+
+  const loadAiPlanConfigs = async () => {
+    const { data, error } = await supabase.rpc("admin_list_ai_plan_configs" as any);
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as AdminAiPlanConfigRow[];
+    setAiPlanConfigs(rows);
+    setAiCapDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.audience] = String(row.monthly_message_cap ?? 0);
+      return next;
+    });
+    setAiEnabledDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.audience] = row.ai_enabled;
+      return next;
+    });
+    setAiAddonSeparateDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.audience] = row.add_on_separate;
+      return next;
+    });
+    setAiAddonLookupDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.audience] = row.add_on_lookup_key ?? "";
+      return next;
+    });
+    setAiAddonAnnualLookupDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.audience] = row.add_on_annual_lookup_key ?? "";
+      return next;
+    });
+  };
+
   const loadAll = async (showFullLoader = false) => {
     if (showFullLoader) setLoading(true);
     else setRefreshing(true);
     try {
-      await Promise.all([loadMetrics(), loadUsers(), loadVendors(), loadPlanners(), loadCouples(), loadReputationMetrics(), loadReputationReviews()]);
+      await Promise.all([
+        loadMetrics(),
+        loadUsers(),
+        loadVendors(),
+        loadPlanners(),
+        loadCouples(),
+        loadReputationMetrics(),
+        loadReputationReviews(),
+        loadAiUsageMetrics(),
+        loadAiUsageRows(),
+        loadAiPlanConfigs(),
+      ]);
     } catch (error: any) {
       toast({
         title: "Failed to load admin portal",
@@ -361,7 +467,7 @@ export default function AdminPortal() {
       await loadCouples();
     } catch (error: any) {
       toast({
-        title: "Failed to load Planning Pass records",
+        title: "Failed to load Wedding Plan records",
         description: error.message,
         variant: "destructive",
       });
@@ -374,6 +480,18 @@ export default function AdminPortal() {
     } catch (error: any) {
       toast({
         title: "Failed to load reputation reviews",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const applyAiUsageFilters = async () => {
+    try {
+      await loadAiUsageRows();
+    } catch (error: any) {
+      toast({
+        title: "Failed to load AI usage",
         description: error.message,
         variant: "destructive",
       });
@@ -534,14 +652,14 @@ export default function AdminPortal() {
       if (error) throw error;
 
       toast({
-        title: "Planning Pass updated",
-        description: `Couple Planning Pass is now ${nextStatus}.`,
+        title: "Wedding Plan updated",
+        description: `Couple Wedding Plan access is now ${nextStatus}.`,
       });
 
       await loadCouples();
     } catch (error: any) {
       toast({
-        title: "Planning Pass update failed",
+        title: "Wedding Plan update failed",
         description: error.message,
         variant: "destructive",
       });
@@ -577,6 +695,46 @@ export default function AdminPortal() {
       });
     } finally {
       setSavingReviewId(null);
+    }
+  };
+
+  const handleAiPlanConfigSave = async (audience: AiAudience) => {
+    const monthlyCap = Number(aiCapDrafts[audience] ?? 0);
+    if (!Number.isFinite(monthlyCap) || monthlyCap < 0) {
+      toast({
+        title: "Invalid AI cap",
+        description: "Monthly AI cap must be 0 or greater.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingAiAudience(audience);
+    try {
+      const { error } = await supabase.rpc("admin_set_ai_plan_config" as any, {
+        audience_input: audience,
+        monthly_message_cap_input: monthlyCap,
+        ai_enabled_input: aiEnabledDrafts[audience] ?? true,
+        add_on_separate_input: aiAddonSeparateDrafts[audience] ?? false,
+        add_on_lookup_key_input: aiAddonLookupDrafts[audience]?.trim() || null,
+        add_on_annual_lookup_key_input: aiAddonAnnualLookupDrafts[audience]?.trim() || null,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "AI plan updated",
+        description: `${audience} AI settings were saved.`,
+      });
+
+      await Promise.all([loadAiPlanConfigs(), loadAiUsageMetrics(), loadAiUsageRows()]);
+    } catch (error: any) {
+      toast({
+        title: "AI plan update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingAiAudience(null);
     }
   };
 
@@ -647,15 +805,25 @@ export default function AdminPortal() {
             <MessageSquareWarning className="h-5 w-5 text-primary" />
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">AI Messages This Month</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <p className="text-2xl font-semibold">{countLabel(aiUsageMetrics?.total_messages)}</p>
+            <Sparkles className="h-5 w-5 text-primary" />
+          </CardContent>
+        </Card>
       </div>
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="h-auto w-full flex-wrap justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="users">Users & Roles</TabsTrigger>
-          <TabsTrigger value="couples">Planning Passes</TabsTrigger>
+          <TabsTrigger value="couples">Wedding Plans</TabsTrigger>
           <TabsTrigger value="planners">Planner Moderation</TabsTrigger>
           <TabsTrigger value="vendors">Vendor Moderation</TabsTrigger>
+          <TabsTrigger value="ai">AI Controls</TabsTrigger>
           <TabsTrigger value="reputation">Reputation Oversight</TabsTrigger>
         </TabsList>
 
@@ -835,7 +1003,7 @@ export default function AdminPortal() {
         <TabsContent value="couples" className="space-y-4">
           <Card>
             <CardHeader className="space-y-3">
-              <CardTitle className="text-base">Couple Planning Pass Access</CardTitle>
+              <CardTitle className="text-base">Couple Wedding Plan Access</CardTitle>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Input
                   value={coupleSearch}
@@ -868,7 +1036,7 @@ export default function AdminPortal() {
                   <TableRow>
                     <TableHead>Couple</TableHead>
                     <TableHead>Wedding</TableHead>
-                    <TableHead>Planning Pass</TableHead>
+                    <TableHead>Wedding Plan</TableHead>
                     <TableHead>Last Updated</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
@@ -931,7 +1099,7 @@ export default function AdminPortal() {
                             disabled={savingUserId === item.user_id}
                             onClick={() => handlePlanningPassUpdate(item.user_id)}
                           >
-                            Save pass
+                            Save plan
                           </Button>
                         </div>
                       </TableCell>
@@ -1127,6 +1295,9 @@ export default function AdminPortal() {
           <Card>
             <CardHeader className="space-y-3">
               <CardTitle className="text-base">Planner & Committee Access Review</CardTitle>
+              <CardDescription>
+                Committee export access is controlled here too. When a committee workspace is active and verified, exports and other full coordination features unlock for that account.
+              </CardDescription>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Input
                   value={plannerSearch}
@@ -1185,6 +1356,11 @@ export default function AdminPortal() {
                         <Badge variant="outline">
                           {item.planner_type === 'committee' ? 'Committee' : 'Professional'}
                         </Badge>
+                        {item.planner_type === 'committee' && (
+                          <Badge variant={item.planner_subscription_status === "active" && item.planner_verified ? "secondary" : "outline"}>
+                            {item.planner_subscription_status === "active" && item.planner_verified ? 'Exports enabled' : 'Exports locked'}
+                          </Badge>
+                        )}
                         <Badge variant={item.planner_verified ? "secondary" : "outline"}>
                           {item.planner_verified ? "Verified" : "Unverified"}
                         </Badge>
@@ -1257,6 +1433,224 @@ export default function AdminPortal() {
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="ai" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Current Month AI Activity</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between"><span>Total messages</span><span>{countLabel(aiUsageMetrics?.total_messages)}</span></div>
+                <div className="flex justify-between"><span>Active AI users</span><span>{countLabel(aiUsageMetrics?.active_users)}</span></div>
+                <div className="flex justify-between"><span>Couple messages</span><span>{countLabel(aiUsageMetrics?.couple_messages)}</span></div>
+                <div className="flex justify-between"><span>Committee messages</span><span>{countLabel(aiUsageMetrics?.committee_messages)}</span></div>
+                <div className="flex justify-between"><span>Planner messages</span><span>{countLabel(aiUsageMetrics?.planner_messages)}</span></div>
+                <div className="flex justify-between"><span>Vendor messages</span><span>{countLabel(aiUsageMetrics?.vendor_messages)}</span></div>
+              </CardContent>
+            </Card>
+
+            <Card className="md:col-span-1 xl:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-base">AI Control Notes</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  AI usage is counted per user message and resets monthly. Each audience can have its own cap,
+                  can be disabled, and can be marked as Stripe-ready for a separate add-on later.
+                </p>
+                <p>
+                  Separate add-on lookup keys are optional right now. Leaving them blank keeps AI bundled into the
+                  base plan while still preserving a clean upgrade path later.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Plan Controls</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {aiPlanConfigs.map((config) => (
+                <div key={config.audience} className="rounded-2xl border border-border/70 p-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-base font-semibold capitalize">{config.audience}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Updated {new Date(config.updated_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={aiEnabledDrafts[config.audience] ? "secondary" : "outline"}>
+                        {aiEnabledDrafts[config.audience] ? "AI enabled" : "AI disabled"}
+                      </Badge>
+                      <Badge variant={aiAddonSeparateDrafts[config.audience] ? "secondary" : "outline"}>
+                        {aiAddonSeparateDrafts[config.audience] ? "Separate AI add-on ready" : "Bundled with base plan"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Monthly cap</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={aiCapDrafts[config.audience] ?? "0"}
+                        onChange={(event) => setAiCapDrafts((prev) => ({ ...prev, [config.audience]: event.target.value }))}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI status</label>
+                      <Select
+                        value={(aiEnabledDrafts[config.audience] ?? true) ? "enabled" : "disabled"}
+                        onValueChange={(value) =>
+                          setAiEnabledDrafts((prev) => ({ ...prev, [config.audience]: value === "enabled" }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="enabled">Enabled</SelectItem>
+                          <SelectItem value="disabled">Disabled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Billing mode</label>
+                      <Select
+                        value={(aiAddonSeparateDrafts[config.audience] ?? false) ? "separate" : "bundled"}
+                        onValueChange={(value) =>
+                          setAiAddonSeparateDrafts((prev) => ({ ...prev, [config.audience]: value === "separate" }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="bundled">Bundled</SelectItem>
+                          <SelectItem value="separate">Separate add-on</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Monthly lookup key</label>
+                      <Input
+                        value={aiAddonLookupDrafts[config.audience] ?? ""}
+                        onChange={(event) =>
+                          setAiAddonLookupDrafts((prev) => ({ ...prev, [config.audience]: event.target.value }))
+                        }
+                        placeholder="ai_add_on_monthly"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Annual lookup key</label>
+                      <Input
+                        value={aiAddonAnnualLookupDrafts[config.audience] ?? ""}
+                        onChange={(event) =>
+                          setAiAddonAnnualLookupDrafts((prev) => ({ ...prev, [config.audience]: event.target.value }))
+                        }
+                        placeholder="ai_add_on_annual"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      onClick={() => handleAiPlanConfigSave(config.audience)}
+                      disabled={savingAiAudience === config.audience}
+                    >
+                      {savingAiAudience === config.audience ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save AI Controls
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="space-y-3">
+              <CardTitle className="text-base">AI Usage by User</CardTitle>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={aiUsageSearch}
+                  onChange={(event) => setAiUsageSearch(event.target.value)}
+                  placeholder="Search by name or email"
+                />
+                <Select value={aiAudienceFilter} onValueChange={(value) => setAiAudienceFilter(value as AiAudienceFilter)}>
+                  <SelectTrigger className="w-full sm:w-[220px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All AI audiences</SelectItem>
+                    <SelectItem value="couple">Couples</SelectItem>
+                    <SelectItem value="committee">Committees</SelectItem>
+                    <SelectItem value="planner">Planners</SelectItem>
+                    <SelectItem value="vendor">Vendors</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={() => applyAiUsageFilters()}>
+                  Apply
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Audience</TableHead>
+                    <TableHead>Messages Used</TableHead>
+                    <TableHead>Cap</TableHead>
+                    <TableHead>Remaining</TableHead>
+                    <TableHead>Month</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {aiUsageRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                        No AI usage matches the current filters yet.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    aiUsageRows.map((row) => (
+                      <TableRow key={`${row.user_id}-${row.audience}`}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{row.full_name || "Unnamed user"}</p>
+                            <p className="text-xs text-muted-foreground">{row.email || "No email found"}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Badge variant="outline" className="capitalize">{row.audience}</Badge>
+                            <p className="text-xs text-muted-foreground capitalize">{row.role}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>{countLabel(row.messages_used)}</TableCell>
+                        <TableCell>{countLabel(row.monthly_message_cap)}</TableCell>
+                        <TableCell>
+                          <Badge variant={row.remaining_messages === 0 ? "destructive" : "secondary"}>
+                            {countLabel(row.remaining_messages)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{new Date(row.month_start).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
