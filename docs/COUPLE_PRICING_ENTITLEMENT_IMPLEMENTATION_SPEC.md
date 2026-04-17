@@ -225,7 +225,7 @@ It is clearer and sounds like platform capability instead of external consulting
 
 ## Wedding-Level Entitlement Model
 
-The couple product should move from the old profile-level `planning_pass` model to wedding-level entitlements.
+The couple product should move from the legacy profile-level `planning_pass` bridge fields to wedding-level entitlements.
 
 The wedding is the paid workspace.
 
@@ -413,9 +413,9 @@ File:
 
 ### Current problem
 
-The file is still built around audience-based paid products such as:
+The file is still built around older audience-based paid products such as:
 
-- `planning_pass`
+- legacy couple `planning_pass`
 - `committee_pass`
 - `planner_pro`
 - `vendor_pro`
@@ -429,7 +429,7 @@ Split pricing definitions into:
 - wedding couple plans
 - professional plans
 
-For the couple side, replace the current one-time `planning_pass` shape with:
+For the couple side, replace the remaining legacy `planning_pass` bridge shape with:
 
 - `free`
 - `basic_monthly`
@@ -506,7 +506,7 @@ The current file still uses legacy audience-based feature keys such as:
 - `couple.calendar_sync`
 - `couple.export_progress`
 
-And it still checks:
+And it still checks legacy profile bridge fields:
 
 - `planning_pass_status`
 - `planning_pass_expires_at`
@@ -591,6 +591,8 @@ Recommended next schema follow-up:
 ### Recommended data normalization rule
 
 Do not reintroduce `planning_pass` as the primary couple control plane.
+
+Keep it only as a temporary compatibility bridge while wedding-level entitlements roll out.
 
 If legacy planning-pass records still exist, map them into:
 
