@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
+import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +23,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import GuestInsights from '@/components/guests/GuestInsights';
 import GuestCheckIn from '@/components/guests/GuestCheckIn';
+import { getEntitlementDecision } from '@/lib/entitlements';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 
 interface Guest {
   id: string;
@@ -43,8 +46,9 @@ const GUEST_GROUPS = ['Bride Family', 'Groom Family', 'Friends', 'Work Colleague
 const GUEST_CATEGORIES = ['general', 'vip', 'family', 'friends', 'kids', 'vendor'];
 
 export default function Guests() {
-  const { user, profile } = useAuth();
+  const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
+  const { entitlements, couplePlanTier, loading: entitlementsLoading } = useWeddingEntitlements();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -75,6 +79,7 @@ export default function Guests() {
   const [showPreview, setShowPreview] = useState(false);
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState({ sent: 0, failed: 0, total: 0 });
+  const [upgradePromptOpen, setUpgradePromptOpen] = useState(false);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) navigate('/clients');
@@ -174,7 +179,21 @@ export default function Guests() {
     load();
   };
 
+  const guestRsvpDecision = getEntitlementDecision('couple.guest_rsvp_management', {
+    profile,
+    bypass: isSuperAdmin && rolePreview === 'couple',
+    weddingEntitlements: entitlements,
+    couplePlanTier,
+  });
+
+  const requireGuestRsvpManagement = () => {
+    if (guestRsvpDecision.allowed) return true;
+    setUpgradePromptOpen(true);
+    return false;
+  };
+
   const copyRsvpLink = (guest: Guest) => {
+    if (!requireGuestRsvpManagement()) return;
     const url = `${window.location.origin}/rsvp/${guest.rsvp_token}`;
     navigator.clipboard.writeText(url);
     toast({ title: 'RSVP link copied!', description: `Share this link with ${guest.name} via WhatsApp or SMS.` });
@@ -184,6 +203,7 @@ export default function Guests() {
     ? `${profile.full_name} & ${profile.partner_name}` : profile?.full_name || '';
 
   const openCompose = (guest?: Guest) => {
+    if (!requireGuestRsvpManagement()) return;
     setComposeGuest(guest || null);
     setComposeSubject(''); setContentText(''); setContentHtml('');
     setComposeMode('text'); setShowPreview(false);
@@ -207,6 +227,7 @@ export default function Guests() {
   };
 
   const handleSend = async () => {
+    if (!requireGuestRsvpManagement()) return;
     setSending(true);
     const targets = composeGuest
       ? [composeGuest]
@@ -258,7 +279,7 @@ export default function Guests() {
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="gap-2">
             <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setCheckInMode(true)} className="gap-2">
+          <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} className="gap-2">
             <UserCheck className="h-4 w-4" /> Check-In
           </Button>
           {pendingWithEmail.length > 0 && (
@@ -270,11 +291,11 @@ export default function Guests() {
             <DialogTrigger asChild>
               <Button className="gap-2"><Plus className="h-4 w-4" /> Add Guest</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
               <DialogHeader><DialogTitle className="font-display">Add Guest</DialogTitle></DialogHeader>
               <form onSubmit={addGuest} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2 col-span-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-2 sm:col-span-2">
                     <Label>Name</Label>
                     <Input value={name} onChange={e => setName(e.target.value)} placeholder="Guest name" required />
                   </div>
@@ -304,7 +325,7 @@ export default function Guests() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2 col-span-2">
+                  <div className="space-y-2 sm:col-span-2">
                     <Label>RSVP Status</Label>
                     <Select value={rsvp} onValueChange={setRsvp}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -323,9 +344,19 @@ export default function Guests() {
         </div>
       </div>
 
+      {!entitlementsLoading && !guestRsvpDecision.allowed && (
+        <InlineUpgradePrompt decision={guestRsvpDecision} />
+      )}
+
       {/* Tabs: List / Insights */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+      <Tabs
+        value={activeTab}
+        onValueChange={(nextTab) => {
+          if (nextTab === 'insights' && !requireGuestRsvpManagement()) return;
+          setActiveTab(nextTab);
+        }}
+      >
+        <TabsList className="h-auto w-full flex-wrap justify-start">
           <TabsTrigger value="list" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Guest List</TabsTrigger>
           <TabsTrigger value="insights" className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Insights</TabsTrigger>
         </TabsList>
@@ -337,7 +368,7 @@ export default function Guests() {
         <TabsContent value="list" className="mt-4 space-y-4">
           {/* Search & filter bar */}
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
+            <div className="relative min-w-0 flex-1 sm:min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 value={searchTerm}
@@ -426,10 +457,13 @@ export default function Guests() {
               />
             </div>
             <div className="space-y-3 rounded-lg border border-border p-4">
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Label>Message Format</Label>
                 <Tabs value={composeMode} onValueChange={(v) => setComposeMode(v as 'text' | 'html')}>
-                  <TabsList><TabsTrigger value="text">Text</TabsTrigger><TabsTrigger value="html">HTML</TabsTrigger></TabsList>
+                  <TabsList className="grid w-full grid-cols-2 sm:w-auto">
+                    <TabsTrigger value="text">Text</TabsTrigger>
+                    <TabsTrigger value="html">HTML</TabsTrigger>
+                  </TabsList>
                 </Tabs>
               </div>
               <Textarea
@@ -490,6 +524,12 @@ export default function Guests() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <UpgradePromptDialog
+        open={upgradePromptOpen}
+        onOpenChange={setUpgradePromptOpen}
+        decision={guestRsvpDecision}
+      />
     </div>
   );
 }

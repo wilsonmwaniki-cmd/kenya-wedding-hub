@@ -1,7 +1,9 @@
 import {
   buildPricingHref,
   getAudiencePlan,
+  getCoupleAddonDefinition,
   getCouplePlanDefinition,
+  type CoupleAddonCode,
   type CoupleEntitlementKey,
   type CouplePlanTier,
   type PricingAudience,
@@ -17,6 +19,8 @@ export type EntitlementFeature =
   | 'couple.connect_planners'
   | 'couple.calendar_sync'
   | 'couple.export_progress'
+  | 'couple.gift_registry'
+  | 'couple.guest_rsvp_management'
   | 'committee.ai_assistant'
   | 'committee.connect_vendors'
   | 'committee.connect_couples'
@@ -161,6 +165,25 @@ function buildCouplePricingHref(tier: Exclude<CouplePlanTier, 'free'>, feature?:
   return `/pricing?${params.toString()}`;
 }
 
+function buildCoupleAddonPricingHref(code: CoupleAddonCode, feature?: string) {
+  const addon = getCoupleAddonDefinition(code);
+  const params = new URLSearchParams({
+    audience: 'couple',
+    addon: addon.code,
+    successPath:
+      addon.code === 'guest_rsvp_management_addon'
+        ? '/guests?upgrade=success'
+        : '/pricing?upgrade=success',
+    cancelPath: '/pricing?upgrade=cancelled',
+    monthlyLookupKey: addon.stripeMonthlyLookupKey ?? '',
+  });
+
+  if (feature) params.set('feature', feature);
+  if (addon.stripeAnnualLookupKey) params.set('annualLookupKey', addon.stripeAnnualLookupKey);
+
+  return `/pricing?${params.toString()}`;
+}
+
 function buildDecision(
   feature: EntitlementFeature,
   audience: PricingAudience,
@@ -209,6 +232,32 @@ function buildCoupleDecision(
     title: overrides?.title ?? `Upgrade to ${plan.title}`,
     description: overrides?.description ?? `Unlock ${plan.title} to continue.`,
     ctaLabel: overrides?.ctaLabel ?? 'View pricing',
+    reasons: overrides?.reasons ?? [],
+  };
+}
+
+function buildCoupleAddonDecision(
+  feature: EntitlementFeature,
+  code: CoupleAddonCode,
+  allowed: boolean,
+  overrides?: Partial<Pick<EntitlementDecision, 'title' | 'description' | 'ctaLabel' | 'reasons'>>,
+): EntitlementDecision {
+  const addon = getCoupleAddonDefinition(code);
+  return {
+    allowed,
+    audience: 'couple',
+    feature,
+    planName: addon.title,
+    entitlementCode: code,
+    billingCadence: addon.stripeAnnualLookupKey ? 'monthly_or_annual' : 'monthly',
+    stripeProductKey: code,
+    stripeMonthlyLookupKey: addon.stripeMonthlyLookupKey,
+    stripeAnnualLookupKey: addon.stripeAnnualLookupKey,
+    stripeOneTimeLookupKey: null,
+    pricingHref: buildCoupleAddonPricingHref(code, feature),
+    title: overrides?.title ?? `Add ${addon.title}`,
+    description: overrides?.description ?? `Unlock ${addon.title} for this wedding.`,
+    ctaLabel: overrides?.ctaLabel ?? 'View add-on',
     reasons: overrides?.reasons ?? [],
   };
 }
@@ -262,6 +311,22 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
         reasons: hasWeddingEntitlement(context, 'timeline_management')
           ? []
           : ['Advanced exports are part of Premium.'],
+      });
+    case 'couple.gift_registry':
+      return buildCoupleAddonDecision(feature, 'gift_registry_addon', hasWeddingEntitlement(context, 'gift_registry'), {
+        title: 'Add Gift Registry to this wedding',
+        description: 'Publish a wedding wishlist, track purchased items automatically, and give guests one clear place to buy gifts without duplicates.',
+        reasons: hasWeddingEntitlement(context, 'gift_registry')
+          ? []
+          : ['Gift Registry is a paid add-on.'],
+      });
+    case 'couple.guest_rsvp_management':
+      return buildCoupleAddonDecision(feature, 'guest_rsvp_management_addon', hasWeddingEntitlement(context, 'guest_rsvp_management'), {
+        title: 'Add RSVP & guest management',
+        description: 'Unlock RSVP links, invite sending, guest insights, and check-in tools for this wedding while keeping the basic guest list free.',
+        reasons: hasWeddingEntitlement(context, 'guest_rsvp_management')
+          ? []
+          : ['Guest RSVP & Management is a paid add-on.'],
       });
     case 'committee.connect_vendors':
     case 'committee.connect_couples':

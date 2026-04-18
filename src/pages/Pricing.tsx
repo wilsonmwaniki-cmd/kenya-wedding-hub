@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import {
   accessControlImplementationSteps,
   audiencePlans,
@@ -17,6 +18,7 @@ import {
   getAudiencePlan,
   getAvailableCheckoutCadences,
   getLookupKeyForCadence,
+  type CoupleAddonCode,
   type CouplePlanCadence,
   type PricingAudience,
   type PricingCheckoutCadence,
@@ -50,6 +52,7 @@ export default function Pricing() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
+  const { weddingId } = useWeddingEntitlements();
   const requestedAudience = searchParams.get('audience');
   const requestedFeature = searchParams.get('feature');
   const successPath = searchParams.get('successPath');
@@ -183,6 +186,15 @@ export default function Pricing() {
       return;
     }
 
+    if (!weddingId) {
+      toast({
+        title: 'Create or join a wedding first',
+        description: 'Couple plans attach to a specific wedding workspace. Create or join your wedding before starting checkout.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setCheckoutTarget(`couple-${tier}`);
     try {
       await startStripeCheckout({
@@ -190,7 +202,51 @@ export default function Pricing() {
         feature: tier === 'premium' ? 'ai_wedding_assistant' : 'wedding_collaboration',
         lookupKey,
         cadence,
+        weddingId,
         successPath: '/budget?upgrade=success',
+        cancelPath: '/pricing?upgrade=cancelled',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not start checkout',
+        description: error?.message || 'There was a problem creating your Stripe checkout session.',
+        variant: 'destructive',
+      });
+      setCheckoutTarget(null);
+    }
+  };
+
+  const handleCoupleAddonCheckout = async (code: CoupleAddonCode) => {
+    const addon = coupleAddonDefinitions.find((item) => item.code === code);
+    if (!addon || !addon.stripeMonthlyLookupKey) return;
+
+    if (!user) {
+      navigate('/auth?mode=signup');
+      toast({
+        title: 'Sign in to continue',
+        description: 'We need your account before we can attach this add-on to your wedding workspace.',
+      });
+      return;
+    }
+
+    if (!weddingId) {
+      toast({
+        title: 'Create or join a wedding first',
+        description: 'Wedding add-ons attach to a specific wedding workspace. Create or join your wedding before checkout.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCheckoutTarget(`addon-${code}`);
+    try {
+      await startStripeCheckout({
+        audience: 'couple',
+        feature: code === 'guest_rsvp_management_addon' ? 'guest_rsvp_management' : 'gift_registry',
+        lookupKey: addon.stripeMonthlyLookupKey,
+        cadence: 'monthly',
+        weddingId,
+        successPath: code === 'guest_rsvp_management_addon' ? '/guests?upgrade=success' : '/pricing?upgrade=success',
         cancelPath: '/pricing?upgrade=cancelled',
       });
     } catch (error: any) {
@@ -458,8 +514,14 @@ export default function Pricing() {
                     <Badge variant="secondary" className="rounded-full px-3 py-1">Add-on</Badge>
                   </div>
                   <p className="mt-3 text-sm leading-7 text-muted-foreground">{addon.supportCopy}</p>
-                  <Button variant="outline" className="mt-5 w-full" disabled>
-                    Add-on checkout next
+                  <Button
+                    variant="outline"
+                    className="mt-5 w-full gap-2"
+                    onClick={() => void handleCoupleAddonCheckout(addon.code)}
+                    disabled={checkoutTarget === `addon-${addon.code}`}
+                  >
+                    {checkoutTarget === `addon-${addon.code}` ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {user ? 'Add to this wedding' : 'Sign in to continue'}
                   </Button>
                 </div>
               ))}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import type { CoupleEntitlementKey, CouplePlanTier } from '@/lib/pricingPlans';
 
@@ -26,6 +27,7 @@ function inferCouplePlanTier(entitlements: Partial<Record<CoupleEntitlementKey, 
 
 export function useWeddingEntitlements() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
+  const { isPlanner, selectedClient } = usePlanner();
   const [state, setState] = useState<WeddingEntitlementsState>({
     weddingId: null,
     entitlements: {},
@@ -34,8 +36,14 @@ export function useWeddingEntitlements() {
   });
 
   const shouldLoad = useMemo(
-    () => Boolean(user && (profile?.role === 'couple' || (isSuperAdmin && rolePreview === 'couple'))),
-    [user, profile?.role, isSuperAdmin, rolePreview],
+    () =>
+      Boolean(
+        user &&
+          (profile?.role === 'couple' ||
+            (isSuperAdmin && rolePreview === 'couple') ||
+            (isPlanner && selectedClient)),
+      ),
+    [user, profile?.role, isSuperAdmin, rolePreview, isPlanner, selectedClient],
   );
 
   useEffect(() => {
@@ -58,18 +66,33 @@ export function useWeddingEntitlements() {
 
       try {
         const db = supabase as any;
-        const { data: memberships, error: membershipError } = await db
-          .from('wedding_memberships')
-          .select('wedding_id, role, is_owner, membership_status, created_at')
-          .eq('user_id', user.id)
-          .in('membership_status', ['active', 'invited'])
-          .order('is_owner', { ascending: false })
-          .order('created_at', { ascending: true })
-          .limit(10);
+        let activeWeddingId: string | null = null;
 
-        if (membershipError) throw membershipError;
+        if (isPlanner && selectedClient) {
+          const { data: plannerClientRow, error: plannerClientError } = await db
+            .from('planner_clients')
+            .select('wedding_id')
+            .eq('id', selectedClient.id)
+            .maybeSingle();
 
-        const activeWeddingId = memberships?.[0]?.wedding_id ?? null;
+          if (plannerClientError) throw plannerClientError;
+          activeWeddingId = plannerClientRow?.wedding_id ?? null;
+        }
+
+        if (!activeWeddingId) {
+          const { data: memberships, error: membershipError } = await db
+            .from('wedding_memberships')
+            .select('wedding_id, role, is_owner, membership_status, created_at')
+            .eq('user_id', user.id)
+            .in('membership_status', ['active', 'invited'])
+            .order('is_owner', { ascending: false })
+            .order('created_at', { ascending: true })
+            .limit(10);
+
+          if (membershipError) throw membershipError;
+          activeWeddingId = memberships?.[0]?.wedding_id ?? null;
+        }
+
         if (!activeWeddingId) {
           if (!cancelled) {
             setState({
@@ -129,7 +152,7 @@ export function useWeddingEntitlements() {
     return () => {
       cancelled = true;
     };
-  }, [shouldLoad, user]);
+  }, [shouldLoad, user, isPlanner, selectedClient]);
 
   return state;
 }
