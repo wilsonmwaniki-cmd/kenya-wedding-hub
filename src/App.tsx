@@ -20,6 +20,7 @@ const PlannerDashboard = lazy(() => import("./pages/PlannerDashboard"));
 const Budget = lazy(() => import("./pages/Budget"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const Guests = lazy(() => import("./pages/Guests"));
+const GiftRegistry = lazy(() => import("./pages/GiftRegistry"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const VendorDirectory = lazy(() => import("./pages/VendorDirectory"));
 const VendorSettings = lazy(() => import("./pages/VendorSettings"));
@@ -29,6 +30,7 @@ const ProfileSettings = lazy(() => import("./pages/ProfileSettings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const PlannerProfile = lazy(() => import("./pages/PlannerProfile"));
 const PlannerDirectory = lazy(() => import("./pages/PlannerDirectory"));
+const Pricing = lazy(() => import("./pages/Pricing"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const AdminPortal = lazy(() => import("./pages/AdminPortal"));
 const TimelinePage = lazy(() => import("./pages/Timeline"));
@@ -79,6 +81,7 @@ const App = () => (
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
+                  <Route path="/pricing" element={<Pricing />} />
                   <Route path="/planners" element={<PlannerDirectory />} />
                   <Route path="/vendors-directory" element={<VendorDirectory />} />
                   <Route path="/planner/:id" element={<PlannerProfile />} />
@@ -87,10 +90,11 @@ const App = () => (
                   <Route path="/budget" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Budget /></ProtectedPage>} />
                   <Route path="/tasks" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Tasks /></ProtectedPage>} />
                   <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Guests /></ProtectedPage>} />
+                  <Route path="/gift-registry" element={<ProtectedPage allowedRoles={['couple', 'planner']}><GiftRegistry /></ProtectedPage>} />
                   <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
                   <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
                   <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
-                  <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner']}><AiChat /></ProtectedPage>} />
+                  <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><AiChat /></ProtectedPage>} />
                   <Route path="/admin" element={<ProtectedPage allowedRoles={['admin']}><AdminPortal /></ProtectedPage>} />
                   <Route path="/settings" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor', 'admin']}><ProfileSettings /></ProtectedPage>} />
                   <Route path="/timeline" element={<ProtectedPage allowedRoles={['couple', 'planner']}><TimelinePage /></ProtectedPage>} />

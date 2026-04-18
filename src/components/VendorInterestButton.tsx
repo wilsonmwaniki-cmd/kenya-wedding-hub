@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Sparkles, Check, Loader2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 
 interface VendorInterestButtonProps {
@@ -29,6 +30,7 @@ export default function VendorInterestButton({
   size = 'sm',
 }: VendorInterestButtonProps) {
   const { user, profile } = useAuth();
+  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const { toast } = useToast();
   const [status, setStatus] = useState<string | null>(existingStatus);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -44,7 +46,7 @@ export default function VendorInterestButton({
         profile.planner_type === 'committee' ? 'committee.connect_vendors' : 'planner.vendor_outreach',
         { profile },
       )
-    : getEntitlementDecision('couple.connect_vendors', { profile });
+    : getEntitlementDecision('couple.connect_vendors', { profile, weddingEntitlements, couplePlanTier });
 
   const handleSendInterest = async () => {
     setSubmitting(true);

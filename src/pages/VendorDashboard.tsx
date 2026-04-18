@@ -14,6 +14,7 @@ import { vendorHasFullAccess } from '@/lib/vendorAccess';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
+import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
 
 interface Booking {
   id: string;
@@ -116,6 +117,7 @@ export default function VendorDashboard() {
   const [taskDetailsByBookingId, setTaskDetailsByBookingId] = useState<Record<string, VendorTaskDetail[]>>({});
   const [paymentDetailsByBookingId, setPaymentDetailsByBookingId] = useState<Record<string, VendorPaymentDetail[]>>({});
   const [internalNoteDrafts, setInternalNoteDrafts] = useState<Record<string, string>>({});
+  const { entitlements: professionalEntitlements, teamSeatLimit: professionalTeamSeatLimit } = useProfessionalEntitlements('vendor');
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
 
@@ -400,6 +402,27 @@ export default function VendorDashboard() {
     vendorListing: listing,
     bypass: vendorPreviewMode,
   });
+  const mediaAddonDecision = getEntitlementDecision('vendor.media_portfolio', {
+    vendorListing: listing,
+    professionalAudience: 'vendor',
+    professionalEntitlements,
+    professionalTeamSeatLimit,
+    bypass: vendorPreviewMode,
+  });
+  const advertisingAddonDecision = getEntitlementDecision('vendor.advertising', {
+    vendorListing: listing,
+    professionalAudience: 'vendor',
+    professionalEntitlements,
+    professionalTeamSeatLimit,
+    bypass: vendorPreviewMode,
+  });
+  const teamAddonDecision = getEntitlementDecision('vendor.team_workspace', {
+    vendorListing: listing,
+    professionalAudience: 'vendor',
+    professionalEntitlements,
+    professionalTeamSeatLimit,
+    bypass: vendorPreviewMode,
+  });
   const fullAccess = workspaceDecision.allowed;
   const bookingsSorted = useMemo(
     () =>
@@ -549,6 +572,66 @@ export default function VendorDashboard() {
       {listing && !fullAccess && (
         <InlineUpgradePrompt decision={workspaceDecision} />
       )}
+
+      <Card className="border-border/70 bg-muted/20">
+        <CardHeader>
+          <CardTitle className="font-display text-base flex items-center gap-2">
+            <CreditCard className="h-4 w-4 text-primary" />
+            Business Growth Add-ons
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 lg:grid-cols-3">
+          {[
+            {
+              key: 'media',
+              title: 'Media portfolio',
+              description: mediaAddonDecision.allowed
+                ? 'Richer portfolio media is active for this vendor business.'
+                : 'Upgrade to unlock richer gallery presentation on your vendor listing.',
+              decision: mediaAddonDecision,
+              activeLabel: 'Active',
+            },
+            {
+              key: 'advertising',
+              title: 'Advertising',
+              description: advertisingAddonDecision.allowed
+                ? 'Advertising is active for this vendor listing.'
+                : 'Upgrade to unlock promoted placement and stronger directory visibility.',
+              decision: advertisingAddonDecision,
+              activeLabel: 'Active',
+            },
+            {
+              key: 'team',
+              title: 'Team workspace',
+              description: teamAddonDecision.allowed
+                ? `Team collaboration is active with up to ${professionalTeamSeatLimit || 0} seats available.`
+                : 'Upgrade to add bundled colleague seats for your delivery and coordination team.',
+              decision: teamAddonDecision,
+              activeLabel: professionalTeamSeatLimit > 0 ? `${professionalTeamSeatLimit} seats` : 'Active',
+            },
+          ].map((item) => (
+            <div key={item.key} className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-card-foreground">{item.title}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
+                </div>
+                <Badge variant={item.decision.allowed ? 'default' : 'secondary'}>
+                  {item.decision.allowed ? item.activeLabel : 'Add-on'}
+                </Badge>
+              </div>
+              {!item.decision.allowed && (
+                <Button asChild variant="outline" className="mt-4 w-full gap-2">
+                  <Link to={item.decision.pricingHref}>
+                    {item.decision.ctaLabel}
+                    <ArrowUpRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-4">
