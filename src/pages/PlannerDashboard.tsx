@@ -11,13 +11,14 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircle2, XCircle, LockKeyhole, CreditCard, ShieldCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import MyConnections from '@/components/MyConnections';
 import { isCommitteePlanner } from '@/lib/plannerAccess';
 import { requestPlannerLinkByCode } from '@/lib/collaborationCodes';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
+import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
 
 interface LinkRequest {
   id: string;
@@ -163,6 +164,9 @@ export default function PlannerDashboard() {
 
   const plannerPreviewMode = isSuperAdmin && (rolePreview === 'planner' || rolePreview === 'committee');
   const isCommittee = isCommitteePlanner(profile);
+  const { entitlements: professionalEntitlements, teamSeatLimit: professionalTeamSeatLimit } = useProfessionalEntitlements(
+    isCommittee ? null : 'planner',
+  );
   const workspaceDecision = getEntitlementDecision(isCommittee ? 'committee.connect_couples' : 'planner.full_workspace', {
     profile,
     activeWeddingCount: clients.length,
@@ -178,6 +182,33 @@ export default function PlannerDashboard() {
   const collectionHeading = isCommittee ? 'Committee Weddings' : 'My Clients';
   const addLabel = isCommittee ? 'Add Wedding' : 'Add Client';
   const committeeAtCapacity = isCommittee && clients.length >= 1;
+  const mediaAddonDecision = !isCommittee
+    ? getEntitlementDecision('planner.media_portfolio', {
+        profile,
+        professionalAudience: 'planner',
+        professionalEntitlements,
+        professionalTeamSeatLimit,
+        bypass: plannerPreviewMode,
+      })
+    : null;
+  const advertisingAddonDecision = !isCommittee
+    ? getEntitlementDecision('planner.advertising', {
+        profile,
+        professionalAudience: 'planner',
+        professionalEntitlements,
+        professionalTeamSeatLimit,
+        bypass: plannerPreviewMode,
+      })
+    : null;
+  const teamAddonDecision = !isCommittee
+    ? getEntitlementDecision('planner.team_workspace', {
+        profile,
+        professionalAudience: 'planner',
+        professionalEntitlements,
+        professionalTeamSeatLimit,
+        bypass: plannerPreviewMode,
+      })
+    : null;
 
   return (
     <div className="space-y-6">
@@ -257,6 +288,68 @@ export default function PlannerDashboard() {
 
       {/* Planner's vendor connections */}
       {fullPlannerAccess && <MyConnections />}
+
+      {!isCommittee && (
+        <Card className="border-border/70 bg-muted/20">
+          <CardHeader>
+            <CardTitle className="font-display text-base flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-primary" />
+              Professional Growth Add-ons
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-3">
+            {[
+              {
+                key: 'media',
+                title: 'Media portfolio',
+                description: mediaAddonDecision?.allowed
+                  ? 'Richer visual presentation is active for this planner workspace.'
+                  : 'Upgrade to showcase richer portfolio photos and videos on your planner profile.',
+                decision: mediaAddonDecision,
+                activeLabel: 'Active',
+              },
+              {
+                key: 'advertising',
+                title: 'Advertising',
+                description: advertisingAddonDecision?.allowed
+                  ? 'Advertising access is active for this planner workspace.'
+                  : 'Upgrade to unlock promoted placement and stronger directory visibility.',
+                decision: advertisingAddonDecision,
+                activeLabel: 'Active',
+              },
+              {
+                key: 'team',
+                title: 'Team workspace',
+                description: teamAddonDecision?.allowed
+                  ? `Team collaboration is active with up to ${professionalTeamSeatLimit || 0} seats available.`
+                  : 'Upgrade to add bundled colleague seats inside your planner workspace.',
+                decision: teamAddonDecision,
+                activeLabel: professionalTeamSeatLimit > 0 ? `${professionalTeamSeatLimit} seats` : 'Active',
+              },
+            ].map((item) => (
+              <div key={item.key} className="rounded-xl border border-border bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-card-foreground">{item.title}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
+                  </div>
+                  <Badge variant={item.decision?.allowed ? 'default' : 'secondary'}>
+                    {item.decision?.allowed ? item.activeLabel : 'Add-on'}
+                  </Badge>
+                </div>
+                {item.decision && !item.decision.allowed && (
+                  <Button asChild variant="outline" className="mt-4 w-full gap-2">
+                    <Link to={item.decision.pricingHref}>
+                      {item.decision.ctaLabel}
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>

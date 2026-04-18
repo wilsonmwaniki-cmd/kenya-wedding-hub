@@ -13,13 +13,23 @@ const allowedLookupKeys = new Set([
   'committee_pass_one_time',
   'planner_pro_monthly',
   'planner_pro_annual',
+  'planner_premium_monthly',
+  'planner_premium_annual',
   'vendor_pro_monthly',
+  'vendor_pro_annual',
+  'vendor_premium_monthly',
+  'vendor_premium_annual',
   'couple_basic_monthly',
   'couple_basic_annual',
   'couple_premium_monthly',
   'couple_premium_annual',
   'gift_registry_addon',
   'guest_rsvp_management_addon',
+  'media_addon',
+  'advertising_addon',
+  'team_workspace_bundle_3',
+  'team_workspace_bundle_5',
+  'team_workspace_bundle_10',
 ]);
 
 serve(async (req) => {

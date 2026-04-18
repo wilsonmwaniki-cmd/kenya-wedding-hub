@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
+import { supabase } from '@/integrations/supabase/client';
 import {
   accessControlImplementationSteps,
   audiencePlans,
@@ -18,8 +19,16 @@ import {
   getAudiencePlan,
   getAvailableCheckoutCadences,
   getLookupKeyForCadence,
+  getProfessionalAddonDefinition,
+  getProfessionalPlanDefinition,
+  professionalAddonDefinitions,
+  professionalAddonEntitlementMap,
+  professionalFeatureMatrix,
   type CoupleAddonCode,
   type CouplePlanCadence,
+  type ProfessionalAddonCode,
+  type ProfessionalAudience,
+  type ProfessionalPlanCadence,
   type PricingAudience,
   type PricingCheckoutCadence,
 } from '@/lib/pricingPlans';
@@ -51,14 +60,18 @@ export default function Pricing() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { weddingId } = useWeddingEntitlements();
   const requestedAudience = searchParams.get('audience');
   const requestedFeature = searchParams.get('feature');
   const successPath = searchParams.get('successPath');
   const cancelPath = searchParams.get('cancelPath');
   const upgradeState = searchParams.get('upgrade');
+  const professionalAddon = searchParams.get('professionalAddon');
+  const professionalAudienceParam = searchParams.get('professionalAudience');
+  const checkoutSessionId = searchParams.get('checkout_session_id');
   const [checkoutTarget, setCheckoutTarget] = useState<string | null>(null);
+  const [processedProfessionalCheckout, setProcessedProfessionalCheckout] = useState<string | null>(null);
   const [selectedCadence, setSelectedCadence] = useState<Record<PricingAudience, PricingCheckoutCadence>>({
     couple: 'one_time',
     committee: 'one_time',
@@ -69,6 +82,11 @@ export default function Pricing() {
     basic: 'annual',
     premium: 'annual',
   });
+  const [selectedProfessionalCadence, setSelectedProfessionalCadence] = useState<Record<ProfessionalAudience, ProfessionalPlanCadence>>({
+    planner: 'annual',
+    vendor: 'annual',
+  });
+  const [selectedProfessionalAddonAudience, setSelectedProfessionalAddonAudience] = useState<ProfessionalAudience>('planner');
 
   const targetAudience = isPricingAudience(requestedAudience) ? requestedAudience : null;
   const targetPlan = targetAudience ? getAudiencePlan(targetAudience) : null;
@@ -82,6 +100,93 @@ export default function Pricing() {
       [targetPlan.audience]: availableCadences[0],
     }));
   }, [targetPlan?.audience]);
+
+  useEffect(() => {
+    if (profile?.role === 'planner' && profile?.planner_type !== 'committee') {
+      setSelectedProfessionalAddonAudience('planner');
+      return;
+    }
+
+    if (profile?.role === 'vendor') {
+      setSelectedProfessionalAddonAudience('vendor');
+    }
+  }, [profile?.planner_type, profile?.role]);
+
+  useEffect(() => {
+    const professionalAudience =
+      professionalAudienceParam === 'planner' || professionalAudienceParam === 'vendor'
+        ? professionalAudienceParam
+        : null;
+    const supportedAddon = professionalAddon && (
+      professionalAddon === 'media_addon'
+      || professionalAddon === 'advertising_addon'
+      || professionalAddon === 'team_workspace_bundle_3'
+      || professionalAddon === 'team_workspace_bundle_5'
+      || professionalAddon === 'team_workspace_bundle_10'
+    )
+      ? professionalAddon
+      : null;
+
+    if (
+      upgradeState !== 'success'
+      || !checkoutSessionId
+      || !professionalAudience
+      || !supportedAddon
+      || processedProfessionalCheckout === checkoutSessionId
+      || !user
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setProcessedProfessionalCheckout(checkoutSessionId);
+
+    const syncCheckout = async () => {
+      const { data, error } = await supabase.functions.invoke<{
+        activatedFeatures: string[];
+        seatLimit: number | null;
+      }>('sync-professional-checkout', {
+        body: {
+          sessionId: checkoutSessionId,
+          audience: professionalAudience,
+        },
+      });
+
+      if (cancelled) return;
+
+      if (error) {
+        toast({
+          title: 'Payment completed but activation is still pending',
+          description: error.message || 'The checkout succeeded, but we could not sync your professional add-on yet.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const addonDefinition = getProfessionalAddonDefinition(supportedAddon as ProfessionalAddonCode);
+      const extraSeatMessage = data?.seatLimit ? ` Your team workspace now allows up to ${data.seatLimit} seats.` : '';
+      toast({
+        title: `${addonDefinition.title} activated`,
+        description: `Your ${professionalAudience} workspace add-on is now active.${extraSeatMessage}`,
+      });
+      navigate(`/pricing?upgrade=success&audience=${professionalAudience}`, { replace: true });
+    };
+
+    void syncCheckout();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    checkoutSessionId,
+    navigate,
+    processedProfessionalCheckout,
+    professionalAddon,
+    professionalAudienceParam,
+    toast,
+    upgradeState,
+    user,
+  ]);
 
   const contextMessage = useMemo(() => {
     if (upgradeState === 'cancelled') {
@@ -248,6 +353,48 @@ export default function Pricing() {
         weddingId,
         successPath: code === 'guest_rsvp_management_addon' ? '/guests?upgrade=success' : '/pricing?upgrade=success',
         cancelPath: '/pricing?upgrade=cancelled',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not start checkout',
+        description: error?.message || 'There was a problem creating your Stripe checkout session.',
+        variant: 'destructive',
+      });
+      setCheckoutTarget(null);
+    }
+  };
+
+  const handleProfessionalPlanCheckout = async (audience: ProfessionalAudience) => {
+    const cadence = selectedProfessionalCadence[audience];
+    setSelectedCadence((prev) => ({ ...prev, [audience]: cadence }));
+    await handleCheckout(audience);
+  };
+
+  const handleProfessionalAddonCheckout = async (
+    audience: ProfessionalAudience,
+    code: ProfessionalAddonCode,
+  ) => {
+    const addon = getProfessionalAddonDefinition(code);
+    if (!addon.stripeMonthlyLookupKey) return;
+
+    if (!user) {
+      navigate('/auth?mode=signup');
+      toast({
+        title: 'Sign in to continue',
+        description: 'We need your account before we can attach this professional add-on to your workspace.',
+      });
+      return;
+    }
+
+    setCheckoutTarget(`professional-addon-${audience}-${code}`);
+    try {
+      await startStripeCheckout({
+        audience,
+        feature: professionalAddonEntitlementMap[code],
+        lookupKey: addon.stripeMonthlyLookupKey,
+        cadence: 'monthly',
+        successPath: `/pricing?upgrade=success&professionalAddon=${code}&professionalAudience=${audience}&checkout_session_id={CHECKOUT_SESSION_ID}`,
+        cancelPath: `/pricing?upgrade=cancelled&professionalAddon=${code}&professionalAudience=${audience}`,
       });
     } catch (error: any) {
       toast({
@@ -499,38 +646,17 @@ export default function Pricing() {
         </div>
 
         <div className="mb-12">
-          <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-            <CardHeader>
-              <CardTitle className="font-display text-3xl">Add-ons</CardTitle>
-              <CardDescription className="text-base leading-7">
-                Extend your wedding workspace when you need more guest coordination or gift commerce.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-6 lg:grid-cols-2">
-              {coupleAddonDefinitions.map((addon) => (
-                <div key={addon.code} className="rounded-2xl border border-border/60 bg-background/60 p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-display text-2xl font-semibold">{addon.title}</h3>
-                    <Badge variant="secondary" className="rounded-full px-3 py-1">Add-on</Badge>
-                  </div>
-                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{addon.supportCopy}</p>
-                  <Button
-                    variant="outline"
-                    className="mt-5 w-full gap-2"
-                    onClick={() => void handleCoupleAddonCheckout(addon.code)}
-                    disabled={checkoutTarget === `addon-${addon.code}`}
-                  >
-                    {checkoutTarget === `addon-${addon.code}` ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {user ? 'Add to this wedding' : 'Sign in to continue'}
-                  </Button>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
+          <div className="mb-6 max-w-3xl">
+            <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
+              Committee-led weddings
+            </Badge>
+            <h2 className="mt-4 font-display text-4xl font-semibold">Committee access stays bundled under the wedding</h2>
+            <p className="mt-4 text-base leading-8 text-muted-foreground">
+              Committee participation is unlocked by the couple&apos;s wedding plan. That keeps the wedding as the billable workspace and treats committee seats as collaboration capacity, not standalone subscriptions.
+            </p>
+          </div>
 
-        <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-4">
-          {audiencePlans.filter((plan) => plan.audience !== 'couple').map((plan) => {
+          {audiencePlans.filter((plan) => plan.audience === 'committee').map((plan) => {
             const availableCadences = getAvailableCheckoutCadences(plan);
             const isHighlighted = plan.audience === targetAudience;
             const cadence = selectedCadence[plan.audience];
@@ -539,7 +665,7 @@ export default function Pricing() {
             return (
               <Card
                 key={plan.audience}
-                className={`h-full rounded-[28px] border bg-card/95 shadow-card transition-all ${
+                className={`rounded-[28px] border bg-card/95 shadow-card transition-all ${
                   isHighlighted ? 'border-primary/40 ring-2 ring-primary/15' : 'border-border/60'
                 }`}
               >
@@ -598,18 +724,6 @@ export default function Pricing() {
                     </ul>
                   </div>
 
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Upgrade triggers</p>
-                    <ul className="mt-3 space-y-2 text-sm leading-7 text-muted-foreground">
-                      {plan.upgradeMoments.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <Lock className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
                   <Button
                     onClick={() => void handleCheckout(plan.audience)}
                     className="w-full gap-2"
@@ -623,6 +737,237 @@ export default function Pricing() {
               </Card>
             );
           })}
+        </div>
+
+        <div className="mb-12">
+          <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
+            <CardHeader>
+              <CardTitle className="font-display text-3xl">Couple add-ons</CardTitle>
+              <CardDescription className="text-base leading-7">
+                Extend your wedding workspace when you need more guest coordination or gift commerce.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-6 lg:grid-cols-2">
+              {coupleAddonDefinitions.map((addon) => (
+                <div key={addon.code} className="rounded-2xl border border-border/60 bg-background/60 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-display text-2xl font-semibold">{addon.title}</h3>
+                    <Badge variant="secondary" className="rounded-full px-3 py-1">Add-on</Badge>
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{addon.supportCopy}</p>
+                  <Button
+                    variant="outline"
+                    className="mt-5 w-full gap-2"
+                    onClick={() => void handleCoupleAddonCheckout(addon.code)}
+                    disabled={checkoutTarget === `addon-${addon.code}`}
+                  >
+                    {checkoutTarget === `addon-${addon.code}` ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {user ? 'Add to this wedding' : 'Sign in to continue'}
+                  </Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="mb-12">
+          <div className="mb-6 max-w-3xl">
+            <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
+              Planner & vendor plans
+            </Badge>
+            <h2 className="mt-4 font-display text-4xl font-semibold">Get discovered free. Upgrade when operations matter.</h2>
+            <p className="mt-4 text-base leading-8 text-muted-foreground">
+              Planners and vendors start with verified visibility, then upgrade into bookings, invoices, contracts, and public trust tools when Zania becomes part of how they run the business.
+            </p>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            {(['planner', 'vendor'] as const).map((audience) => {
+              const freePlan = getProfessionalPlanDefinition(audience, 'free');
+              const premiumPlan = getProfessionalPlanDefinition(audience, 'premium');
+              const isHighlighted = audience === targetAudience;
+              const isLoading = checkoutTarget === `audience-${audience}`;
+              const cadence = selectedProfessionalCadence[audience];
+              const priceLabel =
+                cadence === 'monthly'
+                  ? `${formatKesPrice(premiumPlan.monthlyPriceKes)} / month`
+                  : `${formatKesPrice(premiumPlan.annualPriceKes)} / year`;
+
+              return (
+                <Card
+                  key={audience}
+                  className={`rounded-[28px] border bg-card/95 shadow-card transition-all ${
+                    isHighlighted ? 'border-primary/40 ring-2 ring-primary/15' : 'border-border/60'
+                  }`}
+                >
+                  <CardHeader className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <CardTitle className="font-display text-3xl">{roleLabels[audience]}s</CardTitle>
+                        <CardDescription className="mt-2 text-base leading-7">
+                          {getAudiencePlan(audience).subtitle}
+                        </CardDescription>
+                      </div>
+                      {isHighlighted && <Badge className="rounded-full px-3 py-1">Recommended</Badge>}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{freePlan.title}</p>
+                        <p className="mt-2 font-display text-2xl font-semibold">Free</p>
+                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{freePlan.supportCopy}</p>
+                        <ul className="mt-4 space-y-2 text-sm leading-7 text-muted-foreground">
+                          {freePlan.includedFeatures.map((item) => (
+                            <li key={item} className="flex items-start gap-2">
+                              <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{premiumPlan.title}</p>
+                          <div className="inline-flex rounded-full border border-border bg-background p-1">
+                            {(['annual', 'monthly'] as const).map((option) => (
+                              <button
+                                key={option}
+                                type="button"
+                                onClick={() => setSelectedProfessionalCadence((prev) => ({ ...prev, [audience]: option }))}
+                                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                  cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                              >
+                                {coupleCadenceLabels[option]}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <p className="mt-2 font-display text-2xl font-semibold">{priceLabel}</p>
+                        <p className="mt-2 text-sm leading-7 text-foreground/80">{premiumPlan.supportCopy}</p>
+                        <ul className="mt-4 space-y-2 text-sm leading-7 text-foreground/85">
+                          {premiumPlan.includedFeatures.map((item) => (
+                            <li key={item} className="flex items-start gap-2">
+                              <Sparkles className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Upgrade triggers</p>
+                      <ul className="mt-3 space-y-2 text-sm leading-7 text-muted-foreground">
+                        {getAudiencePlan(audience).upgradeMoments.map((item) => (
+                          <li key={item} className="flex items-start gap-2">
+                            <Lock className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <Button
+                      onClick={() => void handleProfessionalPlanCheckout(audience)}
+                      className="w-full gap-2"
+                      disabled={isLoading}
+                    >
+                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {user ? premiumPlan.ctaLabel : 'Sign in to continue'}
+                      {!isLoading && <ArrowRight className="h-4 w-4" />}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mb-12">
+          <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
+            <CardHeader>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <CardTitle className="font-display text-3xl">Professional add-ons</CardTitle>
+                  <CardDescription className="text-base leading-7">
+                    Grow your business with richer portfolio media, promoted visibility, and bundled team collaboration seats.
+                  </CardDescription>
+                </div>
+                <div className="inline-flex rounded-full border border-border/60 bg-background/70 p-1">
+                  {(['planner', 'vendor'] as const).map((audience) => (
+                    <button
+                      key={audience}
+                      type="button"
+                      onClick={() => setSelectedProfessionalAddonAudience(audience)}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                        selectedProfessionalAddonAudience === audience
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {audience === 'planner' ? 'Planner add-ons' : 'Vendor add-ons'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-6 lg:grid-cols-3">
+              {professionalAddonDefinitions.map((addon) => (
+                <div key={addon.code} className="rounded-2xl border border-border/60 bg-background/60 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="font-display text-2xl font-semibold">{addon.title}</h3>
+                    <Badge variant="secondary" className="rounded-full px-3 py-1">Add-on</Badge>
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{addon.supportCopy}</p>
+                  {addon.seatLimit ? (
+                    <p className="mt-3 text-sm font-medium text-primary">{addon.seatLimit} bundled seats</p>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    className="mt-5 w-full"
+                    disabled={checkoutTarget === `professional-addon-${selectedProfessionalAddonAudience}-${addon.code}`}
+                    onClick={() => void handleProfessionalAddonCheckout(selectedProfessionalAddonAudience, addon.code)}
+                  >
+                    {checkoutTarget === `professional-addon-${selectedProfessionalAddonAudience}-${addon.code}` ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    {user ? `Add to ${selectedProfessionalAddonAudience === 'planner' ? 'planner' : 'vendor'} workspace` : 'Sign in to continue'}
+                  </Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="mb-12">
+          <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
+            <CardHeader>
+              <CardTitle className="font-display text-3xl">Professional feature comparison</CardTitle>
+              <CardDescription className="text-base leading-7">
+                Free gets planners and vendors discovered. Premium unlocks the business tools that turn discovery into real work.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="hidden grid-cols-[1fr_140px_140px] gap-2 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground md:grid">
+                <span>Feature</span>
+                <span className="text-center">Free</span>
+                <span className="text-center">Premium</span>
+              </div>
+              {professionalFeatureMatrix.map((row) => (
+                <div
+                  key={row.feature}
+                  className="grid gap-2 rounded-xl border border-border/50 bg-background/60 px-4 py-3 md:grid-cols-[1fr_140px_140px] md:items-center"
+                >
+                  <p className="text-sm font-medium text-foreground">{row.feature}</p>
+                  <p className="text-sm text-muted-foreground md:text-center">{row.free}</p>
+                  <p className="text-sm font-medium text-primary md:text-center">{row.premium}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         </div>
       </section>
 

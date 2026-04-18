@@ -3,9 +3,13 @@ import {
   getAudiencePlan,
   getCoupleAddonDefinition,
   getCouplePlanDefinition,
+  getProfessionalAddonDefinition,
   type CoupleAddonCode,
   type CoupleEntitlementKey,
   type CouplePlanTier,
+  type ProfessionalAddonCode,
+  type ProfessionalEntitlementKey,
+  type ProfessionalAudience,
   type PricingAudience,
 } from '@/lib/pricingPlans';
 import { isCommitteePlanner, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
@@ -32,9 +36,15 @@ export type EntitlementFeature =
   | 'planner.calendar_sync'
   | 'planner.full_workspace'
   | 'planner.export_progress'
+  | 'planner.media_portfolio'
+  | 'planner.advertising'
+  | 'planner.team_workspace'
   | 'vendor.ai_assistant'
   | 'vendor.direct_leads'
-  | 'vendor.analytics';
+  | 'vendor.analytics'
+  | 'vendor.media_portfolio'
+  | 'vendor.advertising'
+  | 'vendor.team_workspace';
 
 export interface EntitlementProfileLike {
   role?: string | null;
@@ -79,6 +89,9 @@ interface EntitlementContext {
   activeWeddingCount?: number;
   weddingEntitlements?: Partial<Record<CoupleEntitlementKey, boolean>> | null;
   couplePlanTier?: CouplePlanTier | null;
+  professionalAudience?: ProfessionalAudience | null;
+  professionalEntitlements?: Partial<Record<ProfessionalEntitlementKey, boolean>> | null;
+  professionalTeamSeatLimit?: number | null;
   bypass?: boolean;
 }
 
@@ -139,6 +152,11 @@ function hasWeddingEntitlement(context: EntitlementContext, entitlementKey: Coup
   return hasActivePlanningPass(context.profile);
 }
 
+function hasProfessionalEntitlement(context: EntitlementContext, entitlementKey: ProfessionalEntitlementKey) {
+  const explicitValue = context.professionalEntitlements?.[entitlementKey];
+  return Boolean(explicitValue);
+}
+
 function getEffectiveCouplePlanTier(context: EntitlementContext, requiredTier: Exclude<CouplePlanTier, 'free'>) {
   if (context.couplePlanTier) {
     return requiredTier === 'basic' || context.couplePlanTier === 'premium'
@@ -180,6 +198,22 @@ function buildCoupleAddonPricingHref(code: CoupleAddonCode, feature?: string) {
 
   if (feature) params.set('feature', feature);
   if (addon.stripeAnnualLookupKey) params.set('annualLookupKey', addon.stripeAnnualLookupKey);
+
+  return `/pricing?${params.toString()}`;
+}
+
+function buildProfessionalAddonPricingHref(
+  audience: ProfessionalAudience,
+  code: ProfessionalAddonCode,
+  feature?: string,
+) {
+  const addon = getProfessionalAddonDefinition(code);
+  const params = new URLSearchParams({
+    audience,
+    professionalAddon: addon.code,
+  });
+
+  if (feature) params.set('feature', feature);
 
   return `/pricing?${params.toString()}`;
 }
@@ -262,10 +296,53 @@ function buildCoupleAddonDecision(
   };
 }
 
+function buildProfessionalAddonDecision(
+  feature: EntitlementFeature,
+  audience: ProfessionalAudience,
+  code: ProfessionalAddonCode,
+  allowed: boolean,
+  overrides?: Partial<Pick<EntitlementDecision, 'title' | 'description' | 'ctaLabel' | 'reasons'>>,
+): EntitlementDecision {
+  const addon = getProfessionalAddonDefinition(code);
+  return {
+    allowed,
+    audience,
+    feature,
+    planName: addon.title,
+    entitlementCode: code,
+    billingCadence: 'monthly',
+    stripeProductKey: code,
+    stripeMonthlyLookupKey: addon.stripeMonthlyLookupKey,
+    stripeAnnualLookupKey: addon.stripeAnnualLookupKey,
+    stripeOneTimeLookupKey: null,
+    pricingHref: buildProfessionalAddonPricingHref(audience, code, feature),
+    title: overrides?.title ?? `Add ${addon.title}`,
+    description: overrides?.description ?? `Unlock ${addon.title} for your ${audience} workspace.`,
+    ctaLabel: overrides?.ctaLabel ?? 'View add-on',
+    reasons: overrides?.reasons ?? [],
+  };
+}
+
 export function getEntitlementDecision(feature: EntitlementFeature, context: EntitlementContext): EntitlementDecision {
   if (context.bypass) {
-    const audience = getPricingAudience(context.profile);
-    return buildDecision(feature, audience, true);
+    switch (feature) {
+      case 'planner.media_portfolio':
+        return buildProfessionalAddonDecision(feature, 'planner', 'media_addon', true);
+      case 'planner.advertising':
+        return buildProfessionalAddonDecision(feature, 'planner', 'advertising_addon', true);
+      case 'planner.team_workspace':
+        return buildProfessionalAddonDecision(feature, 'planner', 'team_workspace_bundle_5', true);
+      case 'vendor.media_portfolio':
+        return buildProfessionalAddonDecision(feature, 'vendor', 'media_addon', true);
+      case 'vendor.advertising':
+        return buildProfessionalAddonDecision(feature, 'vendor', 'advertising_addon', true);
+      case 'vendor.team_workspace':
+        return buildProfessionalAddonDecision(feature, 'vendor', 'team_workspace_bundle_5', true);
+      default: {
+        const audience = getPricingAudience(context.profile);
+        return buildDecision(feature, audience, true);
+      }
+    }
   }
 
   const audience = getPricingAudience(context.profile);
@@ -404,6 +481,90 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
         description: 'Vendor Pro unlocks analytics, performance insights, and the premium business tools behind your listing.',
         reasons: vendorReasons(context.vendorListing),
       });
+    case 'planner.media_portfolio':
+      return buildProfessionalAddonDecision(
+        feature,
+        context.professionalAudience ?? 'planner',
+        'media_addon',
+        hasProfessionalEntitlement(context, 'media_portfolio'),
+        {
+          title: 'Add richer media tools to your planner profile',
+          description:
+            'Unlock richer portfolio media for your planner workspace, including stronger visual storytelling and premium portfolio presentation.',
+          reasons: hasProfessionalEntitlement(context, 'media_portfolio') ? [] : ['Media is a paid professional add-on.'],
+        },
+      );
+    case 'planner.advertising':
+      return buildProfessionalAddonDecision(
+        feature,
+        context.professionalAudience ?? 'planner',
+        'advertising_addon',
+        hasProfessionalEntitlement(context, 'advertising'),
+        {
+          title: 'Add advertising to your planner profile',
+          description:
+            'Unlock promoted visibility, featured placement, and directory marketing support for your planner business.',
+          reasons: hasProfessionalEntitlement(context, 'advertising') ? [] : ['Advertising is a paid professional add-on.'],
+        },
+      );
+    case 'planner.team_workspace':
+      return buildProfessionalAddonDecision(
+        feature,
+        context.professionalAudience ?? 'planner',
+        'team_workspace_bundle_5',
+        hasProfessionalEntitlement(context, 'team_workspace'),
+        {
+          title: 'Add a team workspace for your planner business',
+          description:
+            'Unlock bundled colleague seats so your planning team can collaborate inside the same professional workspace.',
+          reasons:
+            hasProfessionalEntitlement(context, 'team_workspace') || (context.professionalTeamSeatLimit ?? 0) > 0
+              ? []
+              : ['Team Workspace is a paid professional add-on.'],
+        },
+      );
+    case 'vendor.media_portfolio':
+      return buildProfessionalAddonDecision(
+        feature,
+        context.professionalAudience ?? 'vendor',
+        'media_addon',
+        hasProfessionalEntitlement(context, 'media_portfolio'),
+        {
+          title: 'Add richer media tools to your vendor listing',
+          description:
+            'Unlock richer photo and video presentation so couples can see your work more clearly before they inquire.',
+          reasons: hasProfessionalEntitlement(context, 'media_portfolio') ? [] : ['Media is a paid professional add-on.'],
+        },
+      );
+    case 'vendor.advertising':
+      return buildProfessionalAddonDecision(
+        feature,
+        context.professionalAudience ?? 'vendor',
+        'advertising_addon',
+        hasProfessionalEntitlement(context, 'advertising'),
+        {
+          title: 'Add advertising to your vendor business',
+          description:
+            'Unlock promoted placement, boosted visibility, and directory marketing opportunities for your listing.',
+          reasons: hasProfessionalEntitlement(context, 'advertising') ? [] : ['Advertising is a paid professional add-on.'],
+        },
+      );
+    case 'vendor.team_workspace':
+      return buildProfessionalAddonDecision(
+        feature,
+        context.professionalAudience ?? 'vendor',
+        'team_workspace_bundle_5',
+        hasProfessionalEntitlement(context, 'team_workspace'),
+        {
+          title: 'Add a team workspace for your vendor business',
+          description:
+            'Unlock bundled colleague seats so your team can coordinate bookings, follow-ups, and delivery in one workspace.',
+          reasons:
+            hasProfessionalEntitlement(context, 'team_workspace') || (context.professionalTeamSeatLimit ?? 0) > 0
+              ? []
+              : ['Team Workspace is a paid professional add-on.'],
+        },
+      );
     default:
       return buildDecision(feature, audience, false);
   }
