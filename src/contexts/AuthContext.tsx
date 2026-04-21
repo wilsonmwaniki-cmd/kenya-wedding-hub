@@ -1,8 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, PlannerType, SignupRole } from '@/lib/roles';
-import type { WeddingOwnerRole, WeddingSignupIntent } from '@/lib/weddingWorkspace';
+import {
+  completePendingWeddingSetup,
+  getPendingWeddingSetup,
+  type WeddingOwnerRole,
+  type WeddingSignupIntent,
+} from '@/lib/weddingWorkspace';
 
 interface Profile {
   id: string;
@@ -133,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [baseProfile, setBaseProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [rolePreview, setRolePreviewState] = useState<RolePreview>('admin');
+  const pendingWeddingRecoveryRef = useRef<string | null>(null);
 
   const getFallbackFullName = (authUser: User) => {
     const fullName = authUser.user_metadata?.full_name;
@@ -380,8 +386,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    pendingWeddingRecoveryRef.current = null;
     setBaseProfile(null);
   };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const pendingSetup = getPendingWeddingSetup(user.user_metadata, user.email ?? null);
+    if (!pendingSetup) {
+      pendingWeddingRecoveryRef.current = null;
+      return;
+    }
+
+    const attemptKey = `${user.id}:${pendingSetup.intent}:${pendingSetup.weddingName ?? ''}:${pendingSetup.partnerEmail ?? ''}:${pendingSetup.weddingCode ?? ''}`;
+    if (pendingWeddingRecoveryRef.current === attemptKey) return;
+    pendingWeddingRecoveryRef.current = attemptKey;
+
+    let active = true;
+
+    const recoverPendingWeddingSetup = async () => {
+      try {
+        const completion = await completePendingWeddingSetup(user);
+        if (!active || !completion.handled || typeof window === 'undefined') return;
+
+        pendingWeddingRecoveryRef.current = `completed:${user.id}`;
+        await ensureProfile(user);
+
+        const targetPath = completion.route;
+        const currentPath = `${window.location.pathname}${window.location.search}`;
+
+        if (targetPath && currentPath !== targetPath) {
+          window.location.replace(targetPath);
+        }
+      } catch (error) {
+        console.error('Could not auto-finish pending wedding setup:', error);
+        pendingWeddingRecoveryRef.current = null;
+      }
+    };
+
+    void recoverPendingWeddingSetup();
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   const hydrateSessionFromHash = async () => {
     if (typeof window === 'undefined') return;

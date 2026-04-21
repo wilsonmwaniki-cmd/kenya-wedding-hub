@@ -17,14 +17,26 @@ import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription,
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
+import { completePendingWeddingSetup, getPendingWeddingSetup, sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 
+interface OwnedWeddingWorkspace {
+  weddingId: string;
+  weddingName: string;
+  weddingCode: string;
+  ownerRole: 'bride' | 'groom';
+  partnerEmail: string | null;
+  partnerRole: 'bride' | 'groom' | null;
+  partnerStatus: 'active' | 'pending' | 'not_invited';
+  partnerInviteExpiresAt: string | null;
+}
+
 const committeePermissionOptions = ['chair', 'member', 'viewer'] as const;
 export default function ProfileSettings() {
-  const { profile, updateProfile } = useAuth();
+  const { user, profile, updateProfile } = useAuth();
   const { toast } = useToast();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const [saving, setSaving] = useState(false);
@@ -42,12 +54,19 @@ export default function ProfileSettings() {
     permission_level: 'member' as CommitteeMember['permission_level'],
   });
   const [serviceAreaDraft, setServiceAreaDraft] = useState('');
+  const [ownedWedding, setOwnedWedding] = useState<OwnedWeddingWorkspace | null>(null);
+  const [partnerEmailInput, setPartnerEmailInput] = useState('');
+  const [partnerInviteSubmitting, setPartnerInviteSubmitting] = useState(false);
+  const [ownershipLoading, setOwnershipLoading] = useState(false);
+  const [repairingWeddingSetup, setRepairingWeddingSetup] = useState(false);
 
   const isPlanner = profile?.role === 'planner';
   const isVendor = profile?.role === 'vendor';
   const isAdmin = profile?.role === 'admin';
   const isCommittee = isCommitteePlanner(profile);
   const isProfessionalPlanner = isPlanner && !isCommittee;
+  const isCouple = !isPlanner && !isVendor && !isAdmin;
+  const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
 
   const [form, setForm] = useState({
     full_name: '',
@@ -121,6 +140,99 @@ export default function ProfileSettings() {
   useEffect(() => {
     void loadCommitteeMembers();
   }, [profile?.user_id, isCommittee]);
+
+  const loadOwnedWeddingWorkspace = async () => {
+    if (!user || !isCouple) {
+      setOwnedWedding(null);
+      return;
+    }
+
+    setOwnershipLoading(true);
+    try {
+      const db = supabase as any;
+
+      const { data: ownerMemberships, error: ownerMembershipError } = await db
+        .from('wedding_memberships')
+        .select('id, wedding_id, role')
+        .eq('user_id', user.id)
+        .eq('is_owner', true)
+        .eq('membership_status', 'active')
+        .in('role', ['bride', 'groom'])
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (ownerMembershipError) throw ownerMembershipError;
+
+      const ownerMembership = ownerMemberships?.[0];
+      if (!ownerMembership) {
+        setOwnedWedding(null);
+        setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? '');
+        return;
+      }
+
+      const { data: weddings, error: weddingError } = await db
+        .from('weddings')
+        .select('id, name, wedding_code')
+        .eq('id', ownerMembership.wedding_id)
+        .limit(1);
+
+      if (weddingError || !weddings?.[0]) throw weddingError ?? new Error('Could not load wedding workspace.');
+
+      const { data: partnerMemberships, error: partnerMembershipError } = await db
+        .from('wedding_memberships')
+        .select('id, email, role, membership_status')
+        .eq('wedding_id', ownerMembership.wedding_id)
+        .eq('is_owner', true)
+        .neq('id', ownerMembership.id)
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (partnerMembershipError) throw partnerMembershipError;
+
+      const { data: partnerInvites, error: inviteError } = await db
+        .from('wedding_invites')
+        .select('id, email, proposed_role, expires_at, status')
+        .eq('wedding_id', ownerMembership.wedding_id)
+        .eq('invite_type', 'partner')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (inviteError) throw inviteError;
+
+      const partnerMembership = partnerMemberships?.[0] ?? null;
+      const pendingInvite = partnerInvites?.[0] ?? null;
+      const partnerStatus: OwnedWeddingWorkspace['partnerStatus'] = partnerMembership?.membership_status === 'active'
+        ? 'active'
+        : pendingInvite || partnerMembership?.membership_status === 'invited'
+          ? 'pending'
+          : 'not_invited';
+
+      const partnerRecord = {
+        weddingId: weddings[0].id,
+        weddingName: weddings[0].name ?? 'Your wedding',
+        weddingCode: weddings[0].wedding_code,
+        ownerRole: ownerMembership.role as OwnedWeddingWorkspace['ownerRole'],
+        partnerEmail: partnerMembership?.email ?? pendingInvite?.email ?? null,
+        partnerRole: (partnerMembership?.role ?? pendingInvite?.proposed_role ?? null) as OwnedWeddingWorkspace['partnerRole'],
+        partnerStatus,
+        partnerInviteExpiresAt: pendingInvite?.expires_at ?? null,
+      };
+
+      setOwnedWedding(partnerRecord);
+      setPartnerEmailInput(partnerRecord.partnerEmail ?? '');
+    } catch (error: any) {
+      console.error('Could not load wedding ownership state:', error);
+      setOwnedWedding(null);
+      setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? '');
+    } finally {
+      setOwnershipLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadOwnedWeddingWorkspace();
+  }, [user?.id, isCouple]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,6 +366,74 @@ export default function ProfileSettings() {
       toast({ title: 'Failed to remove committee member', description: err.message, variant: 'destructive' });
     } finally {
       setDeletingCommitteeMemberId(null);
+    }
+  };
+
+  const repairWeddingSetup = async () => {
+    if (!user || !pendingWeddingSetup) return;
+    setRepairingWeddingSetup(true);
+
+    try {
+      const completion = await completePendingWeddingSetup(user);
+      toast({
+        title: completion.action === 'created' ? 'Wedding setup completed' : 'Wedding setup refreshed',
+        description: completion.partnerInviteSent
+          ? 'Your wedding is ready and the partner invite email has been sent.'
+          : completion.partnerInviteQueued
+            ? 'Your wedding is ready. The partner invite is stored and can be resent from Settings.'
+            : 'Your wedding is ready.',
+      });
+      await loadOwnedWeddingWorkspace();
+      window.location.replace(completion.route);
+    } catch (error: any) {
+      toast({
+        title: 'Could not finish wedding setup',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRepairingWeddingSetup(false);
+    }
+  };
+
+  const sendPartnerInvite = async () => {
+    if (!ownedWedding) return;
+    setPartnerInviteSubmitting(true);
+
+    try {
+      const { data, error } = await (supabase as any).rpc('upsert_partner_invite', {
+        target_wedding_id: ownedWedding.weddingId,
+        partner_email_input: partnerEmailInput.trim().toLowerCase(),
+      });
+
+      if (error) throw error;
+
+      const inviteRow = Array.isArray(data) ? data[0] : data;
+      let description = 'Your wedding co-owner can join using the invite email or the wedding code.';
+
+      if (inviteRow?.invite_id) {
+        try {
+          await sendWeddingInviteEmail(inviteRow.invite_id);
+          description = 'The partner invite email has been sent and they can also use the wedding code.';
+        } catch (inviteError: any) {
+          description = 'The partner invite was created, but the email could not be delivered. You can resend it from here.';
+          console.error('Partner invite email delivery failed from settings:', inviteError);
+        }
+      }
+
+      await loadOwnedWeddingWorkspace();
+      toast({
+        title: ownedWedding.partnerStatus === 'pending' ? 'Partner invite refreshed' : 'Partner invite sent',
+        description,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not send partner invite',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPartnerInviteSubmitting(false);
     }
   };
 
@@ -449,6 +629,98 @@ export default function ProfileSettings() {
               <Button asChild variant="outline">
                 <Link to={committeeExportDecision.pricingHref}>View plan details</Link>
               </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {isCouple && (
+        <Card className="shadow-card border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="font-display">Wedding Ownership</CardTitle>
+            <CardDescription>
+              Manage your partner invite, wedding code, and the shared ownership of this wedding.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {ownershipLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading wedding ownership details...
+              </div>
+            ) : ownedWedding ? (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">{ownedWedding.weddingName}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="capitalize">
+                      {ownedWedding.ownerRole}
+                    </Badge>
+                    <Badge variant={ownedWedding.partnerStatus === 'active' ? 'default' : 'secondary'}>
+                      {ownedWedding.partnerStatus === 'active'
+                        ? 'Partner connected'
+                        : ownedWedding.partnerStatus === 'pending'
+                          ? 'Partner invite pending'
+                          : 'Partner not invited'}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Wedding code: <span className="font-medium tracking-[0.16em] text-foreground">{ownedWedding.weddingCode}</span>
+                  </p>
+                  {ownedWedding.partnerInviteExpiresAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Current partner invite expires on {new Date(ownedWedding.partnerInviteExpiresAt).toLocaleDateString()}.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="settings-partner-email">Partner email</Label>
+                  <Input
+                    id="settings-partner-email"
+                    type="email"
+                    value={partnerEmailInput}
+                    onChange={(e) => setPartnerEmailInput(e.target.value)}
+                    placeholder={ownedWedding.partnerRole === 'groom' ? 'groom@example.com' : 'bride@example.com'}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button
+                    type="button"
+                    disabled={partnerInviteSubmitting || !partnerEmailInput.trim()}
+                    onClick={sendPartnerInvite}
+                  >
+                    {partnerInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    {ownedWedding.partnerStatus === 'pending' ? 'Resend partner invite' : 'Send partner invite'}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    This is the email your co-owner will use to join the wedding.
+                  </p>
+                </div>
+              </>
+            ) : pendingWeddingSetup ? (
+              <>
+                <div className="rounded-lg border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground">
+                  Your wedding signup details were saved, but the wedding workspace has not finished setting up yet.
+                </div>
+                <div className="space-y-2">
+                  <Label>Partner email</Label>
+                  <Input value={pendingWeddingSetup.partnerEmail ?? ''} readOnly />
+                </div>
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  <p>Wedding name: <span className="font-medium text-foreground">{pendingWeddingSetup.weddingName ?? 'Not set'}</span></p>
+                  <p>Owner role: <span className="font-medium capitalize text-foreground">{pendingWeddingSetup.weddingOwnerRole ?? 'Not set'}</span></p>
+                </div>
+                <Button type="button" onClick={repairWeddingSetup} disabled={repairingWeddingSetup}>
+                  {repairingWeddingSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Finish wedding setup
+                </Button>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No wedding ownership details are available yet. If you expected a partner invite here, sign out and complete the create-wedding flow again.
+              </p>
             )}
           </CardContent>
         </Card>
