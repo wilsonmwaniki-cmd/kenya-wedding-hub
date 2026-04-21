@@ -1,5 +1,6 @@
-import { Gift, HeartHandshake, ShoppingBag, Sparkles } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { Gift, HeartHandshake, Loader2, ShoppingBag, Sparkles } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,22 +8,22 @@ import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
 import { getEntitlementDecision } from '@/lib/entitlements';
+import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
+import { startStripeCheckout } from '@/lib/billing';
+import { useToast } from '@/hooks/use-toast';
 
-const launchHighlights = [
-  'Build a wedding wishlist that guests can shop from without duplicate gifting.',
-  'Auto-mark purchased gifts so couples always know what is still needed.',
-  'Keep registry planning attached to the same wedding workspace as your budget, guests, and tasks.',
-];
-
-const comingSoonIdeas = [
-  'Curated registry categories for home setup, honeymoon, and couple gifts',
-  'Shareable guest-facing registry link',
-  'Gift progress tracking and thank-you follow-up support',
+const registryHighlights = [
+  'One wishlist for the whole wedding.',
+  'Purchased gifts get marked off automatically.',
+  'Guests get a clear link instead of WhatsApp back-and-forth.',
 ];
 
 export default function GiftRegistry() {
+  const [searchParams] = useSearchParams();
+  const { toast } = useToast();
   const { profile, isSuperAdmin, rolePreview } = useAuth();
   const { weddingId, entitlements, couplePlanTier, loading } = useWeddingEntitlements();
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   const decision = getEntitlementDecision('couple.gift_registry', {
     profile,
@@ -32,6 +33,80 @@ export default function GiftRegistry() {
   });
 
   const canAccessRegistry = decision.allowed && Boolean(weddingId);
+  const addon = getCoupleAddonDefinition('gift_registry_addon');
+  const isFocusedUpgradeFlow = searchParams.get('intent') === 'upgrade';
+  const upgradeState = searchParams.get('upgrade');
+
+  const statusMessage = useMemo(() => {
+    if (upgradeState === 'success') {
+      return {
+        title: 'Gift Registry unlocked',
+        body: 'This wedding now has registry access. You can stay here as we build the actual wishlist and guest purchase flow.',
+        tone: 'success',
+      } as const;
+    }
+
+    if (upgradeState === 'cancelled') {
+      return {
+        title: 'Checkout cancelled',
+        body: 'No problem. Your registry add-on was not purchased yet, and you can come back to it anytime.',
+        tone: 'warning',
+      } as const;
+    }
+
+    return null;
+  }, [upgradeState]);
+
+  const handleCheckout = async () => {
+    if (!profile) return;
+
+    if (profile.role !== 'couple' && !(isSuperAdmin && rolePreview === 'couple')) {
+      toast({
+        title: 'Couple owners purchase wedding add-ons',
+        description: 'Open this page as the couple workspace owner to add Gift Registry to the wedding.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!weddingId) {
+      toast({
+        title: 'Create or join a wedding first',
+        description: 'Gift Registry attaches to a specific wedding workspace.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!addon.stripeMonthlyLookupKey) {
+      toast({
+        title: 'Checkout is not configured',
+        description: 'This add-on does not have a Stripe price configured yet.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCheckoutLoading(true);
+    try {
+      await startStripeCheckout({
+        audience: 'couple',
+        feature: 'gift_registry',
+        lookupKey: addon.stripeMonthlyLookupKey,
+        cadence: 'monthly',
+        weddingId,
+        successPath: '/gift-registry?upgrade=success',
+        cancelPath: '/gift-registry?intent=upgrade&upgrade=cancelled',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not start checkout',
+        description: error?.message || 'There was a problem creating your Stripe checkout session.',
+        variant: 'destructive',
+      });
+      setCheckoutLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -43,13 +118,22 @@ export default function GiftRegistry() {
           </div>
           <h1 className="font-display text-3xl font-bold text-foreground">Gift Registry</h1>
           <p className="max-w-2xl text-muted-foreground">
-            Give guests one beautiful place to see what the couple wants, what has already been purchased, and what still
-            needs a buyer.
+            Give guests one simple place to see what the couple wants and what has already been bought.
           </p>
         </div>
       </div>
 
-      {!canAccessRegistry && !loading && (
+      {statusMessage && (
+        <Card className={`border ${statusMessage.tone === 'success' ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`}>
+          <CardContent className="px-6 py-5">
+            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Registry status</p>
+            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">{statusMessage.title}</h2>
+            <p className="mt-2 text-sm leading-7 text-muted-foreground">{statusMessage.body}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!canAccessRegistry && !loading && !isFocusedUpgradeFlow && (
         <InlineUpgradePrompt decision={decision} />
       )}
 
@@ -58,19 +142,19 @@ export default function GiftRegistry() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-display text-2xl">
               <ShoppingBag className="h-5 w-5 text-primary" />
-              Registry workspace
+              {canAccessRegistry ? 'Registry access is active' : 'Add Gift Registry to this wedding'}
             </CardTitle>
             <CardDescription>
               {canAccessRegistry
-                ? 'Your wedding now has registry access. This is the first live surface and we can build the full store flow on top of it next.'
-                : 'Registry access is available as a paid wedding add-on. Once enabled, this page becomes the couple’s registry command center.'}
+                ? 'The add-on is active. We can now build the actual wishlist and guest checkout flow on top of this.'
+                : 'This add-on unlocks a dedicated registry space for gifts, tracking, and guest sharing.'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
             <div className="rounded-2xl border border-border/70 bg-muted/20 p-5">
-              <p className="text-sm font-medium text-foreground">What couples will do here</p>
+              <p className="text-sm font-medium text-foreground">What this add-on gives you</p>
               <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                {launchHighlights.map((item) => (
+                {registryHighlights.map((item) => (
                   <li key={item} className="flex gap-2">
                     <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                     <span>{item}</span>
@@ -79,37 +163,24 @@ export default function GiftRegistry() {
               </ul>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Card className="border-border/70">
-                <CardContent className="pt-6">
-                  <p className="text-sm font-medium text-foreground">Current status</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    {canAccessRegistry
-                      ? 'Registry entitlement is active for this wedding. The next build can add item creation, guest purchase links, and strike-off logic.'
-                      : 'Registry is not active for this wedding yet.'}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border/70">
-                <CardContent className="pt-6">
-                  <p className="text-sm font-medium text-foreground">Commercial role</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    This is a strong wedding-commerce add-on because it brings both couples and guests into a shared gifting flow.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {canAccessRegistry && (
+            {!canAccessRegistry ? (
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button className="gap-2" onClick={() => void handleCheckout()} disabled={checkoutLoading}>
+                  {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Add Gift Registry to this wedding
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
+                </Button>
+              </div>
+            ) : (
               <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
                 <div className="flex items-start gap-3">
                   <Sparkles className="mt-0.5 h-5 w-5 text-primary" />
                   <div>
-                    <p className="font-medium text-foreground">Registry access is unlocked</p>
+                    <p className="font-medium text-foreground">You’re in the right place now</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      The entitlement and route are now live. The next product step is building the actual registry catalog, wishlist management,
-                      guest purchase flow, and purchased-item strike-off experience.
+                      We’ve kept this page intentionally simple. The next build can focus on the actual gift list, categories, and guest purchase experience.
                     </p>
                   </div>
                 </div>
@@ -122,23 +193,15 @@ export default function GiftRegistry() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-display text-2xl">
               <HeartHandshake className="h-5 w-5 text-primary" />
-              What we can build next
+              Keep it simple
             </CardTitle>
             <CardDescription>
-              This add-on is now wired into pricing and access control. These are the next product layers to add.
+              We’ve removed the long product explanation here. This page should feel like a clear add-on stop, not a wall of text.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {comingSoonIdeas.map((item) => (
-              <div key={item} className="rounded-xl border border-border/70 bg-background p-4 text-sm text-muted-foreground">
-                {item}
-              </div>
-            ))}
-            {!canAccessRegistry && (
-              <Button asChild className="w-full">
-                <Link to={decision.pricingHref}>{decision.ctaLabel}</Link>
-              </Button>
-            )}
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            <p>Couples should land here, understand the add-on in seconds, and either unlock it or move on.</p>
+            <p>If the add-on is already active, this becomes the natural home for the registry build-out.</p>
           </CardContent>
         </Card>
       </div>

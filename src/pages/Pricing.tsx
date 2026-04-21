@@ -351,8 +351,11 @@ export default function Pricing() {
         lookupKey: addon.stripeMonthlyLookupKey,
         cadence: 'monthly',
         weddingId,
-        successPath: code === 'guest_rsvp_management_addon' ? '/guests?upgrade=success' : '/pricing?upgrade=success',
-        cancelPath: '/pricing?upgrade=cancelled',
+        successPath: code === 'guest_rsvp_management_addon' ? '/guests?upgrade=success' : '/gift-registry?upgrade=success',
+        cancelPath:
+          code === 'guest_rsvp_management_addon'
+            ? '/guests?intent=upgrade&upgrade=cancelled'
+            : '/gift-registry?intent=upgrade&upgrade=cancelled',
       });
     } catch (error: any) {
       toast({

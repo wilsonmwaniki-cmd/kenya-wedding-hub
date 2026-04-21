@@ -186,20 +186,14 @@ function buildCouplePricingHref(tier: Exclude<CouplePlanTier, 'free'>, feature?:
 function buildCoupleAddonPricingHref(code: CoupleAddonCode, feature?: string) {
   const addon = getCoupleAddonDefinition(code);
   const params = new URLSearchParams({
-    audience: 'couple',
-    addon: addon.code,
-    successPath:
-      addon.code === 'guest_rsvp_management_addon'
-        ? '/guests?upgrade=success'
-        : '/pricing?upgrade=success',
-    cancelPath: '/pricing?upgrade=cancelled',
-    monthlyLookupKey: addon.stripeMonthlyLookupKey ?? '',
+    intent: 'upgrade',
   });
 
   if (feature) params.set('feature', feature);
-  if (addon.stripeAnnualLookupKey) params.set('annualLookupKey', addon.stripeAnnualLookupKey);
 
-  return `/pricing?${params.toString()}`;
+  return addon.code === 'guest_rsvp_management_addon'
+    ? `/guests?${params.toString()}`
+    : `/gift-registry?${params.toString()}`;
 }
 
 function buildProfessionalAddonPricingHref(
