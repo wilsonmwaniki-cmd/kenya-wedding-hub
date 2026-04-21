@@ -492,7 +492,7 @@ export const audiencePlans: AudiencePlan[] = [
     stripeMonthlyLookupKey: null,
     stripeAnnualLookupKey: null,
     stripeOneTimeLookupKey: 'committee_pass_one_time',
-    successPath: '/planner?upgrade=success',
+    successPath: '/dashboard?upgrade=success',
     cancelPath: '/pricing?upgrade=cancelled',
     freeIncludes: [
       'Create a committee-led wedding workspace',
@@ -530,7 +530,7 @@ export const audiencePlans: AudiencePlan[] = [
     stripeMonthlyLookupKey: 'planner_premium_monthly',
     stripeAnnualLookupKey: 'planner_premium_annual',
     stripeOneTimeLookupKey: null,
-    successPath: '/planner?upgrade=success',
+    successPath: '/clients?upgrade=success',
     cancelPath: '/pricing?upgrade=cancelled',
     freeIncludes: [
       'Directory listing',
