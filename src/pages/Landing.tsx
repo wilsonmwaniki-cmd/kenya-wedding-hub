@@ -356,6 +356,15 @@ function QuickSignupChooser() {
   const selectedCard = chooserCards.find((card) => card.value === selectedTrack) ?? chooserCards[0];
 
   const openAuth = (mode: 'signup' | 'signin') => {
+    if (mode === 'signin') {
+      navigate('/auth', {
+        state: {
+          mode: 'signin' as const,
+        },
+      });
+      return;
+    }
+
     const authState =
       selectedTrack === 'planner' || selectedTrack === 'vendor'
         ? {
