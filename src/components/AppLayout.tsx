@@ -6,7 +6,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck
+  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +17,7 @@ const coupleNavItems = [
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
+  { path: '/gift-registry', label: 'Gift Registry', icon: Gift },
   { path: '/vendors', label: 'Vendors', icon: Store },
   { path: '/timeline', label: 'Timeline', icon: Clock },
   { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
@@ -30,6 +31,7 @@ const plannerNavItems = [
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
+  { path: '/gift-registry', label: 'Gift Registry', icon: Gift },
   { path: '/vendors', label: 'Vendors', icon: Store },
   { path: '/timeline', label: 'Timeline', icon: Clock },
   { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
@@ -40,6 +42,7 @@ const plannerNavItems = [
 const vendorNavItems = [
   { path: '/vendor-dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/vendor-settings', label: 'My Listing', icon: Store },
+  { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -71,7 +74,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !selectedClient;
-  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/vendors', '/timeline', '/portfolio'];
+  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/gift-registry', '/vendors', '/timeline', '/portfolio'];
 
   const previewOptions: Array<{ value: RolePreview; label: string }> = [
     { value: 'admin', label: 'Admin' },
@@ -146,7 +149,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           {profile && (
-            <div className="border-b border-sidebar-border px-6 py-4">
+            <div className="border-b border-sidebar-border px-4 py-4 sm:px-6">
               <p className="text-sm font-medium text-sidebar-foreground">{profile.full_name || 'Welcome!'}</p>
               <p className="text-xs text-sidebar-foreground/60 capitalize">
                 {profile.role} Account
@@ -250,7 +253,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main className="flex-1 flex flex-col min-h-screen">
-        <header className="sticky top-0 z-30 flex items-center gap-4 border-b border-border bg-background/80 backdrop-blur-sm px-6 py-4 lg:hidden">
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur-sm lg:hidden">
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
@@ -264,7 +267,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </Badge>
           )}
         </header>
-        <div className="flex-1 p-6 lg:p-8">
+        <div className="flex-1 p-4 sm:p-6 lg:p-8">
           {isSuperAdmin && (
             <div className="mb-6 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

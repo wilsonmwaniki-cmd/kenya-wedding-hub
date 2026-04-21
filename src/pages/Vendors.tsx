@@ -40,6 +40,7 @@ import {
 import { createVendorTask, createVendorTaskBundle } from '@/lib/vendorTasks';
 import { getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 import { getEntitlementDecision } from '@/lib/entitlements';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 
@@ -288,6 +289,7 @@ function buildVendorMilestones(vendor: Vendor, tasks: VendorTaskItem[]) {
 export default function Vendors() {
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
+  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -1163,7 +1165,7 @@ export default function Vendors() {
       ? 'committee.export_progress'
       : 'planner.export_progress'
     : 'couple.export_progress';
-  const exportDecision = getEntitlementDecision(exportFeature, { profile });
+  const exportDecision = getEntitlementDecision(exportFeature, { profile, weddingEntitlements, couplePlanTier });
 
   const vendorsByName = useMemo(
     () => [...vendors].sort((left, right) => left.name.localeCompare(right.name)),

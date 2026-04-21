@@ -20,6 +20,7 @@ import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorP
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
 import { getEntitlementDecision } from '@/lib/entitlements';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 
@@ -127,6 +128,7 @@ function benchmarkSummary(benchmark?: VendorPriceBenchmark | null) {
 export default function Budget() {
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
+  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
@@ -180,7 +182,7 @@ export default function Budget() {
       ? 'committee.export_progress'
       : 'planner.export_progress'
     : 'couple.export_progress';
-  const exportDecision = getEntitlementDecision(exportFeature, { profile });
+  const exportDecision = getEntitlementDecision(exportFeature, { profile, weddingEntitlements, couplePlanTier });
 
   useEffect(() => {
     if (!showPersonalBudget && activeBudgetScope === 'personal') {

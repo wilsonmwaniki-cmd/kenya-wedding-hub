@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 
 interface PlannerData {
@@ -36,6 +37,7 @@ interface PlannerData {
 export default function PlannerProfile() {
   const { id } = useParams<{ id: string }>();
   const { user, profile } = useAuth();
+  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const { toast } = useToast();
   const [planner, setPlanner] = useState<PlannerData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +49,11 @@ export default function PlannerProfile() {
   const [message, setMessage] = useState('');
 
   const isCouple = profile?.role === 'couple';
-  const connectDecision = getEntitlementDecision('couple.connect_planners', { profile });
+  const connectDecision = getEntitlementDecision('couple.connect_planners', {
+    profile,
+    weddingEntitlements,
+    couplePlanTier,
+  });
 
   useEffect(() => {
     if (!id) return;

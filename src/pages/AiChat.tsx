@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getEntitlementDecision, type EntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -303,6 +304,7 @@ function getAssistantExperience(
 
 export default function AiChat() {
   const { session, profile, baseProfile, isSuperAdmin } = useAuth();
+  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const { toast } = useToast();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const [vendorListing, setVendorListing] = useState<VendorListingAccess | null>(null);
@@ -329,9 +331,11 @@ export default function AiChat() {
     return getEntitlementDecision(feature, {
       profile,
       vendorListing,
+      weddingEntitlements,
+      couplePlanTier,
       bypass: isSuperAdmin || baseProfile?.role === 'admin',
     });
-  }, [baseProfile?.role, feature, isSuperAdmin, profile, vendorListing]);
+  }, [baseProfile?.role, couplePlanTier, feature, isSuperAdmin, profile, vendorListing, weddingEntitlements]);
 
   const experience = useMemo(
     () => getAssistantExperience(profile?.role, profile?.planner_type, selectedClient?.client_name ?? null, workspaceSnapshot),
