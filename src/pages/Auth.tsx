@@ -123,10 +123,10 @@ export default function Auth() {
     () => (user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null),
     [user],
   );
-  const showTrackChooser = isSignUp || signupPath !== 'professional';
-  const showWeddingDetails = signupPath === 'create_wedding';
-  const showJoinDetails = signupPath === 'join_wedding';
-  const showProfessionalDetails = signupPath === 'professional';
+  const showTrackChooser = isSignUp;
+  const showWeddingDetails = isSignUp && signupPath === 'create_wedding';
+  const showJoinDetails = isSignUp && signupPath === 'join_wedding';
+  const showProfessionalDetails = isSignUp && signupPath === 'professional';
   const showGoogleAuth = !isForgot;
 
   const carryoverLabel = useMemo(() => {
@@ -422,11 +422,9 @@ export default function Auth() {
               ? 'Enter your email to receive a reset link.'
               : isSignUp
                 ? 'Start by telling us whether you are creating a wedding, joining one, or opening a professional account.'
-                : signupPath === 'create_wedding'
-                  ? 'Sign in to finish creating your couple-owned wedding workspace.'
-                  : signupPath === 'join_wedding'
-                    ? 'Sign in with the same email that received the invite, then we will join you to that wedding.'
-                    : 'Sign in to continue planning.'}
+                : signupPath === 'join_wedding'
+                  ? 'Sign in with the same email that received the invite and we’ll take you straight into the wedding.'
+                  : 'Sign in to continue.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -459,7 +457,7 @@ export default function Auth() {
             </form>
           ) : (
             <>
-              {hasHomepageCarryover && (
+              {isSignUp && hasHomepageCarryover && (
                 <div className="mb-4 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Continuing from homepage</p>
                   <p className="mt-1 text-sm text-foreground">
@@ -755,11 +753,7 @@ export default function Auth() {
                       : signupPath === 'join_wedding'
                         ? 'Create Account & Join Wedding'
                         : 'Create Account'
-                    : signupPath === 'create_wedding'
-                      ? 'Sign In & Create Wedding'
-                      : signupPath === 'join_wedding'
-                        ? 'Sign In & Join Wedding'
-                        : 'Sign In'}
+                    : 'Sign In'}
                 </Button>
               </form>
 
