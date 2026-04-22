@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Heart, Loader2, Mail, Users, UserRoundPlus } from 'lucide-react';
+import { Heart, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -30,31 +30,6 @@ type AuthEntryState = {
   professionalRole?: ProfessionalSignupRole;
 } | null;
 type ProfessionalSignupRole = 'planner' | 'vendor';
-
-const signupTrackMeta: Record<
-  WeddingSignupIntent,
-  {
-    title: string;
-    description: string;
-    icon: typeof UserRoundPlus;
-  }
-> = {
-  create_wedding: {
-    title: 'Create a wedding',
-    description: 'Start a new wedding workspace as the bride or groom and invite your partner in.',
-    icon: Heart,
-  },
-  join_wedding: {
-    title: 'Join a wedding',
-    description: 'Use the wedding code from an invite email to join an existing wedding workspace.',
-    icon: Users,
-  },
-  professional: {
-    title: 'Professional account',
-    description: 'Create a planner or vendor account without creating a wedding workspace.',
-    icon: Mail,
-  },
-};
 
 const professionalRoleMeta: Record<
   ProfessionalSignupRole,
@@ -128,12 +103,6 @@ export default function Auth() {
   const showJoinDetails = isSignUp && signupPath === 'join_wedding';
   const showProfessionalDetails = isSignUp && signupPath === 'professional';
   const showGoogleAuth = !isForgot;
-
-  const carryoverLabel = useMemo(() => {
-    if (signupPath === 'create_wedding') return 'Create a wedding';
-    if (signupPath === 'join_wedding') return 'Join a wedding';
-    return professionalRoleMeta[professionalRole].title;
-  }, [professionalRole, signupPath]);
 
   useEffect(() => {
     const state = location.state as AuthEntryState;
@@ -479,15 +448,6 @@ export default function Auth() {
             </form>
           ) : (
             <>
-              {isSignUp && hasHomepageCarryover && (
-                <div className="mb-4 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Continuing from homepage</p>
-                  <p className="mt-1 text-sm text-foreground">
-                    You’re starting in <span className="font-medium">{carryoverLabel}</span>.
-                  </p>
-                </div>
-              )}
-
               {isSignUp && (
                 <motion.div
                   initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
@@ -497,9 +457,9 @@ export default function Auth() {
                 >
                   {signupPath === 'create_wedding' ? (
                     <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Starting your wedding</p>
+                      <p className="text-sm font-medium text-foreground">Step 1: Start your wedding</p>
                       <p className="text-xs text-muted-foreground">
-                        This is the default couple flow. Add your spouse’s email here and we’ll create the wedding for both of you.
+                        Add your spouse and wedding date. We’ll create the wedding for both of you automatically.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('join_wedding')}>
@@ -512,9 +472,9 @@ export default function Auth() {
                     </div>
                   ) : signupPath === 'join_wedding' ? (
                     <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Joining an existing wedding</p>
+                      <p className="text-sm font-medium text-foreground">Join with a wedding code</p>
                       <p className="text-xs text-muted-foreground">
-                        Only use this if you already received a wedding code. Otherwise, start a new wedding first.
+                        Only use this if you already received a code from the couple.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('create_wedding')}>
@@ -546,16 +506,6 @@ export default function Auth() {
 
               {showGoogleAuth && (
                 <div className="space-y-4">
-                  {isSignUp && signupPath === 'join_wedding' && (
-                    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                      Use the same Google email that received the wedding invite. We’ll match it to the invitation code after sign-in.
-                    </div>
-                  )}
-                  {isSignUp && signupPath === 'create_wedding' && (
-                    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                      You can continue with Google here. We’ll create the wedding workspace and queue the partner invite after you come back from Google.
-                    </div>
-                  )}
                   <GoogleAuthButton
                     loading={googleSubmitting}
                     disabled={submitting || googleSubmitting}
@@ -590,9 +540,9 @@ export default function Auth() {
                   <>
                     <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
                       <div className="space-y-1">
-                        <p className="text-sm font-medium text-foreground">Who is creating this wedding?</p>
+                        <p className="text-sm font-medium text-foreground">You</p>
                         <p className="text-xs text-muted-foreground">
-                          The couple owns the wedding. Start by telling us whether you are the bride or groom.
+                          Tell us whether you are the bride or groom.
                         </p>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
@@ -616,17 +566,6 @@ export default function Auth() {
                           </button>
                         ))}
                       </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="wedding-name">Wedding Name</Label>
-                      <Input
-                        id="wedding-name"
-                        value={weddingName}
-                        onChange={(event) => setWeddingName(event.target.value)}
-                        placeholder="e.g. Mary & James Wedding"
-                        required
-                      />
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2">
@@ -655,36 +594,6 @@ export default function Auth() {
                           required
                         />
                       </div>
-                    </div>
-
-                    <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-foreground">Where will the wedding happen?</p>
-                        <p className="text-xs text-muted-foreground">
-                          We’ll use this to match the wedding with nearby planners and vendors.
-                        </p>
-                      </div>
-                      <KenyaLocationFields
-                        county={weddingCounty}
-                        town={weddingTown}
-                        onCountyChange={setWeddingCounty}
-                        onTownChange={setWeddingTown}
-                        countyLabel="Wedding county"
-                        townLabel="Wedding town / area"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="wedding-name">Wedding Name <span className="text-muted-foreground">(optional)</span></Label>
-                      <Input
-                        id="wedding-name"
-                        value={weddingName}
-                        onChange={(event) => setWeddingName(event.target.value)}
-                        placeholder={getSuggestedWeddingName()}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Leave this blank and we’ll start with <span className="font-medium">{getSuggestedWeddingName()}</span>. You can rename it later.
-                      </p>
                     </div>
                   </>
                 )}

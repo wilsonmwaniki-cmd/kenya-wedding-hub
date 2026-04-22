@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserRoundPlus, LogIn, Mail, HeartHandshake } from 'lucide-react';
+import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserRoundPlus, LogIn } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -320,40 +320,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
 
 function QuickSignupChooser() {
   const navigate = useNavigate();
-  const [selectedTrack, setSelectedTrack] = useState<'create_wedding' | 'join_wedding' | 'planner' | 'vendor'>('create_wedding');
-
-  const chooserCards = [
-    {
-      value: 'create_wedding' as const,
-      icon: HeartHandshake,
-      title: 'Create a wedding',
-      description: 'Start your wedding workspace as the bride or groom, then invite your partner to co-own it.',
-      helper: 'Bride or groom',
-    },
-    {
-      value: 'join_wedding' as const,
-      icon: Users,
-      title: 'Join a wedding',
-      description: 'Use the wedding code from your invite email to join an existing wedding as partner or committee.',
-      helper: 'Code + invite',
-    },
-    {
-      value: 'planner' as const,
-      icon: Briefcase,
-      title: 'Professional planner',
-      description: 'Create your planner workspace to manage weddings, clients, and collaboration from one place.',
-      helper: 'Planner account',
-    },
-    {
-      value: 'vendor' as const,
-      icon: Store,
-      title: 'Vendor business',
-      description: 'Create your business account to publish your listing, manage bookings, and follow up faster.',
-      helper: 'Vendor account',
-    },
-  ];
-
-  const selectedCard = chooserCards.find((card) => card.value === selectedTrack) ?? chooserCards[0];
+  const [professionalRole, setProfessionalRole] = useState<'planner' | 'vendor'>('planner');
 
   const openAuth = (mode: 'signup' | 'signin') => {
     if (mode === 'signin') {
@@ -365,20 +332,12 @@ function QuickSignupChooser() {
       return;
     }
 
-    const authState =
-      selectedTrack === 'planner' || selectedTrack === 'vendor'
-        ? {
-            mode,
-            signupPath: 'professional' as const,
-            professionalRole: selectedTrack,
-          }
-        : {
-            mode,
-            signupPath: selectedTrack,
-          };
-
     navigate('/auth', {
-      state: authState,
+      state: {
+        mode,
+        signupPath: 'professional' as const,
+        professionalRole,
+      },
     });
   };
 
@@ -393,55 +352,38 @@ function QuickSignupChooser() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Start here</p>
           <h3 className="font-display text-2xl font-semibold text-card-foreground">Create your account</h3>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Most couples should start by creating their wedding. Only use join if you already received a wedding code.
-          </p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Couples now own the wedding workspace. Partners, committees, planners, and vendors join or collaborate from there.
+            Start your wedding in one pass. Add your spouse, pick your date, and we’ll create the shared wedding for both of you.
           </p>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {chooserCards.map((card) => {
-            const selected = card.value === selectedTrack;
-            const Icon = card.icon;
-
-            return (
-              <motion.button
-                key={card.value}
-                type="button"
-                onClick={() => setSelectedTrack(card.value)}
-                initial={selected ? { scale: 0.97, y: 8, opacity: 0.92 } : false}
-                animate={selected ? { scale: 1, y: 0, opacity: 1, boxShadow: '0 18px 40px rgba(224, 98, 47, 0.18)' } : { scale: 1, y: 0, opacity: 1, boxShadow: '0 0 0 rgba(0,0,0,0)' }}
-                transition={{ duration: selected ? 0.35 : 0.18, ease: [0.22, 1, 0.36, 1] }}
-                className={`flex flex-col items-start gap-2 rounded-xl border-2 p-3 text-left transition-colors ${
-                  selected ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-background text-muted-foreground hover:border-primary/50'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                <span className="text-xs font-semibold leading-tight text-foreground">{card.title}</span>
-                <span className="text-[10px] leading-relaxed text-muted-foreground">{card.description}</span>
-                <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-primary">{card.helper}</span>
-              </motion.button>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-4">
+        <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-primary/10 p-2">
-              <selectedCard.icon className="h-4 w-4 text-primary" />
+              <Users className="h-4 w-4 text-primary" />
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">{selectedCard.title}</p>
-              <p className="text-xs leading-relaxed text-muted-foreground">{selectedCard.description}</p>
+              <p className="text-sm font-semibold text-foreground">For couples</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                This is the normal path. We’ll guide you step by step and create the wedding automatically.
+              </p>
             </div>
           </div>
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button className="flex-1 gap-2" onClick={() => openAuth('signup')}>
+          <Button
+            className="flex-1 gap-2"
+            onClick={() =>
+              navigate('/auth', {
+                state: {
+                  mode: 'signup' as const,
+                  signupPath: 'create_wedding' as const,
+                },
+              })
+            }
+          >
             <UserRoundPlus className="h-4 w-4" />
-            {selectedTrack === 'join_wedding' ? 'Join with a code' : selectedTrack === 'create_wedding' ? 'Start our wedding' : 'Continue'}
+            Start our wedding
             <ArrowRight className="h-4 w-4" />
           </Button>
           <Button
@@ -453,19 +395,59 @@ function QuickSignupChooser() {
             I already have an account
           </Button>
         </div>
-        {selectedTrack === 'join_wedding' ? (
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Use the wedding code from your email invite. If you have not received one yet, ask the couple to resend it.
-          </p>
-        ) : selectedTrack === 'create_wedding' ? (
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            We’ll take you straight into the couple setup so you can add your spouse and create the wedding in one pass.
-          </p>
-        ) : (
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Professional accounts do not create a wedding at signup. They connect into weddings through collaboration later.
-          </p>
-        )}
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() =>
+              navigate('/auth', {
+                state: {
+                  mode: 'signup' as const,
+                  signupPath: 'join_wedding' as const,
+                },
+              })
+            }
+            className="rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+          >
+            <p className="text-sm font-medium text-foreground">I have a wedding code</p>
+            <p className="mt-1 text-xs text-muted-foreground">Use this if the couple already invited you.</p>
+          </button>
+
+          <div className="rounded-xl border border-border bg-background px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-primary" />
+              <p className="text-sm font-medium text-foreground">Planner or vendor?</p>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={professionalRole === 'planner' ? 'default' : 'outline'}
+                onClick={() => setProfessionalRole('planner')}
+                className="flex-1"
+              >
+                Planner
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={professionalRole === 'vendor' ? 'default' : 'outline'}
+                onClick={() => setProfessionalRole('vendor')}
+                className="flex-1"
+              >
+                Vendor
+              </Button>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="mt-2 h-auto p-0 text-xs text-primary hover:bg-transparent"
+              onClick={() => openAuth('signup')}
+            >
+              Continue as {professionalRole}
+            </Button>
+          </div>
+        </div>
       </div>
     </motion.div>
   );
