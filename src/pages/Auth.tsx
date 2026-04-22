@@ -99,6 +99,7 @@ export default function Auth() {
     () => (user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null),
     [user],
   );
+  const audience = signupPath === 'professional' ? 'professional' : 'couple';
   const showWeddingDetails = isSignUp && signupPath === 'create_wedding';
   const showJoinDetails = isSignUp && signupPath === 'join_wedding';
   const showProfessionalDetails = isSignUp && signupPath === 'professional';
@@ -393,6 +394,15 @@ export default function Auth() {
     }
   };
 
+  const switchAudience = (nextAudience: 'couple' | 'professional') => {
+    if (nextAudience === 'couple') {
+      setSignupPath('create_wedding');
+      return;
+    }
+
+    setSignupPath('professional');
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-warm p-4">
       <Card className="w-full max-w-2xl shadow-warm border-border/50">
@@ -402,20 +412,28 @@ export default function Auth() {
             <span className="font-display text-2xl font-bold text-foreground">Zania</span>
           </div>
           <CardTitle className="font-display text-xl">
-            {isForgot ? 'Forgot Password' : isSignUp ? 'Create Account' : 'Welcome Back'}
+            {isForgot
+              ? 'Forgot Password'
+              : audience === 'professional'
+                ? isSignUp
+                  ? 'Professional Account'
+                  : 'Professional Sign In'
+                : isSignUp
+                  ? 'Start Your Wedding'
+                  : 'Couple Sign In'}
           </CardTitle>
           <CardDescription>
             {isForgot
               ? 'Enter your email to receive a reset link.'
-              : isSignUp
-                ? signupPath === 'join_wedding'
-                  ? 'Use the wedding code from your invite and the same email that was invited.'
-                  : signupPath === 'professional'
-                    ? 'Create your planner or vendor account without opening a wedding workspace.'
-                    : 'Start your wedding, add your spouse, and we’ll create the shared workspace for you.'
+              : audience === 'professional'
+                ? isSignUp
+                  ? 'Create your planner or vendor account.'
+                  : 'Sign in to your planner or vendor workspace.'
                 : signupPath === 'join_wedding'
-                  ? 'Sign in with the same email that received the invite and we’ll take you straight into the wedding.'
-                  : 'Sign in to continue.'}
+                  ? 'Use the wedding code from the couple and the same email that was invited.'
+                  : isSignUp
+                    ? 'Add your spouse and wedding date. We’ll create the wedding for both of you.'
+                    : 'Sign in to your wedding workspace.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -448,6 +466,39 @@ export default function Auth() {
             </form>
           ) : (
             <>
+              <div className="mb-5 rounded-2xl border border-border/60 bg-muted/20 p-2">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => switchAudience('couple')}
+                    className={`rounded-xl px-4 py-3 text-left transition-all ${
+                      audience === 'couple'
+                        ? 'bg-background shadow-card text-foreground'
+                        : 'text-muted-foreground hover:bg-background/70'
+                    }`}
+                  >
+                    <p className="text-sm font-medium">Couples</p>
+                    <p className="mt-1 text-xs">
+                      {isSignUp ? 'Create or join your wedding' : 'Sign in to your wedding'}
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchAudience('professional')}
+                    className={`rounded-xl px-4 py-3 text-left transition-all ${
+                      audience === 'professional'
+                        ? 'bg-background shadow-card text-foreground'
+                        : 'text-muted-foreground hover:bg-background/70'
+                    }`}
+                  >
+                    <p className="text-sm font-medium">Wedding professionals</p>
+                    <p className="mt-1 text-xs">
+                      {isSignUp ? 'Create your planner or vendor account' : 'Sign in as planner or vendor'}
+                    </p>
+                  </button>
+                </div>
+              </div>
+
               {isSignUp && (
                 <motion.div
                   initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
@@ -455,22 +506,19 @@ export default function Auth() {
                   transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                   className="mb-5 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3"
                 >
-                  {signupPath === 'create_wedding' ? (
+                  {audience === 'couple' && signupPath === 'create_wedding' ? (
                     <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Step 1: Start your wedding</p>
+                      <p className="text-sm font-medium text-foreground">Couple signup</p>
                       <p className="text-xs text-muted-foreground">
-                        Add your spouse and wedding date. We’ll create the wedding for both of you automatically.
+                        We’ll create the wedding for both of you automatically.
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('join_wedding')}>
                           I have a wedding code
                         </Button>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => setSignupPath('professional')}>
-                          I’m a planner or vendor
-                        </Button>
                       </div>
                     </div>
-                  ) : signupPath === 'join_wedding' ? (
+                  ) : audience === 'couple' && signupPath === 'join_wedding' ? (
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-foreground">Join with a wedding code</p>
                       <p className="text-xs text-muted-foreground">
@@ -480,25 +528,14 @@ export default function Auth() {
                         <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('create_wedding')}>
                           Start my wedding instead
                         </Button>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => setSignupPath('professional')}>
-                          I’m a planner or vendor
-                        </Button>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-foreground">Professional account</p>
                       <p className="text-xs text-muted-foreground">
-                        Professional accounts stay separate from couple-owned weddings and connect later through invites.
+                        Planners and vendors use their own separate workspace.
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('create_wedding')}>
-                          Start a wedding instead
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => setSignupPath('join_wedding')}>
-                          I have a wedding code
-                        </Button>
-                      </div>
                     </div>
                   )}
                 </motion.div>
@@ -710,11 +747,15 @@ export default function Auth() {
                   {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {isSignUp
                     ? signupPath === 'create_wedding'
-                      ? 'Create Wedding Account'
+                      ? 'Create our wedding'
                       : signupPath === 'join_wedding'
-                        ? 'Create Account & Join Wedding'
-                        : 'Create Account'
-                    : 'Sign In'}
+                        ? 'Create account and join'
+                        : professionalRole === 'planner'
+                          ? 'Create planner account'
+                          : 'Create vendor account'
+                    : audience === 'professional'
+                      ? 'Sign in to professional account'
+                      : 'Sign in to wedding'}
                 </Button>
               </form>
 
@@ -724,7 +765,13 @@ export default function Auth() {
                   onClick={() => setIsSignUp((current) => !current)}
                   className="text-sm text-muted-foreground transition-colors hover:text-primary"
                 >
-                  {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+                  {isSignUp
+                    ? audience === 'professional'
+                      ? 'Already have a professional account? Sign in'
+                      : 'Already have a wedding account? Sign in'
+                    : audience === 'professional'
+                      ? "Need a professional account? Sign up"
+                      : "Need a wedding account? Sign up"}
                 </button>
               </div>
             </>
