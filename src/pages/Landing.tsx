@@ -322,25 +322,6 @@ function QuickSignupChooser() {
   const navigate = useNavigate();
   const [professionalRole, setProfessionalRole] = useState<'planner' | 'vendor'>('planner');
 
-  const openAuth = (mode: 'signup' | 'signin') => {
-    if (mode === 'signin') {
-      navigate('/auth', {
-        state: {
-          mode: 'signin' as const,
-        },
-      });
-      return;
-    }
-
-    navigate('/auth', {
-      state: {
-        mode,
-        signupPath: 'professional' as const,
-        professionalRole,
-      },
-    });
-  };
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -350,74 +331,83 @@ function QuickSignupChooser() {
       <div className="rounded-[28px] border border-border/60 bg-card/95 p-5 shadow-warm backdrop-blur-sm">
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Start here</p>
-          <h3 className="font-display text-2xl font-semibold text-card-foreground">Create your account</h3>
+          <h3 className="font-display text-2xl font-semibold text-card-foreground">Choose your path</h3>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Start your wedding in one pass. Add your spouse, pick your date, and we’ll create the shared wedding for both of you.
+            Couples and wedding professionals now start in separate flows so each path feels clear and simple.
           </p>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl bg-primary/10 p-2">
-              <Users className="h-4 w-4 text-primary" />
+        <div className="mt-4 grid gap-4">
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-primary/10 p-2">
+                <Users className="h-4 w-4 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-foreground">For couples</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Start your wedding, add your spouse, and we’ll create the shared wedding workspace for both of you.
+                </p>
+              </div>
             </div>
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">For couples</p>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                This is the normal path. We’ll guide you step by step and create the wedding automatically.
-              </p>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <Button
+                className="gap-2"
+                onClick={() =>
+                  navigate('/auth', {
+                    state: {
+                      mode: 'signup' as const,
+                      signupPath: 'create_wedding' as const,
+                    },
+                  })
+                }
+              >
+                <UserRoundPlus className="h-4 w-4" />
+                Start our wedding
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() =>
+                  navigate('/auth', {
+                    state: {
+                      mode: 'signin' as const,
+                      signupPath: 'create_wedding' as const,
+                    },
+                  })
+                }
+              >
+                <LogIn className="h-4 w-4" />
+                Couple sign in
+              </Button>
             </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                navigate('/auth', {
+                  state: {
+                    mode: 'signup' as const,
+                    signupPath: 'join_wedding' as const,
+                  },
+                })
+              }
+              className="mt-3 text-left text-xs text-primary transition-opacity hover:opacity-80"
+            >
+              I already have a wedding code
+            </button>
           </div>
-        </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button
-            className="flex-1 gap-2"
-            onClick={() =>
-              navigate('/auth', {
-                state: {
-                  mode: 'signup' as const,
-                  signupPath: 'create_wedding' as const,
-                },
-              })
-            }
-          >
-            <UserRoundPlus className="h-4 w-4" />
-            Start our wedding
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 gap-2"
-            onClick={() => openAuth('signin')}
-          >
-            <LogIn className="h-4 w-4" />
-            I already have an account
-          </Button>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() =>
-              navigate('/auth', {
-                state: {
-                  mode: 'signup' as const,
-                  signupPath: 'join_wedding' as const,
-                },
-              })
-            }
-            className="rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
-          >
-            <p className="text-sm font-medium text-foreground">I have a wedding code</p>
-            <p className="mt-1 text-xs text-muted-foreground">Use this if the couple already invited you.</p>
-          </button>
 
           <div className="rounded-xl border border-border bg-background px-4 py-3">
             <div className="flex items-center gap-2">
               <Briefcase className="h-4 w-4 text-primary" />
-              <p className="text-sm font-medium text-foreground">Planner or vendor?</p>
+              <p className="text-sm font-medium text-foreground">For wedding professionals</p>
             </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Create or access your planner or vendor workspace separately from couple accounts.
+            </p>
             <div className="mt-3 flex gap-2">
               <Button
                 type="button"
@@ -438,14 +428,41 @@ function QuickSignupChooser() {
                 Vendor
               </Button>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              className="mt-2 h-auto p-0 text-xs text-primary hover:bg-transparent"
-              onClick={() => openAuth('signup')}
-            >
-              Continue as {professionalRole}
-            </Button>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                className="gap-2"
+                onClick={() =>
+                  navigate('/auth', {
+                    state: {
+                      mode: 'signup' as const,
+                      signupPath: 'professional' as const,
+                      professionalRole,
+                    },
+                  })
+                }
+              >
+                <UserRoundPlus className="h-4 w-4" />
+                Create {professionalRole} account
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                onClick={() =>
+                  navigate('/auth', {
+                    state: {
+                      mode: 'signin' as const,
+                      signupPath: 'professional' as const,
+                      professionalRole,
+                    },
+                  })
+                }
+              >
+                <LogIn className="h-4 w-4" />
+                Professional sign in
+              </Button>
+            </div>
           </div>
         </div>
       </div>
