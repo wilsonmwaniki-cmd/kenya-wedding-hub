@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Heart, Loader2 } from 'lucide-react';
+import { Briefcase, Heart, Loader2, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -90,6 +90,7 @@ export default function Auth() {
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+  const [postSignupMessage, setPostSignupMessage] = useState<string | null>(null);
   const { signIn, signUp, signInWithGoogle, user, profile, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -104,6 +105,8 @@ export default function Auth() {
   const showJoinDetails = isSignUp && signupPath === 'join_wedding';
   const showProfessionalDetails = isSignUp && signupPath === 'professional';
   const showGoogleAuth = !isForgot;
+  const showTopGoogleAuth = showGoogleAuth && (!isSignUp || audience === 'professional');
+  const showCoupleSignupGoogleAuth = showGoogleAuth && isSignUp && audience === 'couple';
 
   useEffect(() => {
     const state = location.state as AuthEntryState;
@@ -112,6 +115,7 @@ export default function Auth() {
     if (state.mode) {
       setIsSignUp(state.mode === 'signup');
       setIsForgot(false);
+      setPostSignupMessage(null);
     }
 
     if (state.signupPath) {
@@ -139,6 +143,7 @@ export default function Auth() {
       setSignupPath('join_wedding');
       setIsSignUp(true);
       setIsForgot(false);
+      setPostSignupMessage(null);
     }
 
     if (code) {
@@ -348,6 +353,12 @@ export default function Auth() {
               ? 'Check your email to confirm your account. Once you finish, we will create the wedding and queue your partner invite.'
               : 'Check your email to confirm your account, then we will create your wedding workspace.',
           });
+          setIsSignUp(false);
+          setIsForgot(false);
+          setPassword('');
+          setPostSignupMessage(
+            'Account created. Check your email to confirm it, then sign in to continue setting up your wedding.',
+          );
         } else if (signupPath === 'join_wedding') {
           if (!normalizeJoinCode(weddingCode)) {
             throw new Error('Enter the wedding code from your invitation email.');
@@ -362,6 +373,12 @@ export default function Auth() {
             title: 'Account created!',
             description: 'Check your email to confirm your account. After confirmation, we will join you to the wedding that sent the code.',
           });
+          setIsSignUp(false);
+          setIsForgot(false);
+          setPassword('');
+          setPostSignupMessage(
+            'Account created. Check your email to confirm it, then sign in with the same email to join the wedding.',
+          );
         } else {
           clearPendingWeddingSetup();
           await signUp(email, password, fullName, professionalRole, {
@@ -370,6 +387,12 @@ export default function Auth() {
             primaryTown: primaryTown || null,
           });
           toast({ title: 'Account created!', description: 'Check your email to confirm your account.' });
+          setIsSignUp(false);
+          setIsForgot(false);
+          setPassword('');
+          setPostSignupMessage(
+            `Account created. Check your email to confirm it, then sign in to open your ${professionalRole} workspace.`,
+          );
         }
       } else {
         persistWeddingIntentIfNeeded();
@@ -395,6 +418,7 @@ export default function Auth() {
   };
 
   const switchAudience = (nextAudience: 'couple' | 'professional') => {
+    setPostSignupMessage(null);
     if (nextAudience === 'couple') {
       setSignupPath('create_wedding');
       return;
@@ -466,6 +490,13 @@ export default function Auth() {
             </form>
           ) : (
             <>
+              {postSignupMessage && !isSignUp && (
+                <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left">
+                  <p className="text-sm font-medium text-emerald-900">Check your email, then sign in</p>
+                  <p className="mt-1 text-sm text-emerald-800">{postSignupMessage}</p>
+                </div>
+              )}
+
               <div className="mb-5 rounded-2xl border border-border/60 bg-muted/20 p-2">
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button
@@ -473,12 +504,15 @@ export default function Auth() {
                     onClick={() => switchAudience('couple')}
                     className={`rounded-xl px-4 py-3 text-left transition-all ${
                       audience === 'couple'
-                        ? 'bg-background shadow-card text-foreground'
-                        : 'text-muted-foreground hover:bg-background/70'
+                        ? 'border border-primary bg-primary text-primary-foreground shadow-card'
+                        : 'border border-transparent bg-background/70 text-muted-foreground hover:border-border hover:bg-background'
                     }`}
                   >
-                    <p className="text-sm font-medium">Couples</p>
-                    <p className="mt-1 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      <p className="text-sm font-medium">Couples</p>
+                    </div>
+                    <p className={`mt-1 text-xs ${audience === 'couple' ? 'text-primary-foreground/90' : ''}`}>
                       {isSignUp ? 'Create or join your wedding' : 'Sign in to your wedding'}
                     </p>
                   </button>
@@ -487,12 +521,15 @@ export default function Auth() {
                     onClick={() => switchAudience('professional')}
                     className={`rounded-xl px-4 py-3 text-left transition-all ${
                       audience === 'professional'
-                        ? 'bg-background shadow-card text-foreground'
-                        : 'text-muted-foreground hover:bg-background/70'
+                        ? 'border border-primary bg-primary text-primary-foreground shadow-card'
+                        : 'border border-transparent bg-background/70 text-muted-foreground hover:border-border hover:bg-background'
                     }`}
                   >
-                    <p className="text-sm font-medium">Wedding professionals</p>
-                    <p className="mt-1 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="h-4 w-4" />
+                      <p className="text-sm font-medium">Wedding professionals</p>
+                    </div>
+                    <p className={`mt-1 text-xs ${audience === 'professional' ? 'text-primary-foreground/90' : ''}`}>
                       {isSignUp ? 'Create your planner or vendor account' : 'Sign in as planner or vendor'}
                     </p>
                   </button>
@@ -504,44 +541,41 @@ export default function Auth() {
                   initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
                   animate={hasHomepageCarryover ? { opacity: 1, y: 0, scale: 1 } : { opacity: 1, y: 0, scale: 1 }}
                   transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                  className="mb-5 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3"
+                  className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3"
                 >
-                  {audience === 'couple' && signupPath === 'create_wedding' ? (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Couple signup</p>
-                      <p className="text-xs text-muted-foreground">
-                        We’ll create the wedding for both of you automatically.
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('join_wedding')}>
-                          I have a wedding code
-                        </Button>
-                      </div>
-                    </div>
-                  ) : audience === 'couple' && signupPath === 'join_wedding' ? (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Join with a wedding code</p>
-                      <p className="text-xs text-muted-foreground">
-                        Only use this if you already received a code from the couple.
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('create_wedding')}>
-                          Start my wedding instead
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Professional account</p>
-                      <p className="text-xs text-muted-foreground">
-                        Planners and vendors use their own separate workspace.
-                      </p>
-                    </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {audience === 'couple' && signupPath === 'join_wedding'
+                        ? 'Join a wedding'
+                        : audience === 'couple'
+                          ? 'Start your wedding'
+                          : 'Professional account'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {audience === 'couple' && signupPath === 'join_wedding'
+                        ? 'Use the code the couple sent you.'
+                        : audience === 'couple'
+                          ? 'We’ll guide you through this in one quick pass.'
+                          : 'Choose planner or vendor, then create your login.'}
+                    </p>
+                  </div>
+                  {audience === 'couple' && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setPostSignupMessage(null);
+                        setSignupPath(signupPath === 'join_wedding' ? 'create_wedding' : 'join_wedding');
+                      }}
+                    >
+                      {signupPath === 'join_wedding' ? 'Start a wedding instead' : 'I have a wedding code'}
+                    </Button>
                   )}
                 </motion.div>
               )}
 
-              {showGoogleAuth && (
+              {showTopGoogleAuth && (
                 <div className="space-y-4">
                   <GoogleAuthButton
                     loading={googleSubmitting}
@@ -577,9 +611,9 @@ export default function Auth() {
                   <>
                     <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
                       <div className="space-y-1">
-                        <p className="text-sm font-medium text-foreground">You</p>
+                        <p className="text-sm font-medium text-foreground">Step 1: Tell us who is starting the wedding</p>
                         <p className="text-xs text-muted-foreground">
-                          Tell us whether you are the bride or groom.
+                          Pick bride or groom and we’ll add your spouse as the second owner.
                         </p>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
@@ -607,7 +641,7 @@ export default function Auth() {
 
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="partner-email">Your spouse’s email</Label>
+                        <Label htmlFor="partner-email">Step 2: Your spouse’s email</Label>
                         <Input
                           id="partner-email"
                           type="email"
@@ -622,7 +656,7 @@ export default function Auth() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="wedding-date">Wedding Date</Label>
+                        <Label htmlFor="wedding-date">Wedding date</Label>
                         <Input
                           id="wedding-date"
                           type="date"
@@ -638,9 +672,9 @@ export default function Auth() {
                 {showJoinDetails && (
                   <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
                     <div className="space-y-1">
-                      <p className="text-sm font-medium text-foreground">Join an existing wedding</p>
+                      <p className="text-sm font-medium text-foreground">Step 1: Enter your wedding code</p>
                       <p className="text-xs text-muted-foreground">
-                        Use the same email address that received the invite. We’ll preview the invite and join you automatically after sign-in or account confirmation.
+                        Use the same email address that received the invite.
                       </p>
                     </div>
                     <div className="space-y-2">
@@ -652,6 +686,30 @@ export default function Auth() {
                         placeholder="e.g. ZN-3RM94X"
                         required
                       />
+                    </div>
+                  </div>
+                )}
+
+                {showCoupleSignupGoogleAuth && (
+                  <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-foreground">Step 3: Create your account</p>
+                      <p className="text-xs text-muted-foreground">
+                        Use Google if you want the fastest path, or continue with email below.
+                      </p>
+                    </div>
+                    <GoogleAuthButton
+                      loading={googleSubmitting}
+                      disabled={submitting || googleSubmitting}
+                      onClick={handleGoogleSignIn}
+                    />
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t border-border" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-card px-2 text-muted-foreground">or use email below</span>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -708,7 +766,9 @@ export default function Auth() {
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">
+                    {isSignUp ? 'Step 3: Your email' : 'Email'}
+                  </Label>
                   <Input
                     id="email"
                     type="email"
@@ -747,7 +807,7 @@ export default function Auth() {
                   {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {isSignUp
                     ? signupPath === 'create_wedding'
-                      ? 'Create our wedding'
+                      ? 'Create wedding account'
                       : signupPath === 'join_wedding'
                         ? 'Create account and join'
                         : professionalRole === 'planner'
@@ -762,7 +822,10 @@ export default function Auth() {
               <div className="mt-4 text-center">
                 <button
                   type="button"
-                  onClick={() => setIsSignUp((current) => !current)}
+                  onClick={() => {
+                    setPostSignupMessage(null);
+                    setIsSignUp((current) => !current);
+                  }}
                   className="text-sm text-muted-foreground transition-colors hover:text-primary"
                 >
                   {isSignUp

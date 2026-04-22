@@ -320,7 +320,6 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
 
 function QuickSignupChooser() {
   const navigate = useNavigate();
-  const [professionalRole, setProfessionalRole] = useState<'planner' | 'vendor'>('planner');
 
   return (
     <motion.div
@@ -331,9 +330,9 @@ function QuickSignupChooser() {
       <div className="rounded-[28px] border border-border/60 bg-card/95 p-5 shadow-warm backdrop-blur-sm">
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Start here</p>
-          <h3 className="font-display text-2xl font-semibold text-card-foreground">Choose your path</h3>
+          <h3 className="font-display text-2xl font-semibold text-card-foreground">Choose how you want to enter Zania</h3>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Couples and wedding professionals now start in separate flows so each path feels clear and simple.
+            Couples and wedding professionals use separate sign up and sign in flows so no one has to guess where they belong.
           </p>
         </div>
 
@@ -351,7 +350,7 @@ function QuickSignupChooser() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <div className="mt-4 grid gap-2">
               <Button
                 className="gap-2"
                 onClick={() =>
@@ -367,6 +366,9 @@ function QuickSignupChooser() {
                 Start our wedding
                 <ArrowRight className="h-4 w-4" />
               </Button>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <Button
                 variant="outline"
                 className="gap-2"
@@ -382,25 +384,25 @@ function QuickSignupChooser() {
                 <LogIn className="h-4 w-4" />
                 Couple sign in
               </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="justify-start px-0 text-primary hover:bg-transparent hover:text-primary/80"
+                onClick={() =>
+                  navigate('/auth', {
+                    state: {
+                      mode: 'signup' as const,
+                      signupPath: 'join_wedding' as const,
+                    },
+                  })
+                }
+              >
+                I already have a wedding code
+              </Button>
             </div>
-
-            <button
-              type="button"
-              onClick={() =>
-                navigate('/auth', {
-                  state: {
-                    mode: 'signup' as const,
-                    signupPath: 'join_wedding' as const,
-                  },
-                })
-              }
-              className="mt-3 text-left text-xs text-primary transition-opacity hover:opacity-80"
-            >
-              I already have a wedding code
-            </button>
           </div>
 
-          <div className="rounded-xl border border-border bg-background px-4 py-3">
+          <div className="rounded-xl border border-border bg-background px-4 py-4">
             <div className="flex items-center gap-2">
               <Briefcase className="h-4 w-4 text-primary" />
               <p className="text-sm font-medium text-foreground">For wedding professionals</p>
@@ -408,42 +410,23 @@ function QuickSignupChooser() {
             <p className="mt-1 text-xs text-muted-foreground">
               Create or access your planner or vendor workspace separately from couple accounts.
             </p>
-            <div className="mt-3 flex gap-2">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <Button
                 type="button"
-                size="sm"
-                variant={professionalRole === 'planner' ? 'default' : 'outline'}
-                onClick={() => setProfessionalRole('planner')}
-                className="flex-1"
-              >
-                Planner
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={professionalRole === 'vendor' ? 'default' : 'outline'}
-                onClick={() => setProfessionalRole('vendor')}
-                className="flex-1"
-              >
-                Vendor
-              </Button>
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <Button
-                type="button"
+                variant="outline"
                 className="gap-2"
                 onClick={() =>
                   navigate('/auth', {
                     state: {
                       mode: 'signup' as const,
                       signupPath: 'professional' as const,
-                      professionalRole,
+                      professionalRole: 'planner' as const,
                     },
                   })
                 }
               >
-                <UserRoundPlus className="h-4 w-4" />
-                Create {professionalRole} account
+                <Briefcase className="h-4 w-4" />
+                Planner sign up
               </Button>
               <Button
                 type="button"
@@ -452,15 +435,51 @@ function QuickSignupChooser() {
                 onClick={() =>
                   navigate('/auth', {
                     state: {
+                      mode: 'signup' as const,
+                      signupPath: 'professional' as const,
+                      professionalRole: 'vendor' as const,
+                    },
+                  })
+                }
+              >
+                <Store className="h-4 w-4" />
+                Vendor sign up
+              </Button>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="gap-2"
+                onClick={() =>
+                  navigate('/auth', {
+                    state: {
                       mode: 'signin' as const,
                       signupPath: 'professional' as const,
-                      professionalRole,
+                      professionalRole: 'planner' as const,
                     },
                   })
                 }
               >
                 <LogIn className="h-4 w-4" />
-                Professional sign in
+                Planner sign in
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="gap-2"
+                onClick={() =>
+                  navigate('/auth', {
+                    state: {
+                      mode: 'signin' as const,
+                      signupPath: 'professional' as const,
+                      professionalRole: 'vendor' as const,
+                    },
+                  })
+                }
+              >
+                <LogIn className="h-4 w-4" />
+                Vendor sign in
               </Button>
             </div>
           </div>
