@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Heart, Loader2, Mail, Users, UserRoundPlus } from 'lucide-react';
+import { Heart, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
   completePendingWeddingSetup,
   getPendingWeddingSetup,
   persistPendingWeddingSetup,
+  type PendingWeddingSetup,
   type WeddingOwnerRole,
   type WeddingSignupIntent,
 } from '@/lib/weddingWorkspace';
@@ -29,31 +30,6 @@ type AuthEntryState = {
   professionalRole?: ProfessionalSignupRole;
 } | null;
 type ProfessionalSignupRole = 'planner' | 'vendor';
-
-const signupTrackMeta: Record<
-  WeddingSignupIntent,
-  {
-    title: string;
-    description: string;
-    icon: typeof UserRoundPlus;
-  }
-> = {
-  create_wedding: {
-    title: 'Create a wedding',
-    description: 'Start a new wedding workspace as the bride or groom and invite your partner in.',
-    icon: Heart,
-  },
-  join_wedding: {
-    title: 'Join a wedding',
-    description: 'Use the wedding code from an invite email to join an existing wedding workspace.',
-    icon: Users,
-  },
-  professional: {
-    title: 'Professional account',
-    description: 'Create a planner or vendor account without creating a wedding workspace.',
-    icon: Mail,
-  },
-};
 
 const professionalRoleMeta: Record<
   ProfessionalSignupRole,
@@ -100,7 +76,7 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [signupPath, setSignupPath] = useState<WeddingSignupIntent>('professional');
+  const [signupPath, setSignupPath] = useState<WeddingSignupIntent>('create_wedding');
   const [professionalRole, setProfessionalRole] = useState<ProfessionalSignupRole>('planner');
   const [weddingOwnerRole, setWeddingOwnerRole] = useState<WeddingOwnerRole>('bride');
   const [weddingName, setWeddingName] = useState('');
@@ -123,17 +99,10 @@ export default function Auth() {
     () => (user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null),
     [user],
   );
-  const showTrackChooser = isSignUp || signupPath !== 'professional';
-  const showWeddingDetails = signupPath === 'create_wedding';
-  const showJoinDetails = signupPath === 'join_wedding';
-  const showProfessionalDetails = signupPath === 'professional';
+  const showWeddingDetails = isSignUp && signupPath === 'create_wedding';
+  const showJoinDetails = isSignUp && signupPath === 'join_wedding';
+  const showProfessionalDetails = isSignUp && signupPath === 'professional';
   const showGoogleAuth = !isForgot;
-
-  const carryoverLabel = useMemo(() => {
-    if (signupPath === 'create_wedding') return 'Create a wedding';
-    if (signupPath === 'join_wedding') return 'Join a wedding';
-    return professionalRoleMeta[professionalRole].title;
-  }, [professionalRole, signupPath]);
 
   useEffect(() => {
     const state = location.state as AuthEntryState;
@@ -279,35 +248,48 @@ export default function Auth() {
     );
   }
 
+  const getSuggestedWeddingName = () => {
+    const firstName = fullName.trim().split(/\s+/)[0];
+    return firstName ? `${firstName}'s Wedding` : 'Our Wedding';
+  };
+
   const persistWeddingIntentIfNeeded = () => {
+    const coupleWeddingName = weddingName.trim() || getSuggestedWeddingName();
+
     if (signupPath === 'professional') {
       clearPendingWeddingSetup();
       return;
     }
 
-    persistPendingWeddingSetup({
+    const payload: PendingWeddingSetup = {
       intent: signupPath,
       email,
       weddingOwnerRole: signupPath === 'create_wedding' ? weddingOwnerRole : null,
       partnerEmail: signupPath === 'create_wedding' ? partnerEmail : null,
-      weddingName: signupPath === 'create_wedding' ? weddingName : null,
+      weddingName: signupPath === 'create_wedding' ? coupleWeddingName : null,
       weddingCode: signupPath === 'join_wedding' ? normalizeJoinCode(weddingCode) : null,
       weddingCounty: signupPath === 'create_wedding' ? weddingCounty : null,
       weddingTown: signupPath === 'create_wedding' ? weddingTown : null,
       weddingDate: signupPath === 'create_wedding' ? weddingDate : null,
-    });
+    };
+
+    persistPendingWeddingSetup(payload);
   };
 
   const validateGoogleSignupIntent = () => {
     if (!isSignUp) return;
 
     if (signupPath === 'create_wedding') {
-      if (!weddingName.trim()) {
-        throw new Error('Add a wedding name before continuing with Google.');
+      if (!partnerEmail.trim()) {
+        throw new Error('Add your partner’s email before continuing.');
       }
 
       if (!weddingOwnerRole) {
         throw new Error('Choose whether the bride or groom is creating this wedding first.');
+      }
+
+      if (!weddingDate.trim()) {
+        throw new Error('Add the wedding date before continuing.');
       }
     }
 
@@ -340,16 +322,21 @@ export default function Auth() {
     try {
       if (isSignUp) {
         if (signupPath === 'create_wedding') {
-          if (!weddingName.trim()) {
-            throw new Error('Add a wedding name to create your workspace.');
+          if (!partnerEmail.trim()) {
+            throw new Error('Add your partner’s email to create the wedding properly.');
           }
 
+          if (!weddingDate.trim()) {
+            throw new Error('Add your wedding date before you continue.');
+          }
+
+          const resolvedWeddingName = weddingName.trim() || getSuggestedWeddingName();
           persistWeddingIntentIfNeeded();
           await signUp(email, password, fullName, 'couple', {
             signupIntent: 'create_wedding',
             weddingOwnerRole,
             partnerEmail,
-            weddingName,
+            weddingName: resolvedWeddingName,
             weddingCounty,
             weddingTown,
             weddingDate,
@@ -421,12 +408,14 @@ export default function Auth() {
             {isForgot
               ? 'Enter your email to receive a reset link.'
               : isSignUp
-                ? 'Start by telling us whether you are creating a wedding, joining one, or opening a professional account.'
-                : signupPath === 'create_wedding'
-                  ? 'Sign in to finish creating your couple-owned wedding workspace.'
-                  : signupPath === 'join_wedding'
-                    ? 'Sign in with the same email that received the invite, then we will join you to that wedding.'
-                    : 'Sign in to continue planning.'}
+                ? signupPath === 'join_wedding'
+                  ? 'Use the wedding code from your invite and the same email that was invited.'
+                  : signupPath === 'professional'
+                    ? 'Create your planner or vendor account without opening a wedding workspace.'
+                    : 'Start your wedding, add your spouse, and we’ll create the shared workspace for you.'
+                : signupPath === 'join_wedding'
+                  ? 'Sign in with the same email that received the invite and we’ll take you straight into the wedding.'
+                  : 'Sign in to continue.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -459,68 +448,64 @@ export default function Auth() {
             </form>
           ) : (
             <>
-              {hasHomepageCarryover && (
-                <div className="mb-4 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Continuing from homepage</p>
-                  <p className="mt-1 text-sm text-foreground">
-                    You’re starting in <span className="font-medium">{carryoverLabel}</span>. You can switch it below anytime.
-                  </p>
-                </div>
-              )}
-
-              {showTrackChooser && (
+              {isSignUp && (
                 <motion.div
                   initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
                   animate={hasHomepageCarryover ? { opacity: 1, y: 0, scale: 1 } : { opacity: 1, y: 0, scale: 1 }}
                   transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                  className="mb-5 space-y-3"
+                  className="mb-5 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3"
                 >
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Start Here</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Choose how you want to enter Zania. Weddings stay owned by the couple, while planners and vendors keep their own professional accounts.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-3">
-                    {(Object.entries(signupTrackMeta) as Array<[WeddingSignupIntent, (typeof signupTrackMeta)[WeddingSignupIntent]]>).map(([intent, meta]) => {
-                      const Icon = meta.icon;
-                      const active = signupPath === intent;
-
-                      return (
-                        <button
-                          key={intent}
-                          type="button"
-                          onClick={() => setSignupPath(intent)}
-                          className={`rounded-2xl border p-4 text-left transition-all ${
-                            active
-                              ? 'border-primary bg-primary/5 shadow-card'
-                              : 'border-border/60 bg-background hover:border-primary/40 hover:bg-primary/5'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <Icon className={`h-4 w-4 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
-                            <p className="font-medium text-foreground">{meta.title}</p>
-                          </div>
-                          <p className="mt-2 text-sm text-muted-foreground">{meta.description}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {signupPath === 'create_wedding' ? (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">Step 1: Start your wedding</p>
+                      <p className="text-xs text-muted-foreground">
+                        Add your spouse and wedding date. We’ll create the wedding for both of you automatically.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('join_wedding')}>
+                          I have a wedding code
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setSignupPath('professional')}>
+                          I’m a planner or vendor
+                        </Button>
+                      </div>
+                    </div>
+                  ) : signupPath === 'join_wedding' ? (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">Join with a wedding code</p>
+                      <p className="text-xs text-muted-foreground">
+                        Only use this if you already received a code from the couple.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('create_wedding')}>
+                          Start my wedding instead
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setSignupPath('professional')}>
+                          I’m a planner or vendor
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">Professional account</p>
+                      <p className="text-xs text-muted-foreground">
+                        Professional accounts stay separate from couple-owned weddings and connect later through invites.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => setSignupPath('create_wedding')}>
+                          Start a wedding instead
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setSignupPath('join_wedding')}>
+                          I have a wedding code
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               )}
 
               {showGoogleAuth && (
                 <div className="space-y-4">
-                  {isSignUp && signupPath === 'join_wedding' && (
-                    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                      Use the same Google email that received the wedding invite. We’ll match it to the invitation code after sign-in.
-                    </div>
-                  )}
-                  {isSignUp && signupPath === 'create_wedding' && (
-                    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                      You can continue with Google here. We’ll create the wedding workspace and queue the partner invite after you come back from Google.
-                    </div>
-                  )}
                   <GoogleAuthButton
                     loading={googleSubmitting}
                     disabled={submitting || googleSubmitting}
@@ -555,9 +540,9 @@ export default function Auth() {
                   <>
                     <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
                       <div className="space-y-1">
-                        <p className="text-sm font-medium text-foreground">Who is creating this wedding?</p>
+                        <p className="text-sm font-medium text-foreground">You</p>
                         <p className="text-xs text-muted-foreground">
-                          The couple owns the wedding. Start by telling us whether you are the bride or groom.
+                          Tell us whether you are the bride or groom.
                         </p>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
@@ -583,29 +568,19 @@ export default function Auth() {
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="wedding-name">Wedding Name</Label>
-                      <Input
-                        id="wedding-name"
-                        value={weddingName}
-                        onChange={(event) => setWeddingName(event.target.value)}
-                        placeholder="e.g. Mary & James Wedding"
-                        required
-                      />
-                    </div>
-
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="partner-email">Invite your partner by email</Label>
+                        <Label htmlFor="partner-email">Your spouse’s email</Label>
                         <Input
                           id="partner-email"
                           type="email"
                           value={partnerEmail}
                           onChange={(event) => setPartnerEmail(event.target.value)}
                           placeholder={weddingOwnerRole === 'bride' ? 'groom@example.com' : 'bride@example.com'}
+                          required
                         />
                         <p className="text-xs text-muted-foreground">
-                          Optional for now. You can resend or update this invite later from the dashboard.
+                          Use the email they will sign in with. We’ll send the invite there automatically.
                         </p>
                       </div>
 
@@ -616,25 +591,9 @@ export default function Auth() {
                           type="date"
                           value={weddingDate}
                           onChange={(event) => setWeddingDate(event.target.value)}
+                          required
                         />
                       </div>
-                    </div>
-
-                    <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-foreground">Where will the wedding happen?</p>
-                        <p className="text-xs text-muted-foreground">
-                          We’ll use this to match the wedding with nearby planners and vendors.
-                        </p>
-                      </div>
-                      <KenyaLocationFields
-                        county={weddingCounty}
-                        town={weddingTown}
-                        onCountyChange={setWeddingCounty}
-                        onTownChange={setWeddingTown}
-                        countyLabel="Wedding county"
-                        townLabel="Wedding town / area"
-                      />
                     </div>
                   </>
                 )}
@@ -755,11 +714,7 @@ export default function Auth() {
                       : signupPath === 'join_wedding'
                         ? 'Create Account & Join Wedding'
                         : 'Create Account'
-                    : signupPath === 'create_wedding'
-                      ? 'Sign In & Create Wedding'
-                      : signupPath === 'join_wedding'
-                        ? 'Sign In & Join Wedding'
-                        : 'Sign In'}
+                    : 'Sign In'}
                 </Button>
               </form>
 
