@@ -20,11 +20,13 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import ExcelJS from 'exceljs';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import GuestInsights from '@/components/guests/GuestInsights';
 import GuestCheckIn from '@/components/guests/GuestCheckIn';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
+import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
+import { startStripeCheckout } from '@/lib/billing';
 
 interface Guest {
   id: string;
@@ -48,8 +50,9 @@ const GUEST_CATEGORIES = ['general', 'vip', 'family', 'friends', 'kids', 'vendor
 export default function Guests() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
-  const { entitlements, couplePlanTier, loading: entitlementsLoading } = useWeddingEntitlements();
+  const { weddingId, entitlements, couplePlanTier, loading: entitlementsLoading } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
 
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -80,6 +83,7 @@ export default function Guests() {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState({ sent: 0, failed: 0, total: 0 });
   const [upgradePromptOpen, setUpgradePromptOpen] = useState(false);
+  const [guestAddonCheckoutLoading, setGuestAddonCheckoutLoading] = useState(false);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) navigate('/clients');
@@ -192,6 +196,61 @@ export default function Guests() {
     return false;
   };
 
+  const guestAddon = getCoupleAddonDefinition('guest_rsvp_management_addon');
+  const isFocusedGuestUpgrade = searchParams.get('intent') === 'upgrade';
+  const guestUpgradeState = searchParams.get('upgrade');
+
+  const handleGuestAddonCheckout = async () => {
+    if (!profile) return;
+
+    if (profile.role !== 'couple' && !(isSuperAdmin && rolePreview === 'couple')) {
+      toast({
+        title: 'Couple owners purchase wedding add-ons',
+        description: 'Open this page as the couple workspace owner to add RSVP & Guest Management.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!weddingId) {
+      toast({
+        title: 'Create or join a wedding first',
+        description: 'This add-on attaches to a specific wedding workspace.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!guestAddon.stripeMonthlyLookupKey) {
+      toast({
+        title: 'Checkout is not configured',
+        description: 'This add-on does not have a Stripe price configured yet.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setGuestAddonCheckoutLoading(true);
+    try {
+      await startStripeCheckout({
+        audience: 'couple',
+        feature: 'guest_rsvp_management',
+        lookupKey: guestAddon.stripeMonthlyLookupKey,
+        cadence: 'monthly',
+        weddingId,
+        successPath: '/guests?upgrade=success',
+        cancelPath: '/guests?intent=upgrade&upgrade=cancelled',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not start checkout',
+        description: error?.message || 'There was a problem creating your Stripe checkout session.',
+        variant: 'destructive',
+      });
+      setGuestAddonCheckoutLoading(false);
+    }
+  };
+
   const copyRsvpLink = (guest: Guest) => {
     if (!requireGuestRsvpManagement()) return;
     const url = `${window.location.origin}/rsvp/${guest.rsvp_token}`;
@@ -265,6 +324,35 @@ export default function Guests() {
 
   return (
     <div className="space-y-6">
+      {(!guestRsvpDecision.allowed || guestUpgradeState) && (isFocusedGuestUpgrade || guestUpgradeState) && (
+        <Card className={`border ${guestUpgradeState === 'success' ? 'border-emerald-200 bg-emerald-50/70' : guestUpgradeState === 'cancelled' ? 'border-amber-200 bg-amber-50/70' : 'border-primary/20 bg-primary/5'}`}>
+          <CardContent className="px-6 py-5">
+            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Guest add-on</p>
+            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">
+              {guestUpgradeState === 'success'
+                ? 'RSVP & Guest Management unlocked'
+                : 'Add RSVP & Guest Management'}
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
+              {guestUpgradeState === 'success'
+                ? 'This wedding now has RSVP sending, insights, and check-in tools unlocked.'
+                : 'Unlock RSVP links, invite sending, guest insights, and check-in tools without leaving the guest workspace.'}
+            </p>
+            {!guestRsvpDecision.allowed && (
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                <Button className="gap-2" onClick={() => void handleGuestAddonCheckout()} disabled={guestAddonCheckoutLoading}>
+                  {guestAddonCheckoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Add RSVP & Guest Management
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -344,7 +432,7 @@ export default function Guests() {
         </div>
       </div>
 
-      {!entitlementsLoading && !guestRsvpDecision.allowed && (
+      {!entitlementsLoading && !guestRsvpDecision.allowed && !isFocusedGuestUpgrade && !guestUpgradeState && (
         <InlineUpgradePrompt decision={guestRsvpDecision} />
       )}
 
