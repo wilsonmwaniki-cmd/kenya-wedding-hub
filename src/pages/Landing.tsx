@@ -393,7 +393,7 @@ function QuickSignupChooser() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Start here</p>
           <h3 className="font-display text-2xl font-semibold text-card-foreground">Create your account</h3>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Start by choosing whether you are creating a new wedding, joining one by invite code, or opening a professional workspace.
+            Most couples should start by creating their wedding. Only use join if you already received a wedding code.
           </p>
           <p className="text-xs leading-relaxed text-muted-foreground">
             Couples now own the wedding workspace. Partners, committees, planners, and vendors join or collaborate from there.
@@ -441,7 +441,7 @@ function QuickSignupChooser() {
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button className="flex-1 gap-2" onClick={() => openAuth('signup')}>
             <UserRoundPlus className="h-4 w-4" />
-            {selectedTrack === 'join_wedding' ? 'Join with a code' : 'Continue'}
+            {selectedTrack === 'join_wedding' ? 'Join with a code' : selectedTrack === 'create_wedding' ? 'Start our wedding' : 'Continue'}
             <ArrowRight className="h-4 w-4" />
           </Button>
           <Button
@@ -459,7 +459,7 @@ function QuickSignupChooser() {
           </p>
         ) : selectedTrack === 'create_wedding' ? (
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            You will choose whether you are the bride or groom during signup, then Zania will help you invite your partner into the wedding.
+            We’ll take you straight into the couple setup so you can add your spouse and create the wedding in one pass.
           </p>
         ) : (
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
