@@ -15,6 +15,8 @@ import {
 import { isCommitteePlanner, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
 import { vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 
+const ENTITLEMENT_TEST_MODE_STORAGE_KEY = 'zania-unlock-all-features';
+
 export type PlanningPassStatus = 'inactive' | 'active' | 'past_due' | 'cancelled';
 
 export type EntitlementFeature =
@@ -93,6 +95,18 @@ interface EntitlementContext {
   professionalEntitlements?: Partial<Record<ProfessionalEntitlementKey, boolean>> | null;
   professionalTeamSeatLimit?: number | null;
   bypass?: boolean;
+}
+
+function isGlobalEntitlementBypassEnabled() {
+  if (import.meta.env.VITE_ALLOW_ALL_FEATURES === 'true') {
+    return true;
+  }
+
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.localStorage.getItem(ENTITLEMENT_TEST_MODE_STORAGE_KEY) === 'true';
 }
 
 function planForAudience(audience: PricingAudience) {
@@ -318,7 +332,7 @@ function buildProfessionalAddonDecision(
 }
 
 export function getEntitlementDecision(feature: EntitlementFeature, context: EntitlementContext): EntitlementDecision {
-  if (context.bypass) {
+  if (context.bypass || isGlobalEntitlementBypassEnabled()) {
     switch (feature) {
       case 'planner.media_portfolio':
         return buildProfessionalAddonDecision(feature, 'planner', 'media_addon', true);
