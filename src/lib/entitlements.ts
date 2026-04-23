@@ -16,6 +16,7 @@ import { isCommitteePlanner, plannerHasActiveSubscription, plannerHasFullAccess 
 import { vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 
 const ENTITLEMENT_TEST_MODE_STORAGE_KEY = 'zania-unlock-all-features';
+const TEMPORARILY_UNLOCK_ALL_FEATURES_FOR_TESTING = true;
 
 export type PlanningPassStatus = 'inactive' | 'active' | 'past_due' | 'cancelled';
 
@@ -98,6 +99,10 @@ interface EntitlementContext {
 }
 
 function isGlobalEntitlementBypassEnabled() {
+  if (TEMPORARILY_UNLOCK_ALL_FEATURES_FOR_TESTING) {
+    return true;
+  }
+
   if (import.meta.env.VITE_ALLOW_ALL_FEATURES === 'true') {
     return true;
   }
