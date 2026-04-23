@@ -13,6 +13,9 @@ import MyConnections from '@/components/MyConnections';
 import { useToast } from '@/hooks/use-toast';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
+import InlineAssistantCard from '@/components/InlineAssistantCard';
+import { useInlineAssistant } from '@/hooks/useInlineAssistant';
+import type { EntitlementFeature } from '@/lib/entitlements';
 
 interface DashboardStats {
   totalBudget: number;
@@ -93,6 +96,12 @@ const CATEGORY_LABELS: Record<string, string> = {
   prep: 'Prep', ceremony: 'Ceremony', reception: 'Reception', transport: 'Transport',
   photo: 'Photo/Video', food: 'Food & Drinks', entertainment: 'Entertainment', other: 'Other',
 };
+
+function getDashboardAssistantFeature(role?: string | null, plannerType?: string | null): EntitlementFeature {
+  if (role === 'planner' && plannerType === 'committee') return 'committee.ai_assistant';
+  if (role === 'planner') return 'planner.ai_assistant';
+  return 'couple.ai_assistant';
+}
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
@@ -379,6 +388,49 @@ export default function Dashboard() {
   });
   const vendorActionCount = finalVendorUrgencies.reduce((sum, vendor) => sum + vendor.openTasks.length, 0);
   const nextVendorAction = finalVendorUrgencies.find((vendor) => vendor.nextTask);
+  const dashboardAssistantFeature = useMemo(
+    () => getDashboardAssistantFeature(profile?.role, profile?.planner_type),
+    [profile?.planner_type, profile?.role],
+  );
+
+  const dashboardPrompts = useMemo(() => {
+    const prompts: string[] = [];
+
+    if (pendingTasks.length > 0) {
+      prompts.push('Summarize what we should focus on this week and turn it into a simple action plan.');
+    }
+
+    if (overspentWeddingCategories[0] || overspentPersonalCategories[0] || nearLimitCategories[0]) {
+      prompts.push('Review our dashboard and tell me where budget pressure needs attention first.');
+    }
+
+    if (vendorDecisionsPending[0]) {
+      prompts.push(`Tell me how to close the ${vendorDecisionsPending[0].category} vendor decision next.`);
+    }
+
+    if (paymentsDueSoon.length > 0) {
+      prompts.push('Review upcoming vendor payment deadlines and tell me what needs action first.');
+    }
+
+    if (prompts.length === 0) {
+      prompts.push('Give me a quick summary of the next best planning moves for this wedding.');
+    }
+
+    return prompts.slice(0, 3);
+  }, [
+    nearLimitCategories,
+    overspentPersonalCategories,
+    overspentWeddingCategories,
+    paymentsDueSoon,
+    pendingTasks.length,
+    vendorDecisionsPending,
+  ]);
+
+  const dashboardAssistant = useInlineAssistant({
+    feature: dashboardAssistantFeature,
+    page: 'dashboard',
+    surface: 'weekly_focus_card',
+  });
 
   if (isPlanner && !selectedClient) return null;
 
@@ -462,6 +514,25 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {!dashboardAssistant.dismissed && (
+        <InlineAssistantCard
+          title="This week’s planning focus"
+          description="Get one clear recommendation based on the current wedding workspace."
+          badgeLabel="AI Focus"
+          decision={dashboardAssistant.decision}
+          canUseAssistant={dashboardAssistant.canUseAssistant}
+          prompts={dashboardPrompts}
+          response={dashboardAssistant.response}
+          error={dashboardAssistant.error}
+          loading={dashboardAssistant.loading || dashboardAssistant.usageLoading || dashboardAssistant.accessLoading}
+          dismissible
+          onDismiss={() => dashboardAssistant.setDismissed(true)}
+          onPromptClick={(prompt) => dashboardAssistant.runPrompt(prompt)}
+          emptyStateTitle="Get a quick planning read"
+          emptyStateBody="Ask for a weekly focus, budget watch, or vendor decision summary without leaving the dashboard."
+        />
+      )}
 
       {/* Linked planner info for couples */}
       {linkedPlanner && !isPlanner && (

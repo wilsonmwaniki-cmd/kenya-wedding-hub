@@ -39,10 +39,12 @@ import {
 } from '@/lib/vendorReputation';
 import { createVendorTask, createVendorTaskBundle } from '@/lib/vendorTasks';
 import { getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
-import { getEntitlementDecision } from '@/lib/entitlements';
+import { getEntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
+import InlineAssistantCard from '@/components/InlineAssistantCard';
+import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 
 interface Vendor {
   amount_paid: number;
@@ -284,6 +286,12 @@ function buildVendorMilestones(vendor: Vendor, tasks: VendorTaskItem[]) {
       nextOpenTask,
     };
   });
+}
+
+function getVendorsAssistantFeature(role?: string | null, plannerType?: string | null): EntitlementFeature {
+  if (role === 'planner' && plannerType === 'committee') return 'committee.ai_assistant';
+  if (role === 'planner') return 'planner.ai_assistant';
+  return 'couple.ai_assistant';
 }
 
 export default function Vendors() {
@@ -1252,6 +1260,51 @@ export default function Vendors() {
       balance,
     };
   }, [selectedVendor]);
+  const vendorsAssistantFeature = useMemo(
+    () => getVendorsAssistantFeature(profile?.role, profile?.planner_type),
+    [profile?.planner_type, profile?.role],
+  );
+
+  const finalVendorPaymentsDueSoon = useMemo(() => {
+    const today = new Date();
+    return finalVendorEntries.filter((vendor) => {
+      if (!vendor.payment_due_date || vendor.payment_status === 'paid_full') return false;
+      const dueDate = new Date(vendor.payment_due_date);
+      const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
+      return diffDays >= 0 && diffDays <= 14;
+    });
+  }, [finalVendorEntries]);
+
+  const vendorsPrompts = useMemo(() => {
+    const prompts: string[] = [];
+
+    if (categoriesNeedingFinalChoice[0]) {
+      prompts.push(`Help me close the ${categoriesNeedingFinalChoice[0].category} vendor decision next.`);
+    }
+
+    if (finalVendorPaymentsDueSoon[0]) {
+      prompts.push('Review the upcoming vendor payment deadlines and tell me what needs action first.');
+    }
+
+    if (vendorTaskSummary.openTasks > 0) {
+      prompts.push('Summarize the vendor follow-ups still open and tell me what to chase first.');
+    }
+
+    if (vendors.length > 0) {
+      prompts.push('Give me a quick vendor health check for this wedding and tell me where the biggest gap is.');
+    } else {
+      prompts.push('Help me decide which vendor categories I should shortlist first.');
+    }
+
+    return prompts.slice(0, 3);
+  }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, vendorTaskSummary.openTasks, vendors.length]);
+
+  const vendorsAssistant = useInlineAssistant({
+    feature: vendorsAssistantFeature,
+    page: 'vendors',
+    surface: 'vendor_decision_card',
+    contextSource: selectedVendor ? 'selected_vendor_detail' : 'vendor_workspace_summary',
+  });
 
   useEffect(() => {
     if (selectedVendorId && !selectedVendor) {
@@ -1616,6 +1669,25 @@ export default function Vendors() {
                 {addVendorDialog}
               </div>
             </div>
+
+            {!vendorsAssistant.dismissed && (
+              <InlineAssistantCard
+                title="Which vendor decision needs attention?"
+                description="Get a quick read on shortlist gaps, final choices, vendor follow-ups, and payment deadlines."
+                badgeLabel="AI Vendors"
+                prompts={vendorsPrompts}
+                response={vendorsAssistant.response}
+                error={vendorsAssistant.error}
+                loading={vendorsAssistant.loading || vendorsAssistant.usageLoading || vendorsAssistant.accessLoading}
+                decision={vendorsAssistant.decision}
+                canUseAssistant={vendorsAssistant.canUseAssistant}
+                emptyStateTitle="Get a simple vendor priority check before you dive into the list"
+                emptyStateBody="Ask for help closing a category, reviewing follow-ups, or seeing which vendor decision matters most right now."
+                dismissible
+                onDismiss={() => vendorsAssistant.setDismissed(true)}
+                onPromptClick={(prompt) => vendorsAssistant.runPrompt(prompt)}
+              />
+            )}
 
             {vendorListView === 'by_name' ? (
               <div className="space-y-4">

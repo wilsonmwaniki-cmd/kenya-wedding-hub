@@ -19,10 +19,12 @@ import { createVendorTask } from '@/lib/vendorTasks';
 import { vendorPaymentStatusLabel } from '@/lib/vendorPayments';
 import { cn } from '@/lib/utils';
 import { getSuggestedTaskCategories, getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
-import { getEntitlementDecision } from '@/lib/entitlements';
+import { getEntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
+import InlineAssistantCard from '@/components/InlineAssistantCard';
+import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 
 interface Task {
   id: string;
@@ -146,6 +148,12 @@ function sortTasksByDateAndPriority(left: Task, right: Task) {
   if (leftPriority !== rightPriority) return leftPriority - rightPriority;
 
   return left.title.localeCompare(right.title);
+}
+
+function getTasksAssistantFeature(role?: string | null, plannerType?: string | null): EntitlementFeature {
+  if (role === 'planner' && plannerType === 'committee') return 'committee.ai_assistant';
+  if (role === 'planner') return 'planner.ai_assistant';
+  return 'couple.ai_assistant';
 }
 
 export default function Tasks() {
@@ -389,6 +397,61 @@ export default function Tasks() {
     inSevenDays.setDate(now.getDate() + 7);
     return due >= now && due <= inSevenDays;
   }).length;
+  const tasksAssistantFeature = useMemo(
+    () => getTasksAssistantFeature(profile?.role, profile?.planner_type),
+    [profile?.planner_type, profile?.role],
+  );
+
+  const overduePending = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return pending.filter((task) => {
+      if (!task.due_date) return false;
+      const dueDate = new Date(task.due_date);
+      dueDate.setHours(0, 0, 0, 0);
+      return dueDate < now;
+    }).sort(sortTasksByDateAndPriority);
+  }, [pending]);
+
+  const nextPendingTask = useMemo(
+    () => pending.slice().sort(sortTasksByDateAndPriority)[0] ?? null,
+    [pending],
+  );
+
+  const tasksPrompts = useMemo(() => {
+    const prompts: string[] = [];
+
+    if (overduePending.length > 0) {
+      prompts.push('Look at our overdue tasks and turn them into a catch-up plan for this week.');
+    }
+
+    if (nextPendingTask?.category) {
+      prompts.push(`Tell me what to do first for the next ${nextPendingTask.category} task on our list.`);
+    } else if (nextPendingTask) {
+      prompts.push('Tell me which pending task should be tackled first and why.');
+    }
+
+    if (openVendorTaskCount > 0 || dueSoonVendorTasks > 0) {
+      prompts.push('Review the vendor-linked tasks and tell me what needs attention first.');
+    }
+
+    if (privateTaskCount > 0) {
+      prompts.push('Separate the private couple tasks from the shared ones and tell me what we should handle ourselves first.');
+    }
+
+    if (prompts.length === 0) {
+      prompts.push('Give me a simple action plan for the next tasks we should complete.');
+    }
+
+    return prompts.slice(0, 3);
+  }, [dueSoonVendorTasks, nextPendingTask, openVendorTaskCount, overduePending.length, privateTaskCount]);
+
+  const tasksAssistant = useInlineAssistant({
+    feature: tasksAssistantFeature,
+    page: 'tasks',
+    surface: 'task_focus_card',
+    contextSource: taskViewMode === 'completed' ? 'completed_tasks_summary' : 'pending_tasks_summary',
+  });
 
   const byDateGroups = useMemo(() => {
     return scheduledPending.reduce<Record<string, Task[]>>((groups, task) => {
@@ -876,6 +939,25 @@ export default function Tasks() {
           </CardContent>
         </Card>
       </div>
+
+      {!tasksAssistant.dismissed && (
+        <InlineAssistantCard
+          title="What should we tackle first?"
+          description="Get a quick task recovery plan based on overdue items, vendor-linked work, and what is due next."
+          badgeLabel="AI Tasks"
+          prompts={tasksPrompts}
+          response={tasksAssistant.response}
+          error={tasksAssistant.error}
+          loading={tasksAssistant.loading || tasksAssistant.usageLoading || tasksAssistant.accessLoading}
+          decision={tasksAssistant.decision}
+          canUseAssistant={tasksAssistant.canUseAssistant}
+          emptyStateTitle="Get a simple task plan before you start checking things off"
+          emptyStateBody="Ask for a catch-up plan, a vendor-task review, or the next best task to focus on from the list already on this page."
+          dismissible
+          onDismiss={() => tasksAssistant.setDismissed(true)}
+          onPromptClick={(prompt) => tasksAssistant.runPrompt(prompt)}
+        />
+      )}
 
       <div className="space-y-6">
         {taskViewMode === 'by_date' && (
