@@ -68,6 +68,27 @@ function normalizeJoinCode(value: string) {
   return value.trim().toUpperCase();
 }
 
+function getFallbackRouteFromUserMetadata(
+  userMetadata: Record<string, unknown> | null | undefined,
+) {
+  const role = userMetadata?.role;
+  const plannerType = userMetadata?.planner_type;
+
+  if (role === 'committee') {
+    return getHomeRouteForRole('planner', 'committee');
+  }
+
+  if (role === 'planner') {
+    return getHomeRouteForRole('planner', plannerType === 'committee' ? 'committee' : 'professional');
+  }
+
+  if (role === 'vendor' || role === 'admin' || role === 'couple') {
+    return getHomeRouteForRole(role, null);
+  }
+
+  return getHomeRouteForRole('couple', null);
+}
+
 export default function Auth() {
   const location = useLocation();
   const entryState = location.state as AuthEntryState;
@@ -170,8 +191,6 @@ export default function Auth() {
     if (loading || !user || redirecting) return;
 
     const pendingSetup = getPendingWeddingSetup(user.user_metadata, user.email ?? null);
-    if (!pendingSetup && !profile?.role) return;
-
     let active = true;
 
     const finalizeEntry = async () => {
@@ -206,7 +225,12 @@ export default function Auth() {
           return;
         }
 
-        if (!profile?.role) return;
+        if (!profile?.role) {
+          if (active) {
+            navigate(getFallbackRouteFromUserMetadata(user.user_metadata), { replace: true });
+          }
+          return;
+        }
 
         if (hasPendingEstimatorPlanDraft()) {
           const seeded = await seedPendingEstimatorPlanForUser({
