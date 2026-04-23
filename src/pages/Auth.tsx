@@ -194,34 +194,10 @@ export default function Auth() {
     let active = true;
 
     const finalizeEntry = async () => {
-      setRedirecting(true);
-
       try {
         if (pendingSetup) {
-          const completion = await completePendingWeddingSetup(user);
           if (!active) return;
-
-          if (completion.action === 'created') {
-            toast({
-              title: 'Wedding created',
-              description: completion.partnerInviteSent
-                ? 'Your wedding workspace is ready and the partner invite email has been sent.'
-                : completion.partnerInviteQueued
-                  ? 'Your wedding workspace is ready. The partner invite is stored and can be resent from the dashboard.'
-                  : 'Your wedding workspace is ready. You can invite your partner from the dashboard anytime.',
-            });
-          }
-
-          if (completion.action === 'joined') {
-            toast({
-              title: 'Wedding joined',
-              description: completion.weddingName
-                ? `You joined ${completion.weddingName} successfully.`
-                : 'You joined the wedding successfully.',
-            });
-          }
-
-          navigate(completion.route, { replace: true });
+          navigate('/dashboard', { replace: true });
           return;
         }
 
@@ -240,6 +216,7 @@ export default function Auth() {
           });
 
           if (seeded && active) {
+            setRedirecting(true);
             toast({
               title: 'Wedding plan ready',
               description: 'Your estimate was turned into a starter budget, vendor list, and tasks.',
@@ -250,6 +227,7 @@ export default function Auth() {
         }
 
         if (active) {
+          setRedirecting(true);
           navigate(getHomeRouteForRole(profile.role, profile.planner_type), { replace: true });
         }
       } catch (err: any) {
@@ -270,7 +248,7 @@ export default function Auth() {
     };
   }, [loading, navigate, profile?.planner_type, profile?.role, redirecting, toast, user]);
 
-  if (loading || redirecting || (user && !profile?.role && !activePendingSetup)) {
+  if (loading || redirecting) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
