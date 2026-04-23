@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, Heart, Loader2, Lock, Sparkles } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Heart, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,21 +9,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  accessControlImplementationSteps,
-  audiencePlans,
   coupleAddonDefinitions,
-  coupleFeatureMatrix,
   couplePlanDefinitions,
-  featureGateRows,
   formatEntitlementFeatureLabel,
   getAudiencePlan,
   getAvailableCheckoutCadences,
   getLookupKeyForCadence,
   getProfessionalAddonDefinition,
   getProfessionalPlanDefinition,
-  professionalAddonDefinitions,
   professionalAddonEntitlementMap,
-  professionalFeatureMatrix,
   type CoupleAddonCode,
   type CouplePlanCadence,
   type ProfessionalAddonCode,
@@ -63,6 +57,7 @@ export default function Pricing() {
   const { user, profile } = useAuth();
   const { weddingId } = useWeddingEntitlements();
   const requestedAudience = searchParams.get('audience');
+  const requestedPlanCode = searchParams.get('plan');
   const requestedFeature = searchParams.get('feature');
   const successPath = searchParams.get('successPath');
   const cancelPath = searchParams.get('cancelPath');
@@ -91,6 +86,15 @@ export default function Pricing() {
   const targetAudience = isPricingAudience(requestedAudience) ? requestedAudience : null;
   const targetPlan = targetAudience ? getAudiencePlan(targetAudience) : null;
   const highlightedFeature = formatEntitlementFeatureLabel(requestedFeature);
+  const focusedCoupleTier =
+    requestedPlanCode === 'couple_basic' ? 'basic'
+      : requestedPlanCode === 'couple_premium' ? 'premium'
+        : null;
+  const isFocusedUpgradeView =
+    Boolean(targetAudience)
+    && Boolean(requestedPlanCode || requestedFeature || professionalAddon)
+    && upgradeState !== 'success'
+    && upgradeState !== 'cancelled';
 
   useEffect(() => {
     if (!targetPlan) return;
@@ -414,6 +418,314 @@ export default function Pricing() {
     return `KES ${amount.toLocaleString()}`;
   };
 
+  const compactComparisonRows = [
+    {
+      feature: 'Core planning workspace',
+      coupleFree: 'Tasks, budget, guests, vendor discovery',
+      coupleBasic: 'Everything in Free',
+      couplePremium: 'Everything in Basic',
+      professionalFree: 'Directory listing and profile',
+      professionalPremium: 'Operational workspace tools',
+    },
+    {
+      feature: 'Shared collaboration',
+      coupleFree: 'Not included',
+      coupleBasic: 'Planner, vendor, family, and committee access',
+      couplePremium: 'More seats and deeper coordination',
+      professionalFree: 'Solo profile only',
+      professionalPremium: 'Manage client work in one place',
+    },
+    {
+      feature: 'AI support',
+      coupleFree: 'Not included',
+      coupleBasic: 'Not included',
+      couplePremium: 'AI Wedding Assistant',
+      professionalFree: 'Not included',
+      professionalPremium: 'Not included',
+    },
+    {
+      feature: 'Vendor and planner coordination',
+      coupleFree: 'Vendor management only',
+      coupleBasic: 'Included',
+      couplePremium: 'Included',
+      professionalFree: 'Discovery only',
+      professionalPremium: 'Bookings and follow-through',
+    },
+    {
+      feature: 'Bookings, invoices, contracts',
+      coupleFree: 'Not included',
+      coupleBasic: 'Not included',
+      couplePremium: 'Not included',
+      professionalFree: 'Not included',
+      professionalPremium: 'Included',
+    },
+    {
+      feature: 'Public trust and growth',
+      coupleFree: 'Not included',
+      coupleBasic: 'Not included',
+      couplePremium: 'Not included',
+      professionalFree: 'Verified listing eligibility',
+      professionalPremium: 'Visible ratings and stronger profile',
+    },
+  ];
+
+  const renderFocusedUpgrade = () => {
+    if (!targetAudience) return null;
+
+    if (targetAudience === 'couple' && focusedCoupleTier) {
+      const plan = couplePlanDefinitions.find((item) => item.tier === focusedCoupleTier);
+      if (!plan) return null;
+
+      const cadence = selectedCoupleCadence[plan.tier];
+      const isLoading = checkoutTarget === `couple-${plan.tier}`;
+      const priceLabel =
+        cadence === 'monthly'
+          ? `${formatKesPrice(plan.monthlyPriceKes)} / month`
+          : `${formatKesPrice(plan.annualPriceKes)} / year`;
+
+      return (
+        <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
+          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
+            <CardHeader className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge className="rounded-full px-3 py-1">{plan.title}</Badge>
+                {highlightedFeature ? (
+                  <Badge variant="outline" className="rounded-full px-3 py-1">
+                    For {highlightedFeature}
+                  </Badge>
+                ) : null}
+              </div>
+              <div>
+                <CardTitle className="font-display text-4xl">Upgrade to {plan.title}</CardTitle>
+                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
+                  {highlightedFeature
+                    ? `${plan.title} unlocks ${highlightedFeature.toLowerCase()} and keeps the rest of your wedding planning in the same workspace.`
+                    : plan.supportCopy}
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
+                <div>
+                  <p className="font-display text-3xl font-semibold">{priceLabel}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">Choose how you want to pay, then continue straight to checkout.</p>
+                </div>
+                <div className="inline-flex rounded-full border border-border bg-background p-1">
+                  {(['annual', 'monthly'] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setSelectedCoupleCadence((prev) => ({ ...prev, [plan.tier]: option }))}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {coupleCadenceLabels[option]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Included</p>
+                <ul className="mt-3 space-y-2 text-sm leading-7 text-foreground/85">
+                  {plan.includedFeatures.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  onClick={() => void handleCouplePlanCheckout(plan.tier)}
+                  className="gap-2"
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
+                  {!isLoading && <ArrowRight className="h-4 w-4" />}
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      );
+    }
+
+    if (targetAudience === 'planner' || targetAudience === 'vendor') {
+      const plan = getProfessionalPlanDefinition(targetAudience, 'premium');
+      const cadence = selectedProfessionalCadence[targetAudience];
+      const isLoading = checkoutTarget === `audience-${targetAudience}`;
+      const priceLabel =
+        cadence === 'monthly'
+          ? `${formatKesPrice(plan.monthlyPriceKes)} / month`
+          : `${formatKesPrice(plan.annualPriceKes)} / year`;
+
+      return (
+        <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
+          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
+            <CardHeader className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge className="rounded-full px-3 py-1">{plan.title}</Badge>
+                {highlightedFeature ? (
+                  <Badge variant="outline" className="rounded-full px-3 py-1">
+                    For {highlightedFeature}
+                  </Badge>
+                ) : null}
+              </div>
+              <div>
+                <CardTitle className="font-display text-4xl">Upgrade to {plan.title}</CardTitle>
+                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
+                  {highlightedFeature
+                    ? `${plan.title} unlocks ${highlightedFeature.toLowerCase()} and the rest of the operational tools for your ${targetAudience} workspace.`
+                    : plan.supportCopy}
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
+                <div>
+                  <p className="font-display text-3xl font-semibold">{priceLabel}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">One focused upgrade, then straight into checkout.</p>
+                </div>
+                <div className="inline-flex rounded-full border border-border bg-background p-1">
+                  {(['annual', 'monthly'] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setSelectedProfessionalCadence((prev) => ({ ...prev, [targetAudience]: option }))}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {coupleCadenceLabels[option]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Included</p>
+                <ul className="mt-3 space-y-2 text-sm leading-7 text-foreground/85">
+                  {plan.includedFeatures.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  onClick={() => void handleProfessionalPlanCheckout(targetAudience)}
+                  className="gap-2"
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
+                  {!isLoading && <ArrowRight className="h-4 w-4" />}
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to={`/pricing?audience=${targetAudience}`}>See all {targetAudience} pricing</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      );
+    }
+
+    if (targetAudience === 'committee' && targetPlan) {
+      const availableCadences = getAvailableCheckoutCadences(targetPlan);
+      const cadence = selectedCadence[targetAudience];
+      const isLoading = checkoutTarget === `audience-${targetAudience}`;
+      const priceLabel = cadence === 'annual'
+        ? `${formatKesPrice(targetPlan.stripeAnnualLookupKey ? 5000 : null)}`
+        : `${formatKesPrice(targetPlan.stripeMonthlyLookupKey ? 750 : null)}`;
+
+      return (
+        <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
+          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
+            <CardHeader className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge className="rounded-full px-3 py-1">{targetPlan.paidTierName}</Badge>
+                {highlightedFeature ? <Badge variant="outline" className="rounded-full px-3 py-1">For {highlightedFeature}</Badge> : null}
+              </div>
+              <div>
+                <CardTitle className="font-display text-4xl">{targetPlan.paidTierName}</CardTitle>
+                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
+                  {highlightedFeature
+                    ? `${targetPlan.paidTierName} unlocks ${highlightedFeature.toLowerCase()} for committee-led weddings.`
+                    : targetPlan.subtitle}
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
+                <div>
+                  <p className="font-display text-3xl font-semibold">{priceLabel}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">Choose the billing cadence and continue to checkout.</p>
+                </div>
+                {availableCadences.length > 1 && (
+                  <div className="inline-flex rounded-full border border-border bg-background p-1">
+                    {availableCadences.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setSelectedCadence((prev) => ({ ...prev, [targetAudience]: option }))}
+                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                          cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {cadenceLabels[option]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Included</p>
+                <ul className="mt-3 space-y-2 text-sm leading-7 text-foreground/85">
+                  {targetPlan.paidUnlocks.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  onClick={() => void handleCheckout(targetAudience)}
+                  className="gap-2"
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {user ? `Continue with ${targetPlan.paidTierName}` : 'Sign in to continue'}
+                  {!isLoading && <ArrowRight className="h-4 w-4" />}
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/pricing?audience=committee">See all committee pricing</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#fcf8f3_0%,#fffdfa_24%,#ffffff_100%)] text-foreground">
       <nav className="sticky top-0 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
@@ -436,390 +748,237 @@ export default function Pricing() {
         </div>
       </nav>
 
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
-        <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
-          <div>
-            <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-              Free to explore, pay to actively coordinate
-            </Badge>
-            <h1 className="mt-6 max-w-4xl font-display text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
-              Pricing that matches <span className="italic font-normal">how weddings really work</span>
-            </h1>
-            <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">
-              Couples and committees can explore for free, then upgrade when they need vendor connections and full coordination tools.
-              Planners and vendors can start free, then pay when they scale into real operational value.
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link to="/auth">
-                <Button className="w-full gap-2 sm:w-auto">
-                  Create account
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Link to="/">
-                <Button variant="outline" className="w-full sm:w-auto">
-                  Back to homepage
-                </Button>
-              </Link>
-            </div>
-          </div>
-
-          <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="rounded-2xl bg-primary/10 p-3 text-primary">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <div>
-                  <CardTitle className="font-display text-3xl">Commercial model</CardTitle>
-                  <CardDescription className="mt-2 text-base leading-7">
-                    Zania should feel generous at discovery and decisive at execution.
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-border/60 bg-background/70 p-5">
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Free</p>
-                <p className="mt-2 font-display text-2xl font-semibold">Explore</p>
-                <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                  Cost estimator, browsing, shortlists, draft planning, and enough progress to understand the value.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
-                <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Paid</p>
-                <p className="mt-2 font-display text-2xl font-semibold">Coordinate</p>
-                <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                  Connections, collaboration, exports, sync, payments, and scale where the operational value actually starts.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      {contextMessage && (
-        <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
-          <Card className={`rounded-[28px] border ${
-            contextMessage.tone === 'success'
-              ? 'border-emerald-200 bg-emerald-50/80'
-              : contextMessage.tone === 'warning'
-                ? 'border-amber-200 bg-amber-50/80'
-                : 'border-primary/20 bg-primary/5'
-          }`}>
-            <CardContent className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+      {isFocusedUpgradeView ? (
+        renderFocusedUpgrade()
+      ) : (
+        <>
+          <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
+            <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Upgrade context</p>
-                <h2 className="mt-2 font-display text-2xl font-semibold">{contextMessage.title}</h2>
-                <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">{contextMessage.body}</p>
-              </div>
-              {targetPlan && (
-                <Badge variant="secondary" className="w-fit rounded-full px-3 py-1 text-sm">
-                  {targetPlan.paidTierName}
+                <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
+                  Simple pricing
                 </Badge>
-              )}
-            </CardContent>
-          </Card>
-        </section>
-      )}
+                <h1 className="mt-6 max-w-4xl font-display text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
+                  Start free. Upgrade when the wedding or the business gets real.
+                </h1>
+                <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">
+                  Couples begin with the essentials, then upgrade when planning becomes collaborative and operational.
+                  Planners and vendors list for free, then upgrade when they need bookings, invoices, contracts, and visible trust.
+                </p>
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                  <Link to="/auth">
+                    <Button className="w-full gap-2 sm:w-auto">
+                      Start free
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                  <Link to="/auth">
+                    <Button variant="outline" className="w-full sm:w-auto">
+                      Sign in
+                    </Button>
+                  </Link>
+                </div>
+              </div>
 
-      <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
-        <div className="mb-12">
-          <div className="mb-6 max-w-3xl">
-            <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-              Couple plans
-            </Badge>
-            <h2 className="mt-4 font-display text-4xl font-semibold">Free helps you plan. Paid helps you coordinate.</h2>
-            <p className="mt-4 text-base leading-8 text-muted-foreground">
-              Couples start free, upgrade when the wedding becomes collaborative, and move to Premium when the whole wedding needs active coordination in one place.
-            </p>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-3">
-            {couplePlanDefinitions.map((plan) => {
-              const isPaidTier = plan.tier !== 'free';
-              const isLoading = checkoutTarget === `couple-${plan.tier}`;
-              const cadence = isPaidTier ? selectedCoupleCadence[plan.tier] : null;
-              const priceLabel = !isPaidTier
-                ? 'Free forever'
-                : cadence === 'monthly'
-                  ? `${formatKesPrice(plan.monthlyPriceKes)} / month`
-                  : `${formatKesPrice(plan.annualPriceKes)} / year`;
-
-              return (
-                <Card
-                  key={plan.tier}
-                  className={`h-full rounded-[28px] border bg-card/95 shadow-card ${
-                    plan.tier === 'premium' ? 'border-primary/30 ring-2 ring-primary/10' : 'border-border/60'
-                  }`}
-                >
-                  <CardHeader className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <CardTitle className="font-display text-3xl">{plan.title}</CardTitle>
-                        <CardDescription className="mt-2 text-base leading-7">{plan.tagline}</CardDescription>
-                      </div>
-                      {plan.tier === 'premium' && <Badge className="rounded-full px-3 py-1">Best for full coordination</Badge>}
+              <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                      <Sparkles className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="font-display text-3xl font-semibold">{priceLabel}</p>
-                      <p className="mt-2 text-sm leading-7 text-muted-foreground">{plan.supportCopy}</p>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {isPaidTier && (
-                      <div className="inline-flex rounded-full border border-border bg-background p-1">
-                        {(['annual', 'monthly'] as const).map((option) => (
-                          <button
-                            key={option}
-                            type="button"
-                            onClick={() => setSelectedCoupleCadence((prev) => ({ ...prev, [plan.tier]: option }))}
-                            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                              cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                            }`}
-                          >
-                            {coupleCadenceLabels[option]}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    <ul className="space-y-2 text-sm leading-7 text-foreground/85">
-                      {plan.includedFeatures.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    {plan.tier === 'free' ? (
-                      <Link to="/auth" className="block">
-                        <Button className="w-full gap-2">
-                          {plan.ctaLabel}
-                          <ArrowRight className="h-4 w-4" />
-                        </Button>
-                      </Link>
-                    ) : (
-                      <Button
-                        onClick={() => void handleCouplePlanCheckout(plan.tier)}
-                        className="w-full gap-2"
-                        disabled={isLoading}
-                      >
-                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        {user ? plan.ctaLabel : 'Sign in to continue'}
-                        {!isLoading && <ArrowRight className="h-4 w-4" />}
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mb-12">
-          <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-            <CardHeader>
-              <CardTitle className="font-display text-3xl">Couple feature comparison</CardTitle>
-              <CardDescription className="text-base leading-7">
-                Free helps you plan. Basic helps you plan together. Premium helps you run the whole wedding in one place.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="hidden grid-cols-[1fr_110px_110px_110px] gap-2 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground md:grid">
-                <span>Feature</span>
-                <span className="text-center">Free</span>
-                <span className="text-center">Basic</span>
-                <span className="text-center">Premium</span>
-              </div>
-              {coupleFeatureMatrix.map((row) => (
-                <div
-                  key={row.feature}
-                  className="grid gap-2 rounded-xl border border-border/50 bg-background/60 px-4 py-3 md:grid-cols-[1fr_110px_110px_110px] md:items-center"
-                >
-                  <p className="text-sm font-medium text-foreground">{row.feature}</p>
-                  <p className="text-sm text-muted-foreground md:text-center">{row.free}</p>
-                  <p className="text-sm text-muted-foreground md:text-center">{row.basic}</p>
-                  <p className="text-sm font-medium text-primary md:text-center">{row.premium}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="mb-12">
-          <div className="mb-6 max-w-3xl">
-            <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-              Committee-led weddings
-            </Badge>
-            <h2 className="mt-4 font-display text-4xl font-semibold">Committee access stays bundled under the wedding</h2>
-            <p className="mt-4 text-base leading-8 text-muted-foreground">
-              Committee participation is unlocked by the couple&apos;s wedding plan. That keeps the wedding as the billable workspace and treats committee seats as collaboration capacity, not standalone subscriptions.
-            </p>
-          </div>
-
-          {audiencePlans.filter((plan) => plan.audience === 'committee').map((plan) => {
-            const availableCadences = getAvailableCheckoutCadences(plan);
-            const isHighlighted = plan.audience === targetAudience;
-            const cadence = selectedCadence[plan.audience];
-            const isLoading = checkoutTarget === `audience-${plan.audience}`;
-
-            return (
-              <Card
-                key={plan.audience}
-                className={`rounded-[28px] border bg-card/95 shadow-card transition-all ${
-                  isHighlighted ? 'border-primary/40 ring-2 ring-primary/15' : 'border-border/60'
-                }`}
-              >
-                <CardHeader className="space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <CardTitle className="font-display text-3xl">{plan.title}</CardTitle>
-                    <div className="flex items-center gap-2">
-                      {isHighlighted && <Badge className="rounded-full px-3 py-1">Recommended</Badge>}
-                      <Badge variant="secondary" className="rounded-full px-3 py-1">
-                        {plan.pricingModel}
-                      </Badge>
+                      <CardTitle className="font-display text-3xl">What changes when you pay</CardTitle>
+                      <CardDescription className="mt-2 text-base leading-7">
+                        Zania stays generous at the start and becomes paid when coordination matters.
+                      </CardDescription>
                     </div>
                   </div>
-                  <CardDescription className="text-base leading-7">{plan.subtitle}</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                    <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{plan.freeTierName}</p>
-                    <ul className="mt-3 space-y-2 text-sm leading-7 text-muted-foreground">
-                      {plan.freeIncludes.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
+                <CardContent className="space-y-4">
+                  <div className="rounded-2xl border border-border/60 bg-background/70 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Couples</p>
+                    <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                      Free gets you planning tools. Paid unlocks shared planning, vendor and planner collaboration, AI help, and timeline coordination.
+                    </p>
                   </div>
+                  <div className="rounded-2xl border border-border/60 bg-background/70 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Wedding professionals</p>
+                    <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                      Free gets you discovered. Premium unlocks inquiries, bookings, invoicing, contracts, and public trust tools.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Committee access</p>
+                    <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                      Committee members access Zania under the couple&apos;s plan. They do not need a separate public pricing tier.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
 
-                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{plan.paidTierName}</p>
-                      {availableCadences.length > 1 && (
+          {contextMessage && (
+            <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+              <Card className={`rounded-[28px] border ${
+                contextMessage.tone === 'success'
+                  ? 'border-emerald-200 bg-emerald-50/80'
+                  : contextMessage.tone === 'warning'
+                    ? 'border-amber-200 bg-amber-50/80'
+                    : 'border-primary/20 bg-primary/5'
+              }`}>
+                <CardContent className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Upgrade context</p>
+                    <h2 className="mt-2 font-display text-2xl font-semibold">{contextMessage.title}</h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">{contextMessage.body}</p>
+                  </div>
+                  {targetPlan && (
+                    <Badge variant="secondary" className="w-fit rounded-full px-3 py-1 text-sm">
+                      {targetPlan.paidTierName}
+                    </Badge>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+          )}
+
+          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
+            <div className="mb-6 max-w-3xl">
+              <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
+                Couple plans
+              </Badge>
+              <h2 className="mt-4 font-display text-4xl font-semibold">Choose the stage your wedding is in</h2>
+              <p className="mt-4 text-base leading-8 text-muted-foreground">
+                Free is for getting started. Basic is for shared planning. Premium is for fully coordinated weddings with AI and timeline support.
+              </p>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-3">
+              {couplePlanDefinitions.map((plan) => {
+                const isPaidTier = plan.tier !== 'free';
+                const isLoading = checkoutTarget === `couple-${plan.tier}`;
+                const cadence = isPaidTier ? selectedCoupleCadence[plan.tier] : null;
+                const priceLabel = !isPaidTier
+                  ? 'Free'
+                  : cadence === 'monthly'
+                    ? `${formatKesPrice(plan.monthlyPriceKes)} / month`
+                    : `${formatKesPrice(plan.annualPriceKes)} / year`;
+
+                return (
+                  <Card
+                    key={plan.tier}
+                    className={`h-full rounded-[28px] border bg-card/95 shadow-card ${
+                      plan.tier === 'premium' ? 'border-primary/30 ring-2 ring-primary/10' : 'border-border/60'
+                    }`}
+                  >
+                    <CardHeader className="space-y-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <CardTitle className="font-display text-3xl">{plan.title}</CardTitle>
+                          <CardDescription className="mt-2 text-base leading-7">{plan.tagline}</CardDescription>
+                        </div>
+                        {plan.tier === 'premium' ? (
+                          <Badge className="rounded-full px-3 py-1">Most complete</Badge>
+                        ) : null}
+                      </div>
+                      <div>
+                        <p className="font-display text-3xl font-semibold">{priceLabel}</p>
+                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{plan.supportCopy}</p>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {isPaidTier ? (
                         <div className="inline-flex rounded-full border border-border bg-background p-1">
-                          {availableCadences.map((option) => (
+                          {(['annual', 'monthly'] as const).map((option) => (
                             <button
                               key={option}
                               type="button"
-                              onClick={() => setSelectedCadence((prev) => ({ ...prev, [plan.audience]: option }))}
+                              onClick={() => setSelectedCoupleCadence((prev) => ({ ...prev, [plan.tier]: option }))}
                               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                                 cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                               }`}
                             >
-                              {cadenceLabels[option]}
+                              {coupleCadenceLabels[option]}
                             </button>
                           ))}
                         </div>
+                      ) : null}
+
+                      <ul className="space-y-2 text-sm leading-7 text-foreground/85">
+                        {plan.includedFeatures.slice(0, 5).map((item) => (
+                          <li key={item} className="flex items-start gap-2">
+                            <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      {plan.tier === 'free' ? (
+                        <Link to="/auth" className="block">
+                          <Button className="w-full gap-2">
+                            {plan.ctaLabel}
+                            <ArrowRight className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Button
+                          onClick={() => void handleCouplePlanCheckout(plan.tier)}
+                          className="w-full gap-2"
+                          disabled={isLoading}
+                        >
+                          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                          {user ? plan.ctaLabel : 'Sign in to continue'}
+                          {!isLoading && <ArrowRight className="h-4 w-4" />}
+                        </Button>
                       )}
-                    </div>
-                    <ul className="mt-3 space-y-2 text-sm leading-7 text-foreground/85">
-                      {plan.paidUnlocks.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <Sparkles className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
 
-                  <Button
-                    onClick={() => void handleCheckout(plan.audience)}
-                    className="w-full gap-2"
-                    disabled={isLoading}
-                  >
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {user ? `Continue with ${plan.paidTierName}` : `Sign in to get ${plan.paidTierName}`}
-                    {!isLoading && <ArrowRight className="h-4 w-4" />}
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        <div className="mb-12">
-          <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-            <CardHeader>
-              <CardTitle className="font-display text-3xl">Couple add-ons</CardTitle>
-              <CardDescription className="text-base leading-7">
-                Extend your wedding workspace when you need more guest coordination or gift commerce.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-6 lg:grid-cols-2">
-              {coupleAddonDefinitions.map((addon) => (
-                <div key={addon.code} className="rounded-2xl border border-border/60 bg-background/60 p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-display text-2xl font-semibold">{addon.title}</h3>
-                    <Badge variant="secondary" className="rounded-full px-3 py-1">Add-on</Badge>
-                  </div>
-                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{addon.supportCopy}</p>
-                  <Button
-                    variant="outline"
-                    className="mt-5 w-full gap-2"
-                    onClick={() => void handleCoupleAddonCheckout(addon.code)}
-                    disabled={checkoutTarget === `addon-${addon.code}`}
-                  >
-                    {checkoutTarget === `addon-${addon.code}` ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {user ? 'Add to this wedding' : 'Sign in to continue'}
-                  </Button>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="mb-12">
-          <div className="mb-6 max-w-3xl">
-            <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-              Planner & vendor plans
-            </Badge>
-            <h2 className="mt-4 font-display text-4xl font-semibold">Get discovered free. Upgrade when operations matter.</h2>
-            <p className="mt-4 text-base leading-8 text-muted-foreground">
-              Planners and vendors start with verified visibility, then upgrade into bookings, invoices, contracts, and public trust tools when Zania becomes part of how they run the business.
+            <p className="mt-5 text-sm text-muted-foreground">
+              Committee members and family members access Zania inside the couple&apos;s wedding plan, not through a separate public subscription.
             </p>
-          </div>
+          </section>
 
-          <div className="grid gap-6 xl:grid-cols-2">
-            {(['planner', 'vendor'] as const).map((audience) => {
-              const freePlan = getProfessionalPlanDefinition(audience, 'free');
-              const premiumPlan = getProfessionalPlanDefinition(audience, 'premium');
-              const isHighlighted = audience === targetAudience;
-              const isLoading = checkoutTarget === `audience-${audience}`;
-              const cadence = selectedProfessionalCadence[audience];
-              const priceLabel =
-                cadence === 'monthly'
-                  ? `${formatKesPrice(premiumPlan.monthlyPriceKes)} / month`
-                  : `${formatKesPrice(premiumPlan.annualPriceKes)} / year`;
+          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
+            <div className="mb-6 max-w-3xl">
+              <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
+                Planner & vendor plans
+              </Badge>
+              <h2 className="mt-4 font-display text-4xl font-semibold">Get discovered free. Upgrade when operations matter.</h2>
+              <p className="mt-4 text-base leading-8 text-muted-foreground">
+                Both planners and vendors follow the same commercial logic: free for visibility, premium for the tools that help them actually run the work.
+              </p>
+            </div>
 
-              return (
-                <Card
-                  key={audience}
-                  className={`rounded-[28px] border bg-card/95 shadow-card transition-all ${
-                    isHighlighted ? 'border-primary/40 ring-2 ring-primary/15' : 'border-border/60'
-                  }`}
-                >
-                  <CardHeader className="space-y-4">
-                    <div className="flex items-center justify-between gap-3">
+            <div className="grid gap-6 xl:grid-cols-2">
+              {(['planner', 'vendor'] as const).map((audience) => {
+                const freePlan = getProfessionalPlanDefinition(audience, 'free');
+                const premiumPlan = getProfessionalPlanDefinition(audience, 'premium');
+                const isLoading = checkoutTarget === `audience-${audience}`;
+                const cadence = selectedProfessionalCadence[audience];
+                const priceLabel =
+                  cadence === 'monthly'
+                    ? `${formatKesPrice(premiumPlan.monthlyPriceKes)} / month`
+                    : `${formatKesPrice(premiumPlan.annualPriceKes)} / year`;
+
+                return (
+                  <Card key={audience} className="rounded-[28px] border border-border/60 bg-card/95 shadow-card">
+                    <CardHeader className="space-y-4">
                       <div>
                         <CardTitle className="font-display text-3xl">{roleLabels[audience]}s</CardTitle>
                         <CardDescription className="mt-2 text-base leading-7">
                           {getAudiencePlan(audience).subtitle}
                         </CardDescription>
                       </div>
-                      {isHighlighted && <Badge className="rounded-full px-3 py-1">Recommended</Badge>}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid gap-4 lg:grid-cols-2">
+                    </CardHeader>
+                    <CardContent className="space-y-5">
                       <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
                         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{freePlan.title}</p>
                         <p className="mt-2 font-display text-2xl font-semibold">Free</p>
-                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{freePlan.supportCopy}</p>
                         <ul className="mt-4 space-y-2 text-sm leading-7 text-muted-foreground">
                           {freePlan.includedFeatures.map((item) => (
                             <li key={item} className="flex items-start gap-2">
@@ -851,184 +1010,99 @@ export default function Pricing() {
                         <p className="mt-2 font-display text-2xl font-semibold">{priceLabel}</p>
                         <p className="mt-2 text-sm leading-7 text-foreground/80">{premiumPlan.supportCopy}</p>
                         <ul className="mt-4 space-y-2 text-sm leading-7 text-foreground/85">
-                          {premiumPlan.includedFeatures.map((item) => (
+                          {premiumPlan.includedFeatures.slice(0, 5).map((item) => (
                             <li key={item} className="flex items-start gap-2">
-                              <Sparkles className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                              <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
                               <span>{item}</span>
                             </li>
                           ))}
                         </ul>
                       </div>
+
+                      <Button
+                        onClick={() => void handleProfessionalPlanCheckout(audience)}
+                        className="w-full gap-2"
+                        disabled={isLoading}
+                      >
+                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        {user ? premiumPlan.ctaLabel : 'Sign in to continue'}
+                        {!isLoading && <ArrowRight className="h-4 w-4" />}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
+            <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
+              <CardHeader>
+                <CardTitle className="font-display text-3xl">Quick comparison</CardTitle>
+                <CardDescription className="text-base leading-7">
+                  The main difference is simple: couples pay for shared planning and coordination, while professionals pay for business operations.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[920px]">
+                    <div className="grid grid-cols-[1.4fr_repeat(5,minmax(110px,1fr))] gap-2 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      <span>Feature</span>
+                      <span className="text-center">Couple Free</span>
+                      <span className="text-center">Couple Basic</span>
+                      <span className="text-center">Couple Premium</span>
+                      <span className="text-center">Pro Free</span>
+                      <span className="text-center">Pro Premium</span>
                     </div>
-
-                    <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Upgrade triggers</p>
-                      <ul className="mt-3 space-y-2 text-sm leading-7 text-muted-foreground">
-                        {getAudiencePlan(audience).upgradeMoments.map((item) => (
-                          <li key={item} className="flex items-start gap-2">
-                            <Lock className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
+                    <div className="mt-3 space-y-3">
+                      {compactComparisonRows.map((row) => (
+                        <div
+                          key={row.feature}
+                          className="grid grid-cols-[1.4fr_repeat(5,minmax(110px,1fr))] gap-2 rounded-xl border border-border/50 bg-background/60 px-4 py-3"
+                        >
+                          <p className="text-sm font-medium text-foreground">{row.feature}</p>
+                          <p className="text-center text-sm text-muted-foreground">{row.coupleFree}</p>
+                          <p className="text-center text-sm text-muted-foreground">{row.coupleBasic}</p>
+                          <p className="text-center text-sm font-medium text-primary">{row.couplePremium}</p>
+                          <p className="text-center text-sm text-muted-foreground">{row.professionalFree}</p>
+                          <p className="text-center text-sm font-medium text-primary">{row.professionalPremium}</p>
+                        </div>
+                      ))}
                     </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </section>
 
-                    <Button
-                      onClick={() => void handleProfessionalPlanCheckout(audience)}
-                      className="w-full gap-2"
-                      disabled={isLoading}
-                    >
-                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      {user ? premiumPlan.ctaLabel : 'Sign in to continue'}
-                      {!isLoading && <ArrowRight className="h-4 w-4" />}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="mb-12">
-          <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-            <CardHeader>
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <section className="mx-auto max-w-7xl px-4 pb-18 sm:px-6 lg:px-8">
+            <Card className="rounded-[28px] border border-primary/20 bg-primary/5 shadow-card">
+              <CardContent className="flex flex-col gap-5 px-6 py-8 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <CardTitle className="font-display text-3xl">Professional add-ons</CardTitle>
-                  <CardDescription className="text-base leading-7">
-                    Grow your business with richer portfolio media, promoted visibility, and bundled team collaboration seats.
-                  </CardDescription>
+                  <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Ready to start?</p>
+                  <h2 className="mt-2 font-display text-3xl font-semibold">Open your account and choose the right plan later.</h2>
+                  <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
+                    Most couples and professionals can begin on the free tier, get their bearings, and only upgrade when the real coordination work starts.
+                  </p>
                 </div>
-                <div className="inline-flex rounded-full border border-border/60 bg-background/70 p-1">
-                  {(['planner', 'vendor'] as const).map((audience) => (
-                    <button
-                      key={audience}
-                      type="button"
-                      onClick={() => setSelectedProfessionalAddonAudience(audience)}
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                        selectedProfessionalAddonAudience === audience
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {audience === 'planner' ? 'Planner add-ons' : 'Vendor add-ons'}
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Link to="/auth">
+                    <Button className="w-full gap-2 sm:w-auto">
+                      Create account
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                  <Link to="/">
+                    <Button variant="outline" className="w-full sm:w-auto">
+                      Back to home
+                    </Button>
+                  </Link>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-6 lg:grid-cols-3">
-              {professionalAddonDefinitions.map((addon) => (
-                <div key={addon.code} className="rounded-2xl border border-border/60 bg-background/60 p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-display text-2xl font-semibold">{addon.title}</h3>
-                    <Badge variant="secondary" className="rounded-full px-3 py-1">Add-on</Badge>
-                  </div>
-                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{addon.supportCopy}</p>
-                  {addon.seatLimit ? (
-                    <p className="mt-3 text-sm font-medium text-primary">{addon.seatLimit} bundled seats</p>
-                  ) : null}
-                  <Button
-                    variant="outline"
-                    className="mt-5 w-full"
-                    disabled={checkoutTarget === `professional-addon-${selectedProfessionalAddonAudience}-${addon.code}`}
-                    onClick={() => void handleProfessionalAddonCheckout(selectedProfessionalAddonAudience, addon.code)}
-                  >
-                    {checkoutTarget === `professional-addon-${selectedProfessionalAddonAudience}-${addon.code}` ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    {user ? `Add to ${selectedProfessionalAddonAudience === 'planner' ? 'planner' : 'vendor'} workspace` : 'Sign in to continue'}
-                  </Button>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="mb-12">
-          <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-            <CardHeader>
-              <CardTitle className="font-display text-3xl">Professional feature comparison</CardTitle>
-              <CardDescription className="text-base leading-7">
-                Free gets planners and vendors discovered. Premium unlocks the business tools that turn discovery into real work.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="hidden grid-cols-[1fr_140px_140px] gap-2 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground md:grid">
-                <span>Feature</span>
-                <span className="text-center">Free</span>
-                <span className="text-center">Premium</span>
-              </div>
-              {professionalFeatureMatrix.map((row) => (
-                <div
-                  key={row.feature}
-                  className="grid gap-2 rounded-xl border border-border/50 bg-background/60 px-4 py-3 md:grid-cols-[1fr_140px_140px] md:items-center"
-                >
-                  <p className="text-sm font-medium text-foreground">{row.feature}</p>
-                  <p className="text-sm text-muted-foreground md:text-center">{row.free}</p>
-                  <p className="text-sm font-medium text-primary md:text-center">{row.premium}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
-        <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-          <CardHeader>
-            <CardTitle className="font-display text-3xl">Feature gate map</CardTitle>
-            <CardDescription className="text-base leading-7">
-              The exact product rule is simple: discovery stays open, coordination and operational scale become paid.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {(['couple', 'committee', 'planner', 'vendor'] as const).map((role) => {
-              if (role === 'couple') return null;
-              const rows = featureGateRows.filter((row) => row.role === role);
-              return (
-                <div key={role} className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <h3 className="font-display text-2xl font-semibold">{roleLabels[role]}</h3>
-                    <div className="hidden grid-cols-[100px_100px] gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:grid">
-                      <span>Free</span>
-                      <span>Paid</span>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    {rows.map((row) => (
-                      <div key={`${role}-${row.feature}`} className="grid gap-2 rounded-xl border border-border/50 bg-card px-4 py-3 sm:grid-cols-[1fr_100px_100px] sm:items-center">
-                        <p className="text-sm font-medium text-foreground">{row.feature}</p>
-                        <p className="text-sm text-muted-foreground sm:text-center">{row.free}</p>
-                        <p className="text-sm font-medium text-primary sm:text-center">{row.paid}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 pb-18 sm:px-6 lg:px-8">
-        <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-          <CardHeader>
-            <CardTitle className="font-display text-3xl">Subscription and access control rollout</CardTitle>
-            <CardDescription className="text-base leading-7">
-              Build the commercial layer in a way that keeps discovery generous and enforcement predictable.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 lg:grid-cols-2">
-            {accessControlImplementationSteps.map((step, index) => (
-              <div key={step} className="rounded-2xl border border-border/60 bg-background/60 p-5">
-                <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Step {index + 1}</p>
-                <p className="mt-2 text-sm leading-7 text-muted-foreground">{step}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </section>
+              </CardContent>
+            </Card>
+          </section>
+        </>
+      )}
     </div>
   );
 }
