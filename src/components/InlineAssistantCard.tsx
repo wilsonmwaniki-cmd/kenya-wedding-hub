@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { EntitlementDecision } from '@/lib/entitlements';
 import { cn } from '@/lib/utils';
+import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 
 export interface InlineAssistantCardProps {
   title: string;
@@ -23,6 +24,7 @@ export interface InlineAssistantCardProps {
   dismissible?: boolean;
   onDismiss?: () => void;
   onPromptClick?: (prompt: string) => void | Promise<void>;
+  fullAssistantPrompt?: string | null;
   fullAssistantHref?: string;
   className?: string;
 }
@@ -42,9 +44,13 @@ export default function InlineAssistantCard({
   dismissible = false,
   onDismiss,
   onPromptClick,
+  fullAssistantPrompt,
   fullAssistantHref = '/ai-chat',
   className,
 }: InlineAssistantCardProps) {
+  const assistantPanel = useAssistantPanel();
+  const panelPrompt = fullAssistantPrompt ?? prompts[0] ?? null;
+
   return (
     <Card className={cn('border-border/60 bg-card/95 shadow-card', className)}>
       <CardHeader className="space-y-3">
@@ -122,12 +128,24 @@ export default function InlineAssistantCard({
               <p className="text-xs text-muted-foreground">
                 Need a deeper conversation or write actions? Open the full assistant.
               </p>
-              <Button asChild variant="ghost" className="gap-2">
-                <Link to={fullAssistantHref}>
-                  Open full assistant
+              {assistantPanel ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="gap-2"
+                  onClick={() => assistantPanel.openAssistant(panelPrompt)}
+                >
+                  Open assistant panel
                   <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
+                </Button>
+              ) : (
+                <Button asChild variant="ghost" className="gap-2">
+                  <Link to={fullAssistantHref}>
+                    Open full assistant
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
             </div>
           </>
         )}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { Suspense, lazy, useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,15 +18,15 @@ import {
   Link2, Copy, UserCheck, BarChart3, Search,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import ExcelJS from 'exceljs';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import GuestInsights from '@/components/guests/GuestInsights';
-import GuestCheckIn from '@/components/guests/GuestCheckIn';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
 import { startStripeCheckout } from '@/lib/billing';
+
+const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
 
 interface Guest {
   id: string;
@@ -46,6 +46,10 @@ interface Guest {
 
 const GUEST_GROUPS = ['Bride Family', 'Groom Family', 'Friends', 'Work Colleagues', 'Committee', 'Church'];
 const GUEST_CATEGORIES = ['general', 'vip', 'family', 'friends', 'kids', 'vendor'];
+
+async function loadExcelJs() {
+  return import('exceljs');
+}
 
 export default function Guests() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
@@ -104,6 +108,7 @@ export default function Guests() {
     setUploading(true);
     try {
       const data = await file.arrayBuffer();
+      const { default: ExcelJS } = await loadExcelJs();
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(data);
       const sheet = workbook.worksheets[0];
@@ -148,6 +153,7 @@ export default function Guests() {
   };
 
   const downloadTemplate = async () => {
+    const { default: ExcelJS } = await loadExcelJs();
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('Guests');
     ws.addRow(['Name', 'Email', 'Phone', 'RSVP', 'Meal Preference', 'Plus One', 'Group', 'Category']);
@@ -318,7 +324,22 @@ export default function Guests() {
   const uniqueGroups = [...new Set(guests.map(g => g.group_name).filter(Boolean))] as string[];
 
   if (isPlanner && !selectedClient) return null;
-  if (checkInMode) return <GuestCheckIn guests={guests as any} onClose={() => setCheckInMode(false)} onUpdate={load} />;
+  if (checkInMode) {
+    return (
+      <Suspense
+        fallback={
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Opening check-in...
+            </div>
+          </div>
+        }
+      >
+        <GuestCheckIn guests={guests as any} onClose={() => setCheckInMode(false)} onUpdate={load} />
+      </Suspense>
+    );
+  }
 
   const confirmed = guests.filter(g => g.rsvp_status === 'confirmed').length;
 

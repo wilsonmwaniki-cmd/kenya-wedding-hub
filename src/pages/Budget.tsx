@@ -25,6 +25,7 @@ import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
+import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 
 interface BudgetCategory {
   id: string;
@@ -139,6 +140,7 @@ export default function Budget() {
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const assistantPanel = useAssistantPanel();
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -684,6 +686,35 @@ export default function Budget() {
     surface: 'budget_pressure_card',
     contextSource: activeBudgetScope === 'personal' ? 'personal_budget_summary' : 'wedding_budget_summary',
   });
+  const [budgetNudgeDismissed, setBudgetNudgeDismissed] = useState(false);
+
+  const budgetNudge = useMemo(() => {
+    if (visibleOverBudgetCategories[0]) {
+      return {
+        title: `${visibleOverBudgetCategories.length} budget line${visibleOverBudgetCategories.length === 1 ? '' : 's'} over the limit`,
+        body: 'Get a quick rebalance suggestion before the gap grows.',
+        prompt: `Review our ${activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget'} and tell me which categories need urgent rebalancing first.`,
+      };
+    }
+
+    if (paymentsDueSoon.length > 0) {
+      return {
+        title: `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due soon`,
+        body: 'Use the assistant to decide what should be paid first.',
+        prompt: 'Review upcoming vendor payment deadlines and tell me what should be paid first.',
+      };
+    }
+
+    if (visibleNearLimitCategories[0]) {
+      return {
+        title: 'Some categories are nearly at the limit',
+        body: 'A quick budget check now can prevent overspend later.',
+        prompt: `Tell me which ${activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget'} lines are close to the limit and what to do before we overspend.`,
+      };
+    }
+
+    return null;
+  }, [activeBudgetScope, paymentsDueSoon.length, visibleNearLimitCategories, visibleOverBudgetCategories]);
 
   const paymentsByCategory = useMemo(() => {
     return currentScopePayments.reduce<Record<string, BudgetPaymentRecord[]>>((groups, payment) => {
@@ -1207,6 +1238,36 @@ export default function Budget() {
           </div>
         </CardContent>
       </Card>
+
+      {!budgetNudgeDismissed && budgetNudge && assistantPanel && (
+        <Card className="border-primary/20 bg-primary/5 shadow-card">
+          <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">{budgetNudge.title}</p>
+              <p className="text-sm text-muted-foreground">{budgetNudge.body}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="gap-2"
+                onClick={() => assistantPanel.openAssistant(budgetNudge.prompt)}
+              >
+                <Sparkles className="h-4 w-4" />
+                Review with AI
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setBudgetNudgeDismissed(true)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {!budgetAssistant.dismissed && (
         <InlineAssistantCard
