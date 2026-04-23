@@ -10,7 +10,9 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { getHomeRouteForRole } from '@/lib/roles';
+import { getHomeRouteForRole, type PlannerType } from '@/lib/roles';
+import AssistantPanel from '@/components/AssistantPanel';
+import { AssistantPanelProvider } from '@/contexts/AssistantPanelContext';
 
 const coupleNavItems = [
   { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
@@ -118,6 +120,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
+    <AssistantPanelProvider>
     <div className="flex min-h-screen bg-background">
       {/* Mobile overlay */}
       <AnimatePresence>
@@ -299,8 +302,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           )}
           {children}
+          <AssistantPanel role={profile?.role} plannerType={profile?.planner_type as PlannerType | null | undefined} />
         </div>
       </main>
     </div>
+    </AssistantPanelProvider>
   );
 }

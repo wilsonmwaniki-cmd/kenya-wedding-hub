@@ -16,6 +16,7 @@ import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorP
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
+import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 
 interface DashboardStats {
   totalBudget: number;
@@ -108,6 +109,7 @@ export default function Dashboard() {
   const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const assistantPanel = useAssistantPanel();
   const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
   const showPlanningDigest = profile?.role === 'couple' || isCommittee;
   const [stats, setStats] = useState<DashboardStats>({
@@ -431,6 +433,35 @@ export default function Dashboard() {
     page: 'dashboard',
     surface: 'weekly_focus_card',
   });
+  const [dashboardNudgeDismissed, setDashboardNudgeDismissed] = useState(false);
+
+  const dashboardNudge = useMemo(() => {
+    if (pendingTasks.length >= 3) {
+      return {
+        title: `${pendingTasks.length} tasks still need attention`,
+        body: 'Get a quick catch-up plan before the week gets away from you.',
+        prompt: 'Turn the overdue and pending tasks into a simple catch-up plan for this week.',
+      };
+    }
+
+    if (overspentWeddingCategories[0] || nearLimitCategories[0]) {
+      return {
+        title: 'Budget pressure is building',
+        body: 'A few categories are over or close to the limit. Get a quick read before you keep spending.',
+        prompt: 'Review the dashboard and tell me where budget pressure needs attention first.',
+      };
+    }
+
+    if (paymentsDueSoon.length > 0) {
+      return {
+        title: `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due soon`,
+        body: 'Check what needs attention before a deadline slips.',
+        prompt: 'Review upcoming vendor payment deadlines and tell me what needs action first.',
+      };
+    }
+
+    return null;
+  }, [nearLimitCategories, overspentWeddingCategories, paymentsDueSoon.length, pendingTasks.length]);
 
   if (isPlanner && !selectedClient) return null;
 
@@ -514,6 +545,36 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {!dashboardNudgeDismissed && dashboardNudge && assistantPanel && (
+        <Card className="border-primary/20 bg-primary/5 shadow-card">
+          <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">{dashboardNudge.title}</p>
+              <p className="text-sm text-muted-foreground">{dashboardNudge.body}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="gap-2"
+                onClick={() => assistantPanel.openAssistant(dashboardNudge.prompt)}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Review with AI
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setDashboardNudgeDismissed(true)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {!dashboardAssistant.dismissed && (
         <InlineAssistantCard
