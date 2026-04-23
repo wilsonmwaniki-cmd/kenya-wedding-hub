@@ -377,12 +377,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return fallbackProfile;
   };
 
-  const syncAuthState = (nextSession: Session | null) => {
+  const syncAuthState = async (nextSession: Session | null) => {
     setSession(nextSession);
     setUser(nextSession?.user ?? null);
 
     if (nextSession?.user) {
-      void ensureProfile(nextSession.user);
+      await ensureProfile(nextSession.user);
       return;
     }
 
@@ -459,16 +459,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const getSessionWithTimeout = async (timeoutMs = 2500): Promise<Session | null> => {
-    return await Promise.race([
-      supabase.auth.getSession().then(({ data: { session } }) => session),
-      new Promise<null>((resolve) => {
-        setTimeout(() => {
+  const getSessionWithTimeout = async (timeoutMs = 2500): Promise<{
+    session: Session | null;
+    timedOut: boolean;
+    sessionPromise: Promise<Session | null>;
+  }> => {
+    const sessionPromise = supabase.auth.getSession().then(({ data: { session } }) => session);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const result = await Promise.race([
+      sessionPromise,
+      new Promise<'timeout'>((resolve) => {
+        timeoutId = setTimeout(() => {
           console.warn(`Auth session lookup timed out after ${timeoutMs}ms; continuing without blocking app startup.`);
-          resolve(null);
+          resolve('timeout');
         }, timeoutMs);
       }),
     ]);
+
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    return {
+      session: result === 'timeout' ? null : result,
+      timedOut: result === 'timeout',
+      sessionPromise,
+    };
   };
 
   useEffect(() => {
@@ -513,7 +529,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (_event, session) => {
         try {
           if (!active) return;
-          syncAuthState(session);
+          await syncAuthState(session);
         } finally {
           if (active) setLoading(false);
         }
@@ -523,9 +539,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const initializeAuth = async () => {
       try {
         await hydrateSessionFromHash();
-        const session = await getSessionWithTimeout();
+        const { session, timedOut, sessionPromise } = await getSessionWithTimeout();
         if (!active) return;
-        syncAuthState(session);
+        await syncAuthState(session);
+
+        if (timedOut) {
+          void sessionPromise
+            .then(async (lateSession) => {
+              if (!active || !lateSession) return;
+
+              setLoading(true);
+              try {
+                await syncAuthState(lateSession);
+              } finally {
+                if (active) setLoading(false);
+              }
+            })
+            .catch((error) => {
+              console.error('Late auth session lookup failed:', error);
+            });
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -568,7 +601,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const weddingCode = options?.weddingCode?.trim().toUpperCase() || null;
     const signupIntent = options?.signupIntent ?? 'professional';
     const weddingDate = options?.weddingDate?.trim() || null;
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -594,11 +627,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
     });
     if (error) throw error;
+
+    if (data.session) {
+      setLoading(true);
+      try {
+        await syncAuthState(data.session);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+
+    if (data.session) {
+      setLoading(true);
+      try {
+        await syncAuthState(data.session);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   const signInWithGoogle = async () => {
