@@ -12,18 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-interface PendingWriteAction {
-  toolName: string;
-  args: Record<string, unknown>;
-  summary: string;
-  destructive: boolean;
-}
+import {
+  invokeWeddingAiChat,
+  WeddingAiInvokeError,
+  type AiAssistantMessage as Message,
+  type AiUsageStatus,
+  type PendingWriteAction,
+} from '@/lib/aiAssistant';
 
 interface VendorListingAccess {
   id: string;
@@ -32,18 +27,6 @@ interface VendorListingAccess {
   verification_requested: boolean;
   subscription_status: string;
   subscription_expires_at: string | null;
-}
-
-interface AiUsageStatus {
-  audience: string;
-  monthly_message_cap: number;
-  messages_used: number;
-  remaining_messages: number;
-  month_start: string;
-  ai_enabled: boolean;
-  add_on_separate: boolean;
-  add_on_lookup_key: string | null;
-  add_on_annual_lookup_key: string | null;
 }
 
 interface AssistantExperience {
@@ -592,88 +575,46 @@ export default function AiChat() {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('wedding-ai-chat', {
-        body: {
-          messages: updatedMessages.map((message) => ({ role: message.role, content: message.content })),
-          selectedClientId: isPlanner ? selectedClient?.id ?? null : null,
-          allowWriteActions: options?.allowWriteActions ?? false,
-          confirmedActions: options?.confirmedActions ?? [],
-        },
+      const result = await invokeWeddingAiChat({
+        messages: updatedMessages.map((message) => ({ role: message.role, content: message.content })),
+        selectedClientId: isPlanner ? selectedClient?.id ?? null : null,
+        allowWriteActions: options?.allowWriteActions ?? false,
+        confirmedActions: options?.confirmedActions ?? [],
+        page: 'ai-chat',
+        surface: options?.allowWriteActions ? 'full_chat_with_writes' : 'full_chat',
+        contextSource: 'full_chat',
+        starterPrompt: shouldEchoUser ? null : nextInput.trim(),
       });
 
-      if (error) {
-        let parsedError: any = null;
-        let statusCode: number | null = null;
-        let fallbackError = error.message || 'Request failed';
-
-        const maybeContext = (error as { context?: Response }).context;
-        if (maybeContext instanceof Response) {
-          statusCode = maybeContext.status;
-          const rawError = await maybeContext.text();
-
-          parsedError = (() => {
-            try {
-              const parsed = JSON.parse(rawError);
-              if (parsed && typeof parsed === 'object') {
-                const primaryMessage =
-                  typeof parsed.error === 'string'
-                    ? parsed.error
-                    : typeof parsed.message === 'string'
-                      ? parsed.message
-                      : typeof parsed.details === 'string'
-                        ? parsed.details
-                        : null;
-
-                return primaryMessage ? { ...parsed, error: primaryMessage } : parsed;
-              }
-
-              return parsed;
-            } catch {
-              return rawError.trim() ? { error: rawError.trim() } : null;
-            }
-          })();
-
-          fallbackError =
-            parsedError?.error ||
-            parsedError?.message ||
-            parsedError?.details ||
-            (rawError.trim()
-              ? rawError.trim()
-              : `Request failed with status ${maybeContext.status}${maybeContext.statusText ? ` (${maybeContext.statusText})` : ''}`);
-        } else if (fallbackError === 'Failed to send a request to the Edge Function') {
-          fallbackError = 'Could not reach the AI function. Please try again in a few moments.';
+      if (result.usage) {
+        setUsage(result.usage);
+      }
+      setPendingActions(result.pendingActions);
+      setMessages((prev) => [...prev, { role: 'assistant', content: result.content }]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      if (error instanceof WeddingAiInvokeError) {
+        if (error.usage) {
+          setUsage(error.usage);
         }
 
-        if (parsedError?.usage) {
-          setUsage(parsedError.usage as AiUsageStatus);
-        }
-
-        if (statusCode === 402 || statusCode === 403) {
+        if (error.requiresUpgrade) {
           setUpgradeOpen(true);
         }
 
         toast({
           title:
-            statusCode === 402
+            error.statusCode === 402
               ? 'Premium feature'
-              : statusCode === 429
+              : error.statusCode === 429
                 ? 'Monthly AI limit reached'
                 : 'AI Error',
-          description: fallbackError,
+          description: error.message,
           variant: 'destructive',
         });
         return;
       }
 
-      const content = data.content || 'Sorry, I could not generate a response.';
-      const nextPendingActions = Array.isArray(data.pendingActions) ? (data.pendingActions as PendingWriteAction[]) : [];
-      if (data.usage) {
-        setUsage(data.usage as AiUsageStatus);
-      }
-      setPendingActions(nextPendingActions);
-      setMessages((prev) => [...prev, { role: 'assistant', content }]);
-    } catch (error) {
-      console.error('Chat error:', error);
       toast({
         title: 'Connection Error',
         description: 'Could not reach the AI assistant.',

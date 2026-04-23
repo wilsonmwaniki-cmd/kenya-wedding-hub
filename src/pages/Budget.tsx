@@ -19,10 +19,12 @@ import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPrice
 import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
-import { getEntitlementDecision } from '@/lib/entitlements';
+import { getEntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
+import InlineAssistantCard from '@/components/InlineAssistantCard';
+import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 
 interface BudgetCategory {
   id: string;
@@ -123,6 +125,12 @@ function benchmarkSummary(benchmark?: VendorPriceBenchmark | null) {
     return `${benchmark.sample_size} observations captured. Benchmarks unlock at 5 samples.`;
   }
   return 'No market observations captured yet for this category.';
+}
+
+function getBudgetAssistantFeature(role?: string | null, plannerType?: string | null): EntitlementFeature {
+  if (role === 'planner' && plannerType === 'committee') return 'committee.ai_assistant';
+  if (role === 'planner') return 'planner.ai_assistant';
+  return 'couple.ai_assistant';
 }
 
 export default function Budget() {
@@ -605,6 +613,77 @@ export default function Budget() {
   const invoiceTotal = activeBudgetScope === 'wedding' ? totalFinalVendorContract : visibleAllocated;
   const totalBalance = Math.max(invoiceTotal - currentScopePaymentTotal, 0);
   const remainingBudget = Math.max(visibleAllocated - currentScopePaymentTotal, 0);
+  const budgetAssistantFeature = useMemo(
+    () => getBudgetAssistantFeature(profile?.role, profile?.planner_type),
+    [profile?.planner_type, profile?.role],
+  );
+
+  const visibleOverBudgetCategories = useMemo(
+    () => visibleCategories.filter((category) => category.allocated > 0 && category.spent > category.allocated),
+    [visibleCategories],
+  );
+
+  const visibleNearLimitCategories = useMemo(
+    () =>
+      visibleCategories
+        .filter(
+          (category) =>
+            category.allocated > 0 &&
+            category.spent <= category.allocated &&
+            category.spent / category.allocated >= 0.85,
+        )
+        .sort((left, right) => right.spent / right.allocated - left.spent / left.allocated),
+    [visibleCategories],
+  );
+
+  const paymentsDueSoon = useMemo(() => {
+    if (activeBudgetScope !== 'wedding') return [];
+    const today = new Date();
+    return finalVendorPayments.filter((vendor) => {
+      if (!vendor.payment_due_date || vendor.payment_status === 'paid_full') return false;
+      const dueDate = new Date(vendor.payment_due_date);
+      const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
+      return diffDays >= 0 && diffDays <= 14;
+    });
+  }, [activeBudgetScope, finalVendorPayments]);
+
+  const budgetPrompts = useMemo(() => {
+    const scopeLabel = activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget';
+    const prompts: string[] = [];
+
+    if (visibleOverBudgetCategories[0]) {
+      prompts.push(`Review our ${scopeLabel} and tell me which categories need urgent rebalancing first.`);
+    }
+
+    if (visibleNearLimitCategories[0]) {
+      prompts.push(`Tell me which ${scopeLabel} lines are close to the limit and what to do before we overspend.`);
+    }
+
+    if (paymentsDueSoon[0]) {
+      prompts.push('Review upcoming vendor payment deadlines and tell me what should be paid first.');
+    }
+
+    if (visibleCategories.length > 0) {
+      prompts.push(`Give me a simple budget health check for this ${scopeLabel}.`);
+    } else {
+      prompts.push(`Help me set up the first categories for this ${scopeLabel}.`);
+    }
+
+    return prompts.slice(0, 3);
+  }, [
+    activeBudgetScope,
+    paymentsDueSoon,
+    visibleCategories.length,
+    visibleNearLimitCategories,
+    visibleOverBudgetCategories,
+  ]);
+
+  const budgetAssistant = useInlineAssistant({
+    feature: budgetAssistantFeature,
+    page: 'budget',
+    surface: 'budget_pressure_card',
+    contextSource: activeBudgetScope === 'personal' ? 'personal_budget_summary' : 'wedding_budget_summary',
+  });
 
   const paymentsByCategory = useMemo(() => {
     return currentScopePayments.reduce<Record<string, BudgetPaymentRecord[]>>((groups, payment) => {
@@ -1128,6 +1207,29 @@ export default function Budget() {
           </div>
         </CardContent>
       </Card>
+
+      {!budgetAssistant.dismissed && (
+        <InlineAssistantCard
+          title={activeBudgetScope === 'personal' ? 'Personal budget pressure check' : 'Budget pressure check'}
+          description={
+            activeBudgetScope === 'personal'
+              ? 'Get a quick read on private couple spending, near-limit lines, and what to adjust next.'
+              : 'See where the wedding budget is tightening and what to rebalance or pay attention to next.'
+          }
+          badgeLabel="AI Budget"
+          prompts={budgetPrompts}
+          response={budgetAssistant.response}
+          error={budgetAssistant.error}
+          loading={budgetAssistant.loading || budgetAssistant.usageLoading || budgetAssistant.accessLoading}
+          decision={budgetAssistant.decision}
+          canUseAssistant={budgetAssistant.canUseAssistant}
+          emptyStateTitle="Get a quick budget read before you keep editing"
+          emptyStateBody="Ask for a simple budget health check, a rebalance suggestion, or a payment priority review based on the budget you already have here."
+          dismissible
+          onDismiss={() => budgetAssistant.setDismissed(true)}
+          onPromptClick={(prompt) => budgetAssistant.runPrompt(prompt)}
+        />
+      )}
 
       <Card className="shadow-card">
         <CardContent className="py-5">
