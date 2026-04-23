@@ -58,6 +58,7 @@ export default function ProfileSettings() {
   const [partnerEmailInput, setPartnerEmailInput] = useState('');
   const [partnerInviteSubmitting, setPartnerInviteSubmitting] = useState(false);
   const [ownershipLoading, setOwnershipLoading] = useState(false);
+  const [ownershipError, setOwnershipError] = useState<string | null>(null);
   const [repairingWeddingSetup, setRepairingWeddingSetup] = useState(false);
 
   const isPlanner = profile?.role === 'planner';
@@ -65,8 +66,17 @@ export default function ProfileSettings() {
   const isAdmin = profile?.role === 'admin';
   const isCommittee = isCommitteePlanner(profile);
   const isProfessionalPlanner = isPlanner && !isCommittee;
-  const isCouple = !isPlanner && !isVendor && !isAdmin;
+  const isCouple = profile?.role === 'couple';
   const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
+
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 6000, message = 'Request timed out') => {
+    return await Promise.race<T>([
+      promise,
+      new Promise<T>((_, reject) => {
+        setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  };
 
   const [form, setForm] = useState({
     full_name: '',
@@ -142,24 +152,31 @@ export default function ProfileSettings() {
   }, [profile?.user_id, isCommittee]);
 
   const loadOwnedWeddingWorkspace = async () => {
-    if (!user || !isCouple) {
+    if (!user || !profile || !isCouple) {
       setOwnedWedding(null);
+      setOwnershipError(null);
+      setOwnershipLoading(false);
       return;
     }
 
     setOwnershipLoading(true);
+    setOwnershipError(null);
     try {
       const db = supabase as any;
 
-      const { data: ownerMemberships, error: ownerMembershipError } = await db
-        .from('wedding_memberships')
-        .select('id, wedding_id, role')
-        .eq('user_id', user.id)
-        .eq('is_owner', true)
-        .eq('membership_status', 'active')
-        .in('role', ['bride', 'groom'])
-        .order('created_at', { ascending: true })
-        .limit(1);
+      const { data: ownerMemberships, error: ownerMembershipError } = await withTimeout(
+        db
+          .from('wedding_memberships')
+          .select('id, wedding_id, role')
+          .eq('user_id', user.id)
+          .eq('is_owner', true)
+          .eq('membership_status', 'active')
+          .in('role', ['bride', 'groom'])
+          .order('created_at', { ascending: true })
+          .limit(1),
+        6000,
+        'Loading wedding ownership details took too long.',
+      );
 
       if (ownerMembershipError) throw ownerMembershipError;
 
@@ -170,34 +187,40 @@ export default function ProfileSettings() {
         return;
       }
 
-      const { data: weddings, error: weddingError } = await db
-        .from('weddings')
-        .select('id, name, wedding_code')
-        .eq('id', ownerMembership.wedding_id)
-        .limit(1);
+      const [
+        { data: weddings, error: weddingError },
+        { data: partnerMemberships, error: partnerMembershipError },
+        { data: partnerInvites, error: inviteError },
+      ] = await withTimeout(
+        Promise.all([
+          db
+            .from('weddings')
+            .select('id, name, wedding_code')
+            .eq('id', ownerMembership.wedding_id)
+            .limit(1),
+          db
+            .from('wedding_memberships')
+            .select('id, email, role, membership_status')
+            .eq('wedding_id', ownerMembership.wedding_id)
+            .eq('is_owner', true)
+            .neq('id', ownerMembership.id)
+            .order('created_at', { ascending: true })
+            .limit(1),
+          db
+            .from('wedding_invites')
+            .select('id, email, proposed_role, expires_at, status')
+            .eq('wedding_id', ownerMembership.wedding_id)
+            .eq('invite_type', 'partner')
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(1),
+        ]),
+        6000,
+        'Loading partner ownership details took too long.',
+      );
 
       if (weddingError || !weddings?.[0]) throw weddingError ?? new Error('Could not load wedding workspace.');
-
-      const { data: partnerMemberships, error: partnerMembershipError } = await db
-        .from('wedding_memberships')
-        .select('id, email, role, membership_status')
-        .eq('wedding_id', ownerMembership.wedding_id)
-        .eq('is_owner', true)
-        .neq('id', ownerMembership.id)
-        .order('created_at', { ascending: true })
-        .limit(1);
-
       if (partnerMembershipError) throw partnerMembershipError;
-
-      const { data: partnerInvites, error: inviteError } = await db
-        .from('wedding_invites')
-        .select('id, email, proposed_role, expires_at, status')
-        .eq('wedding_id', ownerMembership.wedding_id)
-        .eq('invite_type', 'partner')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
       if (inviteError) throw inviteError;
 
       const partnerMembership = partnerMemberships?.[0] ?? null;
@@ -224,6 +247,7 @@ export default function ProfileSettings() {
     } catch (error: any) {
       console.error('Could not load wedding ownership state:', error);
       setOwnedWedding(null);
+      setOwnershipError(error?.message || 'Could not load wedding ownership details right now.');
       setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? '');
     } finally {
       setOwnershipLoading(false);
@@ -232,7 +256,7 @@ export default function ProfileSettings() {
 
   useEffect(() => {
     void loadOwnedWeddingWorkspace();
-  }, [user?.id, isCouple]);
+  }, [user?.id, profile?.role]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -647,6 +671,13 @@ export default function ProfileSettings() {
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading wedding ownership details...
+              </div>
+            ) : ownershipError ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">{ownershipError}</p>
+                <Button type="button" variant="outline" onClick={() => void loadOwnedWeddingWorkspace()}>
+                  Try again
+                </Button>
               </div>
             ) : ownedWedding ? (
               <>
