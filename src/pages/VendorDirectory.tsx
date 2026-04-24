@@ -204,7 +204,7 @@ export default function VendorDirectory() {
 
   return (
     <div className="min-h-screen bg-background">
-      <nav className="flex items-center justify-between border-b border-border px-6 py-4 lg:px-12">
+      <nav className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-6 lg:px-12">
         <Link to="/" className="flex items-center gap-2">
           <Heart className="h-6 w-6 text-primary" fill="currentColor" />
           <span className="font-display text-xl font-bold text-foreground">Zania</span>
@@ -223,7 +223,7 @@ export default function VendorDirectory() {
         </div>
       </nav>
 
-      <section className="bg-gradient-warm px-6 py-16 text-center">
+      <section className="bg-gradient-warm px-4 py-12 text-center sm:px-6 sm:py-16">
         <motion.h1
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -244,7 +244,7 @@ export default function VendorDirectory() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="mx-auto mt-8 flex max-w-5xl flex-col gap-3 md:flex-row"
+          className="mx-auto mt-8 flex max-w-5xl flex-col gap-3 lg:flex-row"
         >
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -256,7 +256,7 @@ export default function VendorDirectory() {
             />
           </div>
           <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger className="w-full md:w-40">
+            <SelectTrigger className="w-full lg:w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -272,7 +272,7 @@ export default function VendorDirectory() {
               setLocationTown('all');
             }}
           >
-            <SelectTrigger className="w-full md:w-44">
+            <SelectTrigger className="w-full lg:w-44">
               <SelectValue placeholder="All counties" />
             </SelectTrigger>
             <SelectContent>
@@ -283,7 +283,7 @@ export default function VendorDirectory() {
             </SelectContent>
           </Select>
           <Select value={locationTown} onValueChange={setLocationTown} disabled={locationCounty === 'all'}>
-            <SelectTrigger className="w-full md:w-40">
+            <SelectTrigger className="w-full lg:w-40">
               <SelectValue placeholder="All towns" />
             </SelectTrigger>
             <SelectContent>
@@ -306,7 +306,7 @@ export default function VendorDirectory() {
         )}
       </section>
 
-      <section className="mx-auto max-w-5xl px-6 py-12">
+      <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-12">
         {loading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -467,7 +467,7 @@ export default function VendorDirectory() {
         )}
       </section>
 
-      <footer className="border-t border-border px-6 py-8 text-center text-sm text-muted-foreground">
+      <footer className="border-t border-border px-4 py-8 text-center text-sm text-muted-foreground sm:px-6">
         <div className="flex items-center justify-center gap-2">
           <Heart className="h-4 w-4 text-primary" fill="currentColor" />
           <span>Zania © {new Date().getFullYear()}</span>

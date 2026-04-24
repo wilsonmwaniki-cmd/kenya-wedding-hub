@@ -45,6 +45,7 @@ import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
+import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 
 interface Vendor {
   amount_paid: number;
@@ -300,6 +301,7 @@ export default function Vendors() {
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const assistantPanel = useAssistantPanel();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'directory' | 'custom'>('directory');
@@ -1305,6 +1307,43 @@ export default function Vendors() {
     surface: 'vendor_decision_card',
     contextSource: selectedVendor ? 'selected_vendor_detail' : 'vendor_workspace_summary',
   });
+  const [vendorsNudgeDismissed, setVendorsNudgeDismissed] = useState(false);
+
+  const vendorsNudge = useMemo(() => {
+    if (categoriesNeedingFinalChoice[0]) {
+      return {
+        title: `${categoriesNeedingFinalChoice.length} vendor categor${categoriesNeedingFinalChoice.length === 1 ? 'y still needs a final decision' : 'ies still need final decisions'}`,
+        body: 'Use the assistant to figure out which category to close next.',
+        prompt: `Help me close the ${categoriesNeedingFinalChoice[0].category} vendor decision next.`,
+      };
+    }
+
+    if (finalVendorPaymentsDueSoon[0]) {
+      return {
+        title: `${finalVendorPaymentsDueSoon.length} final vendor payment${finalVendorPaymentsDueSoon.length === 1 ? '' : 's'} due soon`,
+        body: 'A quick review now can help you avoid missing a vendor payment deadline.',
+        prompt: 'Review the upcoming vendor payment deadlines and tell me what needs action first.',
+      };
+    }
+
+    if (vendorTaskSummary.openTasks > 0) {
+      return {
+        title: 'Vendor follow-ups are still open',
+        body: 'Use the assistant to decide which vendor conversation or task to chase first.',
+        prompt: 'Summarize the vendor follow-ups still open and tell me what to chase first.',
+      };
+    }
+
+    if (vendors.length === 0) {
+      return {
+        title: 'No vendors shortlisted yet',
+        body: 'Get a quick recommendation on where to start so the shortlist builds with less guesswork.',
+        prompt: 'Help me decide which vendor categories I should shortlist first.',
+      };
+    }
+
+    return null;
+  }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, vendorTaskSummary.openTasks, vendors.length]);
 
   useEffect(() => {
     if (selectedVendorId && !selectedVendor) {
@@ -1669,6 +1708,36 @@ export default function Vendors() {
                 {addVendorDialog}
               </div>
             </div>
+
+            {!vendorsNudgeDismissed && vendorsNudge && assistantPanel && (
+              <Card className="border-primary/20 bg-primary/5 shadow-card">
+                <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{vendorsNudge.title}</p>
+                    <p className="text-sm text-muted-foreground">{vendorsNudge.body}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => assistantPanel.openAssistant(vendorsNudge.prompt)}
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      Review with AI
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setVendorsNudgeDismissed(true)}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {!vendorsAssistant.dismissed && (
               <InlineAssistantCard

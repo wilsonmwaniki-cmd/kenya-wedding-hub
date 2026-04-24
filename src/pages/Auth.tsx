@@ -14,6 +14,10 @@ import GoogleAuthButton from '@/components/GoogleAuthButton';
 import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import {
+  clearPendingOAuthSignupState,
+  persistPendingOAuthSignupState,
+} from '@/lib/oauthSignupState';
+import {
   clearPendingWeddingSetup,
   completePendingWeddingSetup,
   getPendingWeddingSetup,
@@ -412,6 +416,17 @@ export default function Auth() {
     try {
       validateGoogleSignupIntent();
       persistWeddingIntentIfNeeded();
+
+      if (isSignUp && signupPath === 'professional') {
+        persistPendingOAuthSignupState({
+          role: professionalRole,
+          plannerType: professionalRole === 'planner' ? 'professional' : null,
+          fullName: fullName.trim() || null,
+        });
+      } else {
+        clearPendingOAuthSignupState();
+      }
+
       await signInWithGoogle();
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });

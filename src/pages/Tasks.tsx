@@ -25,6 +25,7 @@ import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
+import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 
 interface Task {
   id: string;
@@ -162,6 +163,7 @@ export default function Tasks() {
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const assistantPanel = useAssistantPanel();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [vendorOptions, setVendorOptions] = useState<VendorOption[]>([]);
   const [budgetCategories, setBudgetCategories] = useState<BudgetCategoryOption[]>([]);
@@ -452,6 +454,45 @@ export default function Tasks() {
     surface: 'task_focus_card',
     contextSource: taskViewMode === 'completed' ? 'completed_tasks_summary' : 'pending_tasks_summary',
   });
+  const [tasksNudgeDismissed, setTasksNudgeDismissed] = useState(false);
+
+  const tasksNudge = useMemo(() => {
+    if (overduePending.length > 0) {
+      return {
+        title: `${overduePending.length} overdue task${overduePending.length === 1 ? '' : 's'} need attention`,
+        body: 'Get a quick catch-up plan before these tasks start blocking the rest of the wedding.',
+        prompt: 'Turn the overdue tasks into a simple catch-up plan for this week.',
+      };
+    }
+
+    if (dueSoonVendorTasks > 0 || openVendorTaskCount > 0) {
+      return {
+        title: 'Vendor-linked tasks are still open',
+        body: 'Use the assistant to decide what vendor follow-up should happen next.',
+        prompt: 'Review the vendor-linked tasks and tell me what needs attention first.',
+      };
+    }
+
+    if (privateTaskCount > 0 && nextPendingTask) {
+      return {
+        title: 'Private couple tasks still need a plan',
+        body: 'Sort out what the two of you should handle directly before delegating the rest.',
+        prompt: 'Separate the private couple tasks from the shared ones and tell me what we should handle ourselves first.',
+      };
+    }
+
+    if (nextPendingTask) {
+      return {
+        title: 'Start with the next right task',
+        body: 'A quick AI pass can help you decide what to tackle before you get lost in the list.',
+        prompt: nextPendingTask.category
+          ? `Tell me what to do first for the next ${nextPendingTask.category} task on our list.`
+          : 'Tell me which pending task should be tackled first and why.',
+      };
+    }
+
+    return null;
+  }, [dueSoonVendorTasks, nextPendingTask, openVendorTaskCount, overduePending.length, privateTaskCount]);
 
   const byDateGroups = useMemo(() => {
     return scheduledPending.reduce<Record<string, Task[]>>((groups, task) => {
@@ -939,6 +980,36 @@ export default function Tasks() {
           </CardContent>
         </Card>
       </div>
+
+      {!tasksNudgeDismissed && tasksNudge && assistantPanel && (
+        <Card className="border-primary/20 bg-primary/5 shadow-card">
+          <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">{tasksNudge.title}</p>
+              <p className="text-sm text-muted-foreground">{tasksNudge.body}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="gap-2"
+                onClick={() => assistantPanel.openAssistant(tasksNudge.prompt)}
+              >
+                <CalendarPlus className="h-4 w-4" />
+                Review with AI
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setTasksNudgeDismissed(true)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {!tasksAssistant.dismissed && (
         <InlineAssistantCard
