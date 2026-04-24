@@ -139,6 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [rolePreview, setRolePreviewState] = useState<RolePreview>('admin');
   const pendingWeddingRecoveryRef = useRef<string | null>(null);
+  const authHydrationRequestRef = useRef(0);
 
   const getFallbackFullName = (authUser: User) => {
     const fullName = authUser.user_metadata?.full_name;
@@ -377,7 +378,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return fallbackProfile;
   };
 
-  const syncAuthState = async (nextSession: Session | null) => {
+  const syncAuthState = async (
+    nextSession: Session | null,
+    options?: { requestId?: number },
+  ) => {
+    if (
+      typeof options?.requestId === 'number' &&
+      authHydrationRequestRef.current !== options.requestId
+    ) {
+      return;
+    }
+
     setSession(nextSession);
     setUser(nextSession?.user ?? null);
 
@@ -537,20 +548,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     const initializeAuth = async () => {
+      const requestId = ++authHydrationRequestRef.current;
+
       try {
         await hydrateSessionFromHash();
         const { session, timedOut, sessionPromise } = await getSessionWithTimeout();
         if (!active) return;
-        await syncAuthState(session);
+        await syncAuthState(session, { requestId });
 
         if (timedOut) {
           void sessionPromise
             .then(async (lateSession) => {
-              if (!active || !lateSession) return;
+              if (
+                !active ||
+                !lateSession ||
+                authHydrationRequestRef.current !== requestId
+              ) {
+                return;
+              }
 
               setLoading(true);
               try {
-                await syncAuthState(lateSession);
+                await syncAuthState(lateSession, { requestId });
               } finally {
                 if (active) setLoading(false);
               }
@@ -664,8 +683,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     setRolePreviewState('admin');
+    authHydrationRequestRef.current += 1;
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    await syncAuthState(null);
   };
 
   const updateProfile = async (updates: Partial<Profile>) => {
