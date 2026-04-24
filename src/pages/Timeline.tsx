@@ -549,12 +549,12 @@ export default function Timeline() {
               <DialogTitle>{editingEvent ? 'Edit Event' : 'Add Event'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-2">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
                   <Label>Time</Label>
                   <Input type="time" value={eventTime} onChange={e => setEventTime(e.target.value)} />
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <Label>Title</Label>
                   <Input placeholder="e.g. Ceremony start" value={eventTitle} onChange={e => setEventTitle(e.target.value)} />
                 </div>
@@ -599,7 +599,7 @@ export default function Timeline() {
 
         {/* Share dialog */}
         <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Share2 className="h-5 w-5" /> Share Timeline
@@ -704,7 +704,7 @@ export default function Timeline() {
 
         {/* Shift dialog */}
         <Dialog open={shiftDialogOpen} onOpenChange={setShiftDialogOpen}>
-          <DialogContent className="max-w-xs">
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xs">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Timer className="h-5 w-5" /> Shift All Events
@@ -715,7 +715,7 @@ export default function Timeline() {
                 <Label>Minutes</Label>
                 <Input type="number" min={1} max={480} value={shiftMinutes} onChange={e => setShiftMinutes(Math.max(1, parseInt(e.target.value) || 1))} />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <Button variant="outline" className="gap-1.5" onClick={() => shiftAllEvents('backward')}>
                   − {shiftMinutes} min
                 </Button>
@@ -734,7 +734,7 @@ export default function Timeline() {
   // List view
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-foreground">Wedding Timeline</h1>
           <p className="text-muted-foreground mt-1">Build, share, and keep everyone synced in real time</p>
@@ -745,7 +745,7 @@ export default function Timeline() {
       </div>
 
       <Tabs defaultValue="timelines">
-        <TabsList>
+        <TabsList className="h-auto w-full flex-wrap justify-start">
           <TabsTrigger value="timelines">Timelines ({instances.length})</TabsTrigger>
           <TabsTrigger value="templates">Templates ({templates.length})</TabsTrigger>
         </TabsList>
@@ -855,7 +855,7 @@ export default function Timeline() {
 
       {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
               {newIsTemplate ? 'Create Template' : fromTemplateId ? 'Create from Template' : 'Create Timeline'}
@@ -894,7 +894,7 @@ export default function Timeline() {
 
       {/* Apply Template dialog */}
       <Dialog open={applyTemplateOpen} onOpenChange={setApplyTemplateOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" /> Apply Template
@@ -912,7 +912,7 @@ export default function Timeline() {
               <Label>Timeline Name</Label>
               <Input placeholder="e.g. Sarah & James Wedding" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <Label>Wedding Date</Label>
                 <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />

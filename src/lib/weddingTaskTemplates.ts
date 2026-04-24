@@ -45,938 +45,1459 @@ export interface SuggestedTaskTemplateOption {
   timelineLabel: string | null;
 }
 
-interface VendorWorkflowConfig {
-  visibility: WeddingTaskVisibility;
-  priorityLevel: 1 | 2 | 3 | 4;
-  secondPaymentRole: string | null;
-  closureRole: string | null;
-}
+type RawChecklistRow = readonly [
+  key: string,
+  category: string,
+  title: string,
+  timelineLabel: string,
+  visibilityRaw: string,
+  delegatableRaw: string,
+  recommendedRole: string | null,
+];
 
-const roleByCategory: Record<string, VendorWorkflowConfig> = {
-  Venue: { visibility: 'public', priorityLevel: 1, secondPaymentRole: 'Aesthetics Coordinator', closureRole: 'Aesthetics Coordinator' },
-  'Venue (Ceremony)': { visibility: 'public', priorityLevel: 1, secondPaymentRole: 'Aesthetics Coordinator', closureRole: 'Secretary' },
-  'Venue (Reception)': { visibility: 'public', priorityLevel: 1, secondPaymentRole: 'Aesthetics Coordinator', closureRole: 'Secretary' },
-  'Venue (Photo Shoot)': { visibility: 'public', priorityLevel: 1, secondPaymentRole: 'Aesthetics Coordinator', closureRole: 'Secretary' },
-  Catering: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Edibles Coordinator', closureRole: 'Edibles Coordinator' },
-  Photography: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Experience Coordinator', closureRole: 'Experience Coordinator' },
-  Photographer: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Experience Coordinator', closureRole: 'Secretary' },
-  Cinematographer: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Experience Coordinator', closureRole: 'Secretary' },
-  Flowers: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Aesthetics Coordinator', closureRole: 'Aesthetics Coordinator' },
-  Décor: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Aesthetics Coordinator', closureRole: 'Aesthetics Coordinator' },
-  Decor: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Aesthetics Coordinator', closureRole: 'Aesthetics Coordinator' },
-  Setup: { visibility: 'public', priorityLevel: 4, secondPaymentRole: 'Aesthetics Coordinator', closureRole: 'Aesthetics Coordinator' },
-  Transport: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Logistics Coordinator', closureRole: 'Logistics Coordinator' },
-  Videography: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Experience Coordinator', closureRole: 'Experience Coordinator' },
-  'Music/DJ': { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Experience Coordinator', closureRole: 'Experience Coordinator' },
-  'Music and Sound (DJ / Band)': { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Experience Coordinator', closureRole: 'Secretary' },
-  MC: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Experience Coordinator', closureRole: 'Experience Coordinator' },
-  Cake: { visibility: 'public', priorityLevel: 3, secondPaymentRole: 'Edibles Coordinator', closureRole: 'Edibles Coordinator' },
-  Stationery: { visibility: 'public', priorityLevel: 1, secondPaymentRole: 'Stationery Coordinator', closureRole: 'Stationery Coordinator' },
-  Legal: { visibility: 'private', priorityLevel: 1, secondPaymentRole: null, closureRole: null },
-  Registry: { visibility: 'private', priorityLevel: 2, secondPaymentRole: null, closureRole: null },
-  Family: { visibility: 'private', priorityLevel: 2, secondPaymentRole: null, closureRole: null },
-  Committee: { visibility: 'public', priorityLevel: 3, secondPaymentRole: null, closureRole: null },
-  Logistics: { visibility: 'public', priorityLevel: 2, secondPaymentRole: 'Chair', closureRole: 'Chair' },
-  Security: { visibility: 'public', priorityLevel: 4, secondPaymentRole: 'Security Coordinator', closureRole: 'Security Coordinator' },
-  Ushering: { visibility: 'public', priorityLevel: 4, secondPaymentRole: 'Ushers Coordinator', closureRole: 'Ushers Coordinator' },
-  'Officiating Minister': { visibility: 'public', priorityLevel: 1, secondPaymentRole: null, closureRole: null },
-  'Bride Body Preparation': { visibility: 'private', priorityLevel: 2, secondPaymentRole: null, closureRole: null },
-  "Bride's Body Preparation": { visibility: 'private', priorityLevel: 2, secondPaymentRole: null, closureRole: null },
-  "Groom's Body Preparation": { visibility: 'private', priorityLevel: 3, secondPaymentRole: null, closureRole: null },
-  'Bride Body Preparation (Pedi-Mani, Facials)': { visibility: 'private', priorityLevel: 3, secondPaymentRole: null, closureRole: null },
-  'Groom Body Preparation (Pedi-Mani, Facials)': { visibility: 'private', priorityLevel: 3, secondPaymentRole: null, closureRole: null },
-  'Hair Stylist': { visibility: 'private', priorityLevel: 3, secondPaymentRole: null, closureRole: 'Best Lady' },
-  'Make-Up Artist': { visibility: 'private', priorityLevel: 3, secondPaymentRole: null, closureRole: 'Best Lady' },
-  "Bride's Gown": { visibility: 'private', priorityLevel: 2, secondPaymentRole: null, closureRole: 'Best Lady' },
-  "Groom's Attire": { visibility: 'private', priorityLevel: 2, secondPaymentRole: null, closureRole: 'Best Man' },
-  "Couple's Rings": { visibility: 'private', priorityLevel: 1, secondPaymentRole: null, closureRole: null },
-  'Couple Rings': { visibility: 'private', priorityLevel: 1, secondPaymentRole: null, closureRole: null },
-  'Bride Attire': { visibility: 'private', priorityLevel: 2, secondPaymentRole: null, closureRole: null },
-  'Groom Attire': { visibility: 'private', priorityLevel: 2, secondPaymentRole: null, closureRole: null },
-  Honeymoon: { visibility: 'private', priorityLevel: 2, secondPaymentRole: null, closureRole: null },
+const RAW_CHECKLIST_ROWS: RawChecklistRow[] = [
+  [
+    "marriage-preparation-research-marriage-preparation-therapy-classes",
+    "Marriage Preparation",
+    "Research marriage preparation therapy / classes.",
+    "18 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "marriage-preparation-lock-in-selected-marriage-preparation-therapy-classes-with-deposit-pl",
+    "Marriage Preparation",
+    "Lock in selected marriage preparation therapy / classes with deposit | Plan to attend",
+    "14 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "rings-research-wedding-rings",
+    "Rings",
+    "Research wedding rings",
+    "14 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-research-bridal-gowns",
+    "Bridal Gown, Accessories, Preparation",
+    "Research bridal gowns",
+    "14 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-research-grooms-attire",
+    "Groom's Attire & Accessories, Preparation",
+    "Research groom's attire",
+    "14 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "couples-tasks-decide-on-a-wedding-date",
+    "Couple's Tasks",
+    "Decide on a wedding date",
+    "14 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "church-and-officiating-minister-research-churches-and-officiating-ministers-decide-if-chur",
+    "Church & Officiating Minister",
+    "Research churches and officiating ministers | Decide if church or garden wedding",
+    "13 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-planner-planning-team-research-wedding-planners",
+    "Wedding Planner / Planning Team",
+    "Research wedding planners",
+    "13 Months",
+    "private",
+    "",
+    null
+  ],
+  [
+    "wedding-venue-research-wedding-venues",
+    "Wedding Venue",
+    "Research wedding venues",
+    "13 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "photo-shoot-venue-research-photo-shoot-venues",
+    "Photo Shoot Venue",
+    "Research photo shoot venues",
+    "13 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "couples-tasks-research-where-you-shall-live-as-a-couple-after-the-wedding-if-applicable",
+    "Couple's Tasks",
+    "Research where you shall live as a couple after the wedding (if applicable)",
+    "13 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "invitations-research-invitation-cards-vendor",
+    "Invitations",
+    "Research invitation cards vendor",
+    "12 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "d-cor-tents-chairs-tables-research-d-corators",
+    "Décor, Tents, Chairs, Tables",
+    "Research décorators",
+    "12 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "caterer-research-caterers",
+    "Caterer",
+    "Research caterers",
+    "12 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "photographer-research-photographers",
+    "Photographer",
+    "Research photographers",
+    "12 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "cinematographer-research-cinematographers",
+    "Cinematographer",
+    "Research cinematographers",
+    "12 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "honeymoon-research-honeymoon-destinations",
+    "Honeymoon",
+    "Research honeymoon destinations",
+    "11 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "master-of-ceremonies-research-master-of-ceremonies",
+    "Master of Ceremonies",
+    "Research master of ceremonies",
+    "11 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "dj-or-band-and-sound-research-djs-or-bands",
+    "DJ (or Band) and Sound",
+    "Research DJs (or bands)",
+    "11 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "cake-artist-and-baker-research-cake-artist-bakers",
+    "Cake Artist & Baker",
+    "Research cake artist / bakers",
+    "11 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "hair-stylist-research-hair-stylists",
+    "Hair Stylist",
+    "Research hair stylists",
+    "10 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "make-up-artist-research-make-up-artists",
+    "Make-up Artist",
+    "Research make-up artists",
+    "10 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "couples-tasks-map-out-the-dates-for-the-key-events-leading-up-to-the-wedding-day",
+    "Couple's Tasks",
+    "Map out the dates for the key events leading up to the wedding day",
+    "10 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-planner-planning-team-lock-in-wedding-planner-plan-future-payment-or-select-the-pe",
+    "Wedding Planner / Planning Team",
+    "Lock in wedding planner | Plan future payment OR Select the people who shall form your planning team",
+    "10 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "church-and-officiating-minister-lock-in-church-and-officiating-minister-with-payment-if-re",
+    "Church & Officiating Minister",
+    "Lock in church and officiating minister with payment (if required)",
+    "9 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-venue-lock-in-wedding-venue-with-a-deposit-plan-future-payment-dates",
+    "Wedding Venue",
+    "Lock in wedding venue with a deposit | Plan future payment dates",
+    "9 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "photo-shoot-venue-lock-in-photo-shoot-venue-with-a-deposit-plan-future-payment-dates",
+    "Photo Shoot Venue",
+    "Lock in photo shoot venue with a deposit | Plan future payment dates",
+    "9 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "rings-lock-in-wedding-rings-with-a-deposit-plan-future-payment-dates",
+    "Rings",
+    "Lock in wedding rings with a deposit | Plan future payment dates",
+    "9 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-lock-in-bridal-gown-with-a-deposit-plan-future-payment",
+    "Bridal Gown, Accessories, Preparation",
+    "Lock in bridal gown with a deposit | Plan future payment dates",
+    "9 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-lock-in-grooms-attire-with-a-deposit-plan-future",
+    "Groom's Attire & Accessories, Preparation",
+    "Lock in groom's attire with a deposit | Plan future payment dates",
+    "9 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "couples-tasks-identify-and-document-all-venues-to-be-used-throughout-the-wedding",
+    "Couple's Tasks",
+    "Identify and document all venues to be used throughout the wedding",
+    "9 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "couples-tasks-develop-a-detailed-program-covering-the-day-from-the-couple-s-morning-prepar",
+    "Couple's Tasks",
+    "Develop a detailed program covering the day from the couple’s morning preparations to the end of the reception",
+    "8 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "invitations-lock-in-invitation-cards-vendor-with-a-deposit-plan-future-payment-dates",
+    "Invitations",
+    "Lock in invitation cards vendor with a deposit | Plan future payment dates",
+    "8 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "d-cor-tents-chairs-tables-lock-in-decorator-with-a-deposit-plan-future-payment-dates",
+    "Décor, Tents, Chairs, Tables",
+    "Lock in decorator with a deposit | Plan future payment dates",
+    "8 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "caterer-lock-in-caterer-with-a-deposit-plan-future-payment-dates",
+    "Caterer",
+    "Lock in caterer with a deposit | Plan future payment dates",
+    "8 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "cake-artist-and-baker-lock-in-cake-artist-baker-with-a-deposit-plan-future-payment-dates",
+    "Cake Artist & Baker",
+    "Lock in cake artist / baker with a deposit | Plan future payment dates",
+    "8 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "couples-tasks-meet-with-the-bridal-party-to-review-attire-vendors-and-costs-make-up-and-ha",
+    "Couple's Tasks",
+    "Meet with the bridal party to review attire vendors and costs, make-up and hair styling expenses, rehearsal date, pre-wedding accommodations, and wedding day timings",
+    "8 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "honeymoon-lock-in-honeymoon-destination-s-with-a-deposit-plan-future-payment-dates",
+    "Honeymoon",
+    "Lock in honeymoon destination(s) with a deposit | Plan future payment dates",
+    "7 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "photographer-lock-in-photographer-with-a-deposit-plan-future-payment-dates",
+    "Photographer",
+    "Lock in photographer with a deposit | Plan future payment dates",
+    "7 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "cinematographer-lock-in-cinematographer-with-a-deposit-plan-future-payment-dates",
+    "Cinematographer",
+    "Lock in cinematographer with a deposit | Plan future payment dates",
+    "7 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "master-of-ceremonies-lock-in-master-of-ceremonies-with-a-deposit-plan-future-payment-dates",
+    "Master of Ceremonies",
+    "Lock in master of ceremonies with a deposit | Plan future payment dates",
+    "7 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "dj-or-band-and-sound-lock-in-dj-or-band-with-a-deposit-plan-future-payment-dates",
+    "DJ (or Band) and Sound",
+    "Lock in DJ (or band) with a deposit | Plan future payment dates",
+    "7 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-research-brides-pedi-mani-artists",
+    "Bridal Gown, Accessories, Preparation",
+    "Research bride's pedi-mani artists.",
+    "6 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-research-grooms-pedi-mani-artists",
+    "Groom's Attire & Accessories, Preparation",
+    "Research groom's pedi-mani artists",
+    "6 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-research-bridesmaids-attire-designer-shop",
+    "Bridal Gown, Accessories, Preparation",
+    "Research bridesmaids' attire designer/shop",
+    "7 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-research-groomsmens-attire-designer-shop",
+    "Groom's Attire & Accessories, Preparation",
+    "Research groomsmen's attire designer/shop",
+    "7 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-bridal-gown-fitting-1",
+    "Bridal Gown, Accessories, Preparation",
+    "Bridal gown fitting #1",
+    "6 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-grooms-attire-fitting-1",
+    "Groom's Attire & Accessories, Preparation",
+    "Groom's attire fitting #1",
+    "6 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "couples-tasks-select-the-people-who-shall-be-in-your-bridal-party",
+    "Couple's Tasks",
+    "Select the people who shall be in your bridal party.",
+    "6 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "invitations-confirm-wedding-details-are-accurate-on-invitations",
+    "Invitations",
+    "Confirm wedding details are accurate on invitations",
+    "5 Months",
+    "public",
+    "Delegatable",
+    "Stationery Coordinator"
+  ],
+  [
+    "invitations-confirm-if-other-stationery-items-are-needed-gift-box-guest-book-envelopes-bad",
+    "Invitations",
+    "Confirm if other stationery items are needed (gift box, guest book, envelopes, badges, signage)",
+    "5 Months",
+    "public",
+    "Delegatable",
+    "Stationery Coordinator"
+  ],
+  [
+    "honeymoon-plan-honeymoon-itinerary",
+    "Honeymoon",
+    "Plan honeymoon itinerary",
+    "5 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "d-cor-tents-chairs-tables-finalize-all-d-cor-and-set-up-elements-with-decorator",
+    "Décor, Tents, Chairs, Tables",
+    "Finalize all décor and set up elements with decorator",
+    "5 Months",
+    "public",
+    "Delegatable",
+    "Aesthetics Coordinator"
+  ],
+  [
+    "caterer-finalize-menu-with-caterer",
+    "Caterer",
+    "Finalize menu with caterer",
+    "5 Months",
+    "public",
+    "Delegatable",
+    "Edibles Coordinator"
+  ],
+  [
+    "cake-artist-and-baker-attend-wedding-cake-tasting-lock-in-cake-flavour-and-design",
+    "Cake Artist & Baker",
+    "Attend wedding cake tasting | Lock in cake flavour & design",
+    "5 Months",
+    "public",
+    "Delegatable",
+    "Edibles Coordinator"
+  ],
+  [
+    "bridal-gown-accessories-preparation-have-the-ladies-lock-in-bridesmaids-attire-designer-wi",
+    "Bridal Gown, Accessories, Preparation",
+    "Have the ladies lock in bridesmaids' attire designer with a deposit",
+    "5 Months",
+    "public",
+    "Delegatable",
+    "Best Lady"
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-have-the-men-lock-in-groomsmens-attire-designer-",
+    "Groom's Attire & Accessories, Preparation",
+    "Have the men lock in groomsmen's attire designer with a deposit",
+    "5 Months",
+    "public",
+    "Delegatable",
+    "Best Man"
+  ],
+  [
+    "couples-tasks-lock-in-with-a-deposit-where-you-shall-live-as-a-couple-after-the-wedding-if",
+    "Couple's Tasks",
+    "Lock in with a deposit, where you shall live as a couple after the wedding (if applicable)",
+    "4 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-choose-and-visit-family-gynaecologist",
+    "Bridal Gown, Accessories, Preparation",
+    "Choose and visit family gynaecologist.",
+    "4 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "church-and-officiating-minister-meet-officiating-minister-to-discuss-wedding-ceremony-requ",
+    "Church & Officiating Minister",
+    "Meet officiating minister to discuss wedding ceremony | Request copy of his officiating licence",
+    "4 Months",
+    "public",
+    "Delegatable",
+    "Aesthetics Coordinator"
+  ],
+  [
+    "master-of-ceremonies-go-through-the-program-with-the-master-of-ceremonies",
+    "Master of Ceremonies",
+    "Go through the program with the master of ceremonies",
+    "4 Months",
+    "public",
+    "Delegatable",
+    "Experience Coordinator"
+  ],
+  [
+    "dj-or-band-and-sound-meet-dj-or-band-to-discuss-and-finalize-music-playlist",
+    "DJ (or Band) and Sound",
+    "Meet DJ (or band) to discuss and finalize music playlist",
+    "4 Months",
+    "public",
+    "Delegatable",
+    "Experience Coordinator"
+  ],
+  [
+    "photographer-brief-photographer-on-wedding-vision-and-days-plans",
+    "Photographer",
+    "Brief photographer on wedding vision & day's plans",
+    "4 Months",
+    "public",
+    "Delegatable",
+    "Experience Coordinator"
+  ],
+  [
+    "cinematographer-brief-cinematographer-on-wedding-vision-and-days-plans",
+    "Cinematographer",
+    "Brief cinematographer on wedding vision & day's plans",
+    "4 Months",
+    "public",
+    "Delegatable",
+    "Experience Coordinator"
+  ],
+  [
+    "bridal-gown-accessories-preparation-bridal-gown-fitting-2",
+    "Bridal Gown, Accessories, Preparation",
+    "Bridal gown fitting #2",
+    "4 Months",
+    "public",
+    "Delegatable",
+    "Best Lady"
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-grooms-attire-fitting-2",
+    "Groom's Attire & Accessories, Preparation",
+    "Groom's attire fitting #2",
+    "4 Months",
+    "public",
+    "Delegatable",
+    "Best Man"
+  ],
+  [
+    "invitations-create-gift-registry-at-outlets-offering-the-same",
+    "Invitations",
+    "Create gift registry at outlets offering the same",
+    "4 Months",
+    "public",
+    "Delegatable",
+    "Stationery Coordinator"
+  ],
+  [
+    "wedding-licenses-apply-for-your-wedding-permit",
+    "Wedding Licenses",
+    "Apply for your wedding permit",
+    "3 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "rings-confirm-wedding-rings-fit-make-adjustents-if-necessary",
+    "Rings",
+    "Confirm wedding rings fit, make adjustents if necessary",
+    "3 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "invitations-confirm-invitations-and-stationery-are-delivered-as-agreed-make-final-payment",
+    "Invitations",
+    "Confirm invitations and stationery are delivered as agreed | Make final payment",
+    "3 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-planner-planning-team-schedule-and-run-for-all-planning-team-meetings-if-applicabl",
+    "Wedding Planner / Planning Team",
+    "Schedule and run for all planning team meetings (if applicable).",
+    "3 Months",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "hair-stylist-lock-in-hair-stylist-with-a-deposit-plan-future-payment-dates",
+    "Hair Stylist",
+    "Lock in hair stylist with a deposit | Plan future payment dates",
+    "3 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "make-up-artist-lock-in-make-up-artist-with-a-deposit-plan-future-payment-dates",
+    "Make-up Artist",
+    "Lock in make-up artist with a deposit | Plan future payment dates",
+    "3 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-lock-in-brides-pedi-mani-artist-with-a-deposit",
+    "Bridal Gown, Accessories, Preparation",
+    "Lock in bride's pedi-mani artist with a deposit",
+    "3 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-lock-in-grooms-pedi-mani-artist-with-a-deposit",
+    "Groom's Attire & Accessories, Preparation",
+    "Lock in groom's pedi-mani artist with a deposit",
+    "3 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-licenses-attend-the-wedding-permit-interview",
+    "Wedding Licenses",
+    "Attend the wedding permit interview",
+    "8 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "church-and-officiating-minister-if-church-wedding-confirm-church-is-ready-for-ceremony-mak",
+    "Church & Officiating Minister",
+    "(if church wedding) Confirm church is ready for ceremony | Make final payment",
+    "8 Weeks",
+    "public",
+    "Delegatable",
+    "Secretary"
+  ],
+  [
+    "wedding-venue-confirm-wedding-venue-is-ready-for-the-wedding-make-final-payment",
+    "Wedding Venue",
+    "Confirm wedding venue is ready for the wedding | Make final payment",
+    "8 Weeks",
+    "public",
+    "Delegatable",
+    "Secretary"
+  ],
+  [
+    "photo-shoot-venue-confirm-venue-is-ready-for-the-photo-shoot-make-final-payment",
+    "Photo Shoot Venue",
+    "Confirm venue is ready for the photo shoot | Make final payment",
+    "8 Weeks",
+    "public",
+    "Delegatable",
+    "Secretary"
+  ],
+  [
+    "honeymoon-make-final-payment-ahead-of-the-wedding-day",
+    "Honeymoon",
+    "Make final payment ahead of the wedding day.",
+    "8 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "church-and-officiating-minister-decide-who-shall-preach-at-the-ceremony",
+    "Church & Officiating Minister",
+    "Decide who shall preach at the ceremony",
+    "8 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-planner-planning-team-liasise-with-couple-to-list-out-family-ushers",
+    "Wedding Planner / Planning Team",
+    "Liasise with couple to list out family ushers",
+    "7 Weeks",
+    "public",
+    "Delegatable",
+    "Ushers Coordinator"
+  ],
+  [
+    "wedding-planner-planning-team-liaisie-with-couple-to-hire-or-identify-from-among-friends-a",
+    "Wedding Planner / Planning Team",
+    "Liaisie with couple to hire (or identify from among friends and family) an ushering team",
+    "7 Weeks",
+    "public",
+    "Delegatable",
+    "Ushers Coordinator"
+  ],
+  [
+    "wedding-planner-planning-team-liaisie-with-couple-to-hire-or-identify-from-among-friends-a",
+    "Wedding Planner / Planning Team",
+    "Liaisie with couple to hire (or identify from among friends and family) a security team",
+    "7 Weeks",
+    "public",
+    "Delegatable",
+    "Security Coordinator"
+  ],
+  [
+    "wedding-planner-planning-team-liaisie-with-couple-to-identify-the-gift-tables-team",
+    "Wedding Planner / Planning Team",
+    "Liaisie with couple to identify the gift tables team",
+    "7 Weeks",
+    "public",
+    "Delegatable",
+    "Stationery Coordinator"
+  ],
+  [
+    "invitations-send-off-wedding-invitation-cards",
+    "Invitations",
+    "Send off wedding invitation cards",
+    "6 Weeks",
+    "public",
+    "Delegatable",
+    "Stationery Coordinator"
+  ],
+  [
+    "wedding-planner-planning-team-liaise-with-couple-to-ensure-all-vendors-have-signed-contrac",
+    "Wedding Planner / Planning Team",
+    "Liaise with couple to ensure all vendors have signed contracts",
+    "6 Weeks",
+    "public",
+    "Delegatable",
+    "Secretary"
+  ],
+  [
+    "transport-determine-the-number-of-vehicles-needed",
+    "Transport",
+    "Determine the number of vehicles needed",
+    "6 Weeks",
+    "public",
+    "Delegatable",
+    "Transport Coordinator"
+  ],
+  [
+    "transport-designate-a-favourable-route-for-all-transfers-on-the-wedding-day",
+    "Transport",
+    "Designate a favourable route for all transfers on the wedding day",
+    "6 Weeks",
+    "public",
+    "Delegatable",
+    "Transport Coordinator"
+  ],
+  [
+    "transport-decide-where-vehicles-shall-be-cleaned-and-decorated",
+    "Transport",
+    "Decide where vehicles shall be cleaned and decorated",
+    "6 Weeks",
+    "public",
+    "Delegatable",
+    "Transport Coordinator"
+  ],
+  [
+    "hair-stylist-have-a-hair-consult",
+    "Hair Stylist",
+    "Have a hair consult",
+    "6 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "make-up-artist-have-a-make-up-trial",
+    "Make-up Artist",
+    "Have a make-up trial",
+    "6 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-purchase-bridal-shoes-and-other-bridal-accessories",
+    "Bridal Gown, Accessories, Preparation",
+    "Purchase bridal shoes and other bridal accessories",
+    "6 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-purchase-grooms-shoes-and-other-grooms-accessori",
+    "Groom's Attire & Accessories, Preparation",
+    "Purchase groom's shoes and other groom's accessories",
+    "6 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "rings-collect-weddings-rings-make-final-payment",
+    "Rings",
+    "Collect weddings rings | Make final payment",
+    "1 Months",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-licenses-collect-the-wedding-permit-and-give-a-copy-to-the-officiating-minister",
+    "Wedding Licenses",
+    "Collect the wedding permit and give a copy to the officiating minister",
+    "4 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-planner-planning-team-organize-a-meeting-with-the-couples-parents-to-align-on-wedd",
+    "Wedding Planner / Planning Team",
+    "Organize a meeting with the couples parents to align on wedding plans.",
+    "4 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-pick-up-bridal-gown-make-final-payment",
+    "Bridal Gown, Accessories, Preparation",
+    "Pick up bridal gown | Make final payment",
+    "4 Weeks",
+    "private",
+    "Delegatable",
+    "Best Lady"
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-pick-up-grooms-attire-make-final-payment",
+    "Groom's Attire & Accessories, Preparation",
+    "Pick up groom's attire | Make final payment",
+    "4 Weeks",
+    "private",
+    "Delegatable",
+    "Best Man"
+  ],
+  [
+    "transport-have-a-record-of-how-long-each-vehicle-is-available-on-the-wedding-day-ensuring-",
+    "Transport",
+    "Have a record of how long each vehicle is available on the wedding day, ensuring no transport gaps",
+    "4 Weeks",
+    "public",
+    "Delegatable",
+    "Transport Coordinator"
+  ],
+  [
+    "church-and-officiating-minister-meet-with-officiating-minister-and-bridal-party-for-the-re",
+    "Church & Officiating Minister",
+    "Meet with officiating minister and bridal party for the rehearsals",
+    "3 Weeks",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "master-of-ceremonies-build-the-program-participants-list-with-the-master-of-ceremonies",
+    "Master of Ceremonies",
+    "Build the program participants list with the master of ceremonies",
+    "3 Weeks",
+    "public",
+    "Delegatable",
+    "Secretary"
+  ],
+  [
+    "master-of-ceremonies-build-the-family-and-friends-group-photo-list-with-the-master-of-cere",
+    "Master of Ceremonies",
+    "Build the family and friends group photo list with the master of ceremonies",
+    "3 Weeks",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-planner-planning-team-plan-a-vendors-meeting-and-ensure-the-planning-team-if-appli",
+    "Wedding Planner / Planning Team",
+    "Plan a vendors’ meeting and ensure the planning team (if applicable) is also in attendance.",
+    "3 Weeks",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "wedding-licenses-confirm-if-the-venue-has-a-nema-license-if-not-make-arrangement-to-have-i",
+    "Wedding Licenses",
+    "Confirm if the Venue has a NEMA license. If not, make arrangement to have it paid",
+    "3 Weeks",
+    "public",
+    "Delegatable",
+    "Experience Coordinator"
+  ],
+  [
+    "wedding-venue-confirm-the-wedding-venue-has-ample-security-and-make-arrangements-if-not",
+    "Wedding Venue",
+    "Confirm the wedding venue has ample security and make arrangements if not",
+    "6 Weeks",
+    "public",
+    "Delegatable",
+    "Security Coordinator"
+  ],
+  [
+    "honeymoon-pack-for-your-honeymoon",
+    "Honeymoon",
+    "Pack for your honeymoon",
+    "1 Weeks",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "bridal-gown-accessories-preparation-visit-brides-pedi-mani-artist-make-final-payment",
+    "Bridal Gown, Accessories, Preparation",
+    "Visit bride's pedi-mani artist | Make final payment",
+    "1 Week",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "grooms-attire-and-accessories-preparation-visit-grooms-pedi-mani-artist-make-final-payment",
+    "Groom's Attire & Accessories, Preparation",
+    "Visit groom's pedi-mani artist | Make final payment",
+    "1 Week",
+    "private",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "d-cor-tents-chairs-tables-confirm-setup-has-commenced-on-agreed-day",
+    "Décor, Tents, Chairs, Tables",
+    "Confirm setup has commenced on agreed day",
+    "3 Days",
+    "public",
+    "Delegatable",
+    "Aesthetics Coordinator"
+  ],
+  [
+    "hair-stylist-have-brides-hair-styled-at-agreed-place-and-time-make-final-payment",
+    "Hair Stylist",
+    "Have bride's hair styled at agreed place and time | Make final payment",
+    "Wedding Day",
+    "private",
+    "Delegatable",
+    "Best Lady"
+  ],
+  [
+    "make-up-artist-have-brides-make-up-done-at-agreed-place-and-time-make-final-payment",
+    "Make-up Artist",
+    "Have bride's make-up done at agreed place and time | Make final payment",
+    "Wedding Day",
+    "private",
+    "Delegatable",
+    "Best Lady"
+  ],
+  [
+    "photographer-confirm-photographer-has-arrived-at-agreed-place-and-time",
+    "Photographer",
+    "Confirm photographer has arrived at agreed place and time",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Experience Coordinator"
+  ],
+  [
+    "cinematographer-confirm-cinematographer-has-arrived-at-agreed-place-and-time",
+    "Cinematographer",
+    "Confirm cinematographer has arrived at agreed place and time",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Experience Coordinator"
+  ],
+  [
+    "transport-confirm-all-vehicles-have-arrived-at-agreed-place-and-time",
+    "Transport",
+    "Confirm all vehicles have arrived at agreed place and time",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Transport Coordinator"
+  ],
+  [
+    "transport-organize-the-transfer-of-couple-family-bridal-party-and-their-luggage-along-desi",
+    "Transport",
+    "Organize the transfer of couple, family, bridal party and their luggage along designated routes",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Transport Coordinator"
+  ],
+  [
+    "master-of-ceremonies-confirm-master-of-ceremonies-has-delivered-as-agreed-make-final-payme",
+    "Master of Ceremonies",
+    "Confirm master of ceremonies has delivered as agreed | Make final payment",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Experience Coordinator"
+  ],
+  [
+    "dj-or-band-and-sound-confirm-all-music-and-sound-requirements-are-delivered-as-agreed-make",
+    "DJ (or Band) and Sound",
+    "Confirm all music and sound requirements are delivered as agreed | Make final payment",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Experience Coordinator"
+  ],
+  [
+    "wedding-venue-ensure-washrooms-are-clean-at-all-times",
+    "Wedding Venue",
+    "Ensure washrooms are clean at all times",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Aesthetics Coordinator"
+  ],
+  [
+    "caterer-confirm-all-catering-elements-are-delivered-as-agreed-make-final-payment",
+    "Caterer",
+    "Confirm all catering elements are delivered as agreed | Make final payment",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Edibles Coordinator"
+  ],
+  [
+    "transport-organize-the-transfer-of-service-teams-ushers-security-along-designated-routes",
+    "Transport",
+    "Organize the transfer of service teams (ushers, security) along designated routes",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Transport Coordinator"
+  ],
+  [
+    "caterer-ensure-service-teams-ushers-security-and-vendors-are-served-at-the-best-times-poss",
+    "Caterer",
+    "Ensure service teams (ushers, security) & vendors are served at the best times possible so their functions are uninterrupted",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Edibles Coordinator"
+  ],
+  [
+    "cake-artist-and-baker-confirm-cake-is-delivered-as-agreed-make-final-payment",
+    "Cake Artist & Baker",
+    "Confirm cake is delivered as agreed | Make final payment",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Edibles Coordinator"
+  ],
+  [
+    "d-cor-tents-chairs-tables-confirm-all-d-cor-elements-tents-chairs-and-tables-are-delivered",
+    "Décor, Tents, Chairs, Tables",
+    "Confirm all décor elements, tents, chairs and tables are delivered as agreed | Make final payment",
+    "Wedding Day",
+    "public",
+    "Delegatable",
+    "Secretary"
+  ],
+  [
+    "transport-organize-the-transfer-of-gifts-to-designated-storage-location",
+    "Transport",
+    "Organize the transfer of gifts to designated storage location",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Transport Coordinator"
+  ],
+  [
+    "photographer-confirm-photos-are-delivered-as-agreed-make-final-payment",
+    "Photographer",
+    "Confirm photos are delivered as agreed | Make final payment",
+    "Post Wedding",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "cinematographer-confirm-video-footage-is-delivered-as-agreed-make-final-payment",
+    "Cinematographer",
+    "Confirm video footage is delivered as agreed | Make final payment",
+    "Post Wedding",
+    "public",
+    "Not Delegatable",
+    null
+  ],
+  [
+    "transport-research-transport-vendors",
+    "Transport",
+    "Research transport vendors",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Transport Coordinator"
+  ],
+  [
+    "transport-lock-in-transport-vendors-with-a-deposit-plan-future-payment-dates",
+    "Transport",
+    "Lock in transport vendors with a deposit | Plan future payment dates",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Transport Coordinator"
+  ],
+  [
+    "transport-confirm-transport-requirements-were-met-as-agreed-make-final-payment",
+    "Transport",
+    "Confirm transport requirements were met as agreed | Make final payment",
+    "Wedding Day",
+    "public",
+    "Must Be Delegated",
+    "Transport Coordinator"
+  ]
+];
+
+const CATEGORY_ALIASES: Record<string, string> = {
+  venue: 'Wedding Venue',
+  'venue ceremony': 'Wedding Venue',
+  'venue reception': 'Wedding Venue',
+  'wedding venue': 'Wedding Venue',
+  'photo shoot venue': 'Photo Shoot Venue',
+  'venue photo shoot': 'Photo Shoot Venue',
+  cake: 'Cake Artist & Baker',
+  'cake artist baker': 'Cake Artist & Baker',
+  catering: 'Caterer',
+  caterer: 'Caterer',
+  photography: 'Photographer',
+  photographer: 'Photographer',
+  videography: 'Cinematographer',
+  cinematographer: 'Cinematographer',
+  'master of ceremonies': 'Master of Ceremonies',
+  mc: 'Master of Ceremonies',
+  'dj or band and sound': 'DJ (or Band) and Sound',
+  'dj band and sound': 'DJ (or Band) and Sound',
+  'music dj': 'DJ (or Band) and Sound',
+  'music and sound dj band': 'DJ (or Band) and Sound',
+  'music and sound': 'DJ (or Band) and Sound',
+  'decor tents chairs': 'Décor, Tents, Chairs, Tables',
+  decor: 'Décor, Tents, Chairs, Tables',
+  'décor': 'Décor, Tents, Chairs, Tables',
+  'décor tents chairs tables': 'Décor, Tents, Chairs, Tables',
+  flowers: 'Décor, Tents, Chairs, Tables',
+  invitations: 'Invitations',
+  stationery: 'Invitations',
+  transport: 'Transport',
+  honeymoon: 'Honeymoon',
+  'couples rings': 'Rings',
+  'couple rings': 'Rings',
+  rings: 'Rings',
+  'hair stylist': 'Hair Stylist',
+  'make-up artist': 'Make-up Artist',
+  'make up artist': 'Make-up Artist',
+  'church and officiating minister': 'Church & Officiating Minister',
+  'church officiating minister': 'Church & Officiating Minister',
+  'officiating minister': 'Church & Officiating Minister',
+  'wedding planner planning team': 'Wedding Planner / Planning Team',
+  'wedding planner': 'Wedding Planner / Planning Team',
+  'planning team': 'Wedding Planner / Planning Team',
+  'wedding licenses': 'Wedding Licenses',
+  legal: 'Wedding Licenses',
+  'couples tasks': "Couple's Tasks",
+  'bridal gown accessories preparation': 'Bridal Gown, Accessories, Preparation',
+  'grooms attire accessories preparation': "Groom's Attire & Accessories, Preparation",
 };
 
-const sharedFoundationTemplates: WeddingTaskTemplate[] = [
-  {
-    key: 'records-wedding-details',
-    title: 'Capture your wedding details',
-    category: 'Records',
-    description: 'Document the wedding date, theme, colours, guest target, and headline priorities before detailed planning starts.',
-    phase: 'foundation',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 1,
-    timelineOffsetMonths: 14,
-  },
-  {
-    key: 'records-wedding-calendar',
-    title: 'Map the wedding calendar',
-    category: 'Records',
-    description: 'Set the dates for key events leading up to the wedding so vendors and family work from the same sequence.',
-    phase: 'foundation',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 14,
-  },
-  {
-    key: 'records-family-database',
-    title: 'Capture key family contacts',
-    category: 'Records',
-    description: 'Add parents, siblings, and other priority contacts who will matter during approvals and wedding-day coordination.',
-    phase: 'foundation',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 14,
-  },
-  {
-    key: 'records-wedding-program',
-    title: 'Draft the wedding program',
-    category: 'Records',
-    description: 'Build the day-of program from wake-up through reception close so vendors, family, and the committee align on timing.',
-    phase: 'foundation',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 9,
-  },
-  {
-    key: 'records-budget-framework',
-    title: 'Set the personal and wedding budget framework',
-    category: 'Budget',
-    description: 'Separate personal/private spending from the public wedding budget and fill both with working estimates from your research.',
-    phase: 'foundation',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 10,
-  },
-  {
-    key: 'bridal-party-selection',
-    title: 'Confirm the bridal party line-up',
-    category: 'Bridal Party',
-    description: 'Choose the people who are reliable, willing, and available to stand with you and carry the related responsibilities.',
-    phase: 'foundation',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 6,
-  },
-  {
-    key: 'logistics-committee-selection',
-    title: 'Appoint the logistics committee',
-    category: 'Logistics',
-    description: 'Select the people who will help run the wedding day and confirm they are available for the key coordination roles.',
-    phase: 'foundation',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 5,
-  },
-  {
-    key: 'officiant-selection',
-    title: 'Choose the officiant and church requirements',
-    category: 'Officiating Minister',
-    description: 'Confirm who will officiate the wedding, book a meeting, and capture any church or officiant requirements early.',
-    phase: 'foundation',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 1,
-    timelineOffsetMonths: 4,
-  },
-  {
-    key: 'legal-wedding-permit',
-    title: 'Apply for the wedding permit',
-    category: 'Legal',
-    description: 'Prepare the legal paperwork, submit the permit application, and track the issue date so it does not become a last-minute blocker.',
-    phase: 'foundation',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 1,
-    timelineOffsetMonths: 3,
-  },
-  {
-    key: 'registry-gift-list',
-    title: 'Set up the gift registry',
-    category: 'Registry',
-    description: 'Create the gift registry or gifting guidance you want guests to see before invitations and RSVP details go out.',
-    phase: 'foundation',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 3,
-  },
-];
+function normalizeValue(value?: string | null) {
+  return value
+    ?.toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim() ?? '';
+}
 
-const coupleOnlyTemplates: WeddingTaskTemplate[] = [
-  {
-    key: 'premarital-classes',
-    title: 'Choose and book pre-marital counselling classes',
-    category: 'Pre-Marital Counselling',
-    description: 'Confirm where you will attend pre-marital classes, find the next available intake, and lock in your place.',
-    phase: 'foundation',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 1,
-    timelineOffsetMonths: 18,
-  },
-  {
-    key: 'post-wedding-home-plan',
-    title: 'Decide where you will live after the wedding',
-    category: 'Post Wedding Preparation',
-    description: 'Make the post-wedding home decision early and track deposits, move-in timing, and any setup costs separately from the public wedding budget.',
-    phase: 'foundation',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 4,
-  },
-  {
-    key: 'health-family-planning',
-    title: 'Book the family health consultation',
-    category: 'Bride Body Preparation',
-    description: 'Choose a family health or gynaecology consultation and set the appointment early enough to act on the recommendations before the wedding.',
-    phase: 'foundation',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 4,
-  },
-];
+function canonicalizeCategory(category: string) {
+  const normalized = normalizeValue(category);
+  return CATEGORY_ALIASES[normalized] ?? category.trim();
+}
 
-const spreadsheetDetailedTemplates: WeddingTaskTemplate[] = [
-  {
-    key: 'records-bio-data',
-    title: 'Bio Data',
-    category: 'Records',
-    description: 'Fill in your names, future family name, phone numbers, and email addresses in the wedding records.',
-    phase: 'foundation',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 1,
-    timelineOffsetMonths: 14,
-    timelineLabel: '14 Months',
-  },
-  {
-    key: 'records-family-bio-data',
-    title: 'Family Bio Data',
-    category: 'Records',
-    description: 'Capture the names, phone numbers, and email addresses of parents and key family contacts.',
-    phase: 'foundation',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 14,
-    timelineLabel: '14 Months',
-  },
-  {
-    key: 'records-venue-details',
-    title: 'Venue Details',
-    category: 'Records',
-    description: 'Key in all venue details that will be used at different points of the wedding.',
-    phase: 'selection_booking',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 9,
-    timelineLabel: '9 Months',
-  },
-  {
-    key: 'records-personal-public-budget',
-    title: 'Personal and Public Budget',
-    category: 'Records',
-    description: 'Write down your personal and public wedding budgets using estimates gathered from research.',
-    phase: 'foundation',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 10,
-    timelineLabel: '10 Months',
-  },
-  {
-    key: 'records-record-management',
-    title: 'Record Management',
-    category: 'Records',
-    description: 'Hand over records to the planner or secretary, track task status, keep planning minutes, and maintain the budget accountability trail.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Secretary',
-    priorityLevel: 3,
-    timelineOffsetMonths: 2,
-    timelineLabel: '8 Weeks',
-  },
-  {
-    key: 'records-program-participants',
-    title: 'Program Participants',
-    category: 'Records',
-    description: 'Fill in the wedding program participants list and keep it updated before the ceremony.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Secretary',
-    priorityLevel: 3,
-    timelineOffsetMonths: 1,
-    timelineLabel: '3 Weeks',
-  },
-  {
-    key: 'records-photo-list',
-    title: 'Photo List',
-    category: 'Records',
-    description: 'Prepare the list of group photo combinations the media team should capture after the ceremony.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 3,
-    timelineOffsetMonths: 1,
-    timelineLabel: '3 Weeks',
-  },
-  {
-    key: 'records-record-availability',
-    title: 'Record Availability',
-    category: 'Records',
-    description: 'Ensure all wedding records and databases are physically available and handed over on the wedding day.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Secretary',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'records-contracts',
-    title: 'Contracts',
-    category: 'Records',
-    description: 'Ensure all vendors have signed contracts with the couple and the signed copies are available.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Secretary',
-    priorityLevel: 3,
-    timelineOffsetMonths: 1,
-    timelineLabel: '6 Weeks',
-  },
-  {
-    key: 'logistics-meetings',
-    title: 'Logistics Meetings',
-    category: 'Logistics',
-    description: 'Chair all logistics meetings, including committee meetings, vendor site visits, and bridal party rehearsals.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Chair',
-    priorityLevel: 3,
-    timelineOffsetMonths: null,
-    timelineLabel: 'Ongoing Task',
-  },
-  {
-    key: 'logistics-coordination',
-    title: 'Coordination',
-    category: 'Logistics',
-    description: 'Coordinate logistics before and during the wedding so all assigned responsibilities are carried through.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Chair',
-    priorityLevel: 3,
-    timelineOffsetMonths: null,
-    timelineLabel: 'Ongoing Task',
-  },
-  {
-    key: 'logistics-time-keeping',
-    title: 'Time Keeping',
-    category: 'Logistics',
-    description: 'Own the wedding-day running order and keep the ceremony and reception flowing according to the agreed program.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Chair',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'logistics-committee-meeting',
-    title: 'Logistics Committee',
-    category: 'Logistics',
-    description: 'Select the people who are reliable and available to help run the wedding day for you.',
-    phase: 'second_payment',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 5,
-    timelineLabel: '5 Months',
-  },
-  {
-    key: 'committee-site-visit',
-    title: 'Site Visit',
-    category: 'Committee',
-    description: 'Carry out a site visit with your committee to align logistics and confirm venue readiness.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 3,
-    timelineOffsetMonths: 1,
-    timelineLabel: '3 Weeks',
-  },
-  {
-    key: 'registry-gift-registry-visit',
-    title: 'Gift Registry',
-    category: 'Registry',
-    description: 'Visit the selected stores and finalize the gift registry items for guests.',
-    phase: 'closure_final_payment',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 3,
-    timelineLabel: '3 Months',
-  },
-  {
-    key: 'legal-wedding-permit-interview',
-    title: 'Wedding Permit Interview',
-    category: 'Legal',
-    description: 'Attend the wedding permit interview and complete all legal requirements in time.',
-    phase: 'closure_final_payment',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 1,
-    timelineOffsetMonths: 2,
-    timelineLabel: '8 Weeks',
-  },
-  {
-    key: 'legal-wedding-permit-collection',
-    title: 'Wedding Permit Collection',
-    category: 'Legal',
-    description: 'Collect the permit and provide a copy to the officiating minister before the wedding.',
-    phase: 'closure_final_payment',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 1,
-    timelineOffsetMonths: 1,
-    timelineLabel: '4 Weeks',
-  },
-  {
-    key: 'officiating-minister-meeting',
-    title: 'Officiant Meeting',
-    category: 'Officiating Minister',
-    description: 'Meet with the officiating minister, walk through the program, and request a copy of their license.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 1,
-    timelineOffsetMonths: 3,
-    timelineLabel: '3 Months',
-  },
-  {
-    key: 'officiating-minister-rehearsal',
-    title: 'Rehearsal with Officiant',
-    category: 'Officiating Minister',
-    description: 'Attend the final rehearsal with the officiant before the wedding day.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 1,
-    timelineOffsetMonths: 0,
-    timelineLabel: '1 Week',
-  },
-  {
-    key: 'family-meeting',
-    title: 'Family Meeting',
-    category: 'Family',
-    description: 'Meet with both families to review the wedding program, speeches, cake matron, and logistics expectations.',
-    phase: 'closure_final_payment',
-    visibility: 'private',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 2,
-    timelineOffsetMonths: 1,
-    timelineLabel: '4 Weeks',
-  },
-  {
-    key: 'transport-vehicle-numbers',
-    title: 'Needed Vehicle Numbers',
-    category: 'Transport',
-    description: 'Determine how many vehicles and drivers are needed for the couple, bridal party, parents, and gifts.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Transport Coordinator',
-    priorityLevel: 3,
-    timelineOffsetMonths: 1,
-    timelineLabel: '6 Weeks',
-  },
-  {
-    key: 'transport-route-plans',
-    title: 'Route Plans',
-    category: 'Transport',
-    description: 'Design the transfer routes that will be used on the wedding day between home, ceremony, and reception.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Transport Coordinator',
-    priorityLevel: 3,
-    timelineOffsetMonths: 1,
-    timelineLabel: '6 Weeks',
-  },
-  {
-    key: 'transport-transfer-key-people',
-    title: 'Transfer of Key People',
-    category: 'Transport',
-    description: 'Organize transport for the bride, groom, best couple, and both sets of parents on the wedding day.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Transport Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'transport-transfer-teams',
-    title: 'Transfer of Teams',
-    category: 'Transport',
-    description: 'Ensure transport teams can move ushers and security staff from the ceremony to the reception smoothly.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Transport Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'transport-transfer-gifts',
-    title: 'Transfer of Gifts',
-    category: 'Transport',
-    description: 'Ensure gifts are moved safely into storage after the function with the proper vehicle registration and security handling.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Transport Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'ushering-family-ushers',
-    title: 'Family Ushers',
-    category: 'Ushering',
-    description: 'Find ushers from each family who understand the relationships and can guide guests confidently.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Ushers Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 2,
-    timelineLabel: '7 Weeks',
-  },
-  {
-    key: 'ushering-team',
-    title: 'Ushering Team',
-    category: 'Ushering',
-    description: 'Recruit and brief the full ushering team to support seating, movement, and guest support.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Ushers Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 2,
-    timelineLabel: '7 Weeks',
-  },
-  {
-    key: 'ushering-arrival',
-    title: 'Arrival of Ushers',
-    category: 'Ushering',
-    description: 'Ensure the ushers arrive at the venue well before guests start arriving.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Ushers Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'ushering-management',
-    title: 'Management of Ushering Team',
-    category: 'Ushering',
-    description: 'Lead the ushering team in seating guests, directing food service queues, and helping families move around the venue.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Ushers Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'security-team',
-    title: 'Security Team',
-    category: 'Security',
-    description: 'Recruit and brief the security team that will support venue access, gift security, and guest safety.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Security Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 2,
-    timelineLabel: '7 Weeks',
-  },
-  {
-    key: 'security-arrival',
-    title: 'Arrival of Security',
-    category: 'Security',
-    description: 'Ensure the security team is at the venue before the wedding begins.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Security Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'security-management',
-    title: 'Management of Security Team',
-    category: 'Security',
-    description: 'Lead the security team around parking, gifts, paparazzi control, cake safety, and venue security requirements.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Security Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'stationery-invitations',
-    title: 'Invitations Cards',
-    category: 'Stationery',
-    description: 'Send out invitation cards and make sure all final guest-facing stationery is ready.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Stationery Coordinator',
-    priorityLevel: 3,
-    timelineOffsetMonths: 1,
-    timelineLabel: '6 Weeks',
-  },
-  {
-    key: 'stationery-signage',
-    title: 'Signage and Badges',
-    category: 'Stationery',
-    description: 'Place signage in the right positions and hand over relevant badges to ushers, security, media, and overall coordinators.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Stationery Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'stationery-gift-team',
-    title: 'Management of Gifts Team',
-    category: 'Stationery',
-    description: 'Lead the gifts team, receive gifts properly, and keep the monetary token box secure with the Best Man after the wedding.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Stationery Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'bridal-party-meeting',
-    title: 'Bridal Party Meeting',
-    category: 'Bridal Party',
-    description: 'Meet with the full bridal party and discuss attire, trials, sleeping arrangements, rehearsal date, and the morning schedule.',
-    phase: 'second_payment',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 3,
-    timelineOffsetMonths: 5,
-    timelineLabel: '5 Months',
-  },
-  {
-    key: 'bridal-party-rehearsals',
-    title: 'Bridal Party Rehearsals',
-    category: 'Bridal Party',
-    description: 'Meet with the bridal party and run the rehearsal for procession and role clarity.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: false,
-    recommendedRole: null,
-    priorityLevel: 3,
-    timelineOffsetMonths: 0,
-    timelineLabel: '3 Weeks',
-  },
-  {
-    key: 'mc-arrival',
-    title: 'MC Arrival',
-    category: 'MC',
-    description: 'Ensure the MC is at the venue at the agreed time and fully familiar with the wedding-day program.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Experience Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'music-arrival',
-    title: 'Music and Sound Arrival',
-    category: 'Music and Sound (DJ / Band)',
-    description: 'Ensure the DJ or band arrives early, equipment is delivered, and sound setup is completed before the function starts.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Experience Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'photographer-arrival',
-    title: 'Photographer Arrival',
-    category: 'Photographer',
-    description: 'Ensure the photographers are at the agreed venue and ready at the agreed time.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Experience Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'cinematographer-arrival',
-    title: 'Cinematographer Arrival',
-    category: 'Cinematographer',
-    description: 'Ensure the cinematographers are at the agreed venue and ready at the agreed time.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Experience Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'hair-artist-arrival',
-    title: 'Hair Stylist Artist Arrival',
-    category: 'Hair Stylist',
-    description: 'Ensure the hair stylist is at the agreed venue and time on the wedding day.',
-    phase: 'closure_final_payment',
-    visibility: 'private',
-    delegatable: true,
-    recommendedRole: 'Best Lady',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'makeup-artist-arrival',
-    title: 'Make-Up Artist Arrival',
-    category: 'Make-Up Artist',
-    description: 'Ensure the make-up artist is at the agreed venue and time on the wedding day.',
-    phase: 'closure_final_payment',
-    visibility: 'private',
-    delegatable: true,
-    recommendedRole: 'Best Lady',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'catering-delivery-food',
-    title: 'Delivery of Food',
-    category: 'Catering',
-    description: 'Ensure food and drinks are ready, delivered at the agreed times, and meet the expected quality and quantity.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Edibles Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'catering-food-service-teams',
-    title: 'Food Service for Teams',
-    category: 'Catering',
-    description: 'Ensure key teams like ushers, security, transport, photographers, videographers, and entertainment are served at practical times.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Edibles Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'cake-delivery',
-    title: 'Delivery of Cake',
-    category: 'Cake',
-    description: 'Ensure the cake is delivered in good time, in good condition, and placed in the designated position.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Edibles Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'setup-ceremony',
-    title: 'Ceremony Setup',
-    category: 'Setup',
-    description: 'Ensure ceremony chairs, tents, and tables are delivered and dressed as agreed at least two hours before start time.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Aesthetics Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'setup-reception',
-    title: 'Reception Setup',
-    category: 'Setup',
-    description: 'Ensure reception chairs, tents, and tables are delivered and dressed as agreed ahead of the service.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Aesthetics Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'decor-ceremony',
-    title: 'Ceremony Décor',
-    category: 'Decor',
-    description: 'Ensure ceremony décor is set up as agreed at least two hours before the wedding ceremony starts.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Aesthetics Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-  {
-    key: 'decor-reception',
-    title: 'Reception Décor',
-    category: 'Decor',
-    description: 'Ensure service and reception areas are decorated as agreed in time for the service.',
-    phase: 'closure_final_payment',
-    visibility: 'public',
-    delegatable: true,
-    recommendedRole: 'Aesthetics Coordinator',
-    priorityLevel: 4,
-    timelineOffsetMonths: 0,
-    timelineLabel: 'Wedding Day',
-  },
-];
+function parseVisibility(raw: string): WeddingTaskVisibility {
+  return raw === 'private' ? 'private' : 'public';
+}
 
-export function getVendorWorkflowTemplates(category: string): WeddingTaskTemplate[] {
-  const config = roleByCategory[category] ?? {
-    visibility: 'public' as const,
-    priorityLevel: 3 as const,
-    secondPaymentRole: null,
-    closureRole: null,
+function parseDelegatable(raw: string) {
+  const normalized = raw.trim().toLowerCase();
+  return normalized === 'delegatable' || normalized === 'must be delegated';
+}
+
+function parseTimelineOffsetMonths(label: string | null | undefined) {
+  if (!label) return null;
+  const monthsMatch = label.match(/(\d+)\s*Months?/i);
+  if (monthsMatch) return Number(monthsMatch[1]);
+  const weeksMatch = label.match(/(\d+)\s*Weeks?/i);
+  if (weeksMatch) return Number(weeksMatch[1]) / 4.345;
+  const daysMatch = label.match(/(\d+)\s*Days?/i);
+  if (daysMatch) return Number(daysMatch[1]) / 30;
+  if (label.toLowerCase() === 'wedding day') return 0;
+  if (label.toLowerCase() === 'post wedding') return -0.25;
+  return null;
+}
+
+function subtractDays(date: Date, days: number) {
+  const clone = new Date(date);
+  clone.setDate(clone.getDate() - days);
+  return clone;
+}
+
+function addDays(date: Date, days: number) {
+  const clone = new Date(date);
+  clone.setDate(clone.getDate() + days);
+  return clone;
+}
+
+function resolveDueDateFromTimeline(weddingDate: Date, timelineLabel: string | null | undefined) {
+  if (!timelineLabel) return null;
+  const monthsMatch = timelineLabel.match(/(\d+)\s*Months?/i);
+  if (monthsMatch) {
+    const clone = new Date(weddingDate);
+    clone.setMonth(clone.getMonth() - Number(monthsMatch[1]));
+    return clone;
+  }
+  const weeksMatch = timelineLabel.match(/(\d+)\s*Weeks?/i);
+  if (weeksMatch) return subtractDays(weddingDate, Number(weeksMatch[1]) * 7);
+  const daysMatch = timelineLabel.match(/(\d+)\s*Days?/i);
+  if (daysMatch) return subtractDays(weddingDate, Number(daysMatch[1]));
+  if (timelineLabel.toLowerCase() === 'wedding day') return new Date(weddingDate);
+  if (timelineLabel.toLowerCase() === 'post wedding') return addDays(weddingDate, 7);
+  return null;
+}
+
+function inferPhase(title: string, timelineLabel: string): WeddingTaskPhase {
+  const lower = title.toLowerCase();
+  if (lower.startsWith('research')) return 'research';
+  if (lower.includes('lock in') || lower.includes('deposit') || lower.includes('apply for your wedding permit') || lower.includes('attend the wedding permit interview')) {
+    return 'selection_booking';
+  }
+  if (
+    lower.includes('make final payment') ||
+    lower.includes('arrival') ||
+    lower.includes('ensure') ||
+    timelineLabel.toLowerCase() === 'wedding day' ||
+    timelineLabel.toLowerCase() === 'post wedding'
+  ) {
+    return 'closure_final_payment';
+  }
+  if (
+    lower.includes('finalize') ||
+    lower.includes('brief ') ||
+    lower.includes('go through the program') ||
+    lower.includes('meet ') ||
+    lower.includes('plan honeymoon itinerary') ||
+    lower.includes('fitting') ||
+    lower.includes('confirm') ||
+    lower.includes('create gift registry') ||
+    lower.includes('schedule and run')
+  ) {
+    return 'second_payment';
+  }
+  return 'foundation';
+}
+
+function inferPriorityLevel(timelineLabel: string): 1 | 2 | 3 | 4 {
+  const lower = timelineLabel.toLowerCase();
+  if (lower === 'wedding day' || lower === 'post wedding' || lower.includes('1 day')) return 1;
+  const weekMatch = timelineLabel.match(/(\d+)\s*Weeks?/i);
+  if (weekMatch) {
+    const weeks = Number(weekMatch[1]);
+    if (weeks <= 1) return 1;
+    if (weeks <= 4) return 2;
+    return 3;
+  }
+  const dayMatch = timelineLabel.match(/(\d+)\s*Days?/i);
+  if (dayMatch) {
+    const days = Number(dayMatch[1]);
+    if (days <= 3) return 1;
+    if (days <= 14) return 2;
+    return 3;
+  }
+  const monthMatch = timelineLabel.match(/(\d+)\s*Months?/i);
+  if (monthMatch) {
+    const months = Number(monthMatch[1]);
+    if (months <= 3) return 2;
+    if (months <= 8) return 3;
+    return 4;
+  }
+  return 3;
+}
+
+function buildDescription(
+  title: string,
+  timelineLabel: string,
+  visibility: WeddingTaskVisibility,
+  recommendedRole: string | null,
+  delegatableRaw: string,
+) {
+  const parts = [title];
+  if (timelineLabel) parts.push(`Timeline: ${timelineLabel}.`);
+  parts.push(visibility === 'private' ? 'Private task.' : 'Public task.');
+  if (recommendedRole) parts.push(`Suggested owner: ${recommendedRole}.`);
+  else if (delegatableRaw.trim()) parts.push(`${delegatableRaw}.`);
+  return parts.join(' ');
+}
+
+const CHECKLIST_TEMPLATES: WeddingTaskTemplate[] = RAW_CHECKLIST_ROWS.map((row) => {
+  const [key, category, title, timelineLabel, visibilityRaw, delegatableRaw, recommendedRole] = row;
+  const visibility = parseVisibility(visibilityRaw);
+  return {
+    key,
+    title,
+    category,
+    description: buildDescription(title, timelineLabel, visibility, recommendedRole, delegatableRaw),
+    phase: inferPhase(title, timelineLabel),
+    visibility,
+    delegatable: parseDelegatable(delegatableRaw),
+    recommendedRole,
+    priorityLevel: inferPriorityLevel(timelineLabel),
+    timelineOffsetMonths: parseTimelineOffsetMonths(timelineLabel),
+    timelineLabel,
   };
+});
 
-  const lower = category.toLowerCase();
+const CHECKLIST_CATEGORIES = [...new Set(CHECKLIST_TEMPLATES.map((template) => template.category))].sort((left, right) => left.localeCompare(right));
 
+function sortTemplates(left: WeddingTaskTemplate, right: WeddingTaskTemplate) {
+  const leftTimeline = left.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
+  const rightTimeline = right.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
+  if (leftTimeline !== rightTimeline) return rightTimeline - leftTimeline;
+  if (left.priorityLevel !== right.priorityLevel) return left.priorityLevel - right.priorityLevel;
+  return left.title.localeCompare(right.title);
+}
+
+function getChecklistTemplatesForCategory(category: string) {
+  const canonical = canonicalizeCategory(category);
+  return CHECKLIST_TEMPLATES.filter((template) => template.category === canonical).sort(sortTemplates);
+}
+
+function getGenericVendorWorkflowTemplates(category: string): WeddingTaskTemplate[] {
+  const safeCategory = canonicalizeCategory(category);
   return [
     {
-      key: `${category}-research`,
-      title: `${category}: Research and shortlist top options`,
-      category,
-      description: `Research ${lower} options, inspect quality of service, compare pricing, and narrow the list to the strongest candidates.`,
+      key: `${safeCategory}-research`,
+      title: `Research ${safeCategory.toLowerCase()} options`,
+      category: safeCategory,
+      description: `Research and shortlist viable ${safeCategory.toLowerCase()} options. Timeline: 8 Months. Public task.`,
       phase: 'research',
-      visibility: config.visibility,
+      visibility: 'public',
       delegatable: false,
       recommendedRole: null,
-      priorityLevel: config.priorityLevel,
-      timelineOffsetMonths: 12,
-    },
-    {
-      key: `${category}-selection-booking`,
-      title: `${category}: Selection, contract, and booking`,
-      category,
-      description: `Choose the preferred ${lower} provider, confirm scope and deliverables, pay the deposit, and lock in the contract.`,
-      phase: 'selection_booking',
-      visibility: config.visibility,
-      delegatable: false,
-      recommendedRole: null,
-      priorityLevel: config.priorityLevel,
+      priorityLevel: 3,
       timelineOffsetMonths: 8,
+      timelineLabel: '8 Months',
     },
     {
-      key: `${category}-second-payment`,
-      title: `${category}: Second payment and service review`,
-      category,
-      description: `Make the next scheduled payment, resolve open questions, and confirm any service details that affect the wedding-day experience.`,
-      phase: 'second_payment',
-      visibility: config.visibility,
-      delegatable: Boolean(config.secondPaymentRole),
-      recommendedRole: config.secondPaymentRole,
-      priorityLevel: config.priorityLevel,
-      timelineOffsetMonths: 5,
+      key: `${safeCategory}-selection-booking`,
+      title: `Lock in ${safeCategory.toLowerCase()} with a deposit`,
+      category: safeCategory,
+      description: `Choose the preferred ${safeCategory.toLowerCase()} option, pay a deposit, and plan the next payment. Timeline: 6 Months. Public task.`,
+      phase: 'selection_booking',
+      visibility: 'public',
+      delegatable: false,
+      recommendedRole: null,
+      priorityLevel: 3,
+      timelineOffsetMonths: 6,
+      timelineLabel: '6 Months',
     },
     {
-      key: `${category}-closure`,
-      title: `${category}: Final confirmation and balance`,
-      category,
-      description: `Confirm final delivery details, close any outstanding balance, and make sure the vendor is aligned with the day-of schedule.`,
+      key: `${safeCategory}-closure`,
+      title: `Confirm ${safeCategory.toLowerCase()} requirements and make final payment`,
+      category: safeCategory,
+      description: `Confirm final requirements and close the outstanding balance. Timeline: 4 Weeks. Public task.`,
       phase: 'closure_final_payment',
-      visibility: config.visibility,
-      delegatable: Boolean(config.closureRole),
-      recommendedRole: config.closureRole,
-      priorityLevel: config.priorityLevel,
-      timelineOffsetMonths: 2,
+      visibility: 'public',
+      delegatable: false,
+      recommendedRole: null,
+      priorityLevel: 2,
+      timelineOffsetMonths: 1,
+      timelineLabel: '4 Weeks',
     },
   ];
 }
 
-function subtractMonths(date: Date, months: number) {
-  const clone = new Date(date);
-  clone.setMonth(clone.getMonth() - months);
-  return clone;
+export function getVendorWorkflowTemplates(category: string): WeddingTaskTemplate[] {
+  const checklistTemplates = getChecklistTemplatesForCategory(category);
+  if (checklistTemplates.length) return checklistTemplates;
+  return getGenericVendorWorkflowTemplates(category);
 }
 
 export function getWeddingTaskTemplates(input: {
@@ -984,19 +1505,17 @@ export function getWeddingTaskTemplates(input: {
   role: string | null | undefined;
   plannerType?: PlannerType | null;
 }) {
-  const templates = [...sharedFoundationTemplates];
-
-  if (input.role === 'couple') {
-    templates.push(...coupleOnlyTemplates);
-  }
-
-  templates.push(...spreadsheetDetailedTemplates);
+  const templates = [...CHECKLIST_TEMPLATES];
 
   for (const category of input.vendorCategories) {
-    templates.push(...getVendorWorkflowTemplates(category));
+    const canonical = canonicalizeCategory(category);
+    const alreadyIncluded = templates.some((template) => template.category === canonical || template.category === category);
+    if (!alreadyIncluded) {
+      templates.push(...getVendorWorkflowTemplates(category));
+    }
   }
 
-  return templates;
+  return templates.sort(sortTemplates);
 }
 
 export function buildSeededTasksFromTemplates(input: {
@@ -1008,23 +1527,23 @@ export function buildSeededTasksFromTemplates(input: {
   const templates = getWeddingTaskTemplates(input);
   const weddingDate = input.weddingDate ? new Date(input.weddingDate) : null;
 
-  return templates.map((template) => ({
-    title: template.title,
-    description: template.description,
-    category: template.category,
-    assigned_to: null,
-    due_date:
-      weddingDate && template.timelineOffsetMonths != null
-        ? subtractMonths(weddingDate, template.timelineOffsetMonths).toISOString().slice(0, 10)
-        : null,
-    completed: false,
-    phase: template.phase,
-    visibility: template.visibility,
-    delegatable: template.delegatable,
-    recommended_role: template.recommendedRole,
-    priority_level: template.priorityLevel,
-    template_source: 'planner_spreadsheet_v1',
-  }));
+  return templates.map((template) => {
+    const resolvedDueDate = weddingDate ? resolveDueDateFromTimeline(weddingDate, template.timelineLabel) : null;
+    return {
+      title: template.title,
+      description: template.description,
+      category: template.category,
+      assigned_to: template.recommendedRole,
+      due_date: resolvedDueDate ? resolvedDueDate.toISOString().slice(0, 10) : null,
+      completed: false,
+      phase: template.phase,
+      visibility: template.visibility,
+      delegatable: template.delegatable,
+      recommended_role: template.recommendedRole,
+      priority_level: template.priorityLevel,
+      template_source: 'zania_checklist_v2',
+    };
+  });
 }
 
 export function getTaskCategoryDefaults(input: {
@@ -1032,29 +1551,14 @@ export function getTaskCategoryDefaults(input: {
   role: string | null | undefined;
   plannerType?: PlannerType | null;
 }): WeddingTaskCategoryDefaults | null {
-  const templates = getWeddingTaskTemplates({
-    vendorCategories: [input.category],
-    role: input.role,
-    plannerType: input.plannerType,
-  }).filter((template) => template.category === input.category);
-
+  const templates = getChecklistTemplatesForCategory(input.category);
   if (!templates.length) return null;
 
-  const [bestTemplate] = templates
-    .slice()
-    .sort((left, right) => {
-      if (left.priorityLevel !== right.priorityLevel) return left.priorityLevel - right.priorityLevel;
-      const leftTimeline = left.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
-      const rightTimeline = right.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
-      if (leftTimeline !== rightTimeline) return rightTimeline - leftTimeline;
-      return left.title.localeCompare(right.title);
-    });
-
-  const recommendedRole =
-    templates.find((template) => template.recommendedRole)?.recommendedRole ?? bestTemplate.recommendedRole ?? null;
+  const [bestTemplate] = templates;
+  const recommendedRole = templates.find((template) => template.recommendedRole)?.recommendedRole ?? bestTemplate.recommendedRole ?? null;
 
   return {
-    category: input.category,
+    category: canonicalizeCategory(input.category),
     visibility: bestTemplate.visibility,
     delegatable: templates.some((template) => template.delegatable),
     recommendedRole,
@@ -1067,13 +1571,11 @@ export function getSuggestedTaskCategories(input: {
   role: string | null | undefined;
   plannerType?: PlannerType | null;
 }) {
-  const templates = getWeddingTaskTemplates({
-    vendorCategories: input.vendorCategories ?? [],
-    role: input.role,
-    plannerType: input.plannerType,
-  });
-
-  return [...new Set(templates.map((template) => template.category))].sort((left, right) => left.localeCompare(right));
+  const categories = new Set(CHECKLIST_CATEGORIES);
+  for (const category of input.vendorCategories ?? []) {
+    categories.add(canonicalizeCategory(category));
+  }
+  return [...categories].sort((left, right) => left.localeCompare(right));
 }
 
 export function getSuggestedTaskTemplates(input: {
@@ -1082,22 +1584,11 @@ export function getSuggestedTaskTemplates(input: {
   role: string | null | undefined;
   plannerType?: PlannerType | null;
 }) {
-  const templates = getWeddingTaskTemplates({
-    vendorCategories: input.vendorCategories ?? [],
-    role: input.role,
-    plannerType: input.plannerType,
-  })
-    .filter((template) => template.category === input.category)
-    .sort((left, right) => {
-      const leftTimeline = left.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
-      const rightTimeline = right.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
-      if (leftTimeline !== rightTimeline) return rightTimeline - leftTimeline;
-      if (left.priorityLevel !== right.priorityLevel) return left.priorityLevel - right.priorityLevel;
-      return left.title.localeCompare(right.title);
-    });
+  const templates = getChecklistTemplatesForCategory(input.category);
+  const sourceTemplates = templates.length ? templates : getGenericVendorWorkflowTemplates(input.category);
 
   const deduped = new Map<string, SuggestedTaskTemplateOption>();
-  for (const template of templates) {
+  for (const template of sourceTemplates) {
     const key = `${template.category}::${template.title}`;
     if (deduped.has(key)) continue;
     deduped.set(key, {
@@ -1115,5 +1606,11 @@ export function getSuggestedTaskTemplates(input: {
     });
   }
 
-  return [...deduped.values()];
+  return [...deduped.values()].sort((left, right) => {
+    const leftTimeline = left.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
+    const rightTimeline = right.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
+    if (leftTimeline !== rightTimeline) return rightTimeline - leftTimeline;
+    if (left.priorityLevel !== right.priorityLevel) return left.priorityLevel - right.priorityLevel;
+    return left.title.localeCompare(right.title);
+  });
 }
