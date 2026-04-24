@@ -613,6 +613,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSuperAdmin = baseProfile?.role === 'admin';
 
   useEffect(() => {
+    if (!user || baseProfile) return;
+
+    let active = true;
+
+    const recoverMissingProfile = async () => {
+      try {
+        await ensureProfile(user);
+      } catch (error) {
+        console.error('Failed to recover missing in-memory profile after sign-in:', error);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void recoverMissingProfile();
+
+    return () => {
+      active = false;
+    };
+  }, [user, baseProfile]);
+
+  useEffect(() => {
     if (!user || !baseProfile) return;
 
     const requestedSignupState = getRequestedSignupState(user);
