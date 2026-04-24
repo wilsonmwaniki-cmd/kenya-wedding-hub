@@ -137,29 +137,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-sidebar text-sidebar-foreground 
+        fixed inset-y-0 left-0 z-50 w-64 overflow-hidden border-r border-white/10
+        bg-[linear-gradient(180deg,hsla(var(--sidebar-background),0.78),hsla(var(--sidebar-background),0.58))]
+        text-sidebar-foreground shadow-[0_20px_60px_rgba(20,12,10,0.28)] backdrop-blur-2xl
         transform transition-transform duration-300 ease-in-out
         lg:relative lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="flex h-full flex-col">
-          <div className="flex items-center gap-2 border-b border-sidebar-border px-6 py-5">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.18),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.06),transparent_28%,rgba(255,255,255,0.03))]" />
+        <div className="relative flex h-full flex-col bg-black/5">
+          <div className="flex items-center gap-2 border-b border-white/10 bg-white/5 px-6 py-5">
             <Heart className="h-6 w-6 text-sidebar-primary" fill="currentColor" />
             <span className="font-display text-lg font-semibold text-sidebar-foreground">Zania</span>
-            <button onClick={() => setSidebarOpen(false)} className="ml-auto lg:hidden text-sidebar-foreground">
+            <button onClick={() => setSidebarOpen(false)} className="ml-auto lg:hidden text-sidebar-foreground/80 hover:text-sidebar-foreground">
               <X className="h-5 w-5" />
             </button>
           </div>
 
           {profile && (
-            <div className="border-b border-sidebar-border px-4 py-4 sm:px-6">
+            <div className="border-b border-white/10 bg-white/[0.04] px-4 py-4 sm:px-6">
               <p className="text-sm font-medium text-sidebar-foreground">{profile.full_name || 'Welcome!'}</p>
-              <p className="text-xs text-sidebar-foreground/60 capitalize">
+              <p className="text-xs text-sidebar-foreground/65 capitalize">
                 {profile.role} Account
                 {isSuperAdmin && rolePreview !== 'admin' ? ` · previewing as ${rolePreview}` : ''}
               </p>
               {isSuperAdmin && baseProfile && (
-                <p className="mt-1 text-[11px] text-sidebar-foreground/50">
+                <p className="mt-1 text-[11px] text-sidebar-foreground/55">
                   Signed in as {baseProfile.full_name || baseProfile.role}
                 </p>
               )}
@@ -167,7 +170,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           )}
 
           {isSuperAdmin && (
-            <div className="border-b border-sidebar-border px-4 py-3">
+            <div className="border-b border-white/10 bg-white/[0.03] px-4 py-3">
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/50">
                 Admin role preview
               </p>
@@ -179,8 +182,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => handlePreviewSwitch(option.value)}
                     className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                       rolePreview === option.value
-                        ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                        : 'bg-sidebar-accent text-sidebar-foreground/70 hover:text-sidebar-foreground'
+                        ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_8px_20px_rgba(216,106,63,0.32)]'
+                        : 'border border-white/10 bg-white/[0.06] text-sidebar-foreground/75 hover:bg-white/[0.1] hover:text-sidebar-foreground'
                     }`}
                   >
                     {option.label}
@@ -195,10 +198,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           {/* Planner client indicator */}
           {isPlanner && selectedClient && (
-            <div className="border-b border-sidebar-border px-4 py-3">
+            <div className="border-b border-white/10 bg-white/[0.03] px-4 py-3">
               <button
                 onClick={() => { selectClient(null); navigate('/clients'); }}
-                className="flex items-center gap-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors w-full"
+                className="flex w-full items-center gap-2 text-xs text-sidebar-foreground/70 transition-colors hover:text-sidebar-foreground"
               >
                 <ArrowLeft className="h-3 w-3" />
                 Back to clients
@@ -222,11 +225,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     setSidebarOpen(false);
                   }}
                   className={`
-                    flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
+                    flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium transition-all
                     ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
                     ${isActive
-                      ? 'bg-sidebar-accent text-sidebar-primary'
-                      : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                      ? 'border-white/10 bg-white/[0.14] text-sidebar-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_24px_rgba(15,8,6,0.18)]'
+                      : 'text-sidebar-foreground/72 hover:border-white/10 hover:bg-white/[0.08] hover:text-sidebar-foreground'
                     }
                   `}
                 >
@@ -242,10 +245,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             })}
           </nav>
 
-          <div className="border-t border-sidebar-border p-3">
+          <div className="border-t border-white/10 bg-white/[0.04] p-3">
             <button
               onClick={handleSignOut}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+              className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-sidebar-foreground/72 transition-all hover:border-white/10 hover:bg-white/[0.08] hover:text-sidebar-foreground"
             >
               <LogOut className="h-4.5 w-4.5" />
               Sign Out
