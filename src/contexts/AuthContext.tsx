@@ -605,10 +605,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [baseProfile?.role]);
 
   const profile = useMemo(() => {
-    if (!baseProfile) return null;
+    if (!baseProfile) {
+      if (!user) return null;
+
+      const requestedSignupState = getRequestedSignupState(user);
+      const pendingOAuthTarget = getPendingOAuthSignupTarget();
+      const inferredRole: AppRole = requestedSignupState?.role
+        ?? pendingOAuthTarget?.role
+        ?? (
+          user.user_metadata?.role === 'committee'
+            ? 'planner'
+            : user.user_metadata?.role === 'admin'
+              || user.user_metadata?.role === 'vendor'
+              || user.user_metadata?.role === 'planner'
+              || user.user_metadata?.role === 'couple'
+              ? user.user_metadata.role
+              : user.user_metadata?.planner_type === 'committee' || user.user_metadata?.planner_type === 'professional'
+                ? 'planner'
+                : 'couple'
+        );
+
+      const fallbackProfile = {
+        ...buildFallbackProfile(user, inferredRole),
+        planner_type: requestedSignupState?.plannerType
+          ?? pendingOAuthTarget?.plannerType
+          ?? buildFallbackProfile(user, inferredRole).planner_type,
+        committee_name: requestedSignupState?.committeeName
+          ?? buildFallbackProfile(user, inferredRole).committee_name,
+      };
+
+      if (fallbackProfile.role !== 'admin') return fallbackProfile;
+      return buildPreviewProfile(fallbackProfile, rolePreview);
+    }
+
     if (baseProfile.role !== 'admin') return baseProfile;
     return buildPreviewProfile(baseProfile, rolePreview);
-  }, [baseProfile, rolePreview]);
+  }, [baseProfile, rolePreview, user]);
 
   const isSuperAdmin = baseProfile?.role === 'admin';
 
