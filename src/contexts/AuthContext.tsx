@@ -613,6 +613,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSuperAdmin = baseProfile?.role === 'admin';
 
   useEffect(() => {
+    if (!user || !baseProfile) return;
+
+    const requestedSignupState = getRequestedSignupState(user);
+    const pendingOAuthTarget = getPendingOAuthSignupTarget();
+    const expectedRole = requestedSignupState?.role ?? pendingOAuthTarget?.role ?? null;
+    const expectedPlannerType = requestedSignupState?.plannerType ?? pendingOAuthTarget?.plannerType ?? null;
+    const expectedCommitteeName = requestedSignupState?.committeeName ?? null;
+    const resolvedFullName = getFallbackFullName(user).trim();
+    const resolvedAvatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
+
+    const roleMismatch = expectedRole != null && baseProfile.role !== expectedRole;
+    const plannerTypeMismatch = (baseProfile.planner_type ?? null) !== expectedPlannerType;
+    const committeeNameMismatch = expectedPlannerType === 'committee'
+      && (baseProfile.committee_name ?? null) !== expectedCommitteeName;
+    const missingIdentity = (!baseProfile.full_name?.trim() && !!resolvedFullName)
+      || (!baseProfile.avatar_url && !!resolvedAvatarUrl);
+
+    if (!roleMismatch && !plannerTypeMismatch && !committeeNameMismatch && !missingIdentity) {
+      if (
+        pendingOAuthTarget &&
+        baseProfile.role === pendingOAuthTarget.role &&
+        (baseProfile.planner_type ?? null) === pendingOAuthTarget.plannerType
+      ) {
+        clearPendingOAuthSignupState();
+      }
+      return;
+    }
+
+    let active = true;
+
+    const reconcileProfileState = async () => {
+      const reconciledProfile = await reconcileRequestedSignupState(user, baseProfile);
+      if (!active) return;
+
+      const profileWithIdentity = await syncMissingProfileIdentity(user, reconciledProfile);
+      if (!active) return;
+
+      if (
+        pendingOAuthTarget &&
+        profileWithIdentity.role === pendingOAuthTarget.role &&
+        (profileWithIdentity.planner_type ?? null) === pendingOAuthTarget.plannerType
+      ) {
+        clearPendingOAuthSignupState();
+      }
+    };
+
+    void reconcileProfileState();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    user,
+    baseProfile,
+    baseProfile?.avatar_url,
+    baseProfile?.committee_name,
+    baseProfile?.full_name,
+    baseProfile?.planner_type,
+    baseProfile?.role,
+  ]);
+
+  useEffect(() => {
     let active = true;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
