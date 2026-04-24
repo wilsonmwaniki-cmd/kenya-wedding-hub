@@ -3,6 +3,10 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, PlannerType, SignupRole } from '@/lib/roles';
 import {
+  clearPendingOAuthSignupState,
+  getPendingOAuthSignupTarget,
+} from '@/lib/oauthSignupState';
+import {
   completePendingWeddingSetup,
   getPendingWeddingSetup,
   type WeddingOwnerRole,
@@ -158,6 +162,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return requestedRole;
     }
 
+    const pendingOAuthTarget = getPendingOAuthSignupTarget();
+    if (pendingOAuthTarget) {
+      return pendingOAuthTarget.role;
+    }
+
     const { data, error } = await supabase
       .from('user_roles')
       .select('role')
@@ -181,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const requestedRole = authUser.user_metadata?.role;
     const requestedPlannerType = authUser.user_metadata?.planner_type;
     const requestedCommitteeName = authUser.user_metadata?.committee_name;
+    const pendingOAuthTarget = getPendingOAuthSignupTarget();
 
     if (
       requestedRole !== 'admin' &&
@@ -189,7 +199,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestedRole !== 'planner' &&
       requestedRole !== 'committee'
     ) {
-      return null;
+      if (!pendingOAuthTarget) {
+        return null;
+      }
+
+      return {
+        role: pendingOAuthTarget.role,
+        plannerType: pendingOAuthTarget.plannerType,
+        committeeName: null,
+      };
     }
 
     const resolvedRole: AppRole = requestedRole === 'committee' ? 'planner' : requestedRole;
@@ -276,6 +294,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data as Profile;
   };
 
+  const syncMissingProfileIdentity = async (authUser: User, existingProfile: Profile): Promise<Profile> => {
+    const resolvedFullName = getFallbackFullName(authUser).trim();
+    const resolvedAvatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null;
+    const updates: Partial<Profile> = {};
+
+    if (!existingProfile.full_name?.trim() && resolvedFullName) {
+      updates.full_name = resolvedFullName;
+    }
+
+    if (!existingProfile.avatar_url && resolvedAvatarUrl) {
+      updates.avatar_url = resolvedAvatarUrl;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return existingProfile;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('user_id', authUser.id);
+
+      if (error) throw error;
+
+      const refreshedProfile = await fetchProfile(authUser.id);
+      if (refreshedProfile) return refreshedProfile;
+    } catch (error) {
+      console.error('Failed to sync missing profile identity from auth metadata:', error);
+    }
+
+    const fallbackProfile: Profile = {
+      ...existingProfile,
+      ...updates,
+    };
+    setBaseProfile(fallbackProfile);
+    return fallbackProfile;
+  };
+
   const reconcileRequestedSignupState = async (
     authUser: User,
     existingProfile: Profile,
@@ -339,7 +396,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const ensureProfile = async (authUser: User) => {
     const existingProfile = await fetchProfile(authUser.id);
     if (existingProfile) {
-      return await reconcileRequestedSignupState(authUser, existingProfile);
+      const reconciledProfile = await reconcileRequestedSignupState(authUser, existingProfile);
+      const profileWithIdentity = await syncMissingProfileIdentity(authUser, reconciledProfile);
+
+      const pendingOAuthTarget = getPendingOAuthSignupTarget();
+      if (
+        pendingOAuthTarget &&
+        profileWithIdentity.role === pendingOAuthTarget.role &&
+        (profileWithIdentity.planner_type ?? null) === pendingOAuthTarget.plannerType
+      ) {
+        clearPendingOAuthSignupState();
+      }
+
+      return profileWithIdentity;
     }
 
     const role = await getFallbackRole(authUser);
@@ -371,7 +440,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const recoveredProfile = await fetchProfile(authUser.id);
-    if (recoveredProfile) return recoveredProfile;
+    if (recoveredProfile) {
+      const pendingOAuthTarget = getPendingOAuthSignupTarget();
+      if (
+        pendingOAuthTarget &&
+        recoveredProfile.role === pendingOAuthTarget.role &&
+        (recoveredProfile.planner_type ?? null) === pendingOAuthTarget.plannerType
+      ) {
+        clearPendingOAuthSignupState();
+      }
+      return recoveredProfile;
+    }
 
     const fallbackProfile = buildFallbackProfile(authUser, role);
     setBaseProfile(fallbackProfile);
