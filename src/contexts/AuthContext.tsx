@@ -115,7 +115,7 @@ const clearStoredSupabaseAuthState = () => {
       const key = storage.key(index);
       if (!key) continue;
 
-      if (key.startsWith('sb-') && (key.includes('auth-token') || key.includes('code-verifier'))) {
+      if (key.startsWith('sb-')) {
         storage.removeItem(key);
       }
     }
@@ -129,6 +129,30 @@ const plannerPreviewExpiry = () => {
   const nextYear = new Date();
   nextYear.setFullYear(nextYear.getFullYear() + 1);
   return nextYear.toISOString();
+};
+
+const withTimeout = async <T,>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallbackValue: T,
+  label: string,
+): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const result = await Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      timeoutId = setTimeout(() => {
+        console.warn(`${label} timed out after ${timeoutMs}ms; continuing with fallback state.`);
+        resolve(fallbackValue);
+      }, timeoutMs);
+    }),
+  ]);
+
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+  }
+
+  return result;
 };
 
 const buildPreviewProfile = (baseProfile: Profile, preview: RolePreview): Profile => {
@@ -263,6 +287,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (error) throw error;
+  };
+
+  const updateActiveRoleMetadata = async (
+    authUser: User,
+    targetRole: Extract<SignupRole, 'couple' | 'planner' | 'vendor'>,
+    plannerType?: PlannerType | null,
+  ) => {
+    const currentMetadata = (authUser.user_metadata ?? {}) as Record<string, unknown>;
+    const nextMetadata: Record<string, unknown> = {
+      ...currentMetadata,
+      role: targetRole,
+      planner_type: targetRole === 'planner' ? (plannerType ?? 'professional') : null,
+      signup_intent: targetRole === 'couple'
+        ? (typeof currentMetadata.signup_intent === 'string' ? currentMetadata.signup_intent : 'create_wedding')
+        : 'professional',
+      wedding_setup_completed: targetRole !== 'couple',
+    };
+
+    const { data, error } = await supabase.auth.updateUser({
+      data: nextMetadata,
+    });
+
+    if (error) throw error;
+
+    await supabase.auth.refreshSession();
+
+    return data.user ?? authUser;
   };
 
   const getRequestedSignupState = (authUser: User): RequestedSignupState => {
@@ -955,9 +1006,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       try {
         if (options?.targetRole) {
-          await activateRequestedRole(data.session.user, options.targetRole, options.plannerType ?? null);
+          const updatedUser = await updateActiveRoleMetadata(
+            data.session.user,
+            options.targetRole,
+            options.plannerType ?? null,
+          );
+          await activateRequestedRole(updatedUser, options.targetRole, options.plannerType ?? null);
         }
-        await syncAuthState(data.session);
+        const {
+          data: { session: refreshedSession },
+        } = await supabase.auth.getSession();
+        await syncAuthState(refreshedSession ?? data.session);
       } finally {
         setLoading(false);
       }
@@ -996,7 +1055,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let globalSignOutError: Error | null = null;
 
     try {
-      const { error } = await supabase.auth.signOut({ scope: 'global' });
+      const globalResult = await withTimeout(
+        supabase.auth.signOut({ scope: 'global' }),
+        2500,
+        { error: null as Error | null },
+        'Supabase global sign out',
+      );
+      const { error } = globalResult;
       if (error && !/session/i.test(error.message)) {
         globalSignOutError = error;
       }
@@ -1007,7 +1072,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      await supabase.auth.signOut({ scope: 'local' });
+      const localResult = await withTimeout(
+        supabase.auth.signOut({ scope: 'local' }),
+        1500,
+        { error: null as Error | null },
+        'Supabase local sign out',
+      );
+      if (localResult.error && !/session/i.test(localResult.error.message) && !globalSignOutError) {
+        globalSignOutError = localResult.error;
+      }
     } catch (error: any) {
       if (!/session/i.test(error?.message ?? '') && !globalSignOutError) {
         globalSignOutError = error;
