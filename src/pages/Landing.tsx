@@ -332,7 +332,7 @@ function QuickSignupChooser() {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Start here</p>
           <h3 className="font-display text-2xl font-semibold text-card-foreground">Choose how you want to enter Zania</h3>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Couples and wedding professionals use separate sign up and sign in flows so no one has to guess where they belong.
+            Pick the path that matches you and we’ll take you to the right sign up or sign in screen.
           </p>
         </div>
 
@@ -345,7 +345,7 @@ function QuickSignupChooser() {
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-foreground">For couples</p>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Start your wedding, add your spouse, and we’ll create the shared wedding workspace for both of you.
+                  Start your wedding, add your spouse, and we’ll set up the shared workspace for both of you.
                 </p>
               </div>
             </div>
@@ -408,7 +408,7 @@ function QuickSignupChooser() {
               <p className="text-sm font-medium text-foreground">For wedding professionals</p>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Create or access your planner or vendor workspace separately from couple accounts.
+              Open a planner or vendor workspace without mixing it into a couple account.
             </p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <Button

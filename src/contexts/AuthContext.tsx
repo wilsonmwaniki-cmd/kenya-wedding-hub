@@ -1080,6 +1080,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       plannerType?: PlannerType | null;
     },
   ) => {
+    if (!options?.targetRole) {
+      throw new Error('Choose whether you are signing in as a couple, planner, or vendor first.');
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
@@ -1101,6 +1105,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           'Post-sign-in session refresh',
         );
         await syncAuthState(refreshedSession ?? data.session);
+      } catch (signInError) {
+        try {
+          await withTimeout(
+            supabase.auth.signOut({ scope: 'local' }),
+            1500,
+            { error: null as Error | null },
+            'Rollback failed sign in',
+          );
+        } finally {
+          clearStoredSupabaseAuthState();
+          await syncAuthState(null);
+        }
+        throw signInError;
       } finally {
         setLoading(false);
       }
@@ -1108,17 +1125,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async (options?: {
-    signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
+    mode?: 'signup' | 'signin';
+    targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
   }) => {
     const redirectUrl = new URL(`${window.location.origin}/auth/callback`);
+    const mode = options?.mode === 'signin' ? 'signin' : 'signup';
+    const targetRole = options?.targetRole ?? null;
 
-    if (options?.signupRole) {
-      redirectUrl.searchParams.set('signup_role', options.signupRole);
-      if (options.signupRole === 'planner') {
+    redirectUrl.searchParams.set('auth_mode', mode);
+
+    if (targetRole) {
+      redirectUrl.searchParams.set('target_role', targetRole);
+      if (mode === 'signup') {
+        redirectUrl.searchParams.set('signup_role', targetRole);
+      }
+      if (targetRole === 'planner') {
         redirectUrl.searchParams.set(
           'planner_type',
-          options.plannerType === 'committee' ? 'committee' : 'professional',
+          options?.plannerType === 'committee' ? 'committee' : 'professional',
         );
       }
     }

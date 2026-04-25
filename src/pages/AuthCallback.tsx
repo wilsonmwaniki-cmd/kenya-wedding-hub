@@ -59,26 +59,19 @@ function getAuthTargetFromUserMetadata(): { role: AppRole; plannerType: PlannerT
 }
 
 function getAuthTargetFromCallbackUrl(): { role: AppRole; plannerType: PlannerType | null } | null {
-  return getOAuthSignupTargetFromSearchParams(new URL(window.location.href).searchParams);
+  const target = getOAuthSignupTargetFromSearchParams(new URL(window.location.href).searchParams);
+  return target ? { role: target.role, plannerType: target.plannerType } : null;
 }
 
-function getProfessionalOAuthTarget():
-  | { role: 'planner' | 'vendor'; plannerType: PlannerType | null }
+function getOAuthAuthTarget():
+  | { mode: 'signup' | 'signin'; role: 'couple' | 'planner' | 'vendor'; plannerType: PlannerType | null }
   | null {
-  const callbackUrlTarget = getAuthTargetFromCallbackUrl();
-  if (callbackUrlTarget?.role === 'planner' || callbackUrlTarget?.role === 'vendor') {
-    return {
-      role: callbackUrlTarget.role,
-      plannerType: callbackUrlTarget.role === 'planner' ? callbackUrlTarget.plannerType : null,
-    };
-  }
+  const callbackUrlTarget = getOAuthSignupTargetFromSearchParams(new URL(window.location.href).searchParams);
+  if (callbackUrlTarget) return callbackUrlTarget;
 
   const pendingOAuthTarget = getPendingOAuthSignupTarget();
-  if (pendingOAuthTarget?.role === 'planner' || pendingOAuthTarget?.role === 'vendor') {
-    return {
-      role: pendingOAuthTarget.role,
-      plannerType: pendingOAuthTarget.role === 'planner' ? pendingOAuthTarget.plannerType : null,
-    };
+  if (pendingOAuthTarget?.role === 'couple' || pendingOAuthTarget?.role === 'planner' || pendingOAuthTarget?.role === 'vendor') {
+    return pendingOAuthTarget;
   }
 
   return null;
@@ -110,9 +103,31 @@ export default function AuthCallback() {
       return result;
     };
 
+    const rejectUnexpectedOAuthSignIn = async (
+      role: 'couple' | 'planner' | 'vendor',
+      plannerType: PlannerType | null,
+    ) => {
+      clearPendingOAuthSignupState();
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch {
+        // Ignore sign-out cleanup errors here; we still redirect the user back into auth.
+      }
+
+      const nextUrl = new URL('/auth', window.location.origin);
+      nextUrl.searchParams.set('auth_error', 'missing_role');
+      nextUrl.searchParams.set('mode', 'signin');
+      nextUrl.searchParams.set('audience', role === 'couple' ? 'couple' : 'professional');
+      nextUrl.searchParams.set('role', role);
+      if (role === 'planner' && plannerType) {
+        nextUrl.searchParams.set('planner_type', plannerType);
+      }
+      window.location.replace(nextUrl.toString());
+    };
+
     const applyPendingOAuthSignupState = async (user: NonNullable<Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user']>) => {
       const pendingOAuthSignupState = readPendingOAuthSignupState();
-      const callbackOAuthTarget = getProfessionalOAuthTarget();
+      const callbackOAuthTarget = getOAuthAuthTarget();
       if (!pendingOAuthSignupState && !callbackOAuthTarget) return user;
 
       const currentMetadata = (user.user_metadata ?? {}) as Record<string, unknown>;
@@ -124,11 +139,28 @@ export default function AuthCallback() {
 
       const desiredRole = pendingOAuthSignupState?.role ?? callbackOAuthTarget?.role;
       if (!desiredRole) return user;
+      const authMode = pendingOAuthSignupState?.mode ?? callbackOAuthTarget?.mode ?? 'signup';
 
       const desiredPlannerType =
         desiredRole === 'planner'
           ? (pendingOAuthSignupState?.plannerType ?? callbackOAuthTarget?.plannerType ?? 'professional')
           : null;
+
+      if (authMode === 'signin') {
+        const { data: existingRoles, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id);
+
+        if (rolesError) throw rolesError;
+
+        const allowedRoles = new Set((existingRoles ?? []).map((entry) => entry.role));
+        if (!allowedRoles.has(desiredRole)) {
+          await rejectUnexpectedOAuthSignIn(desiredRole, desiredPlannerType);
+          throw new Error('OAuth sign-in rejected because this email does not hold the requested role.');
+        }
+      }
+
       const needsRoleSync = currentMetadata.role !== desiredRole;
       const needsPlannerTypeSync = (currentMetadata.planner_type ?? null) !== desiredPlannerType;
       const needsFullNameSync = !currentFullName && !!pendingOAuthSignupState?.fullName;
