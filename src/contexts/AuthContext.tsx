@@ -79,7 +79,14 @@ interface AuthContextType {
       primaryTown?: string | null;
     }
   ) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (
+    email: string,
+    password: string,
+    options?: {
+      targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+      plannerType?: PlannerType | null;
+    }
+  ) => Promise<void>;
   signInWithGoogle: (options?: {
     signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
@@ -223,6 +230,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAvailableRoles([]);
       return [];
     }
+  };
+
+  const ensureRequestedRoleExists = async (
+    userId: string,
+    targetRole: Extract<SignupRole, 'couple' | 'planner' | 'vendor'>,
+  ) => {
+    const roles = await fetchAvailableRoles(userId);
+    if (roles.includes(targetRole)) return roles;
+
+    const roleLabel = targetRole === 'couple' ? 'couple' : targetRole;
+    throw new Error(`This email does not have a ${roleLabel} account yet. Choose the matching sign up path first.`);
+  };
+
+  const activateRequestedRole = async (
+    authUser: User,
+    targetRole: Extract<SignupRole, 'couple' | 'planner' | 'vendor'>,
+    plannerType?: PlannerType | null,
+  ) => {
+    await ensureRequestedRoleExists(authUser.id, targetRole);
+
+    const { error } = await (supabase as any).rpc('apply_current_user_signup_target', {
+      target_role_text: targetRole,
+      target_planner_type_text: targetRole === 'planner' ? (plannerType ?? 'professional') : null,
+      target_full_name: getFallbackFullName(authUser) || null,
+      target_committee_name: null,
+    });
+
+    if (error) throw error;
   };
 
   const getRequestedSignupState = (authUser: User): RequestedSignupState => {
@@ -900,13 +935,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (
+    email: string,
+    password: string,
+    options?: {
+      targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+      plannerType?: PlannerType | null;
+    },
+  ) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
     if (data.session) {
       setLoading(true);
       try {
+        if (options?.targetRole) {
+          await activateRequestedRole(data.session.user, options.targetRole, options.plannerType ?? null);
+        }
         await syncAuthState(data.session);
       } finally {
         setLoading(false);
