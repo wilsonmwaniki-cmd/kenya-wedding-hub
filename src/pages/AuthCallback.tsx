@@ -62,6 +62,28 @@ function getAuthTargetFromCallbackUrl(): { role: AppRole; plannerType: PlannerTy
   return getOAuthSignupTargetFromSearchParams(new URL(window.location.href).searchParams);
 }
 
+function getProfessionalOAuthTarget():
+  | { role: 'planner' | 'vendor'; plannerType: PlannerType | null }
+  | null {
+  const callbackUrlTarget = getAuthTargetFromCallbackUrl();
+  if (callbackUrlTarget?.role === 'planner' || callbackUrlTarget?.role === 'vendor') {
+    return {
+      role: callbackUrlTarget.role,
+      plannerType: callbackUrlTarget.role === 'planner' ? callbackUrlTarget.plannerType : null,
+    };
+  }
+
+  const pendingOAuthTarget = getPendingOAuthSignupTarget();
+  if (pendingOAuthTarget?.role === 'planner' || pendingOAuthTarget?.role === 'vendor') {
+    return {
+      role: pendingOAuthTarget.role,
+      plannerType: pendingOAuthTarget.role === 'planner' ? pendingOAuthTarget.plannerType : null,
+    };
+  }
+
+  return null;
+}
+
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'failed'>('loading');
@@ -90,7 +112,8 @@ export default function AuthCallback() {
 
     const applyPendingOAuthSignupState = async (user: NonNullable<Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user']>) => {
       const pendingOAuthSignupState = readPendingOAuthSignupState();
-      if (!pendingOAuthSignupState) return user;
+      const callbackOAuthTarget = getProfessionalOAuthTarget();
+      if (!pendingOAuthSignupState && !callbackOAuthTarget) return user;
 
       const currentMetadata = (user.user_metadata ?? {}) as Record<string, unknown>;
       const currentFullName = typeof currentMetadata.full_name === 'string' && currentMetadata.full_name.trim().length > 0
@@ -99,11 +122,16 @@ export default function AuthCallback() {
           ? currentMetadata.name.trim()
           : null;
 
-      const desiredRole = pendingOAuthSignupState.role;
-      const desiredPlannerType = desiredRole === 'planner' ? 'professional' : null;
+      const desiredRole = pendingOAuthSignupState?.role ?? callbackOAuthTarget?.role;
+      if (!desiredRole) return user;
+
+      const desiredPlannerType =
+        desiredRole === 'planner'
+          ? (pendingOAuthSignupState?.plannerType ?? callbackOAuthTarget?.plannerType ?? 'professional')
+          : null;
       const needsRoleSync = currentMetadata.role !== desiredRole;
       const needsPlannerTypeSync = (currentMetadata.planner_type ?? null) !== desiredPlannerType;
-      const needsFullNameSync = !currentFullName && !!pendingOAuthSignupState.fullName;
+      const needsFullNameSync = !currentFullName && !!pendingOAuthSignupState?.fullName;
 
       if (!needsRoleSync && !needsPlannerTypeSync && !needsFullNameSync) {
         clearPendingOAuthSignupState();
@@ -118,7 +146,7 @@ export default function AuthCallback() {
         wedding_setup_completed: true,
       };
 
-      if (needsFullNameSync && pendingOAuthSignupState.fullName) {
+      if (needsFullNameSync && pendingOAuthSignupState?.fullName) {
         nextMetadata.full_name = pendingOAuthSignupState.fullName;
       }
 
@@ -127,6 +155,27 @@ export default function AuthCallback() {
       });
 
       if (error) throw error;
+
+      // Refresh auth claims before any RPC that relies on auth.jwt() to derive roles.
+      await supabase.auth.refreshSession();
+
+      const { error: profilePatchError } = await supabase
+        .from('profiles')
+        .update({
+          role: desiredRole,
+          planner_type: desiredPlannerType,
+          committee_name: desiredPlannerType === 'committee'
+            ? (typeof nextMetadata.committee_name === 'string' ? nextMetadata.committee_name : null)
+            : null,
+          full_name: typeof nextMetadata.full_name === 'string' && nextMetadata.full_name.trim().length > 0
+            ? nextMetadata.full_name
+            : undefined,
+        })
+        .eq('user_id', user.id);
+
+      if (profilePatchError) {
+        console.error('Failed to patch profile role after OAuth signup:', profilePatchError);
+      }
 
       const { error: syncRoleError } = await supabase.rpc('sync_current_user_signup_role');
       if (syncRoleError) throw syncRoleError;
