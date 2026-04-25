@@ -79,7 +79,10 @@ interface AuthContextType {
     }
   ) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: (options?: {
+    signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
+    plannerType?: PlannerType | null;
+  }) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
   setRolePreview: (role: RolePreview) => void;
@@ -868,11 +871,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (options?: {
+    signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
+    plannerType?: PlannerType | null;
+  }) => {
+    const redirectUrl = new URL(`${window.location.origin}/auth/callback`);
+
+    if (options?.signupRole) {
+      redirectUrl.searchParams.set('signup_role', options.signupRole);
+      if (options.signupRole === 'planner') {
+        redirectUrl.searchParams.set(
+          'planner_type',
+          options.plannerType === 'committee' ? 'committee' : 'professional',
+        );
+      }
+    }
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: redirectUrl.toString(),
       },
     });
     if (error) throw error;
