@@ -427,7 +427,14 @@ export default function Auth() {
         clearPendingOAuthSignupState();
       }
 
-      await signInWithGoogle();
+      await signInWithGoogle(
+        isSignUp && signupPath === 'professional'
+          ? {
+              signupRole: professionalRole,
+              plannerType: professionalRole === 'planner' ? 'professional' : null,
+            }
+          : undefined,
+      );
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
       setGoogleSubmitting(false);

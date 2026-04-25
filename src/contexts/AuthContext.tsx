@@ -79,7 +79,10 @@ interface AuthContextType {
     }
   ) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: (options?: {
+    signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
+    plannerType?: PlannerType | null;
+  }) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
   setRolePreview: (role: RolePreview) => void;
@@ -95,6 +98,19 @@ type RequestedSignupState = {
   plannerType: PlannerType | null;
   committeeName: string | null;
 } | null;
+
+const clearStoredSupabaseAuthState = () => {
+  if (typeof window === 'undefined') return;
+
+  for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+    const key = window.localStorage.key(index);
+    if (!key) continue;
+
+    if (key.startsWith('sb-') && (key.includes('auth-token') || key.includes('code-verifier'))) {
+      window.localStorage.removeItem(key);
+    }
+  }
+};
 
 const plannerPreviewExpiry = () => {
   const nextYear = new Date();
@@ -868,11 +884,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (options?: {
+    signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
+    plannerType?: PlannerType | null;
+  }) => {
+    const redirectUrl = new URL(`${window.location.origin}/auth/callback`);
+
+    if (options?.signupRole) {
+      redirectUrl.searchParams.set('signup_role', options.signupRole);
+      if (options.signupRole === 'planner') {
+        redirectUrl.searchParams.set(
+          'planner_type',
+          options.plannerType === 'committee' ? 'committee' : 'professional',
+        );
+      }
+    }
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: redirectUrl.toString(),
       },
     });
     if (error) throw error;
@@ -881,8 +912,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     setRolePreviewState('admin');
     authHydrationRequestRef.current += 1;
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    clearPendingOAuthSignupState();
+
+    const { error } = await supabase.auth.signOut({ scope: 'global' });
+    if (error && !/session/i.test(error.message)) throw error;
+
+    clearStoredSupabaseAuthState();
     await syncAuthState(null);
   };
 
