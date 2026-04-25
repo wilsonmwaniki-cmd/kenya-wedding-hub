@@ -6,6 +6,7 @@ import { getHomeRouteForRole, type AppRole, type PlannerType } from '@/lib/roles
 import { hasPendingEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 import {
   clearPendingOAuthSignupState,
+  getOAuthSignupTargetFromSearchParams,
   getPendingOAuthSignupTarget,
   readPendingOAuthSignupState,
 } from '@/lib/oauthSignupState';
@@ -57,6 +58,10 @@ function getAuthTargetFromUserMetadata(): { role: AppRole; plannerType: PlannerT
   return { role: 'couple', plannerType: null };
 }
 
+function getAuthTargetFromCallbackUrl(): { role: AppRole; plannerType: PlannerType | null } | null {
+  return getOAuthSignupTargetFromSearchParams(new URL(window.location.href).searchParams);
+}
+
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'failed'>('loading');
@@ -64,13 +69,13 @@ export default function AuthCallback() {
   useEffect(() => {
     let active = true;
 
-    const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T) => {
+    const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T, label: string) => {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const result = await Promise.race([
         promise,
         new Promise<T>((resolve) => {
           timeoutId = setTimeout(() => {
-            console.warn(`Auth callback step timed out after ${timeoutMs}ms; continuing with fallback state.`);
+            console.warn(`${label} timed out after ${timeoutMs}ms; continuing with fallback state.`);
             resolve(fallbackValue);
           }, timeoutMs);
         }),
@@ -133,38 +138,70 @@ export default function AuthCallback() {
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
       const code = new URL(window.location.href).searchParams.get('code');
+      const callbackUrlTarget = getAuthTargetFromCallbackUrl();
+      const pendingOAuthTarget = getPendingOAuthSignupTarget();
+      const metadataTarget = getAuthTargetFromUserMetadata();
+      const fallbackTarget =
+        callbackUrlTarget
+        ?? pendingOAuthTarget
+        ?? metadataTarget;
 
       try {
         if (accessToken && refreshToken) {
-          const { error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          if (error) throw error;
+          const sessionResult = await withTimeout(
+            supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            }),
+            5000,
+            { data: { session: null, user: null }, error: null },
+            'Auth callback session restore',
+          );
+          if (sessionResult.error) throw sessionResult.error;
         } else if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) throw error;
+          const exchangeResult = await withTimeout(
+            supabase.auth.exchangeCodeForSession(code),
+            5000,
+            { data: { session: null, user: null }, error: null },
+            'Auth callback code exchange',
+          );
+          if (exchangeResult.error) throw exchangeResult.error;
         }
 
-        const { data: { user: rawUser } } = await supabase.auth.getUser();
+        const rawUser = await withTimeout(
+          supabase.auth.getUser().then(({ data }) => data.user),
+          4000,
+          null,
+          'Auth callback user lookup',
+        );
         const user = rawUser
-          ? await withTimeout(applyPendingOAuthSignupState(rawUser), 4000, rawUser)
+          ? await withTimeout(
+              applyPendingOAuthSignupState(rawUser),
+              4000,
+              rawUser,
+              'Auth callback role reconciliation',
+            )
           : rawUser;
         const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
 
         if (user && pendingWeddingSetup) {
-          const completion = await completePendingWeddingSetup(user);
+          const completion = await withTimeout(
+            completePendingWeddingSetup(user),
+            5000,
+            null,
+            'Auth callback wedding setup completion',
+          );
           if (!active) return;
-          navigate(completion.route, { replace: true });
-          return;
+          if (completion) {
+            navigate(completion.route, { replace: true });
+            return;
+          }
         }
 
         const resolvedFromSession = getAuthTargetFromMetadata(user?.user_metadata);
-        const pendingOAuthTarget = getPendingOAuthSignupTarget();
         const { role, plannerType } =
           resolvedFromSession
-          ?? pendingOAuthTarget
-          ?? getAuthTargetFromUserMetadata();
+          ?? fallbackTarget;
         window.history.replaceState({}, document.title, '/auth/callback');
         if (!active) return;
 

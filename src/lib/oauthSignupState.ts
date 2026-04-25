@@ -8,6 +8,20 @@ export type PendingOAuthSignupState = {
   fullName: string | null;
 };
 
+export function getOAuthSignupTargetFromSearchParams(
+  searchParams: URLSearchParams,
+):
+  | { role: Extract<SignupRole, 'planner' | 'vendor'>; plannerType: PlannerType | null }
+  | null {
+  const role = searchParams.get('signup_role');
+  if (role !== 'planner' && role !== 'vendor') return null;
+
+  return {
+    role,
+    plannerType: role === 'planner' ? 'professional' : null,
+  };
+}
+
 export function getPendingOAuthSignupTarget():
   | { role: AppRole; plannerType: PlannerType | null; fullName: string | null }
   | null {
