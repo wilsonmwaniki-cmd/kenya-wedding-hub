@@ -187,11 +187,6 @@ export default function AuthCallback() {
             : null,
       });
       if (applyRoleError) throw applyRoleError;
-
-      const { error: syncRoleError } = await supabase.rpc('sync_current_user_signup_role');
-      if (syncRoleError) {
-        console.warn('JWT-based role sync still failed after explicit role apply:', syncRoleError);
-      }
       return data.user ?? user;
     };
 

@@ -34,6 +34,7 @@ type AuthEntryState = {
   professionalRole?: ProfessionalSignupRole;
 } | null;
 type ProfessionalSignupRole = 'planner' | 'vendor';
+type AuthAudience = 'couple' | 'professional';
 
 const professionalRoleMeta: Record<
   ProfessionalSignupRole,
@@ -101,9 +102,10 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [signupPath, setSignupPath] = useState<WeddingSignupIntent>('create_wedding');
-  const [professionalRole, setProfessionalRole] = useState<ProfessionalSignupRole>('planner');
-  const [weddingOwnerRole, setWeddingOwnerRole] = useState<WeddingOwnerRole>('bride');
+  const [selectedAudience, setSelectedAudience] = useState<AuthAudience | null>(null);
+  const [signupPath, setSignupPath] = useState<WeddingSignupIntent | null>(null);
+  const [professionalRole, setProfessionalRole] = useState<ProfessionalSignupRole | null>(null);
+  const [weddingOwnerRole, setWeddingOwnerRole] = useState<WeddingOwnerRole | null>(null);
   const [weddingName, setWeddingName] = useState('');
   const [partnerEmail, setPartnerEmail] = useState('');
   const [weddingCode, setWeddingCode] = useState('');
@@ -125,10 +127,12 @@ export default function Auth() {
     () => (user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null),
     [user],
   );
-  const audience = signupPath === 'professional' ? 'professional' : 'couple';
-  const showWeddingDetails = isSignUp && signupPath === 'create_wedding';
-  const showJoinDetails = isSignUp && signupPath === 'join_wedding';
-  const showProfessionalDetails = isSignUp && signupPath === 'professional';
+  const audience: AuthAudience | null = isSignUp
+    ? selectedAudience
+    : (selectedAudience ?? 'couple');
+  const showWeddingDetails = isSignUp && selectedAudience === 'couple' && signupPath === 'create_wedding';
+  const showJoinDetails = isSignUp && selectedAudience === 'couple' && signupPath === 'join_wedding';
+  const showProfessionalDetails = isSignUp && selectedAudience === 'professional' && signupPath === 'professional';
   const showGoogleAuth = !isForgot;
   const showTopGoogleAuth = showGoogleAuth && (!isSignUp || audience === 'professional');
   const showCoupleSignupGoogleAuth = showGoogleAuth && isSignUp && audience === 'couple';
@@ -141,9 +145,13 @@ export default function Auth() {
       setIsSignUp(state.mode === 'signup');
       setIsForgot(false);
       setPostSignupMessage(null);
+      if (state.mode === 'signin' && !state.signupPath && !state.role) {
+        setSelectedAudience('couple');
+      }
     }
 
     if (state.signupPath) {
+      setSelectedAudience(state.signupPath === 'professional' ? 'professional' : 'couple');
       setSignupPath(state.signupPath);
       if (state.professionalRole) {
         setProfessionalRole(state.professionalRole);
@@ -153,6 +161,7 @@ export default function Auth() {
 
     if (state.role) {
       const mapped = mapEntryRoleToSignupPath(state.role);
+      setSelectedAudience(mapped.signupPath === 'professional' ? 'professional' : 'couple');
       setSignupPath(mapped.signupPath);
       setProfessionalRole(mapped.professionalRole);
     }
@@ -165,6 +174,7 @@ export default function Auth() {
     const invitedEmail = params.get('email');
 
     if (flow === 'join_wedding') {
+      setSelectedAudience('couple');
       setSignupPath('join_wedding');
       setIsSignUp(true);
       setIsForgot(false);
@@ -266,6 +276,11 @@ export default function Auth() {
   };
 
   const persistWeddingIntentIfNeeded = () => {
+    if (!signupPath) {
+      clearPendingWeddingSetup();
+      return;
+    }
+
     const coupleWeddingName = weddingName.trim() || getSuggestedWeddingName();
 
     if (signupPath === 'professional') {
@@ -290,6 +305,14 @@ export default function Auth() {
 
   const validateGoogleSignupIntent = () => {
     if (!isSignUp) return;
+
+    if (!selectedAudience || !signupPath) {
+      throw new Error('Choose how you are signing up before continuing.');
+    }
+
+    if (signupPath === 'professional' && !professionalRole) {
+      throw new Error('Choose whether you are signing up as a planner or vendor first.');
+    }
 
     if (signupPath === 'create_wedding') {
       if (!partnerEmail.trim()) {
@@ -333,7 +356,19 @@ export default function Auth() {
 
     try {
       if (isSignUp) {
+        if (!selectedAudience || !signupPath) {
+          throw new Error('Choose whether you are signing up as a couple or a wedding professional first.');
+        }
+
+        if (signupPath === 'professional' && !professionalRole) {
+          throw new Error('Choose whether this professional account is for a planner or vendor.');
+        }
+
         if (signupPath === 'create_wedding') {
+          if (!weddingOwnerRole) {
+            throw new Error('Choose whether the bride or groom is creating this wedding.');
+          }
+
           if (!partnerEmail.trim()) {
             throw new Error('Add your partner’s email to create the wedding properly.');
           }
@@ -443,12 +478,16 @@ export default function Auth() {
 
   const switchAudience = (nextAudience: 'couple' | 'professional') => {
     setPostSignupMessage(null);
+    setSelectedAudience(nextAudience);
     if (nextAudience === 'couple') {
       setSignupPath('create_wedding');
+      setProfessionalRole(null);
+      setWeddingOwnerRole(null);
       return;
     }
 
     setSignupPath('professional');
+    setProfessionalRole(null);
   };
 
   return (
@@ -573,14 +612,18 @@ export default function Auth() {
                         ? 'Join a wedding'
                         : audience === 'couple'
                           ? 'Start your wedding'
-                          : 'Professional account'}
+                          : audience === 'professional'
+                            ? 'Professional account'
+                            : 'Choose your account type'}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {audience === 'couple' && signupPath === 'join_wedding'
                         ? 'Use the code the couple sent you.'
                         : audience === 'couple'
                           ? 'We’ll guide you through this in one quick pass.'
-                          : 'Choose planner or vendor, then create your login.'}
+                          : audience === 'professional'
+                            ? 'Choose planner or vendor, then create your login.'
+                            : 'Start by choosing which kind of account you want to create.'}
                     </p>
                   </div>
                   {audience === 'couple' && (
@@ -597,6 +640,12 @@ export default function Auth() {
                     </Button>
                   )}
                 </motion.div>
+              )}
+
+              {isSignUp && !audience && (
+                <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Choose the account type first. We won’t let sign-up continue on a silent default anymore.
+                </div>
               )}
 
               {showTopGoogleAuth && (
@@ -836,7 +885,9 @@ export default function Auth() {
                         ? 'Create account and join'
                         : professionalRole === 'planner'
                           ? 'Create planner account'
-                          : 'Create vendor account'
+                          : professionalRole === 'vendor'
+                            ? 'Create vendor account'
+                            : 'Choose your account type'
                     : audience === 'professional'
                       ? 'Sign in to professional account'
                       : 'Sign in to wedding'}
@@ -848,7 +899,20 @@ export default function Auth() {
                   type="button"
                   onClick={() => {
                     setPostSignupMessage(null);
-                    setIsSignUp((current) => !current);
+                    setIsSignUp((current) => {
+                      const nextValue = !current;
+
+                      if (nextValue) {
+                        setSelectedAudience(null);
+                        setSignupPath(null);
+                        setProfessionalRole(null);
+                        setWeddingOwnerRole(null);
+                      } else {
+                        setSelectedAudience((existing) => existing ?? 'couple');
+                      }
+
+                      return nextValue;
+                    });
                   }}
                   className="text-sm text-muted-foreground transition-colors hover:text-primary"
                 >
