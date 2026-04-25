@@ -132,7 +132,7 @@ export default function Auth() {
     : (selectedAudience ?? 'couple');
   const showWeddingDetails = isSignUp && selectedAudience === 'couple' && signupPath === 'create_wedding';
   const showJoinDetails = isSignUp && selectedAudience === 'couple' && signupPath === 'join_wedding';
-  const showProfessionalDetails = isSignUp && selectedAudience === 'professional' && signupPath === 'professional';
+  const showProfessionalDetails = selectedAudience === 'professional' && signupPath === 'professional';
   const showGoogleAuth = !isForgot;
   const showTopGoogleAuth = showGoogleAuth && (!isSignUp || audience === 'professional');
   const showCoupleSignupGoogleAuth = showGoogleAuth && isSignUp && audience === 'couple';
@@ -303,15 +303,15 @@ export default function Auth() {
     persistPendingWeddingSetup(payload);
   };
 
-  const validateGoogleSignupIntent = () => {
+  const validateGoogleAuthIntent = () => {
+    if (audience === 'professional' && !professionalRole) {
+      throw new Error(`Choose whether you are continuing as a planner or vendor first.`);
+    }
+
     if (!isSignUp) return;
 
     if (!selectedAudience || !signupPath) {
       throw new Error('Choose how you are signing up before continuing.');
-    }
-
-    if (signupPath === 'professional' && !professionalRole) {
-      throw new Error('Choose whether you are signing up as a planner or vendor first.');
     }
 
     if (signupPath === 'create_wedding') {
@@ -437,7 +437,18 @@ export default function Auth() {
         }
       } else {
         persistWeddingIntentIfNeeded();
-        await signIn(email, password);
+        await signIn(email, password, audience === 'professional' && professionalRole
+          ? {
+              targetRole: professionalRole,
+              plannerType: professionalRole === 'planner' ? 'professional' : null,
+            }
+          : audience === 'couple'
+            ? {
+                targetRole: 'couple',
+                plannerType: null,
+              }
+            : undefined,
+        );
       }
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
@@ -449,10 +460,10 @@ export default function Auth() {
   const handleGoogleSignIn = async () => {
     setGoogleSubmitting(true);
     try {
-      validateGoogleSignupIntent();
+      validateGoogleAuthIntent();
       persistWeddingIntentIfNeeded();
 
-      if (isSignUp && signupPath === 'professional') {
+      if (audience === 'professional' && professionalRole) {
         persistPendingOAuthSignupState({
           role: professionalRole,
           plannerType: professionalRole === 'planner' ? 'professional' : null,
@@ -463,7 +474,7 @@ export default function Auth() {
       }
 
       await signInWithGoogle(
-        isSignUp && signupPath === 'professional'
+        audience === 'professional' && professionalRole
           ? {
               signupRole: professionalRole,
               plannerType: professionalRole === 'planner' ? 'professional' : null,
@@ -622,7 +633,9 @@ export default function Auth() {
                         : audience === 'couple'
                           ? 'We’ll guide you through this in one quick pass.'
                           : audience === 'professional'
-                            ? 'Choose planner or vendor, then create your login.'
+                            ? isSignUp
+                              ? 'Choose planner or vendor, then create your login.'
+                              : 'Choose planner or vendor so we open the right account.'
                             : 'Start by choosing which kind of account you want to create.'}
                     </p>
                   </div>
@@ -789,33 +802,35 @@ export default function Auth() {
 
                 {showProfessionalDetails && (
                   <>
-                    {isSignUp && (
-                      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-foreground">What kind of account are you creating?</p>
-                          <p className="text-xs text-muted-foreground">
-                            Planner and vendor accounts stay professional accounts. They can later be attached to wedding workspaces through invites and connections.
-                          </p>
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {(Object.entries(professionalRoleMeta) as Array<[ProfessionalSignupRole, (typeof professionalRoleMeta)[ProfessionalSignupRole]]>).map(([value, meta]) => (
-                            <button
-                              key={value}
-                              type="button"
-                              onClick={() => setProfessionalRole(value)}
-                              className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                                professionalRole === value
-                                  ? 'border-primary bg-primary/5 text-foreground'
-                                  : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
-                              }`}
-                            >
-                              <p className="font-medium">{meta.title}</p>
-                              <p className="mt-1 text-xs">{meta.description}</p>
-                            </button>
-                          ))}
-                        </div>
+                    <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground">
+                          {isSignUp ? 'What kind of account are you creating?' : 'Which professional account are you opening?'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {isSignUp
+                            ? 'Planner and vendor accounts stay professional accounts. They can later be attached to wedding workspaces through invites and connections.'
+                            : 'If this email holds more than one role, this tells Zania which account to open instead of silently falling back to couple.'}
+                        </p>
                       </div>
-                    )}
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {(Object.entries(professionalRoleMeta) as Array<[ProfessionalSignupRole, (typeof professionalRoleMeta)[ProfessionalSignupRole]]>).map(([value, meta]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setProfessionalRole(value)}
+                            className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                              professionalRole === value
+                                ? 'border-primary bg-primary/5 text-foreground'
+                                : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                            }`}
+                          >
+                            <p className="font-medium">{meta.title}</p>
+                            <p className="mt-1 text-xs">{meta.description}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
                     {isSignUp && (
                       <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
@@ -881,15 +896,19 @@ export default function Auth() {
                   {isSignUp
                     ? signupPath === 'create_wedding'
                       ? 'Create wedding account'
-                      : signupPath === 'join_wedding'
-                        ? 'Create account and join'
+                        : signupPath === 'join_wedding'
+                          ? 'Create account and join'
                         : professionalRole === 'planner'
                           ? 'Create planner account'
                           : professionalRole === 'vendor'
                             ? 'Create vendor account'
                             : 'Choose your account type'
                     : audience === 'professional'
-                      ? 'Sign in to professional account'
+                      ? professionalRole === 'planner'
+                        ? 'Sign in as planner'
+                        : professionalRole === 'vendor'
+                          ? 'Sign in as vendor'
+                          : 'Choose planner or vendor'
                       : 'Sign in to wedding'}
                 </Button>
               </form>

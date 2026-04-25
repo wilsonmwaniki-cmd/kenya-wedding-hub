@@ -775,6 +775,13 @@ export default function ProfileSettings() {
               <Label>Full Name</Label>
               <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
             </div>
+            <div className="space-y-2">
+              <Label>Sign-in Email</Label>
+              <Input value={user?.email || ''} readOnly />
+              <p className="text-xs text-muted-foreground">
+                This is the email currently tied to your account sign-in.
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -794,6 +801,9 @@ export default function ProfileSettings() {
                 <div className="space-y-2">
                   <Label>Business Email</Label>
                   <Input type="email" value={form.company_email} onChange={e => setForm(f => ({ ...f, company_email: e.target.value }))} placeholder="info@yourcompany.com" />
+                  <p className="text-xs text-muted-foreground">
+                    This is the public business email couples will see. Your sign-in email is shown above.
+                  </p>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">

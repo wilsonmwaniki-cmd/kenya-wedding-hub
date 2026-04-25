@@ -79,7 +79,14 @@ interface AuthContextType {
       primaryTown?: string | null;
     }
   ) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (
+    email: string,
+    password: string,
+    options?: {
+      targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+      plannerType?: PlannerType | null;
+    }
+  ) => Promise<void>;
   signInWithGoogle: (options?: {
     signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
@@ -103,14 +110,19 @@ type RequestedSignupState = {
 const clearStoredSupabaseAuthState = () => {
   if (typeof window === 'undefined') return;
 
-  for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
-    const key = window.localStorage.key(index);
-    if (!key) continue;
+  const clearMatchingKeys = (storage: Storage) => {
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+      const key = storage.key(index);
+      if (!key) continue;
 
-    if (key.startsWith('sb-') && (key.includes('auth-token') || key.includes('code-verifier'))) {
-      window.localStorage.removeItem(key);
+      if (key.startsWith('sb-') && (key.includes('auth-token') || key.includes('code-verifier'))) {
+        storage.removeItem(key);
+      }
     }
-  }
+  };
+
+  clearMatchingKeys(window.localStorage);
+  clearMatchingKeys(window.sessionStorage);
 };
 
 const plannerPreviewExpiry = () => {
@@ -223,6 +235,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAvailableRoles([]);
       return [];
     }
+  };
+
+  const ensureRequestedRoleExists = async (
+    userId: string,
+    targetRole: Extract<SignupRole, 'couple' | 'planner' | 'vendor'>,
+  ) => {
+    const roles = await fetchAvailableRoles(userId);
+    if (roles.includes(targetRole)) return roles;
+
+    const roleLabel = targetRole === 'couple' ? 'couple' : targetRole;
+    throw new Error(`This email does not have a ${roleLabel} account yet. Choose the matching sign up path first.`);
+  };
+
+  const activateRequestedRole = async (
+    authUser: User,
+    targetRole: Extract<SignupRole, 'couple' | 'planner' | 'vendor'>,
+    plannerType?: PlannerType | null,
+  ) => {
+    await ensureRequestedRoleExists(authUser.id, targetRole);
+
+    const { error } = await (supabase as any).rpc('apply_current_user_signup_target', {
+      target_role_text: targetRole,
+      target_planner_type_text: targetRole === 'planner' ? (plannerType ?? 'professional') : null,
+      target_full_name: getFallbackFullName(authUser) || null,
+      target_committee_name: null,
+    });
+
+    if (error) throw error;
   };
 
   const getRequestedSignupState = (authUser: User): RequestedSignupState => {
@@ -900,13 +940,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (
+    email: string,
+    password: string,
+    options?: {
+      targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+      plannerType?: PlannerType | null;
+    },
+  ) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
     if (data.session) {
       setLoading(true);
       try {
+        if (options?.targetRole) {
+          await activateRequestedRole(data.session.user, options.targetRole, options.plannerType ?? null);
+        }
         await syncAuthState(data.session);
       } finally {
         setLoading(false);
@@ -943,12 +993,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRolePreviewState('admin');
     authHydrationRequestRef.current += 1;
     clearPendingOAuthSignupState();
+    let globalSignOutError: Error | null = null;
 
-    const { error } = await supabase.auth.signOut({ scope: 'global' });
-    if (error && !/session/i.test(error.message)) throw error;
+    try {
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
+      if (error && !/session/i.test(error.message)) {
+        globalSignOutError = error;
+      }
+    } catch (error: any) {
+      if (!/session/i.test(error?.message ?? '')) {
+        globalSignOutError = error;
+      }
+    }
 
-    clearStoredSupabaseAuthState();
-    await syncAuthState(null);
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (error: any) {
+      if (!/session/i.test(error?.message ?? '') && !globalSignOutError) {
+        globalSignOutError = error;
+      }
+    } finally {
+      clearStoredSupabaseAuthState();
+      await syncAuthState(null);
+      setLoading(false);
+    }
+
+    if (globalSignOutError) {
+      console.warn('Supabase global sign out did not fully complete, but local session was cleared.', globalSignOutError);
+    }
   };
 
   const updateProfile = async (updates: Partial<Profile>) => {

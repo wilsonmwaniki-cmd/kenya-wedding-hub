@@ -489,6 +489,14 @@ export default function VendorSettings() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSave} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Sign-in Email</Label>
+              <Input type="email" value={user?.email || ''} readOnly />
+              <p className="text-xs text-muted-foreground">
+                This is the email tied to this vendor account. It is separate from your public business email below.
+              </p>
+            </div>
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Business Name *</Label>
@@ -528,7 +536,7 @@ export default function VendorSettings() {
                 <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+254..." />
               </div>
               <div className="space-y-2">
-                <Label>Email</Label>
+                <Label>Public Business Email</Label>
                 <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="business@example.com" />
               </div>
             </div>
