@@ -110,14 +110,19 @@ type RequestedSignupState = {
 const clearStoredSupabaseAuthState = () => {
   if (typeof window === 'undefined') return;
 
-  for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
-    const key = window.localStorage.key(index);
-    if (!key) continue;
+  const clearMatchingKeys = (storage: Storage) => {
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+      const key = storage.key(index);
+      if (!key) continue;
 
-    if (key.startsWith('sb-') && (key.includes('auth-token') || key.includes('code-verifier'))) {
-      window.localStorage.removeItem(key);
+      if (key.startsWith('sb-') && (key.includes('auth-token') || key.includes('code-verifier'))) {
+        storage.removeItem(key);
+      }
     }
-  }
+  };
+
+  clearMatchingKeys(window.localStorage);
+  clearMatchingKeys(window.sessionStorage);
 };
 
 const plannerPreviewExpiry = () => {
@@ -988,12 +993,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRolePreviewState('admin');
     authHydrationRequestRef.current += 1;
     clearPendingOAuthSignupState();
+    let globalSignOutError: Error | null = null;
 
-    const { error } = await supabase.auth.signOut({ scope: 'global' });
-    if (error && !/session/i.test(error.message)) throw error;
+    try {
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
+      if (error && !/session/i.test(error.message)) {
+        globalSignOutError = error;
+      }
+    } catch (error: any) {
+      if (!/session/i.test(error?.message ?? '')) {
+        globalSignOutError = error;
+      }
+    }
 
-    clearStoredSupabaseAuthState();
-    await syncAuthState(null);
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (error: any) {
+      if (!/session/i.test(error?.message ?? '') && !globalSignOutError) {
+        globalSignOutError = error;
+      }
+    } finally {
+      clearStoredSupabaseAuthState();
+      await syncAuthState(null);
+      setLoading(false);
+    }
+
+    if (globalSignOutError) {
+      console.warn('Supabase global sign out did not fully complete, but local session was cleared.', globalSignOutError);
+    }
   };
 
   const updateProfile = async (updates: Partial<Profile>) => {
