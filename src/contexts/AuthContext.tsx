@@ -56,6 +56,7 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   baseProfile: Profile | null;
+  availableRoles: AppRole[];
   loading: boolean;
   isSuperAdmin: boolean;
   rolePreview: RolePreview;
@@ -156,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [baseProfile, setBaseProfile] = useState<Profile | null>(null);
+  const [availableRoles, setAvailableRoles] = useState<AppRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [rolePreview, setRolePreviewState] = useState<RolePreview>('admin');
   const pendingWeddingRecoveryRef = useRef<string | null>(null);
@@ -200,6 +202,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return [...data]
       .sort((a, b) => rolePriority[b.role as AppRole] - rolePriority[a.role as AppRole])[0]
       .role as AppRole;
+  };
+
+  const fetchAvailableRoles = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      const normalizedRoles = Array.from(
+        new Set((data ?? []).map((entry) => entry.role as AppRole)),
+      );
+      setAvailableRoles(normalizedRoles);
+      return normalizedRoles;
+    } catch (error) {
+      console.error('Failed to load available roles:', error);
+      setAvailableRoles([]);
+      return [];
+    }
   };
 
   const getRequestedSignupState = (authUser: User): RequestedSignupState => {
@@ -366,13 +389,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.rpc('sync_current_user_signup_role');
+      const { error } = await (supabase as any).rpc('apply_current_user_signup_target', {
+        target_role_text: requestedSignupState.role,
+        target_planner_type_text: requestedSignupState.plannerType,
+        target_full_name: getFallbackFullName(authUser) || null,
+        target_committee_name: requestedSignupState.committeeName,
+      });
       if (error) throw error;
 
       const syncedProfile = await fetchProfile(authUser.id);
       if (syncedProfile) return syncedProfile;
     } catch (error) {
-      console.error('Failed to sync signup role from auth metadata:', error);
+      console.error('Failed to apply signup role from auth metadata:', error);
     }
 
     try {
@@ -488,12 +516,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(nextSession?.user ?? null);
 
     if (nextSession?.user) {
+      await fetchAvailableRoles(nextSession.user.id);
       await ensureProfile(nextSession.user);
       return;
     }
 
     pendingWeddingRecoveryRef.current = null;
     setBaseProfile(null);
+    setAvailableRoles([]);
   };
 
   useEffect(() => {
@@ -946,6 +976,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         profile,
         baseProfile,
+        availableRoles,
         loading,
         isSuperAdmin,
         rolePreview,
