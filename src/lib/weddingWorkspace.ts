@@ -112,6 +112,101 @@ export async function getMyWeddingOwnershipSummary(): Promise<MyWeddingOwnership
   };
 }
 
+export async function getMyWeddingOwnershipSummaryFromTables(
+  userId: string,
+  userEmail?: string | null,
+): Promise<MyWeddingOwnershipSummary | null> {
+  const db = supabase as any;
+  const normalizedEmail = normalizeEmail(userEmail);
+  const ownerMatch = normalizedEmail
+    ? `user_id.eq.${userId},email.eq.${normalizedEmail}`
+    : `user_id.eq.${userId}`;
+
+  const { data: ownerMemberships, error: ownerMembershipError } = await db
+    .from('wedding_memberships')
+    .select('id, wedding_id, role, email')
+    .eq('is_owner', true)
+    .eq('membership_status', 'active')
+    .in('role', ['bride', 'groom'])
+    .or(ownerMatch)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (ownerMembershipError) {
+    throw ownerMembershipError;
+  }
+
+  const ownerMembership = ownerMemberships?.[0];
+  if (!ownerMembership) return null;
+
+  const { data: weddings, error: weddingError } = await db
+    .from('weddings')
+    .select('id, name, wedding_code, wedding_date, location_county, location_town')
+    .eq('id', ownerMembership.wedding_id)
+    .limit(1);
+
+  if (weddingError) {
+    throw weddingError;
+  }
+
+  const wedding = weddings?.[0];
+  if (!wedding) return null;
+
+  const { data: partnerMemberships, error: partnerMembershipError } = await db
+    .from('wedding_memberships')
+    .select('id, email, role, membership_status, user_id')
+    .eq('wedding_id', ownerMembership.wedding_id)
+    .eq('is_owner', true)
+    .neq('id', ownerMembership.id)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (partnerMembershipError) {
+    throw partnerMembershipError;
+  }
+
+  const { data: partnerInvites, error: inviteError } = await db
+    .from('wedding_invites')
+    .select('id, email, proposed_role, expires_at, status')
+    .eq('wedding_id', ownerMembership.wedding_id)
+    .eq('invite_type', 'partner')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (inviteError) {
+    throw inviteError;
+  }
+
+  const partnerMembership = partnerMemberships?.[0] ?? null;
+  const pendingInvite = partnerInvites?.[0] ?? null;
+  const partnerStatus: MyWeddingOwnershipSummary['partnerStatus'] =
+    partnerMembership?.membership_status === 'active'
+      ? 'active'
+      : pendingInvite || partnerMembership?.membership_status === 'invited'
+        ? 'pending'
+        : 'not_invited';
+
+  return {
+    weddingId: String(wedding.id),
+    weddingName: String(wedding.name ?? 'Your wedding'),
+    weddingCode: String(wedding.wedding_code ?? ''),
+    weddingDate: typeof wedding.wedding_date === 'string' ? wedding.wedding_date : null,
+    locationCounty: typeof wedding.location_county === 'string' ? wedding.location_county : null,
+    locationTown: typeof wedding.location_town === 'string' ? wedding.location_town : null,
+    ownerRole: ownerMembership.role === 'groom' ? 'groom' : 'bride',
+    partnerEmail: partnerMembership?.email ?? pendingInvite?.email ?? null,
+    partnerRole:
+      partnerMembership?.role === 'bride' || partnerMembership?.role === 'groom'
+        ? partnerMembership.role
+        : pendingInvite?.proposed_role === 'bride' || pendingInvite?.proposed_role === 'groom'
+          ? pendingInvite.proposed_role
+          : null,
+    partnerStatus,
+    partnerInviteExpiresAt: pendingInvite?.expires_at ?? null,
+  };
+}
+
 export function persistPendingWeddingSetup(payload: PendingWeddingSetup) {
   if (typeof window === 'undefined') return;
   window.sessionStorage.setItem(PENDING_WEDDING_SETUP_STORAGE_KEY, JSON.stringify(payload));

@@ -20,6 +20,7 @@ import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import {
   completePendingWeddingSetup,
   getMyWeddingOwnershipSummary,
+  getMyWeddingOwnershipSummaryFromTables,
   getPendingWeddingSetup,
   sendWeddingInviteEmail,
   type MyWeddingOwnershipSummary,
@@ -65,6 +66,8 @@ export default function ProfileSettings() {
   const isProfessionalPlanner = isPlanner && !isCommittee;
   const isCouple = profile?.role === 'couple';
   const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
+  const metadataPartnerEmail =
+    typeof user?.user_metadata?.partner_email === 'string' ? user.user_metadata.partner_email : null;
 
   const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 6000, message = 'Request timed out') => {
     return await Promise.race<T>([
@@ -96,6 +99,55 @@ export default function ProfileSettings() {
     minimum_budget_kes: '',
     maximum_budget_kes: '',
   });
+
+  const buildFallbackOwnershipSummary = (): OwnedWeddingWorkspace | null => {
+    const fallbackPartnerEmail = pendingWeddingSetup?.partnerEmail ?? metadataPartnerEmail ?? null;
+    const fallbackWeddingCode =
+      profile?.collaboration_code ||
+      (typeof user?.user_metadata?.wedding_code === 'string' ? user.user_metadata.wedding_code : '') ||
+      '';
+    const fallbackWeddingName =
+      pendingWeddingSetup?.weddingName ||
+      (typeof user?.user_metadata?.wedding_name === 'string' ? user.user_metadata.wedding_name : null) ||
+      profile?.full_name ||
+      'Your wedding';
+    const fallbackOwnerRole =
+      pendingWeddingSetup?.weddingOwnerRole ||
+      (user?.user_metadata?.wedding_owner_role === 'groom' ? 'groom' : 'bride');
+    const fallbackWeddingDate =
+      form.wedding_date ||
+      pendingWeddingSetup?.weddingDate ||
+      (typeof user?.user_metadata?.wedding_date === 'string' ? user.user_metadata.wedding_date : null) ||
+      null;
+    const fallbackCounty =
+      form.wedding_county ||
+      pendingWeddingSetup?.weddingCounty ||
+      (typeof user?.user_metadata?.wedding_county === 'string' ? user.user_metadata.wedding_county : null) ||
+      null;
+    const fallbackTown =
+      form.wedding_town ||
+      pendingWeddingSetup?.weddingTown ||
+      (typeof user?.user_metadata?.wedding_town === 'string' ? user.user_metadata.wedding_town : null) ||
+      null;
+
+    if (!fallbackPartnerEmail && !fallbackWeddingCode && !fallbackWeddingDate && !fallbackCounty && !fallbackTown) {
+      return null;
+    }
+
+    return {
+      weddingId: '',
+      weddingName: fallbackWeddingName,
+      weddingCode: fallbackWeddingCode,
+      weddingDate: fallbackWeddingDate,
+      locationCounty: fallbackCounty,
+      locationTown: fallbackTown,
+      ownerRole: fallbackOwnerRole,
+      partnerEmail: fallbackPartnerEmail,
+      partnerRole: fallbackOwnerRole === 'groom' ? 'bride' : 'groom',
+      partnerStatus: fallbackPartnerEmail ? 'pending' : 'not_invited',
+      partnerInviteExpiresAt: null,
+    };
+  };
 
   useEffect(() => {
     if (profile) {
@@ -159,15 +211,24 @@ export default function ProfileSettings() {
     setOwnershipLoading(true);
     setOwnershipError(null);
     try {
-      const summary = await withTimeout(
+      let summary = await withTimeout(
         getMyWeddingOwnershipSummary(),
-        6000,
+        3500,
         'Loading wedding ownership details took too long.',
       );
 
       if (!summary) {
-        setOwnedWedding(null);
-        setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? '');
+        summary = await withTimeout(
+          getMyWeddingOwnershipSummaryFromTables(user.id, user.email ?? null),
+          2500,
+          'Loading wedding ownership details took too long.',
+        );
+      }
+
+      if (!summary) {
+        const fallbackSummary = buildFallbackOwnershipSummary();
+        setOwnedWedding(fallbackSummary);
+        setPartnerEmailInput(fallbackSummary?.partnerEmail ?? pendingWeddingSetup?.partnerEmail ?? metadataPartnerEmail ?? '');
         return;
       }
 
@@ -182,9 +243,16 @@ export default function ProfileSettings() {
       }));
     } catch (error: any) {
       console.error('Could not load wedding ownership state:', error);
-      setOwnedWedding(null);
-      setOwnershipError(error?.message || 'Could not load wedding ownership details right now.');
-      setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? '');
+      const fallbackSummary = buildFallbackOwnershipSummary();
+      if (fallbackSummary) {
+        setOwnedWedding(fallbackSummary);
+        setPartnerEmailInput(fallbackSummary.partnerEmail ?? '');
+        setOwnershipError(null);
+      } else {
+        setOwnedWedding(null);
+        setOwnershipError(error?.message || 'Could not load wedding ownership details right now.');
+        setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? metadataPartnerEmail ?? '');
+      }
     } finally {
       setOwnershipLoading(false);
     }
@@ -671,7 +739,7 @@ export default function ProfileSettings() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Button
                     type="button"
-                    disabled={partnerInviteSubmitting || !partnerEmailInput.trim()}
+                    disabled={partnerInviteSubmitting || !partnerEmailInput.trim() || !ownedWedding.weddingId}
                     onClick={sendPartnerInvite}
                   >
                     {partnerInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -1046,6 +1114,13 @@ export default function ProfileSettings() {
               <div className="space-y-2">
                 <Label>Partner's Name</Label>
                 <Input value={form.partner_name} onChange={e => setForm(f => ({ ...f, partner_name: e.target.value }))} placeholder="Partner's name" />
+              </div>
+              <div className="space-y-2">
+                <Label>Spouse Email</Label>
+                <Input value={partnerEmailInput || ownedWedding?.partnerEmail || pendingWeddingSetup?.partnerEmail || metadataPartnerEmail || ''} readOnly />
+                <p className="text-xs text-muted-foreground">
+                  This comes from your wedding ownership record and partner invite.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Wedding Date</Label>
