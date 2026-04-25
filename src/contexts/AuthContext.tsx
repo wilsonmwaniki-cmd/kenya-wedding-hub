@@ -99,6 +99,19 @@ type RequestedSignupState = {
   committeeName: string | null;
 } | null;
 
+const clearStoredSupabaseAuthState = () => {
+  if (typeof window === 'undefined') return;
+
+  for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+    const key = window.localStorage.key(index);
+    if (!key) continue;
+
+    if (key.startsWith('sb-') && (key.includes('auth-token') || key.includes('code-verifier'))) {
+      window.localStorage.removeItem(key);
+    }
+  }
+};
+
 const plannerPreviewExpiry = () => {
   const nextYear = new Date();
   nextYear.setFullYear(nextYear.getFullYear() + 1);
@@ -899,8 +912,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     setRolePreviewState('admin');
     authHydrationRequestRef.current += 1;
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    clearPendingOAuthSignupState();
+
+    const { error } = await supabase.auth.signOut({ scope: 'global' });
+    if (error && !/session/i.test(error.message)) throw error;
+
+    clearStoredSupabaseAuthState();
     await syncAuthState(null);
   };
 
