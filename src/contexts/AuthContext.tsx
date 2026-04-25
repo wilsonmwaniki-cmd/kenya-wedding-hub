@@ -360,6 +360,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   };
 
+  const buildImmediateProfileFallback = (authUser: User): Profile => {
+    const requestedSignupState = getRequestedSignupState(authUser);
+    const pendingOAuthTarget = getPendingOAuthSignupTarget();
+    const inferredRole: AppRole = requestedSignupState?.role
+      ?? pendingOAuthTarget?.role
+      ?? (
+        authUser.user_metadata?.role === 'committee'
+          ? 'planner'
+          : authUser.user_metadata?.role === 'admin'
+            || authUser.user_metadata?.role === 'vendor'
+            || authUser.user_metadata?.role === 'planner'
+            || authUser.user_metadata?.role === 'couple'
+            ? authUser.user_metadata.role
+            : authUser.user_metadata?.planner_type === 'committee' || authUser.user_metadata?.planner_type === 'professional'
+              ? 'planner'
+              : 'couple'
+      );
+
+    const fallbackProfile = buildFallbackProfile(authUser, inferredRole);
+
+    return {
+      ...fallbackProfile,
+      planner_type: requestedSignupState?.plannerType
+        ?? pendingOAuthTarget?.plannerType
+        ?? fallbackProfile.planner_type,
+      committee_name: requestedSignupState?.committeeName
+        ?? fallbackProfile.committee_name,
+    };
+  };
+
   const buildFallbackProfile = (authUser: User, role: AppRole): Profile => ({
     id: authUser.id,
     user_id: authUser.id,
@@ -607,8 +637,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(nextSession?.user ?? null);
 
     if (nextSession?.user) {
-      await fetchAvailableRoles(nextSession.user.id);
-      await ensureProfile(nextSession.user);
+      const immediateFallbackProfile = buildImmediateProfileFallback(nextSession.user);
+      setBaseProfile((currentProfile) =>
+        currentProfile?.user_id === nextSession.user.id ? currentProfile : immediateFallbackProfile,
+      );
+
+      const fallbackRoles: AppRole[] = availableRoles.length > 0
+        ? availableRoles
+        : Array.from(new Set([immediateFallbackProfile.role]));
+
+      await withTimeout(
+        fetchAvailableRoles(nextSession.user.id),
+        2500,
+        fallbackRoles,
+        'Auth role lookup',
+      );
+
+      await withTimeout(
+        ensureProfile(nextSession.user),
+        3500,
+        immediateFallbackProfile,
+        'Auth profile hydration',
+      );
       return;
     }
 
@@ -1013,9 +1063,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
           await activateRequestedRole(updatedUser, options.targetRole, options.plannerType ?? null);
         }
-        const {
-          data: { session: refreshedSession },
-        } = await supabase.auth.getSession();
+        const refreshedSession = await withTimeout(
+          supabase.auth.getSession().then(({ data }) => data.session),
+          2500,
+          data.session,
+          'Post-sign-in session refresh',
+        );
         await syncAuthState(refreshedSession ?? data.session);
       } finally {
         setLoading(false);
