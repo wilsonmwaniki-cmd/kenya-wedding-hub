@@ -350,6 +350,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const requestedCommitteeName = authUser.user_metadata?.committee_name;
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
 
+    const normalizedRequestedRole: AppRole | null =
+      requestedRole === 'committee'
+        ? 'planner'
+        : requestedRole === 'admin' || requestedRole === 'couple' || requestedRole === 'vendor' || requestedRole === 'planner'
+          ? requestedRole
+          : null;
+    const normalizedRequestedPlannerType: PlannerType | null =
+      requestedRole === 'committee'
+        ? 'committee'
+        : requestedRole === 'planner'
+          ? requestedPlannerType === 'committee'
+            ? 'committee'
+            : 'professional'
+          : null;
+
+    if (
+      pendingOAuthTarget &&
+      (normalizedRequestedRole !== pendingOAuthTarget.role
+        || normalizedRequestedPlannerType !== pendingOAuthTarget.plannerType)
+    ) {
+      return {
+        role: pendingOAuthTarget.role,
+        plannerType: pendingOAuthTarget.plannerType,
+        committeeName: pendingOAuthTarget.plannerType === 'committee'
+          ? (typeof requestedCommitteeName === 'string' && requestedCommitteeName.trim().length > 0
+            ? requestedCommitteeName.trim()
+            : null)
+          : null,
+      };
+    }
+
     if (
       requestedRole !== 'admin' &&
       requestedRole !== 'couple' &&
@@ -368,14 +399,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const resolvedRole: AppRole = requestedRole === 'committee' ? 'planner' : requestedRole;
-    const resolvedPlannerType: PlannerType | null = requestedRole === 'committee'
-      ? 'committee'
-      : requestedRole === 'planner'
-        ? requestedPlannerType === 'committee'
-          ? 'committee'
-          : 'professional'
-        : null;
+    const resolvedRole: AppRole = normalizedRequestedRole!;
+    const resolvedPlannerType: PlannerType | null = normalizedRequestedPlannerType;
 
     return {
       role: resolvedRole,

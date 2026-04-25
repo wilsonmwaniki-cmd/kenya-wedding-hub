@@ -77,6 +77,28 @@ function getOAuthAuthTarget():
   return null;
 }
 
+function matchesOAuthTarget(
+  userMetadata: Record<string, unknown> | null | undefined,
+  target: { role: 'couple' | 'planner' | 'vendor'; plannerType: PlannerType | null } | null,
+) {
+  if (!target) return true;
+
+  const currentRole =
+    userMetadata?.role === 'committee'
+      ? 'planner'
+      : userMetadata?.role === 'couple' || userMetadata?.role === 'planner' || userMetadata?.role === 'vendor'
+        ? userMetadata.role
+        : null;
+  const currentPlannerType =
+    currentRole === 'planner'
+      ? userMetadata?.planner_type === 'committee'
+        ? 'committee'
+        : 'professional'
+      : null;
+
+  return currentRole === target.role && currentPlannerType === target.plannerType;
+}
+
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'failed'>('loading');
@@ -219,7 +241,19 @@ export default function AuthCallback() {
             : null,
       });
       if (applyRoleError) throw applyRoleError;
-      return data.user ?? user;
+
+      const refreshedUser = await withTimeout(
+        supabase.auth.getUser().then(({ data }) => data.user),
+        2500,
+        data.user ?? user,
+        'Auth callback refreshed user lookup',
+      );
+
+      if (matchesOAuthTarget(refreshedUser?.user_metadata, callbackOAuthTarget ?? pendingOAuthTarget ?? null)) {
+        clearPendingOAuthSignupState();
+      }
+
+      return refreshedUser ?? data.user ?? user;
     };
 
     const finalizeAuth = async () => {
@@ -288,8 +322,11 @@ export default function AuthCallback() {
         }
 
         const resolvedFromSession = getAuthTargetFromMetadata(user?.user_metadata);
+        const resolvedTarget = matchesOAuthTarget(user?.user_metadata, callbackUrlTarget ?? pendingOAuthTarget ?? null)
+          ? resolvedFromSession
+          : callbackUrlTarget ?? pendingOAuthTarget ?? resolvedFromSession;
         const { role, plannerType } =
-          resolvedFromSession
+          resolvedTarget
           ?? fallbackTarget;
         window.history.replaceState({}, document.title, '/auth/callback');
         if (!active) return;
