@@ -58,6 +58,20 @@ type PreviewJoinWeddingRow = {
   invited_by_name: string | null;
 };
 
+export type MyWeddingOwnershipSummary = {
+  weddingId: string;
+  weddingName: string;
+  weddingCode: string;
+  weddingDate: string | null;
+  locationCounty: string | null;
+  locationTown: string | null;
+  ownerRole: 'bride' | 'groom';
+  partnerEmail: string | null;
+  partnerRole: 'bride' | 'groom' | null;
+  partnerStatus: 'active' | 'pending' | 'not_invited';
+  partnerInviteExpiresAt: string | null;
+};
+
 const normalizeEmail = (value: string | null | undefined) => value?.trim().toLowerCase() || null;
 
 export async function sendWeddingInviteEmail(inviteId: string) {
@@ -74,6 +88,28 @@ export async function sendWeddingInviteEmail(inviteId: string) {
   }
 
   return data;
+}
+
+export async function getMyWeddingOwnershipSummary(): Promise<MyWeddingOwnershipSummary | null> {
+  const { data, error } = await (supabase as any).rpc('get_my_wedding_ownership');
+  if (error) throw error;
+
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  if (!row) return null;
+
+  return {
+    weddingId: String(row.wedding_id),
+    weddingName: String(row.wedding_name ?? 'Your wedding'),
+    weddingCode: String(row.wedding_code ?? ''),
+    weddingDate: typeof row.wedding_date === 'string' ? row.wedding_date : null,
+    locationCounty: typeof row.location_county === 'string' ? row.location_county : null,
+    locationTown: typeof row.location_town === 'string' ? row.location_town : null,
+    ownerRole: row.owner_role === 'groom' ? 'groom' : 'bride',
+    partnerEmail: typeof row.partner_email === 'string' ? row.partner_email : null,
+    partnerRole: row.partner_role === 'bride' || row.partner_role === 'groom' ? row.partner_role : null,
+    partnerStatus: row.partner_status === 'active' || row.partner_status === 'pending' ? row.partner_status : 'not_invited',
+    partnerInviteExpiresAt: typeof row.partner_invite_expires_at === 'string' ? row.partner_invite_expires_at : null,
+  };
 }
 
 export function persistPendingWeddingSetup(payload: PendingWeddingSetup) {
@@ -257,6 +293,21 @@ export async function completePendingWeddingSetup(user: User): Promise<{
           console.error('Partner invite email could not be sent after wedding creation:', inviteError);
         }
       }
+
+      const resolvedWeddingLocation = [pendingSetup.weddingTown, pendingSetup.weddingCounty]
+        .filter(Boolean)
+        .join(', ') || null;
+
+      await supabase
+        .from('profiles')
+        .update({
+          collaboration_code: row?.wedding_code ?? null,
+          wedding_date: pendingSetup.weddingDate ?? null,
+          wedding_county: pendingSetup.weddingCounty ?? null,
+          wedding_town: pendingSetup.weddingTown ?? null,
+          wedding_location: resolvedWeddingLocation,
+        })
+        .eq('user_id', user.id);
 
       await markWeddingSetupComplete(user, {
         role: 'couple',

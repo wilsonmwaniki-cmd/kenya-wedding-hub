@@ -17,22 +17,19 @@ import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription,
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
-import { completePendingWeddingSetup, getPendingWeddingSetup, sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
+import {
+  completePendingWeddingSetup,
+  getMyWeddingOwnershipSummary,
+  getPendingWeddingSetup,
+  sendWeddingInviteEmail,
+  type MyWeddingOwnershipSummary,
+} from '@/lib/weddingWorkspace';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 
-interface OwnedWeddingWorkspace {
-  weddingId: string;
-  weddingName: string;
-  weddingCode: string;
-  ownerRole: 'bride' | 'groom';
-  partnerEmail: string | null;
-  partnerRole: 'bride' | 'groom' | null;
-  partnerStatus: 'active' | 'pending' | 'not_invited';
-  partnerInviteExpiresAt: string | null;
-}
+interface OwnedWeddingWorkspace extends MyWeddingOwnershipSummary {}
 
 const committeePermissionOptions = ['chair', 'member', 'viewer'] as const;
 export default function ProfileSettings() {
@@ -162,88 +159,27 @@ export default function ProfileSettings() {
     setOwnershipLoading(true);
     setOwnershipError(null);
     try {
-      const db = supabase as any;
-
-      const { data: ownerMemberships, error: ownerMembershipError } = await withTimeout(
-        db
-          .from('wedding_memberships')
-          .select('id, wedding_id, role')
-          .eq('user_id', user.id)
-          .eq('is_owner', true)
-          .eq('membership_status', 'active')
-          .in('role', ['bride', 'groom'])
-          .order('created_at', { ascending: true })
-          .limit(1),
+      const summary = await withTimeout(
+        getMyWeddingOwnershipSummary(),
         6000,
+        null,
         'Loading wedding ownership details took too long.',
       );
 
-      if (ownerMembershipError) throw ownerMembershipError;
-
-      const ownerMembership = ownerMemberships?.[0];
-      if (!ownerMembership) {
+      if (!summary) {
         setOwnedWedding(null);
         setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? '');
         return;
       }
 
-      const [
-        { data: weddings, error: weddingError },
-        { data: partnerMemberships, error: partnerMembershipError },
-        { data: partnerInvites, error: inviteError },
-      ] = await withTimeout(
-        Promise.all([
-          db
-            .from('weddings')
-            .select('id, name, wedding_code')
-            .eq('id', ownerMembership.wedding_id)
-            .limit(1),
-          db
-            .from('wedding_memberships')
-            .select('id, email, role, membership_status')
-            .eq('wedding_id', ownerMembership.wedding_id)
-            .eq('is_owner', true)
-            .neq('id', ownerMembership.id)
-            .order('created_at', { ascending: true })
-            .limit(1),
-          db
-            .from('wedding_invites')
-            .select('id, email, proposed_role, expires_at, status')
-            .eq('wedding_id', ownerMembership.wedding_id)
-            .eq('invite_type', 'partner')
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(1),
-        ]),
-        6000,
-        'Loading partner ownership details took too long.',
-      );
-
-      if (weddingError || !weddings?.[0]) throw weddingError ?? new Error('Could not load wedding workspace.');
-      if (partnerMembershipError) throw partnerMembershipError;
-      if (inviteError) throw inviteError;
-
-      const partnerMembership = partnerMemberships?.[0] ?? null;
-      const pendingInvite = partnerInvites?.[0] ?? null;
-      const partnerStatus: OwnedWeddingWorkspace['partnerStatus'] = partnerMembership?.membership_status === 'active'
-        ? 'active'
-        : pendingInvite || partnerMembership?.membership_status === 'invited'
-          ? 'pending'
-          : 'not_invited';
-
-      const partnerRecord = {
-        weddingId: weddings[0].id,
-        weddingName: weddings[0].name ?? 'Your wedding',
-        weddingCode: weddings[0].wedding_code,
-        ownerRole: ownerMembership.role as OwnedWeddingWorkspace['ownerRole'],
-        partnerEmail: partnerMembership?.email ?? pendingInvite?.email ?? null,
-        partnerRole: (partnerMembership?.role ?? pendingInvite?.proposed_role ?? null) as OwnedWeddingWorkspace['partnerRole'],
-        partnerStatus,
-        partnerInviteExpiresAt: pendingInvite?.expires_at ?? null,
-      };
-
-      setOwnedWedding(partnerRecord);
-      setPartnerEmailInput(partnerRecord.partnerEmail ?? '');
+      setOwnedWedding(summary);
+      setPartnerEmailInput(summary.partnerEmail ?? '');
+      setForm((prev) => ({
+        ...prev,
+        wedding_date: prev.wedding_date || summary.weddingDate || '',
+        wedding_county: prev.wedding_county || summary.locationCounty || '',
+        wedding_town: prev.wedding_town || summary.locationTown || '',
+      }));
     } catch (error: any) {
       console.error('Could not load wedding ownership state:', error);
       setOwnedWedding(null);
