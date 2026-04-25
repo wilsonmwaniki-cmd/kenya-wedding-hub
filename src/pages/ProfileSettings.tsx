@@ -162,7 +162,6 @@ export default function ProfileSettings() {
       const summary = await withTimeout(
         getMyWeddingOwnershipSummary(),
         6000,
-        null,
         'Loading wedding ownership details took too long.',
       );
 
@@ -176,9 +175,10 @@ export default function ProfileSettings() {
       setPartnerEmailInput(summary.partnerEmail ?? '');
       setForm((prev) => ({
         ...prev,
-        wedding_date: prev.wedding_date || summary.weddingDate || '',
-        wedding_county: prev.wedding_county || summary.locationCounty || '',
-        wedding_town: prev.wedding_town || summary.locationTown || '',
+        wedding_date: summary.weddingDate || prev.wedding_date || '',
+        wedding_county: summary.locationCounty || prev.wedding_county || '',
+        wedding_town: summary.locationTown || prev.wedding_town || '',
+        wedding_location: buildKenyaLocationLabel(summary.locationCounty || prev.wedding_county || '', summary.locationTown || prev.wedding_town || ''),
       }));
     } catch (error: any) {
       console.error('Could not load wedding ownership state:', error);
@@ -218,6 +218,19 @@ export default function ProfileSettings() {
         updates.wedding_town = form.wedding_town || null;
         updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
       } else if (!isVendor && !isAdmin) {
+        if (ownedWedding?.weddingId) {
+          const { error: weddingError } = await supabase
+            .from('weddings')
+            .update({
+              wedding_date: form.wedding_date || null,
+              location_county: form.wedding_county || null,
+              location_town: form.wedding_town || null,
+            })
+            .eq('id', ownedWedding.weddingId);
+
+          if (weddingError) throw weddingError;
+        }
+
         updates.partner_name = form.partner_name;
         updates.wedding_date = form.wedding_date;
         updates.wedding_county = form.wedding_county || null;
@@ -225,6 +238,9 @@ export default function ProfileSettings() {
         updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
       }
       await updateProfile(updates);
+      if (!isVendor && !isAdmin && !isPlanner) {
+        await loadOwnedWeddingWorkspace();
+      }
       toast({ title: 'Profile updated!' });
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
