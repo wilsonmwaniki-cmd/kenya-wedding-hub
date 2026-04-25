@@ -177,8 +177,21 @@ export default function AuthCallback() {
         console.error('Failed to patch profile role after OAuth signup:', profilePatchError);
       }
 
+      const { error: applyRoleError } = await (supabase as any).rpc('apply_current_user_signup_target', {
+        target_role_text: desiredRole,
+        target_planner_type_text: desiredPlannerType,
+        target_full_name: typeof nextMetadata.full_name === 'string' ? nextMetadata.full_name : null,
+        target_committee_name:
+          desiredPlannerType === 'committee' && typeof nextMetadata.committee_name === 'string'
+            ? nextMetadata.committee_name
+            : null,
+      });
+      if (applyRoleError) throw applyRoleError;
+
       const { error: syncRoleError } = await supabase.rpc('sync_current_user_signup_role');
-      if (syncRoleError) throw syncRoleError;
+      if (syncRoleError) {
+        console.warn('JWT-based role sync still failed after explicit role apply:', syncRoleError);
+      }
       return data.user ?? user;
     };
 

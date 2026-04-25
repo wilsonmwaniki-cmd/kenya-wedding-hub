@@ -366,13 +366,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.rpc('sync_current_user_signup_role');
+      const { error } = await (supabase as any).rpc('apply_current_user_signup_target', {
+        target_role_text: requestedSignupState.role,
+        target_planner_type_text: requestedSignupState.plannerType,
+        target_full_name: getFallbackFullName(authUser) || null,
+        target_committee_name: requestedSignupState.committeeName,
+      });
       if (error) throw error;
 
       const syncedProfile = await fetchProfile(authUser.id);
       if (syncedProfile) return syncedProfile;
     } catch (error) {
-      console.error('Failed to sync signup role from auth metadata:', error);
+      console.error('Failed to apply signup role from auth metadata:', error);
     }
 
     try {
