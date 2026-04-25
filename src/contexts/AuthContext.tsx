@@ -155,6 +155,34 @@ const withTimeout = async <T,>(
   return result;
 };
 
+const normalizeProductionAuthEntry = (): boolean => {
+  if (typeof window === 'undefined') return false;
+
+  const currentUrl = new URL(window.location.href);
+  const isProductionHost =
+    currentUrl.hostname === 'zaniaweddings.com'
+    || currentUrl.hostname === 'www.zaniaweddings.com';
+
+  if (!isProductionHost) return false;
+
+  const hasAuthHash = currentUrl.hash.includes('access_token=');
+  const needsWwwHost = currentUrl.hostname !== 'www.zaniaweddings.com';
+  const needsCallbackPath = hasAuthHash && currentUrl.pathname !== '/auth/callback';
+
+  if (!needsWwwHost && !needsCallbackPath) return false;
+
+  const targetUrl = new URL(currentUrl.toString());
+  targetUrl.hostname = 'www.zaniaweddings.com';
+
+  if (hasAuthHash) {
+    targetUrl.pathname = '/auth/callback';
+    targetUrl.search = '';
+  }
+
+  window.location.replace(targetUrl.toString());
+  return true;
+};
+
 const buildPreviewProfile = (baseProfile: Profile, preview: RolePreview): Profile => {
   if (preview === 'admin') return baseProfile;
 
@@ -935,6 +963,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const requestId = ++authHydrationRequestRef.current;
 
       try {
+        if (normalizeProductionAuthEntry()) {
+          return;
+        }
         await hydrateSessionFromHash();
         const { session, timedOut, sessionPromise } = await getSessionWithTimeout();
         if (!active) return;
