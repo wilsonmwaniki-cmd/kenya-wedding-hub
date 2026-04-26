@@ -758,6 +758,57 @@ export default function Auth() {
 
               {showTopGoogleAuth && (
                 <div className="space-y-4">
+                  {showProfessionalDetails && (
+                    <>
+                      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            {isSignUp ? 'Choose your professional account' : 'Choose the account you want to open'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Pick one clearly and we’ll open only that workspace.
+                          </p>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {(Object.entries(professionalRoleMeta) as Array<[ProfessionalSignupRole, (typeof professionalRoleMeta)[ProfessionalSignupRole]]>).map(([value, meta]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setProfessionalRole(value)}
+                              className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                                professionalRole === value
+                                  ? 'border-primary bg-primary/5 text-foreground'
+                                  : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                              }`}
+                            >
+                              <p className="font-medium">{meta.title}</p>
+                              <p className="mt-1 text-xs">{meta.description}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {isSignUp && (
+                        <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">Business location</p>
+                            <p className="text-xs text-muted-foreground">
+                              Couples will use this to find professionals near them.
+                            </p>
+                          </div>
+                          <KenyaLocationFields
+                            county={primaryCounty}
+                            town={primaryTown}
+                            onCountyChange={setPrimaryCounty}
+                            onTownChange={setPrimaryTown}
+                            countyLabel="Business county"
+                            townLabel="Town / area"
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   <GoogleAuthButton
                     loading={googleSubmitting}
                     disabled={submitting || googleSubmitting}
@@ -901,57 +952,6 @@ export default function Auth() {
                           </div>
                         </div>
                       </div>
-                    )}
-
-                    {showProfessionalDetails && (
-                      <>
-                        <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium text-foreground">
-                              {isSignUp ? 'Choose your professional account' : 'Choose the account you want to open'}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Pick one clearly and we’ll open only that workspace.
-                            </p>
-                          </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {(Object.entries(professionalRoleMeta) as Array<[ProfessionalSignupRole, (typeof professionalRoleMeta)[ProfessionalSignupRole]]>).map(([value, meta]) => (
-                              <button
-                                key={value}
-                                type="button"
-                                onClick={() => setProfessionalRole(value)}
-                                className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                                  professionalRole === value
-                                    ? 'border-primary bg-primary/5 text-foreground'
-                                    : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
-                                }`}
-                              >
-                                <p className="font-medium">{meta.title}</p>
-                                <p className="mt-1 text-xs">{meta.description}</p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {isSignUp && (
-                          <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium text-foreground">Business location</p>
-                              <p className="text-xs text-muted-foreground">
-                                Couples will use this to find professionals near them.
-                              </p>
-                            </div>
-                            <KenyaLocationFields
-                              county={primaryCounty}
-                              town={primaryTown}
-                              onCountyChange={setPrimaryCounty}
-                              onTownChange={setPrimaryTown}
-                              countyLabel="Business county"
-                              townLabel="Town / area"
-                            />
-                          </div>
-                        )}
-                      </>
                     )}
 
                     <div className="space-y-2">
