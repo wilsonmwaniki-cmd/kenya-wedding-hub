@@ -175,8 +175,21 @@ const normalizeProductionAuthEntry = (): boolean => {
   targetUrl.hostname = 'www.zaniaweddings.com';
 
   if (hasAuthHash) {
+    const pendingOAuthTarget = getPendingOAuthSignupTarget();
     targetUrl.pathname = '/auth/callback';
-    targetUrl.search = '';
+    if (!targetUrl.searchParams.get('target_role') && pendingOAuthTarget) {
+      targetUrl.searchParams.set('auth_mode', pendingOAuthTarget.mode);
+      targetUrl.searchParams.set('target_role', pendingOAuthTarget.role);
+      if (pendingOAuthTarget.mode === 'signup') {
+        targetUrl.searchParams.set('signup_role', pendingOAuthTarget.role);
+      }
+      if (pendingOAuthTarget.role === 'planner') {
+        targetUrl.searchParams.set(
+          'planner_type',
+          pendingOAuthTarget.plannerType === 'committee' ? 'committee' : 'professional',
+        );
+      }
+    }
   }
 
   window.location.replace(targetUrl.toString());
