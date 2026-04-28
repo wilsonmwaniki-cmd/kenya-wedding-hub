@@ -27,6 +27,7 @@ import {
 } from '@/lib/weddingWorkspace';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
+import { getHomeRouteForRole, isProfessionalSetupPending } from '@/lib/roles';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 
@@ -58,6 +59,8 @@ export default function ProfileSettings() {
   const [ownershipLoading, setOwnershipLoading] = useState(false);
   const [ownershipError, setOwnershipError] = useState<string | null>(null);
   const [repairingWeddingSetup, setRepairingWeddingSetup] = useState(false);
+  const [professionalSetupRole, setProfessionalSetupRole] = useState<'planner' | 'vendor' | null>(null);
+  const [completingProfessionalSetup, setCompletingProfessionalSetup] = useState(false);
 
   const isPlanner = profile?.role === 'planner';
   const isVendor = profile?.role === 'vendor';
@@ -65,6 +68,7 @@ export default function ProfileSettings() {
   const isCommittee = isCommitteePlanner(profile);
   const isProfessionalPlanner = isPlanner && !isCommittee;
   const isCouple = profile?.role === 'couple';
+  const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata, profile?.role);
   const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
   const metadataPartnerEmail =
     typeof user?.user_metadata?.partner_email === 'string' ? user.user_metadata.partner_email : null;
@@ -339,6 +343,65 @@ export default function ProfileSettings() {
     setForm((prev) => ({ ...prev, service_areas: prev.service_areas.filter((area) => area !== county) }));
   };
 
+  const completeProfessionalSetup = async () => {
+    if (!user || !profile) return;
+    if (!professionalSetupRole) {
+      toast({ title: 'Choose your account type', description: 'Pick Planner or Vendor before continuing.', variant: 'destructive' });
+      return;
+    }
+    if (!form.primary_county) {
+      toast({ title: 'Add your business county', description: 'Choose your business county before continuing.', variant: 'destructive' });
+      return;
+    }
+
+    setCompletingProfessionalSetup(true);
+    const plannerType = professionalSetupRole === 'planner' ? 'professional' : null;
+
+    try {
+      const nextMetadata = {
+        ...(user.user_metadata ?? {}),
+        role: professionalSetupRole,
+        planner_type: plannerType,
+        signup_intent: 'professional',
+        professional_role_locked: true,
+        wedding_setup_completed: true,
+      };
+
+      const { error: metadataError } = await supabase.auth.updateUser({ data: nextMetadata });
+      if (metadataError) throw metadataError;
+
+      await supabase.auth.refreshSession();
+
+      const { error: applyError } = await (supabase as any).rpc('apply_current_user_signup_target', {
+        target_role_text: professionalSetupRole,
+        target_planner_type_text: plannerType,
+        target_full_name: form.full_name || null,
+        target_committee_name: null,
+      });
+      if (applyError) throw applyError;
+
+      await updateProfile({
+        primary_county: form.primary_county || null,
+        primary_town: form.primary_town || null,
+      } as any);
+
+      toast({
+        title: 'Professional setup complete',
+        description: `Your ${professionalSetupRole} account is now ready.`,
+      });
+
+      window.location.assign(getHomeRouteForRole(professionalSetupRole, plannerType));
+    } catch (error: any) {
+      toast({
+        title: 'Could not finish setup',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setCompletingProfessionalSetup(false);
+    }
+  };
+
   const profileUrl = profile ? `${window.location.origin}/planner/${profile.id}` : '';
 
   const copyProfileLink = () => {
@@ -497,6 +560,54 @@ export default function ProfileSettings() {
                   : 'Manage your wedding profile'}
         </p>
       </div>
+
+      {professionalSetupPending && (
+        <Card className="shadow-card border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="font-display">Finish Your Professional Setup</CardTitle>
+            <CardDescription>
+              Choose whether this account is a planner or vendor account. Once saved, this cannot be changed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(['planner', 'vendor'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setProfessionalSetupRole(value)}
+                  className={`rounded-xl border px-4 py-4 text-left transition-all ${
+                    professionalSetupRole === value
+                      ? 'border-primary bg-primary/5 text-foreground'
+                      : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                  }`}
+                >
+                  <p className="font-medium capitalize">{value}</p>
+                  <p className="mt-1 text-xs">
+                    {value === 'planner'
+                      ? 'Use this if you will manage clients and planning workspaces.'
+                      : 'Use this if you will list and manage a wedding business.'}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            <KenyaLocationFields
+              county={form.primary_county}
+              town={form.primary_town}
+              onCountyChange={(value) => setForm((prev) => ({ ...prev, primary_county: value }))}
+              onTownChange={(value) => setForm((prev) => ({ ...prev, primary_town: value }))}
+              countyLabel="Business county"
+              townLabel="Town / area"
+            />
+
+            <Button type="button" onClick={completeProfessionalSetup} disabled={completingProfessionalSetup}>
+              {completingProfessionalSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Complete professional setup
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {isPlanner && (
         <Card className="shadow-card border-primary/20 bg-primary/5">

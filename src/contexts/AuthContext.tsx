@@ -77,18 +77,22 @@ interface AuthContextType {
       weddingTown?: string | null;
       primaryCounty?: string | null;
       primaryTown?: string | null;
+      professionalRoleLocked?: boolean | null;
     }
   ) => Promise<void>;
   signIn: (
     email: string,
     password: string,
     options?: {
+      audience?: 'couple' | 'professional' | null;
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
     }
   ) => Promise<void>;
   signInWithGoogle: (options?: {
-    signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
+    audience?: 'couple' | 'professional' | null;
+    mode?: 'signup' | 'signin';
+    targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
   }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -177,7 +181,10 @@ const normalizeProductionAuthEntry = (): boolean => {
   if (hasAuthHash) {
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
     targetUrl.pathname = '/auth/callback';
-    if (!targetUrl.searchParams.get('target_role') && pendingOAuthTarget) {
+    if (pendingOAuthTarget?.audience) {
+      targetUrl.searchParams.set('audience', pendingOAuthTarget.audience);
+    }
+    if (!targetUrl.searchParams.get('target_role') && pendingOAuthTarget?.role) {
       targetUrl.searchParams.set('auth_mode', pendingOAuthTarget.mode);
       targetUrl.searchParams.set('target_role', pendingOAuthTarget.role);
       if (pendingOAuthTarget.mode === 'signup') {
@@ -258,7 +265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
-    if (pendingOAuthTarget) {
+    if (pendingOAuthTarget?.role) {
       return pendingOAuthTarget.role;
     }
 
@@ -379,7 +386,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           : null;
 
     if (
-      pendingOAuthTarget &&
+      pendingOAuthTarget?.role &&
       (normalizedRequestedRole !== pendingOAuthTarget.role
         || normalizedRequestedPlannerType !== pendingOAuthTarget.plannerType)
     ) {
@@ -401,7 +408,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestedRole !== 'planner' &&
       requestedRole !== 'committee'
     ) {
-      if (!pendingOAuthTarget) {
+      if (!pendingOAuthTarget?.role) {
         return null;
       }
 
@@ -632,7 +639,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const pendingOAuthTarget = getPendingOAuthSignupTarget();
       if (
-        pendingOAuthTarget &&
+        pendingOAuthTarget?.role &&
         profileWithIdentity.role === pendingOAuthTarget.role &&
         (profileWithIdentity.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
@@ -674,7 +681,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (recoveredProfile) {
       const pendingOAuthTarget = getPendingOAuthSignupTarget();
       if (
-        pendingOAuthTarget &&
+        pendingOAuthTarget?.role &&
         recoveredProfile.role === pendingOAuthTarget.role &&
         (recoveredProfile.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
@@ -941,7 +948,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!roleMismatch && !plannerTypeMismatch && !committeeNameMismatch && !missingIdentity) {
       if (
-        pendingOAuthTarget &&
+        pendingOAuthTarget?.role &&
         baseProfile.role === pendingOAuthTarget.role &&
         (baseProfile.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
@@ -960,7 +967,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!active) return;
 
       if (
-        pendingOAuthTarget &&
+        pendingOAuthTarget?.role &&
         profileWithIdentity.role === pendingOAuthTarget.role &&
         (profileWithIdentity.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
@@ -1068,6 +1075,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const weddingTown = options?.weddingTown?.trim() || null;
     const primaryCounty = options?.primaryCounty?.trim() || null;
     const primaryTown = options?.primaryTown?.trim() || null;
+    const professionalRoleLocked = options?.professionalRoleLocked ?? null;
     const partnerEmail = options?.partnerEmail?.trim().toLowerCase() || null;
     const weddingName = options?.weddingName?.trim() || null;
     const weddingCode = options?.weddingCode?.trim().toUpperCase() || null;
@@ -1083,6 +1091,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           planner_type: isCommittee ? 'committee' : role === 'planner' ? 'professional' : null,
           committee_name: isCommittee ? options?.committeeName ?? null : null,
           signup_intent: signupIntent,
+          professional_role_locked: signupIntent === 'professional' ? professionalRoleLocked ?? false : true,
           wedding_setup_completed: signupIntent === 'professional',
           wedding_owner_role: options?.weddingOwnerRole ?? null,
           partner_email: partnerEmail,
@@ -1114,12 +1123,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string,
     password: string,
     options?: {
+      audience?: 'couple' | 'professional' | null;
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
     },
   ) => {
-    if (!options?.targetRole) {
-      throw new Error('Choose whether you are signing in as a couple, planner, or vendor first.');
+    if (!options?.targetRole && !options?.audience) {
+      throw new Error('Choose which kind of account you are signing in to first.');
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -1135,6 +1145,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             options.plannerType ?? null,
           );
           await activateRequestedRole(updatedUser, options.targetRole, options.plannerType ?? null);
+        } else if (options?.audience === 'professional') {
+          const roles = await fetchAvailableRoles(data.session.user.id);
+          const professionalRoles = roles.filter((role) => role === 'planner' || role === 'vendor');
+          if (professionalRoles.length === 0) {
+            throw new Error('This email does not have a professional account yet. Choose professional sign up first.');
+          }
         }
         const refreshedSession = await withTimeout(
           supabase.auth.getSession().then(({ data }) => data.session),
@@ -1163,6 +1179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async (options?: {
+    audience?: 'couple' | 'professional' | null;
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
@@ -1170,8 +1187,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const redirectUrl = new URL(`${window.location.origin}/auth/callback`);
     const mode = options?.mode === 'signin' ? 'signin' : 'signup';
     const targetRole = options?.targetRole ?? null;
+    const audience = options?.audience ?? (targetRole === 'couple' ? 'couple' : 'professional');
 
     redirectUrl.searchParams.set('auth_mode', mode);
+    redirectUrl.searchParams.set('audience', audience);
 
     if (targetRole) {
       redirectUrl.searchParams.set('target_role', targetRole);

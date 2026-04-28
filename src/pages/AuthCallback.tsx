@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { getHomeRouteForRole, type AppRole, type PlannerType } from '@/lib/roles';
+import { getHomeRouteForRole, isProfessionalSetupPending, type AppRole, type PlannerType } from '@/lib/roles';
 import { hasPendingEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 import {
   clearPendingOAuthSignupState,
@@ -126,7 +126,7 @@ export default function AuthCallback() {
     };
 
     const rejectUnexpectedOAuthSignIn = async (
-      role: 'couple' | 'planner' | 'vendor',
+      role: 'couple' | 'planner' | 'vendor' | null,
       plannerType: PlannerType | null,
     ) => {
       clearPendingOAuthSignupState();
@@ -140,7 +140,9 @@ export default function AuthCallback() {
       nextUrl.searchParams.set('auth_error', 'missing_role');
       nextUrl.searchParams.set('mode', 'signin');
       nextUrl.searchParams.set('audience', role === 'couple' ? 'couple' : 'professional');
-      nextUrl.searchParams.set('role', role);
+      if (role) {
+        nextUrl.searchParams.set('role', role);
+      }
       if (role === 'planner' && plannerType) {
         nextUrl.searchParams.set('planner_type', plannerType);
       }
@@ -159,9 +161,27 @@ export default function AuthCallback() {
           ? currentMetadata.name.trim()
           : null;
 
-      const desiredRole = pendingOAuthSignupState?.role ?? callbackOAuthTarget?.role;
-      if (!desiredRole) return user;
       const authMode = pendingOAuthSignupState?.mode ?? callbackOAuthTarget?.mode ?? 'signup';
+      const desiredRole = pendingOAuthSignupState?.role ?? callbackOAuthTarget?.role;
+      if (!desiredRole) {
+        if (authMode === 'signin' && pendingOAuthSignupState?.audience === 'professional') {
+          const { data: existingRoles, error: rolesError } = await supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', user.id);
+
+          if (rolesError) throw rolesError;
+
+          const hasProfessionalRole = (existingRoles ?? []).some((entry) => entry.role === 'planner' || entry.role === 'vendor');
+          if (!hasProfessionalRole) {
+            await rejectUnexpectedOAuthSignIn(null, null);
+            throw new Error('OAuth sign-in rejected because this email does not hold a professional role.');
+          }
+        }
+
+        clearPendingOAuthSignupState();
+        return user;
+      }
 
       const desiredPlannerType =
         desiredRole === 'planner'
@@ -197,6 +217,10 @@ export default function AuthCallback() {
         role: desiredRole,
         planner_type: desiredPlannerType,
         signup_intent: 'professional',
+        professional_role_locked:
+          pendingOAuthSignupState?.audience === 'professional' && authMode === 'signup'
+            ? false
+            : currentMetadata.professional_role_locked,
         wedding_setup_completed: true,
       };
 
@@ -322,7 +346,7 @@ export default function AuthCallback() {
         }
 
         const resolvedFromSession = getAuthTargetFromMetadata(user?.user_metadata);
-        const resolvedTarget = matchesOAuthTarget(user?.user_metadata, callbackUrlTarget ?? pendingOAuthTarget ?? null)
+      const resolvedTarget = matchesOAuthTarget(user?.user_metadata, callbackUrlTarget ?? pendingOAuthTarget ?? null)
           ? resolvedFromSession
           : callbackUrlTarget ?? pendingOAuthTarget ?? resolvedFromSession;
         const { role, plannerType } =
@@ -330,6 +354,11 @@ export default function AuthCallback() {
           ?? fallbackTarget;
         window.history.replaceState({}, document.title, '/auth/callback');
         if (!active) return;
+
+        if (user && isProfessionalSetupPending(user.user_metadata, role)) {
+          navigate('/settings', { replace: true });
+          return;
+        }
 
         if (hasPendingEstimatorPlanDraft()) {
           navigate('/auth', { replace: true });

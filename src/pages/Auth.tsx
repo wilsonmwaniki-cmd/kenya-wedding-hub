@@ -9,10 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { getHomeRouteForRole, type SignupRole } from '@/lib/roles';
+import { getHomeRouteForRole, isProfessionalSetupPending, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
 import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
-import KenyaLocationFields from '@/components/KenyaLocationFields';
 import {
   clearPendingOAuthSignupState,
   persistPendingOAuthSignupState,
@@ -35,20 +34,6 @@ type AuthEntryState = {
 } | null;
 type ProfessionalSignupRole = 'planner' | 'vendor';
 type AuthAudience = 'couple' | 'professional';
-
-const professionalRoleMeta: Record<
-  ProfessionalSignupRole,
-  { title: string; description: string }
-> = {
-  planner: {
-    title: 'Planner',
-    description: 'Manage clients, planning workspaces, payments, and delivery timelines.',
-  },
-  vendor: {
-    title: 'Vendor',
-    description: 'List your business, manage bookings, and stay close to couples in your market.',
-  },
-};
 
 function mapEntryRoleToSignupPath(role?: SignupRole): {
   signupPath: WeddingSignupIntent;
@@ -104,7 +89,6 @@ export default function Auth() {
   const [fullName, setFullName] = useState('');
   const [selectedAudience, setSelectedAudience] = useState<AuthAudience | null>(null);
   const [signupPath, setSignupPath] = useState<WeddingSignupIntent | null>(null);
-  const [professionalRole, setProfessionalRole] = useState<ProfessionalSignupRole | null>(null);
   const [weddingOwnerRole, setWeddingOwnerRole] = useState<WeddingOwnerRole | null>(null);
   const [weddingName, setWeddingName] = useState('');
   const [partnerEmail, setPartnerEmail] = useState('');
@@ -112,8 +96,6 @@ export default function Auth() {
   const [weddingCounty, setWeddingCounty] = useState('');
   const [weddingTown, setWeddingTown] = useState('');
   const [weddingDate, setWeddingDate] = useState('');
-  const [primaryCounty, setPrimaryCounty] = useState('');
-  const [primaryTown, setPrimaryTown] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
@@ -132,7 +114,7 @@ export default function Auth() {
   const showJoinDetails = isSignUp && selectedAudience === 'couple' && signupPath === 'join_wedding';
   const showProfessionalDetails = selectedAudience === 'professional' && signupPath === 'professional';
   const showGoogleAuth = !isForgot;
-  const hasProfessionalSelection = audience === 'professional' ? !!professionalRole : true;
+  const hasProfessionalSelection = true;
   const hasChosenAudiencePath = !!audience && (!isSignUp || !!signupPath);
   const hasChosenPath = hasChosenAudiencePath && hasProfessionalSelection;
   const showTopGoogleAuth = showGoogleAuth && hasChosenPath && (!isSignUp || audience === 'professional');
@@ -160,9 +142,6 @@ export default function Auth() {
     if (state.signupPath) {
       setSelectedAudience(state.signupPath === 'professional' ? 'professional' : 'couple');
       setSignupPath(state.signupPath);
-      if (state.professionalRole) {
-        setProfessionalRole(state.professionalRole);
-      }
       return;
     }
 
@@ -170,7 +149,6 @@ export default function Auth() {
       const mapped = mapEntryRoleToSignupPath(state.role);
       setSelectedAudience(mapped.signupPath === 'professional' ? 'professional' : 'couple');
       setSignupPath(mapped.signupPath);
-      setProfessionalRole(mapped.professionalRole);
     }
   }, [location.state]);
 
@@ -209,9 +187,6 @@ export default function Auth() {
       setSignupPath(audienceParam === 'couple' ? (flow === 'join_wedding' ? 'join_wedding' : 'create_wedding') : 'professional');
     }
 
-    if (roleParam === 'planner' || roleParam === 'vendor') {
-      setProfessionalRole(roleParam);
-    }
   }, [location.search]);
 
   useEffect(() => {
@@ -233,6 +208,14 @@ export default function Auth() {
 
     const finalizeEntry = async () => {
       try {
+        if (isProfessionalSetupPending(user.user_metadata, profile?.role)) {
+          if (active) {
+            setRedirecting(true);
+            navigate('/settings', { replace: true });
+          }
+          return;
+        }
+
         if (pendingSetup) {
           if (!active) return;
           navigate('/dashboard', { replace: true });
@@ -332,10 +315,6 @@ export default function Auth() {
       throw new Error(`Choose whether you are continuing as a couple or wedding professional first.`);
     }
 
-    if (audience === 'professional' && !professionalRole) {
-      throw new Error(`Choose whether you are continuing as a planner or vendor first.`);
-    }
-
     if (!isSignUp) return;
 
     if (!selectedAudience || !signupPath) {
@@ -386,10 +365,6 @@ export default function Auth() {
       if (isSignUp) {
         if (!selectedAudience || !signupPath) {
           throw new Error('Choose whether you are signing up as a couple or a wedding professional first.');
-        }
-
-        if (signupPath === 'professional' && !professionalRole) {
-          throw new Error('Choose whether this professional account is for a planner or vendor.');
         }
 
         if (signupPath === 'create_wedding') {
@@ -450,17 +425,16 @@ export default function Auth() {
           );
         } else {
           clearPendingWeddingSetup();
-          await signUp(email, password, fullName, professionalRole, {
+          await signUp(email, password, fullName, 'vendor', {
             signupIntent: 'professional',
-            primaryCounty: primaryCounty || null,
-            primaryTown: primaryTown || null,
+            professionalRoleLocked: false,
           });
           toast({ title: 'Account created!', description: 'Check your email to confirm your account.' });
           setIsSignUp(false);
           setIsForgot(false);
           setPassword('');
           setPostSignupMessage(
-            `Account created. Check your email to confirm it, then sign in to open your ${professionalRole} workspace.`,
+            'Account created. Check your email to confirm it, then sign in to finish your professional setup.',
           );
         }
       } else {
@@ -468,22 +442,17 @@ export default function Auth() {
           throw new Error('Choose which kind of account you want to sign in to first.');
         }
 
-        if (audience === 'professional' && !professionalRole) {
-          throw new Error('Choose whether you are signing in as a planner or vendor.');
-        }
-
         persistWeddingIntentIfNeeded();
-        await signIn(email, password, audience === 'professional' && professionalRole
-          ? {
-              targetRole: professionalRole,
-              plannerType: professionalRole === 'planner' ? 'professional' : null,
-            }
-          : audience === 'couple'
-            ? {
+        await signIn(
+          email,
+          password,
+          audience === 'professional'
+            ? { audience: 'professional' }
+            : {
+                audience: 'couple',
                 targetRole: 'couple',
                 plannerType: null,
-              }
-            : undefined,
+              },
         );
       }
     } catch (err: any) {
@@ -499,19 +468,21 @@ export default function Auth() {
       validateGoogleAuthIntent();
       persistWeddingIntentIfNeeded();
 
-      if (audience === 'professional' && professionalRole) {
+      if (audience === 'professional') {
         persistPendingOAuthSignupState({
           mode: isSignUp ? 'signup' : 'signin',
-          role: professionalRole,
-          plannerType: professionalRole === 'planner' ? 'professional' : null,
+          audience: 'professional',
+          role: isSignUp ? 'vendor' : null,
+          plannerType: null,
           fullName: fullName.trim() || null,
         });
-      } else if (!isSignUp && audience === 'couple') {
+      } else if (audience === 'couple') {
         persistPendingOAuthSignupState({
-          mode: 'signin',
+          mode: isSignUp ? 'signup' : 'signin',
+          audience: 'couple',
           role: 'couple',
           plannerType: null,
-          fullName: null,
+          fullName: isSignUp ? fullName.trim() || null : null,
         });
       } else {
         clearPendingOAuthSignupState();
@@ -520,9 +491,10 @@ export default function Auth() {
       await signInWithGoogle(
         audience
           ? {
+              audience,
               mode: isSignUp ? 'signup' : 'signin',
-              targetRole: audience === 'professional' ? professionalRole : 'couple',
-              plannerType: audience === 'professional' && professionalRole === 'planner' ? 'professional' : null,
+              targetRole: audience === 'professional' ? (isSignUp ? 'vendor' : null) : 'couple',
+              plannerType: null,
             }
           : undefined,
       );
@@ -537,13 +509,11 @@ export default function Auth() {
     setSelectedAudience(nextAudience);
     if (nextAudience === 'couple') {
       setSignupPath('create_wedding');
-      setProfessionalRole(null);
       setWeddingOwnerRole(null);
       return;
     }
 
     setSignupPath('professional');
-    setProfessionalRole(null);
   };
 
   return (
@@ -563,7 +533,7 @@ export default function Auth() {
                   : 'Welcome Back'
                 : audience === 'professional'
                 ? isSignUp
-                  ? 'Professional Account'
+                  ? 'Create Your Professional Account'
                   : 'Professional Sign In'
                 : isSignUp
                   ? 'Start Your Wedding'
@@ -578,8 +548,8 @@ export default function Auth() {
                   : 'Choose which account you want to open.'
                 : audience === 'professional'
                 ? isSignUp
-                  ? 'Create your planner or vendor account.'
-                  : 'Sign in to your planner or vendor workspace.'
+                  ? 'Create your professional account first. You will choose Planner or Vendor after sign-in.'
+                  : 'Sign in to your professional workspace.'
                 : signupPath === 'join_wedding'
                   ? 'Use the wedding code from the couple and the same email that was invited.'
                   : isSignUp
@@ -735,8 +705,8 @@ export default function Auth() {
                           ? 'A short setup and you are in.'
                           : audience === 'professional'
                             ? isSignUp
-                              ? 'Choose planner or vendor, then create your login.'
-                              : 'Choose planner or vendor, then sign in.'
+                              ? 'Create your login first. You will choose Planner or Vendor inside Settings.'
+                              : 'Sign in to continue to your professional setup or workspace.'
                             : 'Choose your account type.'}
                     </p>
                   </div>
@@ -758,57 +728,6 @@ export default function Auth() {
 
               {showTopGoogleAuth && (
                 <div className="space-y-4">
-                  {showProfessionalDetails && (
-                    <>
-                      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-foreground">
-                            {isSignUp ? 'Choose your professional account' : 'Choose the account you want to open'}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Pick one clearly and we’ll open only that workspace.
-                          </p>
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {(Object.entries(professionalRoleMeta) as Array<[ProfessionalSignupRole, (typeof professionalRoleMeta)[ProfessionalSignupRole]]>).map(([value, meta]) => (
-                            <button
-                              key={value}
-                              type="button"
-                              onClick={() => setProfessionalRole(value)}
-                              className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                                professionalRole === value
-                                  ? 'border-primary bg-primary/5 text-foreground'
-                                  : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
-                              }`}
-                            >
-                              <p className="font-medium">{meta.title}</p>
-                              <p className="mt-1 text-xs">{meta.description}</p>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {isSignUp && (
-                        <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium text-foreground">Business location</p>
-                            <p className="text-xs text-muted-foreground">
-                              Couples will use this to find professionals near them.
-                            </p>
-                          </div>
-                          <KenyaLocationFields
-                            county={primaryCounty}
-                            town={primaryTown}
-                            onCountyChange={setPrimaryCounty}
-                            onTownChange={setPrimaryTown}
-                            countyLabel="Business county"
-                            townLabel="Town / area"
-                          />
-                        </div>
-                      )}
-                    </>
-                  )}
-
                   <GoogleAuthButton
                     loading={googleSubmitting}
                     disabled={submitting || googleSubmitting}
@@ -999,17 +918,9 @@ export default function Auth() {
                           ? 'Create wedding account'
                             : signupPath === 'join_wedding'
                               ? 'Create account and join'
-                            : professionalRole === 'planner'
-                              ? 'Create planner account'
-                              : professionalRole === 'vendor'
-                                ? 'Create vendor account'
-                                : 'Choose your account type'
+                            : 'Create professional account'
                         : audience === 'professional'
-                          ? professionalRole === 'planner'
-                            ? 'Sign in as planner'
-                            : professionalRole === 'vendor'
-                              ? 'Sign in as vendor'
-                              : 'Choose planner or vendor'
+                          ? 'Sign in to professional account'
                           : 'Sign in to wedding'}
                     </Button>
                   </>
@@ -1024,7 +935,6 @@ export default function Auth() {
                     setIsSignUp((current) => !current);
                     setSelectedAudience(null);
                     setSignupPath(null);
-                    setProfessionalRole(null);
                     setWeddingOwnerRole(null);
                     clearPendingOAuthSignupState();
                   }}

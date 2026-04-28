@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
-import { getHomeRouteForRole, type AppRole } from '@/lib/roles';
+import { getHomeRouteForRole, isProfessionalSetupPending, type AppRole } from '@/lib/roles';
 
 export default function ProtectedRoute({
   children,
@@ -43,6 +43,10 @@ export default function ProtectedRoute({
   }
 
   if (!user) return <Navigate to="/auth" replace state={{ from: location.pathname }} />;
+
+  if (isProfessionalSetupPending(user.user_metadata, profile?.role) && location.pathname !== '/settings') {
+    return <Navigate to="/settings" replace />;
+  }
 
   if (allowedRoles?.length) {
     if (!allowedRoles.includes(inferredRole)) {

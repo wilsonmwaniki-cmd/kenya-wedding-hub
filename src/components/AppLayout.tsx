@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { getHomeRouteForRole, type PlannerType } from '@/lib/roles';
+import { getHomeRouteForRole, isProfessionalSetupPending, type PlannerType } from '@/lib/roles';
 import AssistantPanel from '@/components/AssistantPanel';
 import { AssistantPanelProvider } from '@/contexts/AssistantPanelContext';
 
@@ -53,17 +53,30 @@ const adminNavItems = [
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
+const professionalSetupNavItems = [
+  { path: '/settings', label: 'Complete Setup', icon: Settings },
+];
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, profile, baseProfile, isSuperAdmin, rolePreview, setRolePreview } = useAuth();
+  const { user, signOut, profile, baseProfile, isSuperAdmin, rolePreview, setRolePreview } = useAuth();
   const { isPlanner, selectedClient, selectClient } = usePlanner();
   const { vendorRequestCount, plannerRequestCount } = useNotifications();
 
   const isAdmin = profile?.role === 'admin';
   const isVendor = profile?.role === 'vendor';
-  const navItems = isAdmin ? adminNavItems : isVendor ? vendorNavItems : isPlanner ? plannerNavItems : coupleNavItems;
+  const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata ?? null, profile?.role);
+  const navItems = professionalSetupPending
+    ? professionalSetupNavItems
+    : isAdmin
+      ? adminNavItems
+      : isVendor
+        ? vendorNavItems
+        : isPlanner
+          ? plannerNavItems
+          : coupleNavItems;
 
   // Map paths to badge counts
   const badgeCounts: Record<string, number> = {};
@@ -164,7 +177,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="border-b border-white/12 bg-white/[0.06] px-4 py-4 sm:px-6">
               <p className="text-sm font-semibold text-white">{profile.full_name || 'Welcome!'}</p>
               <p className="text-xs font-medium text-white/74 capitalize">
-                {profile.role} Account
+                {professionalSetupPending ? 'Professional Account' : `${profile.role} Account`}
                 {isSuperAdmin && rolePreview !== 'admin' ? ` · previewing as ${rolePreview}` : ''}
               </p>
               {isSuperAdmin && baseProfile && (
