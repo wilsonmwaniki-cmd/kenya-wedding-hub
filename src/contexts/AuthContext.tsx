@@ -7,6 +7,10 @@ import {
   getPendingOAuthSignupTarget,
 } from '@/lib/oauthSignupState';
 import {
+  clearPendingProfessionalSetup,
+  readPendingProfessionalSetup,
+} from '@/lib/professionalSetupState';
+import {
   completePendingWeddingSetup,
   getPendingWeddingSetup,
   type WeddingOwnerRole,
@@ -157,6 +161,21 @@ const withTimeout = async <T,>(
   }
 
   return result;
+};
+
+const getCanonicalAppOrigin = (): string => {
+  if (typeof window === 'undefined') return '';
+
+  const currentUrl = new URL(window.location.href);
+  const isProductionHost =
+    currentUrl.hostname === 'zaniaweddings.com'
+    || currentUrl.hostname === 'www.zaniaweddings.com';
+
+  if (isProductionHost) {
+    return 'https://www.zaniaweddings.com';
+  }
+
+  return window.location.origin;
 };
 
 const normalizeProductionAuthEntry = (): boolean => {
@@ -1112,7 +1131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           primary_county: primaryCounty,
           primary_town: primaryTown,
         },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${getCanonicalAppOrigin()}/auth/callback`,
       },
     });
     if (error) throw error;
@@ -1160,8 +1179,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const professionalSetupPending =
             metadata.signup_intent === 'professional'
             && metadata.professional_role_locked === false;
+          const localProfessionalSetupPending = readPendingProfessionalSetup(email);
 
-          if (professionalRoles.length === 0 && !professionalSetupPending) {
+          if (professionalRoles.length === 0 && !professionalSetupPending && !localProfessionalSetupPending) {
             throw new Error('This email does not have a professional account yet. Choose professional sign up first.');
           }
         }
@@ -1197,7 +1217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
   }) => {
-    const redirectUrl = new URL(`${window.location.origin}/auth/callback`);
+    const redirectUrl = new URL(`${getCanonicalAppOrigin()}/auth/callback`);
     const mode = options?.mode === 'signin' ? 'signin' : 'signup';
     const targetRole = options?.targetRole ?? null;
     const audience = options?.audience ?? (targetRole === 'couple' ? 'couple' : 'professional');
@@ -1234,6 +1254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRolePreviewState('admin');
     authHydrationRequestRef.current += 1;
     clearPendingOAuthSignupState();
+    clearPendingProfessionalSetup();
     let globalSignOutError: Error | null = null;
 
     try {

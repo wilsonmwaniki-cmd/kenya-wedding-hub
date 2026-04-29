@@ -28,6 +28,7 @@ import {
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 import { getHomeRouteForRole, isProfessionalSetupPending } from '@/lib/roles';
+import { clearPendingProfessionalSetup } from '@/lib/professionalSetupState';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 
@@ -67,7 +68,7 @@ export default function ProfileSettings() {
   const isAdmin = profile?.role === 'admin';
   const isCommittee = isCommitteePlanner(profile);
   const isProfessionalPlanner = isPlanner && !isCommittee;
-  const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata, profile?.role);
+  const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata, profile?.role, user?.email ?? null);
   const isCouple = profile?.role === 'couple' && !professionalSetupPending;
   const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
   const metadataPartnerEmail =
@@ -384,6 +385,8 @@ export default function ProfileSettings() {
         primary_county: form.primary_county || null,
         primary_town: form.primary_town || null,
       } as any);
+
+      clearPendingProfessionalSetup();
 
       toast({
         title: 'Professional setup complete',

@@ -67,7 +67,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const isAdmin = profile?.role === 'admin';
   const isVendor = profile?.role === 'vendor';
-  const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata ?? null, profile?.role);
+  const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata ?? null, profile?.role, user?.email ?? null);
   const navItems = professionalSetupPending
     ? professionalSetupNavItems
     : isAdmin

@@ -17,6 +17,10 @@ import {
   persistPendingOAuthSignupState,
 } from '@/lib/oauthSignupState';
 import {
+  clearPendingProfessionalSetup,
+  persistPendingProfessionalSetup,
+} from '@/lib/professionalSetupState';
+import {
   clearPendingWeddingSetup,
   completePendingWeddingSetup,
   getPendingWeddingSetup,
@@ -425,6 +429,7 @@ export default function Auth() {
           );
         } else {
           clearPendingWeddingSetup();
+          persistPendingProfessionalSetup(email);
           await signUp(email, password, fullName, 'couple', {
             signupIntent: 'professional',
             professionalRoleLocked: false,
@@ -469,6 +474,11 @@ export default function Auth() {
       persistWeddingIntentIfNeeded();
 
       if (audience === 'professional') {
+        if (isSignUp) {
+          persistPendingProfessionalSetup(email);
+        } else {
+          clearPendingProfessionalSetup();
+        }
         persistPendingOAuthSignupState({
           mode: isSignUp ? 'signup' : 'signin',
           audience: 'professional',
@@ -477,6 +487,7 @@ export default function Auth() {
           fullName: fullName.trim() || null,
         });
       } else if (audience === 'couple') {
+        clearPendingProfessionalSetup();
         persistPendingOAuthSignupState({
           mode: isSignUp ? 'signup' : 'signin',
           audience: 'couple',

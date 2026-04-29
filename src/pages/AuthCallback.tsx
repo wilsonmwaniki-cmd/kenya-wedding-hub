@@ -10,6 +10,10 @@ import {
   getPendingOAuthSignupTarget,
   readPendingOAuthSignupState,
 } from '@/lib/oauthSignupState';
+import {
+  persistPendingProfessionalSetup,
+  readPendingProfessionalSetup,
+} from '@/lib/professionalSetupState';
 import { completePendingWeddingSetup, getPendingWeddingSetup } from '@/lib/weddingWorkspace';
 
 function getAuthTargetFromMetadata(
@@ -193,8 +197,9 @@ export default function AuthCallback() {
           const alreadyPendingProfessionalSetup =
             user.user_metadata?.signup_intent === 'professional'
             && user.user_metadata?.professional_role_locked === false;
+          const locallyPendingProfessionalSetup = readPendingProfessionalSetup(user.email ?? null);
 
-          if (!hasProfessionalRole && !alreadyPendingProfessionalSetup) {
+          if (!hasProfessionalRole && !alreadyPendingProfessionalSetup && !locallyPendingProfessionalSetup) {
             await rejectUnexpectedOAuthSignIn(null, null);
             throw new Error('OAuth sign-in rejected because this email does not hold a professional role.');
           }
@@ -233,9 +238,12 @@ export default function AuthCallback() {
             if (error) throw error;
 
             await supabase.auth.refreshSession();
+            persistPendingProfessionalSetup(user.email ?? null);
             clearPendingOAuthSignupState();
             return data.user ?? user;
           }
+
+          persistPendingProfessionalSetup(user.email ?? null);
         }
 
         clearPendingOAuthSignupState();

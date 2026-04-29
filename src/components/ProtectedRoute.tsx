@@ -44,7 +44,7 @@ export default function ProtectedRoute({
 
   if (!user) return <Navigate to="/auth" replace state={{ from: location.pathname }} />;
 
-  if (isProfessionalSetupPending(user.user_metadata, profile?.role) && location.pathname !== '/settings') {
+  if (isProfessionalSetupPending(user.user_metadata, profile?.role, user.email ?? null) && location.pathname !== '/settings') {
     return <Navigate to="/settings" replace />;
   }
 
