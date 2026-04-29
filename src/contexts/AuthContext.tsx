@@ -913,7 +913,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const recoverMissingProfile = async () => {
       try {
-        await ensureProfile(user);
+        await withTimeout(
+          ensureProfile(user),
+          3500,
+          buildImmediateProfileFallback(user),
+          'Recover missing profile after sign-in',
+        );
       } catch (error) {
         console.error('Failed to recover missing in-memory profile after sign-in:', error);
       } finally {
