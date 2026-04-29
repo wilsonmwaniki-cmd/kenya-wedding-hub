@@ -434,7 +434,7 @@ export default function AuthCallback() {
         window.history.replaceState({}, document.title, '/auth/callback');
         if (!active) return;
 
-        if (user && isProfessionalSetupPending(user.user_metadata, role)) {
+        if (user && isProfessionalSetupPending(user.user_metadata, role, user.email ?? null)) {
           navigate('/settings', { replace: true });
           return;
         }

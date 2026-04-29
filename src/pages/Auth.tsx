@@ -64,7 +64,12 @@ function normalizeJoinCode(value: string) {
 
 function getFallbackRouteFromUserMetadata(
   userMetadata: Record<string, unknown> | null | undefined,
+  userEmail?: string | null,
 ) {
+  if (isProfessionalSetupPending(userMetadata, null, userEmail ?? null)) {
+    return '/settings';
+  }
+
   const role = userMetadata?.role;
   const plannerType = userMetadata?.planner_type;
 
@@ -212,7 +217,7 @@ export default function Auth() {
 
     const finalizeEntry = async () => {
       try {
-        if (isProfessionalSetupPending(user.user_metadata, profile?.role)) {
+        if (isProfessionalSetupPending(user.user_metadata, profile?.role, user.email ?? null)) {
           if (active) {
             setRedirecting(true);
             navigate('/settings', { replace: true });
@@ -228,7 +233,7 @@ export default function Auth() {
 
         if (!profile?.role) {
           if (active) {
-            navigate(getFallbackRouteFromUserMetadata(user.user_metadata), { replace: true });
+            navigate(getFallbackRouteFromUserMetadata(user.user_metadata, user.email ?? null), { replace: true });
           }
           return;
         }
