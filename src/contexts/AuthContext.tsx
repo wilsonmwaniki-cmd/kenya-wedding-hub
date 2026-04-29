@@ -280,9 +280,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getFallbackRole = async (authUser: User): Promise<AppRole> => {
     const requestedRole = authUser.user_metadata?.role;
+    const professionalSetupPending =
+      authUser.user_metadata?.signup_intent === 'professional'
+      && authUser.user_metadata?.professional_role_locked === false;
     if (requestedRole === 'committee') return 'planner';
     if (requestedRole === 'admin' || requestedRole === 'vendor' || requestedRole === 'planner' || requestedRole === 'couple') {
       return requestedRole;
+    }
+    if (professionalSetupPending || readPendingProfessionalSetup(authUser.email ?? null)) {
+      return 'planner';
     }
 
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
@@ -390,6 +396,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const requestedPlannerType = authUser.user_metadata?.planner_type;
     const requestedCommitteeName = authUser.user_metadata?.committee_name;
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
+    const professionalSetupPending =
+      authUser.user_metadata?.signup_intent === 'professional'
+      && authUser.user_metadata?.professional_role_locked === false;
 
     const normalizedRequestedRole: AppRole | null =
       requestedRole === 'committee'
@@ -429,6 +438,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestedRole !== 'planner' &&
       requestedRole !== 'committee'
     ) {
+      if (professionalSetupPending) {
+        return {
+          role: 'planner',
+          plannerType: 'professional',
+          committeeName: null,
+        };
+      }
+
       if (!pendingOAuthTarget?.role) {
         return null;
       }

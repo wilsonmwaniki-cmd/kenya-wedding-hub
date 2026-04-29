@@ -430,7 +430,7 @@ export default function Auth() {
         } else {
           clearPendingWeddingSetup();
           persistPendingProfessionalSetup(email);
-          await signUp(email, password, fullName, 'couple', {
+          await signUp(email, password, fullName, 'planner', {
             signupIntent: 'professional',
             professionalRoleLocked: false,
           });
