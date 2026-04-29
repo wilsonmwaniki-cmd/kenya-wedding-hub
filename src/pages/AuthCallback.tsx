@@ -60,11 +60,16 @@ function getAuthTargetFromUserMetadata(): { role: AppRole; plannerType: PlannerT
 
 function getAuthTargetFromCallbackUrl(): { role: AppRole; plannerType: PlannerType | null } | null {
   const target = getOAuthSignupTargetFromSearchParams(new URL(window.location.href).searchParams);
-  return target ? { role: target.role, plannerType: target.plannerType } : null;
+  return target?.role ? { role: target.role, plannerType: target.plannerType } : null;
 }
 
 function getOAuthAuthTarget():
-  | { mode: 'signup' | 'signin'; role: 'couple' | 'planner' | 'vendor'; plannerType: PlannerType | null }
+  | {
+      mode: 'signup' | 'signin';
+      audience: 'couple' | 'professional';
+      role: 'couple' | 'planner' | 'vendor' | null;
+      plannerType: PlannerType | null;
+    }
   | null {
   const callbackUrlTarget = getOAuthSignupTargetFromSearchParams(new URL(window.location.href).searchParams);
   if (callbackUrlTarget) return callbackUrlTarget;
@@ -79,9 +84,19 @@ function getOAuthAuthTarget():
 
 function matchesOAuthTarget(
   userMetadata: Record<string, unknown> | null | undefined,
-  target: { role: 'couple' | 'planner' | 'vendor'; plannerType: PlannerType | null } | null,
+  target: {
+    audience: 'couple' | 'professional';
+    role: 'couple' | 'planner' | 'vendor' | null;
+    plannerType: PlannerType | null;
+  } | null,
 ) {
   if (!target) return true;
+  if (target.audience === 'professional' && target.role === null) {
+    return (
+      userMetadata?.signup_intent === 'professional'
+      && userMetadata?.professional_role_locked === false
+    );
+  }
 
   const currentRole =
     userMetadata?.role === 'committee'
@@ -163,8 +178,10 @@ export default function AuthCallback() {
 
       const authMode = pendingOAuthSignupState?.mode ?? callbackOAuthTarget?.mode ?? 'signup';
       const desiredRole = pendingOAuthSignupState?.role ?? callbackOAuthTarget?.role;
+      const requestedAudience = pendingOAuthSignupState?.audience ?? callbackOAuthTarget?.audience ?? null;
+      const shouldPrepareProfessionalSetup = requestedAudience === 'professional' && !desiredRole;
       if (!desiredRole) {
-        if (authMode === 'signin' && pendingOAuthSignupState?.audience === 'professional') {
+        if (authMode === 'signin' && requestedAudience === 'professional') {
           const { data: existingRoles, error: rolesError } = await supabase
             .from('user_roles')
             .select('role')
@@ -173,9 +190,51 @@ export default function AuthCallback() {
           if (rolesError) throw rolesError;
 
           const hasProfessionalRole = (existingRoles ?? []).some((entry) => entry.role === 'planner' || entry.role === 'vendor');
-          if (!hasProfessionalRole) {
+          const alreadyPendingProfessionalSetup =
+            user.user_metadata?.signup_intent === 'professional'
+            && user.user_metadata?.professional_role_locked === false;
+
+          if (!hasProfessionalRole && !alreadyPendingProfessionalSetup) {
             await rejectUnexpectedOAuthSignIn(null, null);
             throw new Error('OAuth sign-in rejected because this email does not hold a professional role.');
+          }
+        }
+
+        if (shouldPrepareProfessionalSetup) {
+          const currentMetadata = (user.user_metadata ?? {}) as Record<string, unknown>;
+          const currentFullName = typeof currentMetadata.full_name === 'string' && currentMetadata.full_name.trim().length > 0
+            ? currentMetadata.full_name.trim()
+            : typeof currentMetadata.name === 'string' && currentMetadata.name.trim().length > 0
+              ? currentMetadata.name.trim()
+              : null;
+          const needsProfessionalSetupSync =
+            currentMetadata.signup_intent !== 'professional'
+            || currentMetadata.professional_role_locked !== false
+            || currentMetadata.wedding_setup_completed !== true
+            || (!currentFullName && !!pendingOAuthSignupState?.fullName);
+
+          if (needsProfessionalSetupSync) {
+            const nextMetadata: Record<string, unknown> = {
+              ...currentMetadata,
+              role: currentMetadata.role === 'planner' || currentMetadata.role === 'vendor' || currentMetadata.role === 'couple'
+                ? currentMetadata.role
+                : 'couple',
+              planner_type: null,
+              signup_intent: 'professional',
+              professional_role_locked: false,
+              wedding_setup_completed: true,
+            };
+
+            if (!currentFullName && pendingOAuthSignupState?.fullName) {
+              nextMetadata.full_name = pendingOAuthSignupState.fullName;
+            }
+
+            const { data, error } = await supabase.auth.updateUser({ data: nextMetadata });
+            if (error) throw error;
+
+            await supabase.auth.refreshSession();
+            clearPendingOAuthSignupState();
+            return data.user ?? user;
           }
         }
 

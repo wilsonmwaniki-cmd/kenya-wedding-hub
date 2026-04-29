@@ -13,13 +13,25 @@ export type PendingOAuthSignupState = {
 export function getOAuthSignupTargetFromSearchParams(
   searchParams: URLSearchParams,
 ):
-  | { mode: 'signup' | 'signin'; role: Extract<SignupRole, 'couple' | 'planner' | 'vendor'>; plannerType: PlannerType | null }
+  | {
+      mode: 'signup' | 'signin';
+      audience: 'couple' | 'professional';
+      role: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+      plannerType: PlannerType | null;
+    }
   | null {
-  const role = searchParams.get('target_role') ?? searchParams.get('signup_role');
-  if (role !== 'couple' && role !== 'planner' && role !== 'vendor') return null;
+  const audience = searchParams.get('audience');
+  if (audience !== 'couple' && audience !== 'professional') return null;
+
+  const rawRole = searchParams.get('target_role') ?? searchParams.get('signup_role');
+  const role =
+    rawRole === 'couple' || rawRole === 'planner' || rawRole === 'vendor'
+      ? rawRole
+      : null;
 
   return {
     mode: searchParams.get('auth_mode') === 'signin' ? 'signin' : 'signup',
+    audience,
     role,
     plannerType: role === 'planner'
       ? (searchParams.get('planner_type') === 'committee' ? 'committee' : 'professional')

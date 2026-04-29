@@ -67,8 +67,8 @@ export default function ProfileSettings() {
   const isAdmin = profile?.role === 'admin';
   const isCommittee = isCommitteePlanner(profile);
   const isProfessionalPlanner = isPlanner && !isCommittee;
-  const isCouple = profile?.role === 'couple';
   const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata, profile?.role);
+  const isCouple = profile?.role === 'couple' && !professionalSetupPending;
   const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
   const metadataPartnerEmail =
     typeof user?.user_metadata?.partner_email === 'string' ? user.user_metadata.partner_email : null;
@@ -289,7 +289,7 @@ export default function ProfileSettings() {
         updates.wedding_county = form.wedding_county || null;
         updates.wedding_town = form.wedding_town || null;
         updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
-      } else if (!isVendor && !isAdmin) {
+      } else if (isCouple) {
         if (ownedWedding?.weddingId) {
           const { error: weddingError } = await supabase
             .from('weddings')
@@ -310,7 +310,7 @@ export default function ProfileSettings() {
         updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
       }
       await updateProfile(updates);
-      if (!isVendor && !isAdmin && !isPlanner) {
+      if (isCouple) {
         await loadOwnedWeddingWorkspace();
       }
       toast({ title: 'Profile updated!' });
@@ -687,7 +687,7 @@ export default function ProfileSettings() {
         </Card>
       )}
 
-      {!isPlanner && !isVendor && !isAdmin && profile && coupleExportDecision && (
+      {isCouple && profile && coupleExportDecision && (
         <Card className={coupleExportDecision?.allowed ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
@@ -1215,7 +1215,7 @@ export default function ProfileSettings() {
               </CardContent>
             </Card>
           </>
-        ) : !isVendor && !isAdmin ? (
+        ) : isCouple ? (
           /* Couple: Wedding Details */
           <Card className="shadow-card">
             <CardHeader>

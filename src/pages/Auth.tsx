@@ -425,7 +425,7 @@ export default function Auth() {
           );
         } else {
           clearPendingWeddingSetup();
-          await signUp(email, password, fullName, 'vendor', {
+          await signUp(email, password, fullName, 'couple', {
             signupIntent: 'professional',
             professionalRoleLocked: false,
           });
@@ -472,7 +472,7 @@ export default function Auth() {
         persistPendingOAuthSignupState({
           mode: isSignUp ? 'signup' : 'signin',
           audience: 'professional',
-          role: isSignUp ? 'vendor' : null,
+          role: null,
           plannerType: null,
           fullName: fullName.trim() || null,
         });
@@ -493,7 +493,7 @@ export default function Auth() {
           ? {
               audience,
               mode: isSignUp ? 'signup' : 'signin',
-              targetRole: audience === 'professional' ? (isSignUp ? 'vendor' : null) : 'couple',
+              targetRole: audience === 'professional' ? null : 'couple',
               plannerType: null,
             }
           : undefined,

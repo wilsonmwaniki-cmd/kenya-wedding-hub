@@ -181,11 +181,13 @@ const normalizeProductionAuthEntry = (): boolean => {
   if (hasAuthHash) {
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
     targetUrl.pathname = '/auth/callback';
+    if (pendingOAuthTarget?.mode) {
+      targetUrl.searchParams.set('auth_mode', pendingOAuthTarget.mode);
+    }
     if (pendingOAuthTarget?.audience) {
       targetUrl.searchParams.set('audience', pendingOAuthTarget.audience);
     }
     if (!targetUrl.searchParams.get('target_role') && pendingOAuthTarget?.role) {
-      targetUrl.searchParams.set('auth_mode', pendingOAuthTarget.mode);
       targetUrl.searchParams.set('target_role', pendingOAuthTarget.role);
       if (pendingOAuthTarget.mode === 'signup') {
         targetUrl.searchParams.set('signup_role', pendingOAuthTarget.role);
@@ -1068,6 +1070,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       weddingTown?: string | null;
       primaryCounty?: string | null;
       primaryTown?: string | null;
+      professionalRoleLocked?: boolean | null;
     },
   ) => {
     const isCommittee = role === 'committee';
@@ -1148,7 +1151,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else if (options?.audience === 'professional') {
           const roles = await fetchAvailableRoles(data.session.user.id);
           const professionalRoles = roles.filter((role) => role === 'planner' || role === 'vendor');
-          if (professionalRoles.length === 0) {
+          const metadata = (data.session.user.user_metadata ?? {}) as Record<string, unknown>;
+          const professionalSetupPending =
+            metadata.signup_intent === 'professional'
+            && metadata.professional_role_locked === false;
+
+          if (professionalRoles.length === 0 && !professionalSetupPending) {
             throw new Error('This email does not have a professional account yet. Choose professional sign up first.');
           }
         }
