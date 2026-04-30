@@ -17,22 +17,22 @@ import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription,
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
-import { completePendingWeddingSetup, getPendingWeddingSetup, sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
+import {
+  completePendingWeddingSetup,
+  getMyWeddingOwnershipSummary,
+  getMyWeddingOwnershipSummaryFromTables,
+  getPendingWeddingSetup,
+  sendWeddingInviteEmail,
+  type MyWeddingOwnershipSummary,
+} from '@/lib/weddingWorkspace';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
+import { getHomeRouteForRole, isProfessionalSetupPending } from '@/lib/roles';
+import { clearPendingProfessionalSetup } from '@/lib/professionalSetupState';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 
-interface OwnedWeddingWorkspace {
-  weddingId: string;
-  weddingName: string;
-  weddingCode: string;
-  ownerRole: 'bride' | 'groom';
-  partnerEmail: string | null;
-  partnerRole: 'bride' | 'groom' | null;
-  partnerStatus: 'active' | 'pending' | 'not_invited';
-  partnerInviteExpiresAt: string | null;
-}
+interface OwnedWeddingWorkspace extends MyWeddingOwnershipSummary {}
 
 const committeePermissionOptions = ['chair', 'member', 'viewer'] as const;
 export default function ProfileSettings() {
@@ -60,14 +60,19 @@ export default function ProfileSettings() {
   const [ownershipLoading, setOwnershipLoading] = useState(false);
   const [ownershipError, setOwnershipError] = useState<string | null>(null);
   const [repairingWeddingSetup, setRepairingWeddingSetup] = useState(false);
+  const [professionalSetupRole, setProfessionalSetupRole] = useState<'planner' | 'vendor' | null>(null);
+  const [completingProfessionalSetup, setCompletingProfessionalSetup] = useState(false);
 
   const isPlanner = profile?.role === 'planner';
   const isVendor = profile?.role === 'vendor';
   const isAdmin = profile?.role === 'admin';
   const isCommittee = isCommitteePlanner(profile);
   const isProfessionalPlanner = isPlanner && !isCommittee;
-  const isCouple = profile?.role === 'couple';
+  const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata, profile?.role, user?.email ?? null);
+  const isCouple = profile?.role === 'couple' && !professionalSetupPending;
   const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
+  const metadataPartnerEmail =
+    typeof user?.user_metadata?.partner_email === 'string' ? user.user_metadata.partner_email : null;
 
   const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 6000, message = 'Request timed out') => {
     return await Promise.race<T>([
@@ -99,6 +104,55 @@ export default function ProfileSettings() {
     minimum_budget_kes: '',
     maximum_budget_kes: '',
   });
+
+  const buildFallbackOwnershipSummary = (): OwnedWeddingWorkspace | null => {
+    const fallbackPartnerEmail = pendingWeddingSetup?.partnerEmail ?? metadataPartnerEmail ?? null;
+    const fallbackWeddingCode =
+      profile?.collaboration_code ||
+      (typeof user?.user_metadata?.wedding_code === 'string' ? user.user_metadata.wedding_code : '') ||
+      '';
+    const fallbackWeddingName =
+      pendingWeddingSetup?.weddingName ||
+      (typeof user?.user_metadata?.wedding_name === 'string' ? user.user_metadata.wedding_name : null) ||
+      profile?.full_name ||
+      'Your wedding';
+    const fallbackOwnerRole =
+      pendingWeddingSetup?.weddingOwnerRole ||
+      (user?.user_metadata?.wedding_owner_role === 'groom' ? 'groom' : 'bride');
+    const fallbackWeddingDate =
+      form.wedding_date ||
+      pendingWeddingSetup?.weddingDate ||
+      (typeof user?.user_metadata?.wedding_date === 'string' ? user.user_metadata.wedding_date : null) ||
+      null;
+    const fallbackCounty =
+      form.wedding_county ||
+      pendingWeddingSetup?.weddingCounty ||
+      (typeof user?.user_metadata?.wedding_county === 'string' ? user.user_metadata.wedding_county : null) ||
+      null;
+    const fallbackTown =
+      form.wedding_town ||
+      pendingWeddingSetup?.weddingTown ||
+      (typeof user?.user_metadata?.wedding_town === 'string' ? user.user_metadata.wedding_town : null) ||
+      null;
+
+    if (!fallbackPartnerEmail && !fallbackWeddingCode && !fallbackWeddingDate && !fallbackCounty && !fallbackTown) {
+      return null;
+    }
+
+    return {
+      weddingId: '',
+      weddingName: fallbackWeddingName,
+      weddingCode: fallbackWeddingCode,
+      weddingDate: fallbackWeddingDate,
+      locationCounty: fallbackCounty,
+      locationTown: fallbackTown,
+      ownerRole: fallbackOwnerRole,
+      partnerEmail: fallbackPartnerEmail,
+      partnerRole: fallbackOwnerRole === 'groom' ? 'bride' : 'groom',
+      partnerStatus: fallbackPartnerEmail ? 'pending' : 'not_invited',
+      partnerInviteExpiresAt: null,
+    };
+  };
 
   useEffect(() => {
     if (profile) {
@@ -162,93 +216,48 @@ export default function ProfileSettings() {
     setOwnershipLoading(true);
     setOwnershipError(null);
     try {
-      const db = supabase as any;
-
-      const { data: ownerMemberships, error: ownerMembershipError } = await withTimeout(
-        db
-          .from('wedding_memberships')
-          .select('id, wedding_id, role')
-          .eq('user_id', user.id)
-          .eq('is_owner', true)
-          .eq('membership_status', 'active')
-          .in('role', ['bride', 'groom'])
-          .order('created_at', { ascending: true })
-          .limit(1),
-        6000,
+      let summary = await withTimeout(
+        getMyWeddingOwnershipSummary(),
+        3500,
         'Loading wedding ownership details took too long.',
       );
 
-      if (ownerMembershipError) throw ownerMembershipError;
+      if (!summary) {
+        summary = await withTimeout(
+          getMyWeddingOwnershipSummaryFromTables(user.id, user.email ?? null),
+          2500,
+          'Loading wedding ownership details took too long.',
+        );
+      }
 
-      const ownerMembership = ownerMemberships?.[0];
-      if (!ownerMembership) {
-        setOwnedWedding(null);
-        setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? '');
+      if (!summary) {
+        const fallbackSummary = buildFallbackOwnershipSummary();
+        setOwnedWedding(fallbackSummary);
+        setPartnerEmailInput(fallbackSummary?.partnerEmail ?? pendingWeddingSetup?.partnerEmail ?? metadataPartnerEmail ?? '');
         return;
       }
 
-      const [
-        { data: weddings, error: weddingError },
-        { data: partnerMemberships, error: partnerMembershipError },
-        { data: partnerInvites, error: inviteError },
-      ] = await withTimeout(
-        Promise.all([
-          db
-            .from('weddings')
-            .select('id, name, wedding_code')
-            .eq('id', ownerMembership.wedding_id)
-            .limit(1),
-          db
-            .from('wedding_memberships')
-            .select('id, email, role, membership_status')
-            .eq('wedding_id', ownerMembership.wedding_id)
-            .eq('is_owner', true)
-            .neq('id', ownerMembership.id)
-            .order('created_at', { ascending: true })
-            .limit(1),
-          db
-            .from('wedding_invites')
-            .select('id, email, proposed_role, expires_at, status')
-            .eq('wedding_id', ownerMembership.wedding_id)
-            .eq('invite_type', 'partner')
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(1),
-        ]),
-        6000,
-        'Loading partner ownership details took too long.',
-      );
-
-      if (weddingError || !weddings?.[0]) throw weddingError ?? new Error('Could not load wedding workspace.');
-      if (partnerMembershipError) throw partnerMembershipError;
-      if (inviteError) throw inviteError;
-
-      const partnerMembership = partnerMemberships?.[0] ?? null;
-      const pendingInvite = partnerInvites?.[0] ?? null;
-      const partnerStatus: OwnedWeddingWorkspace['partnerStatus'] = partnerMembership?.membership_status === 'active'
-        ? 'active'
-        : pendingInvite || partnerMembership?.membership_status === 'invited'
-          ? 'pending'
-          : 'not_invited';
-
-      const partnerRecord = {
-        weddingId: weddings[0].id,
-        weddingName: weddings[0].name ?? 'Your wedding',
-        weddingCode: weddings[0].wedding_code,
-        ownerRole: ownerMembership.role as OwnedWeddingWorkspace['ownerRole'],
-        partnerEmail: partnerMembership?.email ?? pendingInvite?.email ?? null,
-        partnerRole: (partnerMembership?.role ?? pendingInvite?.proposed_role ?? null) as OwnedWeddingWorkspace['partnerRole'],
-        partnerStatus,
-        partnerInviteExpiresAt: pendingInvite?.expires_at ?? null,
-      };
-
-      setOwnedWedding(partnerRecord);
-      setPartnerEmailInput(partnerRecord.partnerEmail ?? '');
+      setOwnedWedding(summary);
+      setPartnerEmailInput(summary.partnerEmail ?? '');
+      setForm((prev) => ({
+        ...prev,
+        wedding_date: summary.weddingDate || prev.wedding_date || '',
+        wedding_county: summary.locationCounty || prev.wedding_county || '',
+        wedding_town: summary.locationTown || prev.wedding_town || '',
+        wedding_location: buildKenyaLocationLabel(summary.locationCounty || prev.wedding_county || '', summary.locationTown || prev.wedding_town || ''),
+      }));
     } catch (error: any) {
       console.error('Could not load wedding ownership state:', error);
-      setOwnedWedding(null);
-      setOwnershipError(error?.message || 'Could not load wedding ownership details right now.');
-      setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? '');
+      const fallbackSummary = buildFallbackOwnershipSummary();
+      if (fallbackSummary) {
+        setOwnedWedding(fallbackSummary);
+        setPartnerEmailInput(fallbackSummary.partnerEmail ?? '');
+        setOwnershipError(null);
+      } else {
+        setOwnedWedding(null);
+        setOwnershipError(error?.message || 'Could not load wedding ownership details right now.');
+        setPartnerEmailInput(pendingWeddingSetup?.partnerEmail ?? metadataPartnerEmail ?? '');
+      }
     } finally {
       setOwnershipLoading(false);
     }
@@ -281,7 +290,20 @@ export default function ProfileSettings() {
         updates.wedding_county = form.wedding_county || null;
         updates.wedding_town = form.wedding_town || null;
         updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
-      } else if (!isVendor && !isAdmin) {
+      } else if (isCouple) {
+        if (ownedWedding?.weddingId) {
+          const { error: weddingError } = await supabase
+            .from('weddings')
+            .update({
+              wedding_date: form.wedding_date || null,
+              location_county: form.wedding_county || null,
+              location_town: form.wedding_town || null,
+            })
+            .eq('id', ownedWedding.weddingId);
+
+          if (weddingError) throw weddingError;
+        }
+
         updates.partner_name = form.partner_name;
         updates.wedding_date = form.wedding_date;
         updates.wedding_county = form.wedding_county || null;
@@ -289,6 +311,9 @@ export default function ProfileSettings() {
         updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
       }
       await updateProfile(updates);
+      if (isCouple) {
+        await loadOwnedWeddingWorkspace();
+      }
       toast({ title: 'Profile updated!' });
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
@@ -317,6 +342,67 @@ export default function ProfileSettings() {
 
   const removeServiceArea = (county: string) => {
     setForm((prev) => ({ ...prev, service_areas: prev.service_areas.filter((area) => area !== county) }));
+  };
+
+  const completeProfessionalSetup = async () => {
+    if (!user || !profile) return;
+    if (!professionalSetupRole) {
+      toast({ title: 'Choose your account type', description: 'Pick Planner or Vendor before continuing.', variant: 'destructive' });
+      return;
+    }
+    if (!form.primary_county) {
+      toast({ title: 'Add your business county', description: 'Choose your business county before continuing.', variant: 'destructive' });
+      return;
+    }
+
+    setCompletingProfessionalSetup(true);
+    const plannerType = professionalSetupRole === 'planner' ? 'professional' : null;
+
+    try {
+      const nextMetadata = {
+        ...(user.user_metadata ?? {}),
+        role: professionalSetupRole,
+        planner_type: plannerType,
+        signup_intent: 'professional',
+        professional_role_locked: true,
+        wedding_setup_completed: true,
+      };
+
+      const { error: metadataError } = await supabase.auth.updateUser({ data: nextMetadata });
+      if (metadataError) throw metadataError;
+
+      await supabase.auth.refreshSession();
+
+      const { error: applyError } = await (supabase as any).rpc('apply_current_user_signup_target', {
+        target_role_text: professionalSetupRole,
+        target_planner_type_text: plannerType,
+        target_full_name: form.full_name || null,
+        target_committee_name: null,
+      });
+      if (applyError) throw applyError;
+
+      await updateProfile({
+        primary_county: form.primary_county || null,
+        primary_town: form.primary_town || null,
+      } as any);
+
+      clearPendingProfessionalSetup();
+
+      toast({
+        title: 'Professional setup complete',
+        description: `Your ${professionalSetupRole} account is now ready.`,
+      });
+
+      window.location.assign(getHomeRouteForRole(professionalSetupRole, plannerType));
+    } catch (error: any) {
+      toast({
+        title: 'Could not finish setup',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setCompletingProfessionalSetup(false);
+    }
   };
 
   const profileUrl = profile ? `${window.location.origin}/planner/${profile.id}` : '';
@@ -478,6 +564,54 @@ export default function ProfileSettings() {
         </p>
       </div>
 
+      {professionalSetupPending && (
+        <Card className="shadow-card border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="font-display">Finish Your Professional Setup</CardTitle>
+            <CardDescription>
+              Choose whether this account is a planner or vendor account. Once saved, this cannot be changed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(['planner', 'vendor'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setProfessionalSetupRole(value)}
+                  className={`rounded-xl border px-4 py-4 text-left transition-all ${
+                    professionalSetupRole === value
+                      ? 'border-primary bg-primary/5 text-foreground'
+                      : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                  }`}
+                >
+                  <p className="font-medium capitalize">{value}</p>
+                  <p className="mt-1 text-xs">
+                    {value === 'planner'
+                      ? 'Use this if you will manage clients and planning workspaces.'
+                      : 'Use this if you will list and manage a wedding business.'}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            <KenyaLocationFields
+              county={form.primary_county}
+              town={form.primary_town}
+              onCountyChange={(value) => setForm((prev) => ({ ...prev, primary_county: value }))}
+              onTownChange={(value) => setForm((prev) => ({ ...prev, primary_town: value }))}
+              countyLabel="Business county"
+              townLabel="Town / area"
+            />
+
+            <Button type="button" onClick={completeProfessionalSetup} disabled={completingProfessionalSetup}>
+              {completingProfessionalSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Complete professional setup
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {isPlanner && (
         <Card className="shadow-card border-primary/20 bg-primary/5">
           <CardContent className="flex items-center gap-3 py-4">
@@ -556,7 +690,7 @@ export default function ProfileSettings() {
         </Card>
       )}
 
-      {!isPlanner && !isVendor && !isAdmin && profile && coupleExportDecision && (
+      {isCouple && profile && coupleExportDecision && (
         <Card className={coupleExportDecision?.allowed ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
@@ -719,7 +853,7 @@ export default function ProfileSettings() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Button
                     type="button"
-                    disabled={partnerInviteSubmitting || !partnerEmailInput.trim()}
+                    disabled={partnerInviteSubmitting || !partnerEmailInput.trim() || !ownedWedding.weddingId}
                     onClick={sendPartnerInvite}
                   >
                     {partnerInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -1084,7 +1218,7 @@ export default function ProfileSettings() {
               </CardContent>
             </Card>
           </>
-        ) : !isVendor && !isAdmin ? (
+        ) : isCouple ? (
           /* Couple: Wedding Details */
           <Card className="shadow-card">
             <CardHeader>
@@ -1094,6 +1228,13 @@ export default function ProfileSettings() {
               <div className="space-y-2">
                 <Label>Partner's Name</Label>
                 <Input value={form.partner_name} onChange={e => setForm(f => ({ ...f, partner_name: e.target.value }))} placeholder="Partner's name" />
+              </div>
+              <div className="space-y-2">
+                <Label>Spouse Email</Label>
+                <Input value={partnerEmailInput || ownedWedding?.partnerEmail || pendingWeddingSetup?.partnerEmail || metadataPartnerEmail || ''} readOnly />
+                <p className="text-xs text-muted-foreground">
+                  This comes from your wedding ownership record and partner invite.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Wedding Date</Label>

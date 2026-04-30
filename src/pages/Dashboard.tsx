@@ -17,6 +17,7 @@ import InlineAssistantCard from '@/components/InlineAssistantCard';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { getMyWeddingOwnershipSummary, type MyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
 
 interface DashboardStats {
   totalBudget: number;
@@ -122,6 +123,7 @@ export default function Dashboard() {
   const [budgetDigestRows, setBudgetDigestRows] = useState<BudgetDigestRow[]>([]);
   const [vendorDigestRows, setVendorDigestRows] = useState<VendorDigestRow[]>([]);
   const [taskDigestRows, setTaskDigestRows] = useState<TaskDigestRow[]>([]);
+  const [ownedWeddingSummary, setOwnedWeddingSummary] = useState<MyWeddingOwnershipSummary | null>(null);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) {
@@ -219,15 +221,51 @@ export default function Dashboard() {
     loadTimeline();
   }, [user, selectedClient, dataOrFilter]);
 
+  useEffect(() => {
+    if (!user || isPlanner || profile?.role !== 'couple') {
+      setOwnedWeddingSummary(null);
+      return;
+    }
+
+    let active = true;
+
+    const loadOwnedWeddingSummary = async () => {
+      try {
+        const summary = await getMyWeddingOwnershipSummary();
+        if (active) {
+          setOwnedWeddingSummary(summary);
+        }
+      } catch (error) {
+        console.error('Could not load owned wedding summary for dashboard:', error);
+        if (active) {
+          setOwnedWeddingSummary(null);
+        }
+      }
+    };
+
+    void loadOwnedWeddingSummary();
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id, isPlanner, profile?.role]);
+
   const weddingDate = isPlanner && selectedClient
     ? (selectedClient.wedding_date ? new Date(selectedClient.wedding_date) : null)
-    : (profile?.wedding_date ? new Date(profile.wedding_date) : null);
+    : ((profile?.wedding_date || ownedWeddingSummary?.weddingDate)
+      ? new Date(profile?.wedding_date || ownedWeddingSummary?.weddingDate || '')
+      : null);
 
   const daysUntil = weddingDate ? Math.max(0, Math.ceil((weddingDate.getTime() - Date.now()) / 86400000)) : null;
   const weddingTitle = isPlanner && selectedClient
     ? [selectedClient.client_name, selectedClient.partner_name].filter(Boolean).join(' & ')
-    : [profile?.full_name, profile?.partner_name].filter(Boolean).join(' & ') || profile?.full_name || 'Your Wedding';
-  const weddingLocation = isPlanner && selectedClient ? selectedClient.wedding_location : profile?.wedding_location;
+    : ownedWeddingSummary?.weddingName
+      || [profile?.full_name, profile?.partner_name].filter(Boolean).join(' & ')
+      || profile?.full_name
+      || 'Your Wedding';
+  const weddingLocation = isPlanner && selectedClient
+    ? selectedClient.wedding_location
+    : profile?.wedding_location || [ownedWeddingSummary?.locationTown, ownedWeddingSummary?.locationCounty].filter(Boolean).join(', ') || null;
   const weddingMeta = [
     weddingDate ? weddingDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null,
     stats.totalGuests > 0 ? `${stats.totalGuests} guests` : null,

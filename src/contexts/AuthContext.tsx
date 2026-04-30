@@ -7,6 +7,10 @@ import {
   getPendingOAuthSignupTarget,
 } from '@/lib/oauthSignupState';
 import {
+  clearPendingProfessionalSetup,
+  readPendingProfessionalSetup,
+} from '@/lib/professionalSetupState';
+import {
   completePendingWeddingSetup,
   getPendingWeddingSetup,
   type WeddingOwnerRole,
@@ -77,18 +81,22 @@ interface AuthContextType {
       weddingTown?: string | null;
       primaryCounty?: string | null;
       primaryTown?: string | null;
+      professionalRoleLocked?: boolean | null;
     }
   ) => Promise<void>;
   signIn: (
     email: string,
     password: string,
     options?: {
+      audience?: 'couple' | 'professional' | null;
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
     }
   ) => Promise<void>;
   signInWithGoogle: (options?: {
-    signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
+    audience?: 'couple' | 'professional' | null;
+    mode?: 'signup' | 'signin';
+    targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
   }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -155,6 +163,67 @@ const withTimeout = async <T,>(
   return result;
 };
 
+const getCanonicalAppOrigin = (): string => {
+  if (typeof window === 'undefined') return '';
+
+  const currentUrl = new URL(window.location.href);
+  const isProductionHost =
+    currentUrl.hostname === 'zaniaweddings.com'
+    || currentUrl.hostname === 'www.zaniaweddings.com';
+
+  if (isProductionHost) {
+    return 'https://www.zaniaweddings.com';
+  }
+
+  return window.location.origin;
+};
+
+const normalizeProductionAuthEntry = (): boolean => {
+  if (typeof window === 'undefined') return false;
+
+  const currentUrl = new URL(window.location.href);
+  const isProductionHost =
+    currentUrl.hostname === 'zaniaweddings.com'
+    || currentUrl.hostname === 'www.zaniaweddings.com';
+
+  if (!isProductionHost) return false;
+
+  const hasAuthHash = currentUrl.hash.includes('access_token=');
+  const needsWwwHost = currentUrl.hostname !== 'www.zaniaweddings.com';
+  const needsCallbackPath = hasAuthHash && currentUrl.pathname !== '/auth/callback';
+
+  if (!needsWwwHost && !needsCallbackPath) return false;
+
+  const targetUrl = new URL(currentUrl.toString());
+  targetUrl.hostname = 'www.zaniaweddings.com';
+
+  if (hasAuthHash) {
+    const pendingOAuthTarget = getPendingOAuthSignupTarget();
+    targetUrl.pathname = '/auth/callback';
+    if (pendingOAuthTarget?.mode) {
+      targetUrl.searchParams.set('auth_mode', pendingOAuthTarget.mode);
+    }
+    if (pendingOAuthTarget?.audience) {
+      targetUrl.searchParams.set('audience', pendingOAuthTarget.audience);
+    }
+    if (!targetUrl.searchParams.get('target_role') && pendingOAuthTarget?.role) {
+      targetUrl.searchParams.set('target_role', pendingOAuthTarget.role);
+      if (pendingOAuthTarget.mode === 'signup') {
+        targetUrl.searchParams.set('signup_role', pendingOAuthTarget.role);
+      }
+      if (pendingOAuthTarget.role === 'planner') {
+        targetUrl.searchParams.set(
+          'planner_type',
+          pendingOAuthTarget.plannerType === 'committee' ? 'committee' : 'professional',
+        );
+      }
+    }
+  }
+
+  window.location.replace(targetUrl.toString());
+  return true;
+};
+
 const buildPreviewProfile = (baseProfile: Profile, preview: RolePreview): Profile => {
   if (preview === 'admin') return baseProfile;
 
@@ -211,13 +280,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getFallbackRole = async (authUser: User): Promise<AppRole> => {
     const requestedRole = authUser.user_metadata?.role;
+    const professionalSetupPending =
+      authUser.user_metadata?.signup_intent === 'professional'
+      && authUser.user_metadata?.professional_role_locked === false;
     if (requestedRole === 'committee') return 'planner';
     if (requestedRole === 'admin' || requestedRole === 'vendor' || requestedRole === 'planner' || requestedRole === 'couple') {
       return requestedRole;
     }
+    if (professionalSetupPending || readPendingProfessionalSetup(authUser.email ?? null)) {
+      return 'planner';
+    }
 
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
-    if (pendingOAuthTarget) {
+    if (pendingOAuthTarget?.role) {
       return pendingOAuthTarget.role;
     }
 
@@ -321,6 +396,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const requestedPlannerType = authUser.user_metadata?.planner_type;
     const requestedCommitteeName = authUser.user_metadata?.committee_name;
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
+    const professionalSetupPending =
+      authUser.user_metadata?.signup_intent === 'professional'
+      && authUser.user_metadata?.professional_role_locked === false;
+
+    const normalizedRequestedRole: AppRole | null =
+      requestedRole === 'committee'
+        ? 'planner'
+        : requestedRole === 'admin' || requestedRole === 'couple' || requestedRole === 'vendor' || requestedRole === 'planner'
+          ? requestedRole
+          : null;
+    const normalizedRequestedPlannerType: PlannerType | null =
+      requestedRole === 'committee'
+        ? 'committee'
+        : requestedRole === 'planner'
+          ? requestedPlannerType === 'committee'
+            ? 'committee'
+            : 'professional'
+          : null;
+
+    if (
+      pendingOAuthTarget?.role &&
+      (normalizedRequestedRole !== pendingOAuthTarget.role
+        || normalizedRequestedPlannerType !== pendingOAuthTarget.plannerType)
+    ) {
+      return {
+        role: pendingOAuthTarget.role,
+        plannerType: pendingOAuthTarget.plannerType,
+        committeeName: pendingOAuthTarget.plannerType === 'committee'
+          ? (typeof requestedCommitteeName === 'string' && requestedCommitteeName.trim().length > 0
+            ? requestedCommitteeName.trim()
+            : null)
+          : null,
+      };
+    }
 
     if (
       requestedRole !== 'admin' &&
@@ -329,7 +438,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestedRole !== 'planner' &&
       requestedRole !== 'committee'
     ) {
-      if (!pendingOAuthTarget) {
+      if (professionalSetupPending) {
+        return {
+          role: 'planner',
+          plannerType: 'professional',
+          committeeName: null,
+        };
+      }
+
+      if (!pendingOAuthTarget?.role) {
         return null;
       }
 
@@ -340,14 +457,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const resolvedRole: AppRole = requestedRole === 'committee' ? 'planner' : requestedRole;
-    const resolvedPlannerType: PlannerType | null = requestedRole === 'committee'
-      ? 'committee'
-      : requestedRole === 'planner'
-        ? requestedPlannerType === 'committee'
-          ? 'committee'
-          : 'professional'
-        : null;
+    const resolvedRole: AppRole = normalizedRequestedRole!;
+    const resolvedPlannerType: PlannerType | null = normalizedRequestedPlannerType;
 
     return {
       role: resolvedRole,
@@ -357,6 +468,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ? requestedCommitteeName.trim()
           : null)
         : null,
+    };
+  };
+
+  const buildImmediateProfileFallback = (authUser: User): Profile => {
+    const requestedSignupState = getRequestedSignupState(authUser);
+    const pendingOAuthTarget = getPendingOAuthSignupTarget();
+    const inferredRole: AppRole = requestedSignupState?.role
+      ?? pendingOAuthTarget?.role
+      ?? (
+        authUser.user_metadata?.role === 'committee'
+          ? 'planner'
+          : authUser.user_metadata?.role === 'admin'
+            || authUser.user_metadata?.role === 'vendor'
+            || authUser.user_metadata?.role === 'planner'
+            || authUser.user_metadata?.role === 'couple'
+            ? authUser.user_metadata.role
+            : authUser.user_metadata?.planner_type === 'committee' || authUser.user_metadata?.planner_type === 'professional'
+              ? 'planner'
+              : 'couple'
+      );
+
+    const fallbackProfile = buildFallbackProfile(authUser, inferredRole);
+
+    return {
+      ...fallbackProfile,
+      planner_type: requestedSignupState?.plannerType
+        ?? pendingOAuthTarget?.plannerType
+        ?? fallbackProfile.planner_type,
+      committee_name: requestedSignupState?.committeeName
+        ?? fallbackProfile.committee_name,
     };
   };
 
@@ -536,7 +677,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const pendingOAuthTarget = getPendingOAuthSignupTarget();
       if (
-        pendingOAuthTarget &&
+        pendingOAuthTarget?.role &&
         profileWithIdentity.role === pendingOAuthTarget.role &&
         (profileWithIdentity.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
@@ -578,7 +719,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (recoveredProfile) {
       const pendingOAuthTarget = getPendingOAuthSignupTarget();
       if (
-        pendingOAuthTarget &&
+        pendingOAuthTarget?.role &&
         recoveredProfile.role === pendingOAuthTarget.role &&
         (recoveredProfile.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
@@ -607,8 +748,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(nextSession?.user ?? null);
 
     if (nextSession?.user) {
-      await fetchAvailableRoles(nextSession.user.id);
-      await ensureProfile(nextSession.user);
+      const immediateFallbackProfile = buildImmediateProfileFallback(nextSession.user);
+      setBaseProfile((currentProfile) =>
+        currentProfile?.user_id === nextSession.user.id ? currentProfile : immediateFallbackProfile,
+      );
+
+      const fallbackRoles: AppRole[] = availableRoles.length > 0
+        ? availableRoles
+        : Array.from(new Set([immediateFallbackProfile.role]));
+
+      await withTimeout(
+        fetchAvailableRoles(nextSession.user.id),
+        2500,
+        fallbackRoles,
+        'Auth role lookup',
+      );
+
+      await withTimeout(
+        ensureProfile(nextSession.user),
+        3500,
+        immediateFallbackProfile,
+        'Auth profile hydration',
+      );
       return;
     }
 
@@ -788,7 +949,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const recoverMissingProfile = async () => {
       try {
-        await ensureProfile(user);
+        await withTimeout(
+          ensureProfile(user),
+          3500,
+          buildImmediateProfileFallback(user),
+          'Recover missing profile after sign-in',
+        );
       } catch (error) {
         console.error('Failed to recover missing in-memory profile after sign-in:', error);
       } finally {
@@ -825,7 +991,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!roleMismatch && !plannerTypeMismatch && !committeeNameMismatch && !missingIdentity) {
       if (
-        pendingOAuthTarget &&
+        pendingOAuthTarget?.role &&
         baseProfile.role === pendingOAuthTarget.role &&
         (baseProfile.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
@@ -844,7 +1010,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!active) return;
 
       if (
-        pendingOAuthTarget &&
+        pendingOAuthTarget?.role &&
         profileWithIdentity.role === pendingOAuthTarget.role &&
         (profileWithIdentity.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
@@ -885,6 +1051,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const requestId = ++authHydrationRequestRef.current;
 
       try {
+        if (normalizeProductionAuthEntry()) {
+          return;
+        }
         await hydrateSessionFromHash();
         const { session, timedOut, sessionPromise } = await getSessionWithTimeout();
         if (!active) return;
@@ -942,6 +1111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       weddingTown?: string | null;
       primaryCounty?: string | null;
       primaryTown?: string | null;
+      professionalRoleLocked?: boolean | null;
     },
   ) => {
     const isCommittee = role === 'committee';
@@ -949,6 +1119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const weddingTown = options?.weddingTown?.trim() || null;
     const primaryCounty = options?.primaryCounty?.trim() || null;
     const primaryTown = options?.primaryTown?.trim() || null;
+    const professionalRoleLocked = options?.professionalRoleLocked ?? null;
     const partnerEmail = options?.partnerEmail?.trim().toLowerCase() || null;
     const weddingName = options?.weddingName?.trim() || null;
     const weddingCode = options?.weddingCode?.trim().toUpperCase() || null;
@@ -964,6 +1135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           planner_type: isCommittee ? 'committee' : role === 'planner' ? 'professional' : null,
           committee_name: isCommittee ? options?.committeeName ?? null : null,
           signup_intent: signupIntent,
+          professional_role_locked: signupIntent === 'professional' ? professionalRoleLocked ?? false : true,
           wedding_setup_completed: signupIntent === 'professional',
           wedding_owner_role: options?.weddingOwnerRole ?? null,
           partner_email: partnerEmail,
@@ -976,7 +1148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           primary_county: primaryCounty,
           primary_town: primaryTown,
         },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${getCanonicalAppOrigin()}/auth/callback`,
       },
     });
     if (error) throw error;
@@ -995,10 +1167,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string,
     password: string,
     options?: {
+      audience?: 'couple' | 'professional' | null;
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
     },
   ) => {
+    if (!options?.targetRole && !options?.audience) {
+      throw new Error('Choose which kind of account you are signing in to first.');
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
@@ -1012,11 +1189,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             options.plannerType ?? null,
           );
           await activateRequestedRole(updatedUser, options.targetRole, options.plannerType ?? null);
+        } else if (options?.audience === 'professional') {
+          const roles = await fetchAvailableRoles(data.session.user.id);
+          const professionalRoles = roles.filter((role) => role === 'planner' || role === 'vendor');
+          const metadata = (data.session.user.user_metadata ?? {}) as Record<string, unknown>;
+          const professionalSetupPending =
+            metadata.signup_intent === 'professional'
+            && metadata.professional_role_locked === false;
+          const localProfessionalSetupPending = readPendingProfessionalSetup(email);
+
+          if (professionalRoles.length === 0 && !professionalSetupPending && !localProfessionalSetupPending) {
+            throw new Error('This email does not have a professional account yet. Choose professional sign up first.');
+          }
         }
-        const {
-          data: { session: refreshedSession },
-        } = await supabase.auth.getSession();
+        const refreshedSession = await withTimeout(
+          supabase.auth.getSession().then(({ data }) => data.session),
+          2500,
+          data.session,
+          'Post-sign-in session refresh',
+        );
         await syncAuthState(refreshedSession ?? data.session);
+      } catch (signInError) {
+        try {
+          await withTimeout(
+            supabase.auth.signOut({ scope: 'local' }),
+            1500,
+            { error: null as Error | null },
+            'Rollback failed sign in',
+          );
+        } finally {
+          clearStoredSupabaseAuthState();
+          await syncAuthState(null);
+        }
+        throw signInError;
       } finally {
         setLoading(false);
       }
@@ -1024,17 +1229,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithGoogle = async (options?: {
-    signupRole?: Extract<SignupRole, 'planner' | 'vendor'> | null;
+    audience?: 'couple' | 'professional' | null;
+    mode?: 'signup' | 'signin';
+    targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
   }) => {
-    const redirectUrl = new URL(`${window.location.origin}/auth/callback`);
+    const redirectUrl = new URL(`${getCanonicalAppOrigin()}/auth/callback`);
+    const mode = options?.mode === 'signin' ? 'signin' : 'signup';
+    const targetRole = options?.targetRole ?? null;
+    const audience = options?.audience ?? (targetRole === 'couple' ? 'couple' : 'professional');
 
-    if (options?.signupRole) {
-      redirectUrl.searchParams.set('signup_role', options.signupRole);
-      if (options.signupRole === 'planner') {
+    redirectUrl.searchParams.set('auth_mode', mode);
+    redirectUrl.searchParams.set('audience', audience);
+
+    if (targetRole) {
+      redirectUrl.searchParams.set('target_role', targetRole);
+      if (mode === 'signup') {
+        redirectUrl.searchParams.set('signup_role', targetRole);
+      }
+      if (targetRole === 'planner') {
         redirectUrl.searchParams.set(
           'planner_type',
-          options.plannerType === 'committee' ? 'committee' : 'professional',
+          options?.plannerType === 'committee' ? 'committee' : 'professional',
         );
       }
     }
@@ -1043,6 +1259,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       provider: 'google',
       options: {
         redirectTo: redirectUrl.toString(),
+        queryParams: {
+          prompt: 'select_account',
+        },
       },
     });
     if (error) throw error;
@@ -1052,6 +1271,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRolePreviewState('admin');
     authHydrationRequestRef.current += 1;
     clearPendingOAuthSignupState();
+    clearPendingProfessionalSetup();
     let globalSignOutError: Error | null = null;
 
     try {

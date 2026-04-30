@@ -3,34 +3,55 @@ import type { AppRole, PlannerType, SignupRole } from '@/lib/roles';
 const PENDING_OAUTH_SIGNUP_STORAGE_KEY = 'zania-pending-oauth-signup';
 
 export type PendingOAuthSignupState = {
-  role: Extract<SignupRole, 'planner' | 'vendor'>;
-  plannerType: 'professional' | null;
+  mode: 'signup' | 'signin';
+  audience: 'couple' | 'professional';
+  role: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+  plannerType: PlannerType | null;
   fullName: string | null;
 };
 
 export function getOAuthSignupTargetFromSearchParams(
   searchParams: URLSearchParams,
 ):
-  | { role: Extract<SignupRole, 'planner' | 'vendor'>; plannerType: PlannerType | null }
+  | {
+      mode: 'signup' | 'signin';
+      audience: 'couple' | 'professional';
+      role: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+      plannerType: PlannerType | null;
+    }
   | null {
-  const role = searchParams.get('signup_role');
-  if (role !== 'planner' && role !== 'vendor') return null;
+  const audience = searchParams.get('audience');
+  if (audience !== 'couple' && audience !== 'professional') return null;
+
+  const rawRole = searchParams.get('target_role') ?? searchParams.get('signup_role');
+  const role =
+    rawRole === 'couple' || rawRole === 'planner' || rawRole === 'vendor'
+      ? rawRole
+      : null;
 
   return {
+    mode: searchParams.get('auth_mode') === 'signin' ? 'signin' : 'signup',
+    audience,
     role,
-    plannerType: role === 'planner' ? 'professional' : null,
+    plannerType: role === 'planner'
+      ? (searchParams.get('planner_type') === 'committee' ? 'committee' : 'professional')
+      : null,
   };
 }
 
 export function getPendingOAuthSignupTarget():
-  | { role: AppRole; plannerType: PlannerType | null; fullName: string | null }
+  | { mode: 'signup' | 'signin'; audience: 'couple' | 'professional'; role: AppRole | null; plannerType: PlannerType | null; fullName: string | null }
   | null {
   const pendingState = readPendingOAuthSignupState();
   if (!pendingState) return null;
 
   return {
+    mode: pendingState.mode,
+    audience: pendingState.audience,
     role: pendingState.role,
-    plannerType: pendingState.role === 'planner' ? 'professional' : null,
+    plannerType: pendingState.role === 'planner'
+      ? (pendingState.plannerType === 'committee' ? 'committee' : 'professional')
+      : null,
     fullName: pendingState.fullName,
   };
 }
@@ -48,11 +69,16 @@ export function readPendingOAuthSignupState(): PendingOAuthSignupState | null {
 
   try {
     const parsed = JSON.parse(rawValue) as PendingOAuthSignupState;
-    if (parsed.role !== 'planner' && parsed.role !== 'vendor') return null;
+    if (parsed.audience !== 'couple' && parsed.audience !== 'professional') return null;
+    if (parsed.role !== null && parsed.role !== 'couple' && parsed.role !== 'planner' && parsed.role !== 'vendor') return null;
 
     return {
+      mode: parsed.mode === 'signin' ? 'signin' : 'signup',
+      audience: parsed.audience,
       role: parsed.role,
-      plannerType: parsed.role === 'planner' ? 'professional' : null,
+      plannerType: parsed.role === 'planner'
+        ? (parsed.plannerType === 'committee' ? 'committee' : 'professional')
+        : null,
       fullName: typeof parsed.fullName === 'string' && parsed.fullName.trim().length > 0
         ? parsed.fullName.trim()
         : null,
