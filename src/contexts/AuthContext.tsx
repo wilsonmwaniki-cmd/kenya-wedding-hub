@@ -288,7 +288,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return requestedRole;
     }
     if (professionalSetupPending || readPendingProfessionalSetup(authUser.email ?? null)) {
-      return 'planner';
+      return 'couple';
     }
 
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
@@ -440,8 +440,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ) {
       if (professionalSetupPending) {
         return {
-          role: 'planner',
-          plannerType: 'professional',
+          role: 'couple',
+          plannerType: null,
           committeeName: null,
         };
       }
