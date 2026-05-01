@@ -75,7 +75,7 @@ function TikTokSocialIcon({ className }: { className?: string }) {
 }
 
 export default function VendorSettings() {
-  const { user, isSuperAdmin, rolePreview } = useAuth();
+  const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -112,6 +112,8 @@ export default function VendorSettings() {
   useEffect(() => {
     if (!user) return;
     const load = async () => {
+      const fallbackCounty = profile?.primary_county || '';
+      const fallbackTown = profile?.primary_town || '';
       const { data } = await supabase
         .from('vendor_listings')
         .select('*')
@@ -127,8 +129,8 @@ export default function VendorSettings() {
           email: data.email || '',
           website: data.website || '',
           location: data.location || '',
-          location_county: (data as any).location_county || '',
-          location_town: (data as any).location_town || '',
+          location_county: (data as any).location_county || fallbackCounty,
+          location_town: (data as any).location_town || fallbackTown,
           services: (data.services as string[]) || [],
           social_instagram: (data as any).social_instagram || '',
           social_facebook: (data as any).social_facebook || '',
@@ -139,11 +141,41 @@ export default function VendorSettings() {
           minimum_budget_kes: (data as any).minimum_budget_kes != null ? String((data as any).minimum_budget_kes) : '',
           maximum_budget_kes: (data as any).maximum_budget_kes != null ? String((data as any).maximum_budget_kes) : '',
         });
+      } else if (fallbackCounty || fallbackTown) {
+        setForm((prev) => ({
+          ...prev,
+          location_county: prev.location_county || fallbackCounty,
+          location_town: prev.location_town || fallbackTown,
+          location: buildKenyaLocationLabel(
+            prev.location_county || fallbackCounty,
+            prev.location_town || fallbackTown,
+          ),
+        }));
       }
       setLoading(false);
     };
     load();
-  }, [user]);
+  }, [user, profile?.primary_county, profile?.primary_town]);
+
+  useEffect(() => {
+    if (!profile?.primary_county && !profile?.primary_town) return;
+
+    setForm((prev) => {
+      const nextCounty = prev.location_county || profile.primary_county || '';
+      const nextTown = prev.location_town || profile.primary_town || '';
+
+      if (nextCounty === prev.location_county && nextTown === prev.location_town) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        location_county: nextCounty,
+        location_town: nextTown,
+        location: buildKenyaLocationLabel(nextCounty, nextTown),
+      };
+    });
+  }, [profile?.primary_county, profile?.primary_town]);
 
   useEffect(() => {
     if (!listing?.id || !vendorHasFullAccess(listing)) {

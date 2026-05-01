@@ -226,10 +226,14 @@ export default function AuthCallback() {
             || (!currentFullName && !!pendingOAuthSignupState?.fullName);
 
           if (needsProfessionalSetupSync) {
+            const currentRole =
+              currentMetadata.role === 'planner' || currentMetadata.role === 'vendor' || currentMetadata.role === 'admin'
+                ? currentMetadata.role
+                : 'couple';
             const nextMetadata: Record<string, unknown> = {
               ...currentMetadata,
-              role: 'planner',
-              planner_type: 'professional',
+              role: currentRole,
+              planner_type: null,
               signup_intent: 'professional',
               professional_role_locked: false,
               wedding_setup_completed: true,
@@ -243,13 +247,6 @@ export default function AuthCallback() {
             if (error) throw error;
 
             await supabase.auth.refreshSession();
-            const { error: applyProfessionalPlaceholderError } = await (supabase as any).rpc('apply_current_user_signup_target', {
-              target_role_text: 'planner',
-              target_planner_type_text: 'professional',
-              target_full_name: typeof nextMetadata.full_name === 'string' ? nextMetadata.full_name : currentFullName,
-              target_committee_name: null,
-            });
-            if (applyProfessionalPlaceholderError) throw applyProfessionalPlaceholderError;
             persistPendingProfessionalSetup(user.email ?? null);
             clearPendingOAuthSignupState();
             return data.user ?? user;
