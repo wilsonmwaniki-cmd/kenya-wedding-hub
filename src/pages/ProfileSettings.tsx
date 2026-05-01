@@ -350,10 +350,6 @@ export default function ProfileSettings() {
       toast({ title: 'Choose your account type', description: 'Pick Planner or Vendor before continuing.', variant: 'destructive' });
       return;
     }
-    if (!form.primary_county) {
-      toast({ title: 'Add your business county', description: 'Choose your business county before continuing.', variant: 'destructive' });
-      return;
-    }
 
     setCompletingProfessionalSetup(true);
     const plannerType = professionalSetupRole === 'planner' ? 'professional' : null;
@@ -381,17 +377,20 @@ export default function ProfileSettings() {
       });
       if (applyError) throw applyError;
 
-      await updateProfile({
-        primary_county: form.primary_county || null,
-        primary_town: form.primary_town || null,
-      } as any);
-
       clearPendingProfessionalSetup();
 
       toast({
         title: 'Professional setup complete',
-        description: `Your ${professionalSetupRole} account is now ready.`,
+        description:
+          professionalSetupRole === 'planner'
+            ? 'Your planner account is ready. Finish your planner profile below.'
+            : 'Your vendor account is now ready.',
       });
+
+      if (professionalSetupRole === 'planner') {
+        window.location.assign('/settings?setup=planner-profile');
+        return;
+      }
 
       window.location.assign(getHomeRouteForRole(professionalSetupRole, plannerType));
     } catch (error: any) {
@@ -566,13 +565,13 @@ export default function ProfileSettings() {
 
       {professionalSetupPending && (
         <Card className="shadow-card border-primary/20 bg-primary/5">
-          <CardHeader>
-            <CardTitle className="font-display">Finish Your Professional Setup</CardTitle>
-            <CardDescription>
-              Choose whether this account is a planner or vendor account. Once saved, this cannot be changed.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <CardHeader>
+          <CardTitle className="font-display">Finish Your Professional Setup</CardTitle>
+          <CardDescription>
+            Choose whether this account is a planner or vendor account. Once saved, this cannot be changed.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               {(['planner', 'vendor'] as const).map((value) => (
                 <button
@@ -595,14 +594,18 @@ export default function ProfileSettings() {
               ))}
             </div>
 
-            <KenyaLocationFields
-              county={form.primary_county}
-              town={form.primary_town}
-              onCountyChange={(value) => setForm((prev) => ({ ...prev, primary_county: value }))}
-              onTownChange={(value) => setForm((prev) => ({ ...prev, primary_town: value }))}
-              countyLabel="Business county"
-              townLabel="Town / area"
-            />
+            {professionalSetupRole === 'planner' && (
+              <div className="rounded-xl border border-border/60 bg-background/50 p-4 text-sm text-muted-foreground">
+                Next, we will keep you here and open your planner profile fields so you can add your business location,
+                specialties, service areas, and other planner details in one place.
+              </div>
+            )}
+
+            {professionalSetupRole === 'vendor' && (
+              <div className="rounded-xl border border-border/60 bg-background/50 p-4 text-sm text-muted-foreground">
+                You will add your business location on the next screen when you complete your vendor listing, so we do not ask for it twice here.
+              </div>
+            )}
 
             <Button type="button" onClick={completeProfessionalSetup} disabled={completingProfessionalSetup}>
               {completingProfessionalSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
