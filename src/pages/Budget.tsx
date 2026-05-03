@@ -7,10 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles, Lock, CalendarDays, Download } from 'lucide-react';
+import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles, Lock, CalendarDays, Download, HandCoins } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -397,6 +397,14 @@ export default function Budget() {
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (!name.trim()) {
+      toast({
+        title: 'Add a category name',
+        description: 'Choose a suggested category or type your own before saving.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     const insert: Record<string, unknown> = {
       user_id: user.id,
@@ -1115,10 +1123,20 @@ export default function Budget() {
             <Download className="h-4 w-4" />
             Export Budget
           </Button>
+          <Button
+            type="button"
+            className="w-full gap-2 sm:w-auto"
+            variant="outline"
+            onClick={() => navigate('/contributions')}
+          >
+            <HandCoins className="h-4 w-4" />
+            Track Contributions
+          </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="h-4 w-4" /> Add Category</Button>
-          </DialogTrigger>
+            <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add Category
+            </Button>
           <DialogContent>
             <DialogHeader><DialogTitle className="font-display">Add Budget Category</DialogTitle></DialogHeader>
             <form onSubmit={addCategory} className="space-y-4">
