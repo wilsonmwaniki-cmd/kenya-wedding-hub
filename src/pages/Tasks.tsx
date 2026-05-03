@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download } from 'lucide-react';
@@ -320,6 +320,14 @@ export default function Tasks() {
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (!title.trim()) {
+      toast({
+        title: 'Choose a task first',
+        description: 'Pick a checklist task or type a custom title before saving.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     const linkedVendor = sourceVendorId !== 'none' ? vendorLookup[sourceVendorId] : null;
     const categoryName = linkedVendor?.category ?? selectedCategoryName ?? null;
@@ -755,9 +763,10 @@ export default function Tasks() {
             Export Tasks
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="w-full gap-2 sm:w-auto"><Plus className="h-4 w-4" /> Add Task</Button>
-            </DialogTrigger>
+            <Button type="button" className="w-full gap-2 sm:w-auto" onClick={() => setOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add Task
+            </Button>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
               <DialogHeader><DialogTitle className="font-display">Add Task</DialogTitle></DialogHeader>
               <form onSubmit={addTask} className="space-y-4">
