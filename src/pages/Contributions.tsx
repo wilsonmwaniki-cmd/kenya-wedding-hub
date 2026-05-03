@@ -216,6 +216,13 @@ export default function Contributions() {
   const fundingTarget = activeGoal > 0 ? activeGoal : budgetTarget;
   const fundingGap = Math.max(fundingTarget - summary.totalSupport, 0);
   const coveragePercentage = fundingTarget > 0 ? Math.min((summary.totalSupport / fundingTarget) * 100, 100) : 0;
+  const activeRounds = rounds.filter((round) => round.is_active).length;
+  const selectedRoundLabel =
+    selectedRoundId === 'all'
+      ? 'All rounds'
+      : selectedRoundId === 'unassigned'
+        ? 'Unassigned contributions'
+        : currentRound?.title ?? 'Selected round';
 
   const resetContributionForm = (roundId = 'none') => {
     setEditingContributionId(null);
@@ -369,14 +376,30 @@ export default function Contributions() {
 
   return (
     <div className="space-y-6">
-      <Card className="border-primary/20 shadow-card">
-        <CardContent className="grid gap-5 p-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <div>
+      <Card className="overflow-hidden border-primary/20 shadow-card">
+        <CardContent className="grid gap-5 bg-[radial-gradient(circle_at_top_left,rgba(222,92,43,0.14),transparent_42%),linear-gradient(180deg,rgba(255,249,246,0.96),rgba(255,255,255,0.98))] p-6 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="space-y-5">
+            <div>
             <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Committee Contributions</p>
             <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Wedding Contributions</h1>
             <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
               Track harambee pledges, contributions received, in-kind support, and the remaining funding gap without leaving the wedding workspace.
             </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-primary/15 bg-white/85 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Track promises</p>
+                <p className="mt-2 text-sm text-foreground">Log who pledged, how much, and which round or meeting it came from.</p>
+              </div>
+              <div className="rounded-2xl border border-primary/15 bg-white/85 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Record support</p>
+                <p className="mt-2 text-sm text-foreground">Capture paid cash and in-kind help like chairs, food, transport, or cake support.</p>
+              </div>
+              <div className="rounded-2xl border border-primary/15 bg-white/85 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">See the gap</p>
+                <p className="mt-2 text-sm text-foreground">Compare real support against the wedding budget so the committee knows what is still uncovered.</p>
+              </div>
+            </div>
             <div className="mt-4 flex flex-wrap gap-3">
               <Button onClick={openCreateContribution} className="gap-2">
                 <Plus className="h-4 w-4" />
@@ -392,7 +415,7 @@ export default function Contributions() {
               </Button>
             </div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-background/80 p-5">
+          <div className="space-y-4 rounded-2xl border border-border/70 bg-background/90 p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
@@ -414,6 +437,22 @@ export default function Contributions() {
                 <span>{formatCurrency(fundingGap)} gap remaining</span>
               </div>
             </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Active rounds</p>
+                <p className="mt-2 text-xl font-semibold text-foreground">{activeRounds}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {rounds.length ? `${rounds.length} total round${rounds.length === 1 ? '' : 's'} tracked` : 'No fundraising rounds yet'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Current view</p>
+                <p className="mt-2 text-sm font-semibold text-foreground">{selectedRoundLabel}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {filteredRows.length} contribution{filteredRows.length === 1 ? '' : 's'} shown in this view
+                </p>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -426,6 +465,7 @@ export default function Contributions() {
               <Banknote className="h-5 w-5 text-primary" />
               {formatCurrency(budgetTarget)}
             </CardTitle>
+            <p className="text-xs text-muted-foreground">Current wedding budget target</p>
           </CardHeader>
         </Card>
         <Card className="shadow-card">
@@ -435,6 +475,7 @@ export default function Contributions() {
               <HandCoins className="h-5 w-5 text-primary" />
               {formatCurrency(summary.pledgedCash)}
             </CardTitle>
+            <p className="text-xs text-muted-foreground">Promises recorded so far</p>
           </CardHeader>
         </Card>
         <Card className="shadow-card">
@@ -444,6 +485,7 @@ export default function Contributions() {
               <ArrowUpRight className="h-5 w-5 text-emerald-600" />
               {formatCurrency(summary.collectedCash)}
             </CardTitle>
+            <p className="text-xs text-muted-foreground">Money already received</p>
           </CardHeader>
         </Card>
         <Card className="shadow-card">
@@ -453,6 +495,7 @@ export default function Contributions() {
               <Gift className="h-5 w-5 text-primary" />
               {formatCurrency(summary.inKindValue)}
             </CardTitle>
+            <p className="text-xs text-muted-foreground">Goods and services pledged</p>
           </CardHeader>
         </Card>
         <Card className="shadow-card">
@@ -462,6 +505,7 @@ export default function Contributions() {
               <Users className="h-5 w-5 text-primary" />
               {summary.contributorCount}
             </CardTitle>
+            <p className="text-xs text-muted-foreground">Unique contributors recorded</p>
           </CardHeader>
         </Card>
       </div>
@@ -501,7 +545,7 @@ export default function Contributions() {
               </Button>
             ))}
           </div>
-          {rounds.length > 0 && (
+          {rounds.length > 0 ? (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {rounds.map((round) => (
                 <div key={round.id} className="rounded-2xl border border-border/70 bg-background/70 p-4">
@@ -527,6 +571,13 @@ export default function Contributions() {
                 </div>
               ))}
             </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border/70 p-6">
+              <p className="text-sm font-medium text-foreground">No rounds yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Add a round for each fundraiser, family meeting, church drive, or committee collection if you want to track them separately.
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -538,7 +589,21 @@ export default function Contributions() {
             Log pledges, fulfilled payments, and in-kind support so the couple and committee always know the real funding position.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/10 p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground">{selectedRoundLabel}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {filteredRows.length
+                  ? `Showing ${filteredRows.length} contribution record${filteredRows.length === 1 ? '' : 's'} for this view.`
+                  : 'No contribution records match this view yet.'}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <Badge variant="outline" className="rounded-full">Outstanding {formatCurrency(summary.outstandingPledges)}</Badge>
+              <Badge variant="outline" className="rounded-full">Collected {formatCurrency(summary.collectedCash)}</Badge>
+            </div>
+          </div>
           {loading ? (
             <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/70 p-6 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -555,6 +620,7 @@ export default function Contributions() {
             <div className="space-y-3">
               {filteredRows.map((row) => {
                 const round = rounds.find((item) => item.id === row.round_id);
+                const rowOutstanding = Math.max(row.pledged_amount - row.paid_amount, 0);
                 return (
                   <div key={row.id} className="rounded-2xl border border-border/70 bg-background/70 p-4">
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -588,6 +654,23 @@ export default function Contributions() {
                         {row.notes && (
                           <p className="text-sm text-muted-foreground">{row.notes}</p>
                         )}
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {rowOutstanding > 0 && row.contribution_type !== 'in_kind' ? (
+                            <Badge variant="outline" className="rounded-full">
+                              Outstanding {formatCurrency(rowOutstanding)}
+                            </Badge>
+                          ) : null}
+                          {row.paid_amount > 0 ? (
+                            <Badge variant="outline" className="rounded-full">
+                              Cash received {formatCurrency(row.paid_amount)}
+                            </Badge>
+                          ) : null}
+                          {row.in_kind_value > 0 ? (
+                            <Badge variant="outline" className="rounded-full">
+                              In-kind value {formatCurrency(row.in_kind_value)}
+                            </Badge>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="grid min-w-[250px] gap-3 sm:grid-cols-3 xl:grid-cols-1">
                         <div className="rounded-2xl border border-border/60 bg-muted/10 p-3">
