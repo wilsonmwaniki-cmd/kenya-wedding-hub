@@ -14,6 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
+  buildContributionReminderMessage,
   contributionPaymentMethodLabel,
   contributionPaymentMethodOptions,
   contributionStatusLabel,
@@ -21,10 +22,11 @@ import {
   contributionStatusTone,
   contributionTypeLabel,
   contributionTypeOptions,
+  getOutstandingContributionAmount,
   summarizeContributions,
 } from '@/lib/contributions';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
-import { ArrowUpRight, Banknote, CalendarDays, Download, Gift, HandCoins, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { ArrowUpRight, Banknote, CalendarDays, Copy, Download, ExternalLink, Gift, HandCoins, Loader2, MessageCircle, Plus, Printer, Share2, Trash2, Users } from 'lucide-react';
 
 type ContributionRound = {
   id: string;
@@ -129,7 +131,7 @@ function formatCurrency(value: number | null | undefined) {
 }
 
 export default function Contributions() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -147,6 +149,8 @@ export default function Contributions() {
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null);
   const [contributionForm, setContributionForm] = useState<ContributionFormState>(emptyContributionForm());
   const [roundForm, setRoundForm] = useState<RoundFormState>(emptyRoundForm());
+  const [shareLink, setShareLink] = useState('');
+  const [creatingShareLink, setCreatingShareLink] = useState(false);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) {
@@ -223,6 +227,109 @@ export default function Contributions() {
       : selectedRoundId === 'unassigned'
         ? 'Unassigned contributions'
         : currentRound?.title ?? 'Selected round';
+  const workspaceName =
+    (isPlanner ? selectedClient?.client_name : profile?.wedding_name) ||
+    profile?.full_name ||
+    'Wedding';
+  const pendingRows = useMemo(
+    () =>
+      filteredRows.filter((row) => {
+        if (row.contribution_type === 'in_kind') return false;
+        if (row.status !== 'pledged' && row.status !== 'partial') return false;
+        return getOutstandingContributionAmount(row) > 0;
+      }),
+    [filteredRows],
+  );
+  const latestShareUrl = shareLink || '';
+
+  const copyText = async (value: string, successTitle: string, successDescription?: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast({ title: successTitle, description: successDescription });
+      return true;
+    } catch {
+      toast({
+        title: 'Could not copy',
+        description: 'Your browser blocked clipboard access. Please copy it manually.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  };
+
+  const buildPendingSummaryMessage = () => {
+    if (!pendingRows.length) {
+      return `No pending pledges in the ${selectedRoundLabel.toLowerCase()} view right now.`;
+    }
+
+    const lines = pendingRows.map((row) => {
+      const outstanding = getOutstandingContributionAmount(row);
+      return `- ${row.contributor_name}: ${formatCurrency(outstanding)} pending${row.purpose ? ` (${row.purpose})` : ''}`;
+    });
+
+    return [
+      `${workspaceName} contribution follow-up`,
+      '',
+      `View: ${selectedRoundLabel}`,
+      `Pending pledges: ${pendingRows.length}`,
+      `Outstanding total: ${formatCurrency(summary.outstandingPledges)}`,
+      '',
+      ...lines,
+    ].join('\n');
+  };
+
+  const ensureShareUrl = async () => {
+    if (latestShareUrl) return latestShareUrl;
+
+    setCreatingShareLink(true);
+    const { data, error } = await supabase.rpc('ensure_contribution_share_token', {
+      _client_id: isPlanner ? selectedClient?.id ?? null : null,
+    });
+    setCreatingShareLink(false);
+
+    if (error || !data) {
+      toast({
+        title: 'Could not create share link',
+        description: error?.message || 'The shareable summary link could not be created right now.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+
+    const origin = window.location.origin;
+    const url = `${origin}/contributions/share/${data}`;
+    setShareLink(url);
+    return url;
+  };
+
+  const copyShareSummaryLink = async () => {
+    const url = await ensureShareUrl();
+    if (!url) return;
+    void copyText(url, 'Share link copied', 'You can send the public contribution summary link now.');
+  };
+
+  const openShareSummaryPage = async () => {
+    const url = await ensureShareUrl();
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const copyMeetingFollowUp = async () => {
+    void copyText(
+      buildPendingSummaryMessage(),
+      'Meeting follow-up copied',
+      'You can now paste the pending pledges summary into WhatsApp or committee notes.',
+    );
+  };
+
+  const printMeetingSummary = () => {
+    window.print();
+  };
+
+  const copyIndividualReminder = async (row: ContributionRow) => {
+    const message = buildContributionReminderMessage(row, workspaceName);
+    void copyText(message, 'Reminder copied', `Follow-up message for ${row.contributor_name} is ready to paste.`);
+  };
 
   const resetContributionForm = (roundId = 'none') => {
     setEditingContributionId(null);
@@ -376,7 +483,7 @@ export default function Contributions() {
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-primary/20 shadow-card">
+      <Card className="overflow-hidden border-primary/20 shadow-card print:hidden">
         <CardContent className="grid gap-5 bg-[radial-gradient(circle_at_top_left,rgba(222,92,43,0.14),transparent_42%),linear-gradient(180deg,rgba(255,249,246,0.96),rgba(255,255,255,0.98))] p-6 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="space-y-5">
             <div>
@@ -412,6 +519,14 @@ export default function Contributions() {
               <Button variant="outline" onClick={exportContributions} disabled={filteredRows.length === 0} className="gap-2">
                 <Download className="h-4 w-4" />
                 Export summary
+              </Button>
+              <Button variant="outline" onClick={printMeetingSummary} className="gap-2">
+                <Printer className="h-4 w-4" />
+                Print meeting summary
+              </Button>
+              <Button variant="outline" onClick={() => void copyShareSummaryLink()} disabled={creatingShareLink} className="gap-2">
+                {creatingShareLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+                Share summary
               </Button>
             </div>
           </div>
@@ -457,7 +572,7 @@ export default function Contributions() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 print:hidden md:grid-cols-2 xl:grid-cols-5">
         <Card className="shadow-card">
           <CardHeader className="pb-2">
             <CardDescription>Wedding target</CardDescription>
@@ -510,7 +625,7 @@ export default function Contributions() {
         </Card>
       </div>
 
-      <Card className="shadow-card">
+      <Card className="shadow-card print:hidden">
         <CardHeader>
           <CardTitle className="font-display text-2xl">Fundraising rounds</CardTitle>
           <CardDescription>Track each family meeting, committee drive, or church fundraiser separately when needed.</CardDescription>
@@ -582,7 +697,98 @@ export default function Contributions() {
         </CardContent>
       </Card>
 
-      <Card className="shadow-card">
+      <Card className="shadow-card print:hidden">
+        <CardHeader>
+          <CardTitle className="font-display text-2xl">Meeting summary</CardTitle>
+          <CardDescription>
+            Use this to follow up pending pledges, open the public summary, or print a clean committee-ready summary.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Current view</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">{selectedRoundLabel}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {pendingRows.length
+                  ? `${pendingRows.length} pending pledge${pendingRows.length === 1 ? '' : 's'} worth ${formatCurrency(summary.outstandingPledges)} still need follow-up.`
+                  : 'Everything in this view is either paid, in-kind, or already cleared.'}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => void copyMeetingFollowUp()} className="gap-2" disabled={!pendingRows.length}>
+                  <Copy className="h-4 w-4" />
+                  Copy pending summary
+                </Button>
+                <Button variant="outline" onClick={() => void openShareSummaryPage()} className="gap-2">
+                  <ExternalLink className="h-4 w-4" />
+                  Open share page
+                </Button>
+              </div>
+              {latestShareUrl ? (
+                <div className="mt-4 rounded-xl border border-border/60 bg-background/75 p-3">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Public summary link</p>
+                  <div className="mt-2 flex gap-2">
+                    <Input readOnly value={latestShareUrl} className="text-xs" />
+                    <Button size="icon" variant="outline" onClick={() => void copyShareSummaryLink()}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-background/75 p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">What to say in the meeting</p>
+              <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                <li>• Budget target: {formatCurrency(fundingTarget)}</li>
+                <li>• Support raised so far: {formatCurrency(summary.totalSupport)}</li>
+                <li>• Outstanding pledges: {formatCurrency(summary.outstandingPledges)}</li>
+                <li>• Contributors tracked: {summary.contributorCount}</li>
+                <li>• Active rounds: {activeRounds}</li>
+              </ul>
+            </div>
+          </div>
+          {pendingRows.length ? (
+            <div className="rounded-2xl border border-border/70">
+              <div className="border-b border-border/70 px-4 py-3">
+                <p className="text-sm font-semibold text-foreground">Pending pledges to follow up</p>
+              </div>
+              <div className="divide-y divide-border/60">
+                {pendingRows.slice(0, 6).map((row) => (
+                  <div key={row.id} className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{row.contributor_name}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Outstanding {formatCurrency(getOutstandingContributionAmount(row))}
+                        {row.purpose ? ` • ${row.purpose}` : ''}
+                        {row.contributor_phone ? ` • ${row.contributor_phone}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" onClick={() => void copyIndividualReminder(row)} className="gap-2">
+                        <Copy className="h-4 w-4" />
+                        Copy reminder
+                      </Button>
+                      {row.contributor_phone ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => window.open(`https://wa.me/${row.contributor_phone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(buildContributionReminderMessage(row, workspaceName))}`, '_blank', 'noopener,noreferrer')}
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          WhatsApp
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-card print:hidden">
         <CardHeader>
           <CardTitle className="font-display text-2xl">Contribution tracker</CardTitle>
           <CardDescription>
@@ -703,6 +909,88 @@ export default function Contributions() {
           )}
         </CardContent>
       </Card>
+
+      <section className="hidden print:block">
+        <div className="space-y-6">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Wedding contributions</p>
+            <h1 className="mt-2 font-display text-3xl font-bold text-foreground">{workspaceName}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">Meeting summary • {selectedRoundLabel}</p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-border p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Funding target</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(fundingTarget)}</p>
+            </div>
+            <div className="rounded-2xl border border-border p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Support raised</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(summary.totalSupport)}</p>
+            </div>
+            <div className="rounded-2xl border border-border p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Outstanding pledges</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(summary.outstandingPledges)}</p>
+            </div>
+            <div className="rounded-2xl border border-border p-4">
+              <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Contributors</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">{summary.contributorCount}</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border p-4">
+            <h2 className="font-display text-2xl font-semibold text-foreground">Rounds overview</h2>
+            {rounds.length ? (
+              <div className="mt-4 space-y-3">
+                {rounds.map((round) => (
+                  <div key={round.id} className="rounded-xl border border-border/70 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-foreground">{round.title}</p>
+                      <span className="text-xs text-muted-foreground">{formatCurrency(round.goal_amount)}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {safeDateLabel(round.starts_on)} {round.ends_on ? `to ${safeDateLabel(round.ends_on)}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-muted-foreground">No separate rounds recorded yet.</p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-border p-4">
+            <h2 className="font-display text-2xl font-semibold text-foreground">Pending pledge follow-up</h2>
+            {pendingRows.length ? (
+              <div className="mt-4 overflow-hidden rounded-xl border border-border/70">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-muted/30 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2">Contributor</th>
+                      <th className="px-3 py-2">Group</th>
+                      <th className="px-3 py-2">Pledged</th>
+                      <th className="px-3 py-2">Paid</th>
+                      <th className="px-3 py-2">Outstanding</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingRows.map((row) => (
+                      <tr key={row.id} className="border-t border-border/60">
+                        <td className="px-3 py-2">{row.contributor_name}</td>
+                        <td className="px-3 py-2">{row.contributor_group ?? '—'}</td>
+                        <td className="px-3 py-2">{formatCurrency(row.pledged_amount)}</td>
+                        <td className="px-3 py-2">{formatCurrency(row.paid_amount)}</td>
+                        <td className="px-3 py-2">{formatCurrency(getOutstandingContributionAmount(row))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-muted-foreground">No pending pledges in this view.</p>
+            )}
+          </div>
+        </div>
+      </section>
 
       <Dialog open={roundDialogOpen} onOpenChange={setRoundDialogOpen}>
         <DialogContent className="sm:max-w-lg">

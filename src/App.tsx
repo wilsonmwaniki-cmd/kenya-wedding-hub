@@ -21,6 +21,7 @@ const Budget = lazy(() => import("./pages/Budget"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const Guests = lazy(() => import("./pages/Guests"));
 const Contributions = lazy(() => import("./pages/Contributions"));
+const ContributionsShare = lazy(() => import("./pages/ContributionsShare"));
 const GiftRegistry = lazy(() => import("./pages/GiftRegistry"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const VendorDirectory = lazy(() => import("./pages/VendorDirectory"));
@@ -92,6 +93,7 @@ const App = () => (
                   <Route path="/tasks" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Tasks /></ProtectedPage>} />
                   <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Guests /></ProtectedPage>} />
                   <Route path="/contributions" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Contributions /></ProtectedPage>} />
+                  <Route path="/contributions/share/:token" element={<ContributionsShare />} />
                   <Route path="/gift-registry" element={<ProtectedPage allowedRoles={['couple', 'planner']}><GiftRegistry /></ProtectedPage>} />
                   <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
                   <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
