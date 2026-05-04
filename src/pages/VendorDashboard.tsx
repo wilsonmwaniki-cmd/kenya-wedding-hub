@@ -633,6 +633,23 @@ export default function VendorDashboard() {
         </CardContent>
       </Card>
 
+      <Card className="border-primary/20 bg-primary/5 shadow-card">
+        <CardContent className="flex flex-col gap-4 py-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="font-display text-xl text-foreground">Commercial documents</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Create quotes, track invoice balances, and issue receipts without leaving your vendor workspace.
+            </p>
+          </div>
+          <Button asChild className="gap-2 self-start lg:self-auto">
+            <Link to="/vendor-documents">
+              Open documents
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-4">
         <Card className="shadow-card">

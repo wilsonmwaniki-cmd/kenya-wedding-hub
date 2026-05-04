@@ -45,6 +45,7 @@ const plannerNavItems = [
 
 const vendorNavItems = [
   { path: '/vendor-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/vendor-documents', label: 'Documents', icon: NotebookPen },
   { path: '/vendor-settings', label: 'My Listing', icon: Store },
   { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
