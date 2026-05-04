@@ -43,8 +43,7 @@ import {
   getCommercialDocument,
   issueReceiptFromPayment,
   listCommercialDocuments,
-  listVendorBookingOptions,
-  listVendorListingOptions,
+  listPlannerClientOptions,
   recordCommercialDocumentPayment,
   saveCommercialDocumentItems,
   updateCommercialDocument,
@@ -53,9 +52,8 @@ import {
   type CommercialDocumentRecord,
   type CommercialDocumentStatus,
   type CommercialDocumentType,
+  type PlannerClientOption,
   type SaveCommercialDocumentItemInput,
-  type VendorBookingOption,
-  type VendorListingOption,
 } from '@/lib/commercialDocuments';
 
 type CreateDocumentDraft = {
@@ -65,8 +63,7 @@ type CreateDocumentDraft = {
   recipientEmail: string;
   recipientPhone: string;
   weddingName: string;
-  vendorListingId: string;
-  vendorId: string;
+  clientId: string;
   issueDate: string;
   dueDate: string;
   notes: string;
@@ -104,7 +101,7 @@ function nextDueDateValue(type: CommercialDocumentType) {
   return nextWeek.toISOString().slice(0, 10);
 }
 
-export default function VendorDocuments() {
+export default function PlannerDocuments() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -112,8 +109,7 @@ export default function VendorDocuments() {
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<CommercialDocumentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [vendorListings, setVendorListings] = useState<VendorListingOption[]>([]);
-  const [vendorBookings, setVendorBookings] = useState<VendorBookingOption[]>([]);
+  const [plannerClients, setPlannerClients] = useState<PlannerClientOption[]>([]);
   const [search, setSearch] = useState('');
   const [activeType, setActiveType] = useState<FilterType>('all');
   const [createOpen, setCreateOpen] = useState(false);
@@ -130,8 +126,7 @@ export default function VendorDocuments() {
     recipientEmail: '',
     recipientPhone: '',
     weddingName: '',
-    vendorListingId: '',
-    vendorId: '',
+    clientId: '',
     issueDate: todayIso(),
     dueDate: nextDueDateValue('quote'),
     notes: '',
@@ -160,7 +155,7 @@ export default function VendorDocuments() {
 
   const loadDocuments = async (preferredId?: string | null) => {
     const next = await listCommercialDocuments({
-      role: 'vendor',
+      role: 'planner',
       documentType: activeType === 'all' ? undefined : activeType,
       search: search.trim() || undefined,
     });
@@ -177,23 +172,19 @@ export default function VendorDocuments() {
 
     const load = async () => {
       try {
-        const [listings, bookings] = await Promise.all([
-          listVendorListingOptions(),
-          listVendorBookingOptions(),
-        ]);
+        const clients = await listPlannerClientOptions();
 
         if (cancelled) return;
 
-        setVendorListings(listings);
-        setVendorBookings(bookings);
+        setPlannerClients(clients);
         setCreateDraft((current) => ({
           ...current,
-          vendorListingId: current.vendorListingId || listings[0]?.id || '',
+          clientId: current.clientId || clients[0]?.id || '',
         }));
 
         await loadDocuments();
       } catch (error) {
-        console.error('Could not load vendor documents workspace:', error);
+        console.error('Could not load planner documents workspace:', error);
         toast({
           title: 'Could not load documents',
           description: 'We could not open your commercial documents workspace.',
@@ -220,7 +211,7 @@ export default function VendorDocuments() {
       try {
         await loadDocuments(selectedDocumentId);
       } catch (error) {
-        console.error('Could not refresh vendor documents:', error);
+        console.error('Could not refresh planner documents:', error);
       } finally {
         if (!cancelled) setRefreshing(false);
       }
@@ -307,21 +298,23 @@ export default function VendorDocuments() {
     };
   }, [documents]);
 
-  const selectedBooking = useMemo(
-    () => vendorBookings.find((booking) => booking.id === createDraft.vendorId) ?? null,
-    [vendorBookings, createDraft.vendorId],
+  const selectedClient = useMemo(
+    () => plannerClients.find((client) => client.id === createDraft.clientId) ?? null,
+    [plannerClients, createDraft.clientId],
   );
 
   useEffect(() => {
-    if (!selectedBooking) return;
+    if (!selectedClient) return;
     setCreateDraft((current) => ({
       ...current,
-      weddingName: current.weddingName || selectedBooking.coupleName,
+      recipientName: current.recipientName || selectedClient.label,
+      recipientEmail: current.recipientEmail || selectedClient.email || '',
+      weddingName: current.weddingName || selectedClient.label,
       title:
         current.title ||
-        `${commercialDocumentTypeLabel(current.documentType)} for ${selectedBooking.coupleName}`,
+        `${commercialDocumentTypeLabel(current.documentType)} for ${selectedClient.label}`,
     }));
-  }, [selectedBooking]);
+  }, [selectedClient]);
 
   const handleCreate = async () => {
     if (!createDraft.recipientName.trim()) {
@@ -345,15 +338,14 @@ export default function VendorDocuments() {
     setSavingHeader(true);
     try {
       const created = await createCommercialDocument({
-        role: 'vendor',
+        role: 'planner',
         documentType: createDraft.documentType,
         title: createDraft.title.trim(),
         recipientName: createDraft.recipientName.trim(),
         recipientEmail: createDraft.recipientEmail.trim() || null,
         recipientPhone: createDraft.recipientPhone.trim() || null,
         weddingName: createDraft.weddingName.trim() || null,
-        vendorListingId: createDraft.vendorListingId || null,
-        vendorId: createDraft.vendorId || null,
+        clientId: createDraft.clientId || null,
         issueDate: createDraft.issueDate || null,
         dueDate: createDraft.documentType === 'receipt' ? null : createDraft.dueDate || null,
         notes: createDraft.notes.trim() || null,
@@ -370,7 +362,7 @@ export default function VendorDocuments() {
         recipientEmail: '',
         recipientPhone: '',
         weddingName: '',
-        vendorId: '',
+        clientId: '',
         issueDate: todayIso(),
         dueDate: nextDueDateValue(current.documentType),
         notes: '',
@@ -607,7 +599,7 @@ export default function VendorDocuments() {
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Commercial documents</p>
                 <CardTitle className="font-display text-3xl text-foreground">Quotes, invoices, and receipts</CardTitle>
                 <CardDescription className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                  Keep every client-facing document in one vendor workspace so your quote, payment trail, and receipt story always matches.
+                  Keep every client-facing document in one planner workspace so your proposal, invoice, and receipt story always matches.
                 </CardDescription>
               </div>
               <Button onClick={() => setCreateOpen(true)} className="gap-2">
@@ -646,7 +638,7 @@ export default function VendorDocuments() {
         <Card className="border-border/70 bg-card shadow-card">
           <CardHeader>
             <CardTitle className="font-display text-lg">At a glance</CardTitle>
-            <CardDescription>Quick health check for the money trail behind your vendor work.</CardDescription>
+            <CardDescription>Quick health check for the money trail behind your planner work.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -1147,24 +1139,24 @@ export default function VendorDocuments() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Vendor listing</Label>
+              <Label>Linked client</Label>
               <Select
-                value={createDraft.vendorListingId || 'none'}
+                value={createDraft.clientId || 'none'}
                 onValueChange={(value) =>
                   setCreateDraft((current) => ({
                     ...current,
-                    vendorListingId: value === 'none' ? '' : value,
+                    clientId: value === 'none' ? '' : value,
                   }))
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Choose listing" />
+                  <SelectValue placeholder="Choose client" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No listing link</SelectItem>
-                  {vendorListings.map((listing) => (
-                    <SelectItem key={listing.id} value={listing.id}>
-                      {listing.label}
+                  <SelectItem value="none">No client link</SelectItem>
+                  {plannerClients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1175,7 +1167,7 @@ export default function VendorDocuments() {
               <Input
                 value={createDraft.title}
                 onChange={(event) => setCreateDraft((current) => ({ ...current, title: event.target.value }))}
-                placeholder="e.g. Photography quote for Mary & James"
+                placeholder="e.g. Planning proposal for Mary & James"
               />
             </div>
             <div className="space-y-2">
@@ -1183,7 +1175,7 @@ export default function VendorDocuments() {
               <Input
                 value={createDraft.recipientName}
                 onChange={(event) => setCreateDraft((current) => ({ ...current, recipientName: event.target.value }))}
-                placeholder="Couple, planner, or contact name"
+                placeholder="Couple or main contact name"
               />
             </div>
             <div className="space-y-2">
@@ -1211,26 +1203,8 @@ export default function VendorDocuments() {
                 placeholder="+254..."
               />
             </div>
-            <div className="space-y-2">
-              <Label>Link to vendor booking</Label>
-              <Select
-                value={createDraft.vendorId || 'none'}
-                onValueChange={(value) =>
-                  setCreateDraft((current) => ({ ...current, vendorId: value === 'none' ? '' : value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose booking" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No booking link</SelectItem>
-                  {vendorBookings.map((booking) => (
-                    <SelectItem key={booking.id} value={booking.id}>
-                      {booking.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="rounded-2xl border border-border bg-muted/10 p-4 text-sm text-muted-foreground">
+              Link documents to a planner client so your proposals, invoices, and receipts stay attached to the right wedding workspace.
             </div>
             <div className="space-y-2">
               <Label>Issue date</Label>
