@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles, ArrowRightLeft, ArrowLeft, Download } from 'lucide-react';
@@ -308,6 +308,7 @@ export default function Vendors() {
   const [form, setForm] = useState({ name: '', category: 'Venue', phone: '', price: '' });
   const [dirSearch, setDirSearch] = useState('');
   const [dirResults, setDirResults] = useState<DirectoryVendor[]>([]);
+  const [directoryPool, setDirectoryPool] = useState<DirectoryVendor[]>([]);
   const [dirLoading, setDirLoading] = useState(false);
   const [benchmarksLoading, setBenchmarksLoading] = useState(false);
   const [categoryBenchmarks, setCategoryBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
@@ -628,24 +629,51 @@ export default function Vendors() {
     };
   }, [open, mode, form.category, selectedClient?.wedding_location]);
 
-  const searchDirectory = async (q: string) => {
-    setDirSearch(q);
-    if (q.trim().length < 2) {
+  useEffect(() => {
+    if (!open || mode !== 'directory' || directoryPool.length) return;
+
+    let active = true;
+    const fetchDirectory = async () => {
+      setDirLoading(true);
+      try {
+        const { data } = await supabase
+          .from('vendor_listings')
+          .select('id, business_name, category, phone, email, location, is_verified')
+          .eq('is_approved', true)
+          .order('business_name')
+          .limit(200);
+
+        if (active) setDirectoryPool((data as DirectoryVendor[]) || []);
+      } finally {
+        if (active) setDirLoading(false);
+      }
+    };
+
+    void fetchDirectory();
+    return () => {
+      active = false;
+    };
+  }, [open, mode, directoryPool.length]);
+
+  useEffect(() => {
+    if (mode !== 'directory') return;
+    const query = dirSearch.trim().toLowerCase();
+    if (query.length < 2) {
       setDirResults([]);
       return;
     }
 
-    setDirLoading(true);
-    const { data } = await supabase
-      .from('vendor_listings')
-      .select('id, business_name, category, phone, email, location, is_verified')
-      .eq('is_approved', true)
-      .ilike('business_name', `%${q}%`)
-      .limit(10);
+    const nextResults = directoryPool
+      .filter((vendor) => {
+        const haystack = [vendor.business_name, vendor.category, vendor.location ?? '']
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(query);
+      })
+      .slice(0, 20);
 
-    setDirResults((data as DirectoryVendor[]) || []);
-    setDirLoading(false);
-  };
+    setDirResults(nextResults);
+  }, [dirSearch, directoryPool, mode]);
 
   const addFromDirectory = async (dv: DirectoryVendor) => {
     if (!user) return;
@@ -681,10 +709,18 @@ export default function Vendors() {
   const addVendor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (!form.name.trim()) {
+      toast({
+        title: 'Add a vendor name',
+        description: 'Enter the business name before saving the vendor.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     const insert: Record<string, unknown> = {
       user_id: user.id,
-      name: form.name,
+      name: form.name.trim(),
       category: form.category,
       phone: form.phone || null,
       price: form.price ? parseFloat(form.price) : null,
@@ -1498,9 +1534,10 @@ export default function Vendors() {
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button className="gap-2"><Plus className="h-4 w-4" /> Add Vendor</Button>
-      </DialogTrigger>
+      <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
+        <Plus className="h-4 w-4" />
+        Add Vendor
+      </Button>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader><DialogTitle className="font-display">Add Vendor</DialogTitle></DialogHeader>
         <div className="flex gap-2 border-b border-border pb-3">
@@ -1513,8 +1550,8 @@ export default function Vendors() {
         </div>
         {mode === 'directory' ? (
           <div className="space-y-3">
-            <Input placeholder="Search verified vendors…" value={dirSearch} onChange={(e) => searchDirectory(e.target.value)} autoFocus />
-            {dirLoading && <p className="text-sm text-muted-foreground">Searching…</p>}
+            <Input placeholder="Search verified vendors…" value={dirSearch} onChange={(e) => setDirSearch(e.target.value)} autoFocus />
+            {dirLoading && <p className="text-sm text-muted-foreground">Loading directory…</p>}
             {dirResults.length > 0 ? (
               <div className="max-h-60 overflow-y-auto space-y-2">
                 {dirResults.map((dv) => {

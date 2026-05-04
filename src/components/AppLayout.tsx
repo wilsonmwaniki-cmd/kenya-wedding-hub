@@ -6,7 +6,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift
+  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +19,7 @@ const coupleNavItems = [
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
+  { path: '/contributions', label: 'Contributions', icon: HandCoins },
   { path: '/gift-registry', label: 'Gift Registry', icon: Gift },
   { path: '/vendors', label: 'Vendors', icon: Store },
   { path: '/timeline', label: 'Timeline', icon: Clock },
@@ -33,6 +34,7 @@ const plannerNavItems = [
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
+  { path: '/contributions', label: 'Contributions', icon: HandCoins },
   { path: '/gift-registry', label: 'Gift Registry', icon: Gift },
   { path: '/vendors', label: 'Vendors', icon: Store },
   { path: '/timeline', label: 'Timeline', icon: Clock },
@@ -89,7 +91,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !selectedClient;
-  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/gift-registry', '/vendors', '/timeline', '/portfolio'];
+  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/contributions', '/gift-registry', '/vendors', '/timeline', '/portfolio'];
 
   const previewOptions: Array<{ value: RolePreview; label: string }> = [
     { value: 'admin', label: 'Admin' },

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -44,11 +44,81 @@ interface Guest {
   rsvp_token: string;
 }
 
-const GUEST_GROUPS = ['Bride Family', 'Groom Family', 'Friends', 'Work Colleagues', 'Committee', 'Church'];
+const GUEST_GROUPS = ["Bride's Guests", "Groom's Guests", "Bride's Parents' Guests", "Groom's Parents' Guests"];
 const GUEST_CATEGORIES = ['general', 'vip', 'family', 'friends', 'kids', 'vendor'];
 
-async function loadExcelJs() {
-  return import('exceljs');
+function parseCsvLine(line: string) {
+  const values: string[] = [];
+  let current = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === '"') {
+      if (insideQuotes && next === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !insideQuotes) {
+      values.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current.trim());
+  return values;
+}
+
+function parseCsv(text: string) {
+  const lines = text
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return [];
+
+  const headers = parseCsvLine(lines[0]);
+  return lines.slice(1).map((line) => {
+    const values = parseCsvLine(line);
+    return headers.reduce<Record<string, string>>((row, header, index) => {
+      row[header] = values[index] ?? '';
+      return row;
+    }, {});
+  });
+}
+
+function downloadCsvFile(filename: string, rows: string[][]) {
+  const csv = rows
+    .map((row) =>
+      row
+        .map((value) => {
+          const normalized = String(value ?? '');
+          return /[",\n]/.test(normalized)
+            ? `"${normalized.replace(/"/g, '""')}"`
+            : normalized;
+        })
+        .join(','),
+    )
+    .join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function Guests() {
@@ -107,21 +177,8 @@ export default function Guests() {
     if (!file || !user) return;
     setUploading(true);
     try {
-      const data = await file.arrayBuffer();
-      const { default: ExcelJS } = await loadExcelJs();
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(data);
-      const sheet = workbook.worksheets[0];
-      if (!sheet) { toast({ title: 'Empty file', description: 'No worksheets found.', variant: 'destructive' }); return; }
-      const headers: string[] = [];
-      sheet.getRow(1).eachCell((cell, colNumber) => { headers[colNumber - 1] = String(cell.value || ''); });
-      const rows: Record<string, any>[] = [];
-      sheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-        const obj: Record<string, any> = {};
-        row.eachCell((cell, colNumber) => { obj[headers[colNumber - 1]] = cell.value; });
-        rows.push(obj);
-      });
+      const text = await file.text();
+      const rows = parseCsv(text);
       if (rows.length === 0) { toast({ title: 'Empty file', variant: 'destructive' }); return; }
 
       const guestRows = rows.map(row => {
@@ -153,23 +210,21 @@ export default function Guests() {
   };
 
   const downloadTemplate = async () => {
-    const { default: ExcelJS } = await loadExcelJs();
-    const workbook = new ExcelJS.Workbook();
-    const ws = workbook.addWorksheet('Guests');
-    ws.addRow(['Name', 'Email', 'Phone', 'RSVP', 'Meal Preference', 'Plus One', 'Group', 'Category']);
-    ws.addRow(['Jane Doe', 'jane@example.com', '+254700000000', 'pending', 'Vegetarian', 'No', 'Bride Family', 'family']);
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'guest-list-template.xlsx'; a.click();
-    URL.revokeObjectURL(url);
+    downloadCsvFile('guest-list-template.csv', [
+      ['Name', 'Email', 'Phone', 'RSVP', 'Meal Preference', 'Plus One', 'Group', 'Category'],
+      ['Jane Doe', 'jane@example.com', '+254700000000', 'pending', 'Vegetarian', 'No', "Bride's Guests", 'family'],
+    ]);
   };
 
   const addGuest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    if (!name.trim()) {
+      toast({ title: 'Add a guest name', description: 'Enter the guest name before saving.', variant: 'destructive' });
+      return;
+    }
     const insert: any = {
-      user_id: user.id, name, email: email || null, phone: phone || null,
+      user_id: user.id, name: name.trim(), email: email || null, phone: phone || null,
       rsvp_status: rsvp, group_name: groupName || null, category,
     };
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
@@ -381,12 +436,12 @@ export default function Guests() {
           <p className="text-muted-foreground">{guests.length} guests · {confirmed} confirmed</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <input type="file" ref={fileInputRef} accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="hidden" />
+          <input type="file" ref={fileInputRef} accept=".csv" onChange={handleFileUpload} className="hidden" />
           <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
-            <Download className="h-4 w-4" /> Template
+            <Download className="h-4 w-4" /> CSV Template
           </Button>
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="gap-2">
-            <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}
+            <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload CSV'}
           </Button>
           <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} className="gap-2">
             <UserCheck className="h-4 w-4" /> Check-In
@@ -397,9 +452,10 @@ export default function Guests() {
             </Button>
           )}
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2"><Plus className="h-4 w-4" /> Add Guest</Button>
-            </DialogTrigger>
+            <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add Guest
+            </Button>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
               <DialogHeader><DialogTitle className="font-display">Add Guest</DialogTitle></DialogHeader>
               <form onSubmit={addGuest} className="space-y-4">

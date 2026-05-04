@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight, MapPin, Receipt, BriefcaseBusiness, AlertTriangle, ShieldCheck, EyeOff } from 'lucide-react';
+import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight, MapPin, Receipt, BriefcaseBusiness, AlertTriangle, ShieldCheck, EyeOff, HandCoins } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
@@ -18,6 +18,7 @@ import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { getMyWeddingOwnershipSummary, type MyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
+import { summarizeContributions, type ContributionSummaryRow } from '@/lib/contributions';
 
 interface DashboardStats {
   totalBudget: number;
@@ -84,6 +85,10 @@ interface TaskDigestRow {
   phase: string | null;
 }
 
+interface ContributionDigestRow extends ContributionSummaryRow {
+  id: string;
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   prep: 'bg-blue-100 text-blue-700 border-blue-200',
   ceremony: 'bg-amber-100 text-amber-700 border-amber-200',
@@ -123,6 +128,7 @@ export default function Dashboard() {
   const [budgetDigestRows, setBudgetDigestRows] = useState<BudgetDigestRow[]>([]);
   const [vendorDigestRows, setVendorDigestRows] = useState<VendorDigestRow[]>([]);
   const [taskDigestRows, setTaskDigestRows] = useState<TaskDigestRow[]>([]);
+  const [contributionRows, setContributionRows] = useState<ContributionDigestRow[]>([]);
   const [ownedWeddingSummary, setOwnedWeddingSummary] = useState<MyWeddingOwnershipSummary | null>(null);
 
   useEffect(() => {
@@ -135,7 +141,7 @@ export default function Dashboard() {
     if (!user || !dataOrFilter) return;
 
     const load = async () => {
-      const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows] = await Promise.all([
+      const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows, contributions] = await Promise.all([
         supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope, visibility').or(dataOrFilter),
         supabase.from('tasks').select('id, title, due_date, completed, visibility, phase').or(dataOrFilter),
         supabase.from('guests').select('rsvp_status').or(dataOrFilter),
@@ -152,6 +158,10 @@ export default function Dashboard() {
           .or(dataOrFilter)
           .not('source_vendor_id', 'is', null)
           .order('due_date', { ascending: true, nullsFirst: false }),
+        (supabase as any)
+          .from('wedding_contributions')
+          .select('id, contributor_name, contribution_type, status, pledged_amount, paid_amount, in_kind_value')
+          .or(dataOrFilter),
       ]);
       setStats({
         totalBudget: budget.data?.reduce((s, b) => s + Number(b.allocated), 0) ?? 0,
@@ -178,6 +188,15 @@ export default function Dashboard() {
       setTaskDigestRows(((tasks.data ?? []) as any[]).map((row) => ({
         ...row,
         visibility: row.visibility ?? 'public',
+      })));
+      setContributionRows(((contributions.data ?? []) as any[]).map((row) => ({
+        id: row.id,
+        contributor_name: row.contributor_name ?? null,
+        contribution_type: row.contribution_type ?? 'cash',
+        status: row.status ?? 'pledged',
+        pledged_amount: Number(row.pledged_amount ?? 0),
+        paid_amount: Number(row.paid_amount ?? 0),
+        in_kind_value: Number(row.in_kind_value ?? 0),
       })));
       setFinalVendors(((finalVendorRows.data ?? []) as any[]).map((vendor) => ({
         ...vendor,
@@ -301,6 +320,13 @@ export default function Dashboard() {
       icon: Users,
     },
     {
+      label: 'Contributions',
+      href: '/contributions',
+      summary: `KES ${contributionSummary.totalSupport.toLocaleString()} raised`,
+      description: `${contributionSummary.pendingCount} pledge${contributionSummary.pendingCount === 1 ? '' : 's'} still pending.`,
+      icon: HandCoins,
+    },
+    {
       label: 'Tasks',
       href: '/tasks',
       summary: `${stats.completedTasks} of ${stats.totalTasks} done`,
@@ -365,6 +391,21 @@ export default function Dashboard() {
     () => [...publicTasks].sort((left, right) => (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31'))[0] ?? null,
     [publicTasks],
   );
+  const topPendingTasks = useMemo(
+    () =>
+      [...pendingTasks]
+        .sort((left, right) => (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31'))
+        .slice(0, 3),
+    [pendingTasks],
+  );
+  const contributionSummary = useMemo(
+    () => summarizeContributions(contributionRows),
+    [contributionRows],
+  );
+  const contributionCoveragePercentage = stats.totalBudget > 0
+    ? Math.min((contributionSummary.totalSupport / stats.totalBudget) * 100, 100)
+    : 0;
+  const contributionGap = Math.max(stats.totalBudget - contributionSummary.totalSupport, 0);
 
   const vendorDecisionsPending = useMemo(() => {
     const byCategory = vendorDigestRows.reduce((summary, vendor) => {
@@ -579,6 +620,156 @@ export default function Dashboard() {
                   {weddingLocation || 'Add location'}
                 </p>
               </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/20 shadow-card">
+        <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.15fr_0.85fr] lg:p-6">
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Start Here</p>
+              <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Your next tasks</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                See the first few actions right away, then open the full task list when you want to plan in more detail.
+              </p>
+            </div>
+
+            {topPendingTasks.length > 0 ? (
+              <div className="space-y-3">
+                {topPendingTasks.map((task) => (
+                  <div key={task.id} className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-foreground">{task.title}</p>
+                          <Badge variant="outline" className="rounded-full text-[11px]">
+                            {task.visibility === 'private' ? 'Private' : 'Shared'}
+                          </Badge>
+                          {task.phase && (
+                            <Badge variant="outline" className="rounded-full text-[11px]">
+                              {task.phase.replace(/_/g, ' ')}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {task.due_date
+                            ? `Due ${new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                            : 'No due date set yet'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/15 p-5">
+                <p className="text-sm font-medium text-foreground">No tasks yet</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Start with your first wedding checklist items so the rest of the workspace has something concrete to organize around.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-border/70 bg-background/80 p-5">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Task snapshot</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{pendingTasks.length}</p>
+              <p className="mt-1 text-sm text-muted-foreground">Open tasks still need attention</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Private next</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{nextPrivateTask?.title ?? 'No private task pending'}</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Shared next</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{nextPublicTask?.title ?? 'No shared task pending'}</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button asChild className="justify-start gap-2">
+                <Link to="/tasks">
+                  <CheckSquare className="h-4 w-4" />
+                  Open task workspace
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="justify-start gap-2">
+                <Link to="/contributions">
+                  <HandCoins className="h-4 w-4" />
+                  Open contributions
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="justify-start gap-2">
+                <Link to="/budget">
+                  <Wallet className="h-4 w-4" />
+                  Continue into budget
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/15 shadow-card">
+        <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.05fr_0.95fr] lg:p-6">
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Wedding Fund</p>
+              <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Contributions at a glance</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Keep pledges, cash received, and in-kind support tied to the wedding budget so the committee always knows the real gap.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Raised</p>
+                <p className="mt-2 text-lg font-semibold text-foreground">KES {contributionSummary.totalSupport.toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Pledged</p>
+                <p className="mt-2 text-lg font-semibold text-foreground">KES {contributionSummary.pledgedCash.toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">In-kind</p>
+                <p className="mt-2 text-lg font-semibold text-foreground">KES {contributionSummary.inKindValue.toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Pending pledges</p>
+                <p className="mt-2 text-lg font-semibold text-foreground">{contributionSummary.pendingCount}</p>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-background/80 p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Budget coverage</p>
+                <p className="mt-2 text-3xl font-semibold text-foreground">{Math.round(contributionCoveragePercentage)}%</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {stats.totalBudget > 0
+                    ? `KES ${contributionGap.toLocaleString()} still uncovered`
+                    : 'Set your wedding budget to see the live funding gap.'}
+                </p>
+              </div>
+              <Badge variant="outline" className="rounded-full px-3 py-1">
+                {contributionSummary.contributorCount} supporter{contributionSummary.contributorCount === 1 ? '' : 's'}
+              </Badge>
+            </div>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button asChild className="justify-start gap-2">
+                <Link to="/contributions">
+                  <HandCoins className="h-4 w-4" />
+                  Open contributions tracker
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="justify-start gap-2">
+                <Link to="/budget">
+                  <Wallet className="h-4 w-4" />
+                  Compare against budget
+                </Link>
+              </Button>
             </div>
           </div>
         </CardContent>
