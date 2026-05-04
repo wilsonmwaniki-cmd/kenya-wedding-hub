@@ -108,6 +108,9 @@ export type VendorListingOption = {
   id: string;
   label: string;
   category: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
   primaryCounty: string | null;
   primaryTown: string | null;
 };
@@ -118,6 +121,52 @@ export type VendorBookingOption = {
   coupleName: string;
   paymentStatus: string | null;
   quotedAmount: number | null;
+};
+
+export type SharedCommercialDocument = {
+  id: string;
+  role: CommercialDocumentRole;
+  documentType: CommercialDocumentType;
+  documentNumber: string;
+  title: string;
+  status: CommercialDocumentStatus;
+  currency: string;
+  recipientName: string;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  weddingName: string | null;
+  issueDate: string;
+  dueDate: string | null;
+  paidDate: string | null;
+  notes: string | null;
+  terms: string | null;
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  amountPaid: number;
+  balanceDue: number;
+  issuerName: string;
+  issuerEmail: string | null;
+  issuerPhone: string | null;
+  issuerWebsite: string | null;
+  issuerLocation: string | null;
+  items: Array<{
+    id: string;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+    sortOrder: number;
+  }>;
+  payments: Array<{
+    id: string;
+    amount: number;
+    paymentDate: string;
+    paymentMethod: CommercialDocumentPaymentMethod;
+    reference: string | null;
+    notes: string | null;
+  }>;
 };
 
 export type CreateCommercialDocumentInput = {
@@ -501,6 +550,127 @@ export async function issueReceiptFromPayment(documentId: string, paymentId: str
   return mapCommercialDocument(data as Record<string, unknown>);
 }
 
+export async function ensureCommercialDocumentShareToken(documentId: string) {
+  const { data, error } = await (supabase as any).rpc('ensure_commercial_document_share_token', {
+    _document_id: documentId,
+  });
+
+  if (error) throw error;
+  return String(data);
+}
+
+export async function getSharedCommercialDocument(shareToken: string) {
+  const { data, error } = await (supabase as any).rpc('get_shared_commercial_document', {
+    _share_token: shareToken,
+  });
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as Record<string, unknown>;
+  return {
+    id: String(row.id),
+    role: row.role === 'planner' ? 'planner' : 'vendor',
+    documentType:
+      row.documentType === 'invoice' || row.documentType === 'receipt' ? row.documentType : 'quote',
+    documentNumber: String(row.documentNumber ?? ''),
+    title: String(row.title ?? ''),
+    status: String(row.status ?? 'draft') as CommercialDocumentStatus,
+    currency: String(row.currency ?? 'KES'),
+    recipientName: String(row.recipientName ?? ''),
+    recipientEmail: typeof row.recipientEmail === 'string' ? row.recipientEmail : null,
+    recipientPhone: typeof row.recipientPhone === 'string' ? row.recipientPhone : null,
+    weddingName: typeof row.weddingName === 'string' ? row.weddingName : null,
+    issueDate: String(row.issueDate ?? ''),
+    dueDate: typeof row.dueDate === 'string' ? row.dueDate : null,
+    paidDate: typeof row.paidDate === 'string' ? row.paidDate : null,
+    notes: typeof row.notes === 'string' ? row.notes : null,
+    terms: typeof row.terms === 'string' ? row.terms : null,
+    subtotal: toNumber(row.subtotal),
+    discountAmount: toNumber(row.discountAmount),
+    taxAmount: toNumber(row.taxAmount),
+    totalAmount: toNumber(row.totalAmount),
+    amountPaid: toNumber(row.amountPaid),
+    balanceDue: toNumber(row.balanceDue),
+    issuerName: String(row.issuerName ?? ''),
+    issuerEmail: typeof row.issuerEmail === 'string' ? row.issuerEmail : null,
+    issuerPhone: typeof row.issuerPhone === 'string' ? row.issuerPhone : null,
+    issuerWebsite: typeof row.issuerWebsite === 'string' ? row.issuerWebsite : null,
+    issuerLocation: typeof row.issuerLocation === 'string' ? row.issuerLocation : null,
+    items: Array.isArray(row.items)
+      ? row.items.map((item) => ({
+          id: String((item as Record<string, unknown>).id ?? ''),
+          description: String((item as Record<string, unknown>).description ?? ''),
+          quantity: toNumber((item as Record<string, unknown>).quantity),
+          unitPrice: toNumber((item as Record<string, unknown>).unitPrice),
+          lineTotal: toNumber((item as Record<string, unknown>).lineTotal),
+          sortOrder: toNumber((item as Record<string, unknown>).sortOrder),
+        }))
+      : [],
+    payments: Array.isArray(row.payments)
+      ? row.payments.map((payment) => ({
+          id: String((payment as Record<string, unknown>).id ?? ''),
+          amount: toNumber((payment as Record<string, unknown>).amount),
+          paymentDate: String((payment as Record<string, unknown>).paymentDate ?? ''),
+          paymentMethod:
+            (payment as Record<string, unknown>).paymentMethod === 'mpesa' ||
+            (payment as Record<string, unknown>).paymentMethod === 'bank' ||
+            (payment as Record<string, unknown>).paymentMethod === 'cash' ||
+            (payment as Record<string, unknown>).paymentMethod === 'card'
+              ? ((payment as Record<string, unknown>).paymentMethod as CommercialDocumentPaymentMethod)
+              : 'other',
+          reference: typeof (payment as Record<string, unknown>).reference === 'string'
+            ? ((payment as Record<string, unknown>).reference as string)
+            : null,
+          notes: typeof (payment as Record<string, unknown>).notes === 'string'
+            ? ((payment as Record<string, unknown>).notes as string)
+            : null,
+        }))
+      : [],
+  } satisfies SharedCommercialDocument;
+}
+
+export function canonicalZaniaOrigin(origin?: string) {
+  if (!origin) return 'https://www.zaniaweddings.com';
+  try {
+    const url = new URL(origin);
+    if (url.hostname === 'zaniaweddings.com' || url.hostname === 'www.zaniaweddings.com') {
+      return 'https://www.zaniaweddings.com';
+    }
+    return url.origin;
+  } catch {
+    return 'https://www.zaniaweddings.com';
+  }
+}
+
+export function buildCommercialDocumentShareUrl(shareToken: string, origin?: string) {
+  return `${canonicalZaniaOrigin(origin)}/documents/share/${shareToken}`;
+}
+
+export function buildCommercialDocumentShareEmailDraft(input: {
+  document: Pick<CommercialDocumentRecord, 'documentNumber' | 'title' | 'documentType' | 'recipientName' | 'totalAmount' | 'dueDate'>;
+  shareUrl: string;
+}) {
+  const subject = `${commercialDocumentTypeLabel(input.document.documentType)} ${input.document.documentNumber}`;
+  const dueLine = input.document.dueDate
+    ? `Due date: ${new Date(input.document.dueDate).toLocaleDateString('en-KE')}\n`
+    : '';
+  const body =
+    `Hello ${input.document.recipientName},\n\n` +
+    `Here is your ${commercialDocumentTypeLabel(input.document.documentType).toLowerCase()} from Zania:\n` +
+    `${input.document.title}\n` +
+    `Amount: KES ${input.document.totalAmount.toLocaleString()}\n` +
+    dueLine +
+    `Open it here: ${shareUrl}\n\n` +
+    `Thank you.`;
+
+  return {
+    subject,
+    body,
+    href: `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+  };
+}
+
 export async function listPlannerClientOptions() {
   const db = supabase as any;
   const { data, error } = await db
@@ -529,7 +699,7 @@ export async function listVendorListingOptions() {
   const db = supabase as any;
   const { data, error } = await db
     .from('vendor_listings')
-    .select('id, business_name, category, primary_county, primary_town')
+    .select('id, business_name, category, email, phone, website, primary_county, primary_town')
     .order('business_name', { ascending: true });
 
   if (error) throw error;
@@ -538,6 +708,9 @@ export async function listVendorListingOptions() {
     id: String(row.id),
     label: String(row.business_name ?? 'Vendor listing'),
     category: typeof row.category === 'string' ? row.category : null,
+    email: typeof row.email === 'string' ? row.email : null,
+    phone: typeof row.phone === 'string' ? row.phone : null,
+    website: typeof row.website === 'string' ? row.website : null,
     primaryCounty: typeof row.primary_county === 'string' ? row.primary_county : null,
     primaryTown: typeof row.primary_town === 'string' ? row.primary_town : null,
   })) as VendorListingOption[];

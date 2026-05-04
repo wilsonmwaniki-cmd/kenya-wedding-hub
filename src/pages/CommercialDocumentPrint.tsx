@@ -13,6 +13,7 @@ import {
   getCommercialDocument,
   listVendorListingOptions,
   type CommercialDocumentDetail,
+  type VendorListingOption,
 } from '@/lib/commercialDocuments';
 
 function formatCurrency(amount: number) {
@@ -30,7 +31,7 @@ export default function CommercialDocumentPrint() {
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [document, setDocument] = useState<CommercialDocumentDetail | null>(null);
-  const [vendorListingLabel, setVendorListingLabel] = useState<string | null>(null);
+  const [vendorListing, setVendorListing] = useState<VendorListingOption | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,9 +45,9 @@ export default function CommercialDocumentPrint() {
         if (detail?.vendorListingId) {
           const listings = await listVendorListingOptions();
           if (cancelled) return;
-          setVendorListingLabel(listings.find((listing) => listing.id === detail.vendorListingId)?.label ?? null);
+          setVendorListing(listings.find((listing) => listing.id === detail.vendorListingId) ?? null);
         } else {
-          setVendorListingLabel(null);
+          setVendorListing(null);
         }
       } catch (error) {
         console.error('Could not load printable commercial document:', error);
@@ -73,8 +74,24 @@ export default function CommercialDocumentPrint() {
   const backPath = document?.role === 'planner' ? '/planner-documents' : '/vendor-documents';
   const issuedByLabel =
     document?.role === 'planner'
-      ? profile?.full_name || 'Zania planner workspace'
-      : vendorListingLabel || profile?.full_name || 'Zania vendor workspace';
+      ? profile?.company_name || profile?.full_name || 'Zania planner workspace'
+      : vendorListing?.label || profile?.company_name || profile?.full_name || 'Zania vendor workspace';
+  const issuerEmail =
+    document?.role === 'planner'
+      ? profile?.company_email || user?.email || null
+      : vendorListing?.email || profile?.company_email || user?.email || null;
+  const issuerWebsite =
+    document?.role === 'planner'
+      ? profile?.company_website || null
+      : vendorListing?.website || profile?.company_website || null;
+  const issuerLocation =
+    document?.role === 'planner'
+      ? [profile?.primary_town, profile?.primary_county].filter(Boolean).join(', ')
+      : [vendorListing?.primaryTown, vendorListing?.primaryCounty].filter(Boolean).join(', ');
+  const issuerPhone =
+    document?.role === 'planner'
+      ? profile?.company_phone || null
+      : vendorListing?.phone || profile?.company_phone || null;
 
   if (loading) {
     return (
@@ -148,7 +165,10 @@ export default function CommercialDocumentPrint() {
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Issued by</p>
                 <p className="font-semibold text-foreground">{issuedByLabel}</p>
-                <p className="text-sm text-muted-foreground">{user?.email || document.recipientEmail || '—'}</p>
+                {issuerEmail && <p className="text-sm text-muted-foreground">{issuerEmail}</p>}
+                {issuerPhone && <p className="text-sm text-muted-foreground">{issuerPhone}</p>}
+                {issuerWebsite && <p className="text-sm text-muted-foreground">{issuerWebsite.replace(/^https?:\/\//, '')}</p>}
+                {issuerLocation && <p className="text-sm text-muted-foreground">{issuerLocation}</p>}
               </div>
               <div className="space-y-2 md:text-right">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Recipient</p>

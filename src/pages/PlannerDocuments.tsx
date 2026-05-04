@@ -6,7 +6,9 @@ import {
   CircleDollarSign,
   FilePlus2,
   FileSpreadsheet,
+  Link2,
   Loader2,
+  Mail,
   NotebookPen,
   Printer,
   Receipt,
@@ -32,6 +34,8 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import {
+  buildCommercialDocumentShareEmailDraft,
+  buildCommercialDocumentShareUrl,
   commercialDocumentPaymentMethodLabel,
   commercialDocumentPaymentMethodOptions,
   commercialDocumentStatusLabel,
@@ -40,6 +44,7 @@ import {
   createCommercialDocument,
   convertQuoteToInvoice,
   deleteCommercialDocument,
+  ensureCommercialDocumentShareToken,
   getCommercialDocument,
   issueReceiptFromPayment,
   listCommercialDocuments,
@@ -119,6 +124,7 @@ export default function PlannerDocuments() {
   const [savingPayment, setSavingPayment] = useState(false);
   const [convertingQuote, setConvertingQuote] = useState(false);
   const [issuingReceiptId, setIssuingReceiptId] = useState<string | null>(null);
+  const [sharingDocumentId, setSharingDocumentId] = useState<string | null>(null);
   const [createDraft, setCreateDraft] = useState<CreateDocumentDraft>({
     documentType: 'quote',
     title: '',
@@ -578,6 +584,52 @@ export default function PlannerDocuments() {
     }
   };
 
+  const handleCopyShareLink = async () => {
+    if (!selectedDetail) return;
+    setSharingDocumentId(selectedDetail.id);
+    try {
+      const token = await ensureCommercialDocumentShareToken(selectedDetail.id);
+      const url = buildCommercialDocumentShareUrl(token, window.location.origin);
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: 'Share link copied',
+        description: 'You can now paste this document link into WhatsApp or email.',
+      });
+    } catch (error) {
+      console.error('Could not copy share link:', error);
+      toast({
+        title: 'Could not create share link',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSharingDocumentId(null);
+    }
+  };
+
+  const handleEmailShare = async () => {
+    if (!selectedDetail) return;
+    setSharingDocumentId(selectedDetail.id);
+    try {
+      const token = await ensureCommercialDocumentShareToken(selectedDetail.id);
+      const url = buildCommercialDocumentShareUrl(token, window.location.origin);
+      const draft = buildCommercialDocumentShareEmailDraft({
+        document: selectedDetail,
+        shareUrl: url,
+      });
+      window.location.href = draft.href;
+    } catch (error) {
+      console.error('Could not prepare share email:', error);
+      toast({
+        title: 'Could not prepare share email',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSharingDocumentId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -804,6 +856,24 @@ export default function PlannerDocuments() {
                       <Printer className="h-4 w-4" />
                       Print
                     </Link>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={handleCopyShareLink}
+                    disabled={sharingDocumentId === selectedDetail.id}
+                  >
+                    {sharingDocumentId === selectedDetail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                    Copy link
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={handleEmailShare}
+                    disabled={sharingDocumentId === selectedDetail.id}
+                  >
+                    <Mail className="h-4 w-4" />
+                    Email link
                   </Button>
                   <Button variant="ghost" className="gap-2 text-destructive hover:text-destructive" onClick={handleDeleteSelected}>
                     <Trash2 className="h-4 w-4" />
