@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircle2, XCircle, LockKeyhole, CreditCard, ShieldCheck } from 'lucide-react';
+import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircle2, XCircle, LockKeyhole, CreditCard, ShieldCheck, NotebookPen } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -357,6 +357,12 @@ export default function PlannerDashboard() {
           <p className="text-muted-foreground">{clients.length} wedding{clients.length !== 1 ? 's' : ''} in this {workspaceLabel}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button asChild variant="outline" className="gap-2">
+            <Link to="/planner-documents">
+              <NotebookPen className="h-4 w-4" />
+              Documents
+            </Link>
+          </Button>
           <Dialog open={codeDialogOpen} onOpenChange={setCodeDialogOpen}>
             <Button
               variant="outline"

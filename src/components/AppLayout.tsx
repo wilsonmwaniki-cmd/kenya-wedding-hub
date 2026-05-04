@@ -6,7 +6,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins
+  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +30,7 @@ const coupleNavItems = [
 
 const plannerNavItems = [
   { path: '/clients', label: 'My Weddings', icon: Briefcase },
+  { path: '/planner-documents', label: 'Documents', icon: NotebookPen },
   { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
@@ -45,6 +46,7 @@ const plannerNavItems = [
 
 const vendorNavItems = [
   { path: '/vendor-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/vendor-documents', label: 'Documents', icon: NotebookPen },
   { path: '/vendor-settings', label: 'My Listing', icon: Store },
   { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
