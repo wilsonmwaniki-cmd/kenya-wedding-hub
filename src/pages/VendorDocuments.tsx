@@ -183,10 +183,13 @@ export default function VendorDocuments() {
 
     const load = async () => {
       try {
-        const [listings, bookings] = await Promise.all([
+        const [listingsResult, bookingsResult] = await Promise.allSettled([
           listVendorListingOptions(),
           listVendorBookingOptions(),
         ]);
+
+        const listings = listingsResult.status === 'fulfilled' ? listingsResult.value : [];
+        const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : [];
 
         if (cancelled) return;
 
@@ -196,6 +199,13 @@ export default function VendorDocuments() {
           ...current,
           vendorListingId: current.vendorListingId || listings[0]?.id || '',
         }));
+
+        if (bookingsResult.status === 'rejected') {
+          console.error('Could not load vendor booking options:', bookingsResult.reason);
+        }
+        if (listingsResult.status === 'rejected') {
+          console.error('Could not load vendor listing options:', listingsResult.reason);
+        }
 
         await loadDocuments();
       } catch (error) {

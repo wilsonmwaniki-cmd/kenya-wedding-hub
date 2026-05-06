@@ -718,22 +718,29 @@ export async function listVendorListingOptions() {
 
 export async function listVendorBookingOptions() {
   const db = supabase as any;
+  const { data: listing, error: listingError } = await db
+    .from('vendor_listings')
+    .select('id')
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle();
+
+  if (listingError) throw listingError;
+  if (!listing?.id) return [];
+
   const { data, error } = await db
     .from('vendors')
-    .select('id, name, quoted_amount, payment_status, wedding_id, weddings(name)')
+    .select('id, name, quoted_amount, payment_status')
+    .eq('vendor_listing_id', listing.id)
     .order('name', { ascending: true });
 
   if (error) throw error;
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
-    const wedding = Array.isArray(row.weddings)
-      ? (row.weddings[0] as Record<string, unknown> | undefined)
-      : (row.weddings as Record<string, unknown> | null | undefined);
-    const coupleName = typeof wedding?.name === 'string' ? wedding.name : 'Wedding workspace';
+    const coupleName = String(row.name ?? 'Vendor booking');
 
     return {
       id: String(row.id),
-      label: `${String(row.name ?? 'Booking')} · ${coupleName}`,
+      label: coupleName,
       coupleName,
       paymentStatus: typeof row.payment_status === 'string' ? row.payment_status : null,
       quotedAmount: row.quoted_amount == null ? null : toNumber(row.quoted_amount),
