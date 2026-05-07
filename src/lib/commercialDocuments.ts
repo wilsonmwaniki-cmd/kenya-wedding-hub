@@ -227,6 +227,122 @@ export type RecordCommercialDocumentPaymentInput = {
   budgetPaymentId?: string | null;
 };
 
+export const professionalContractStatusOptions = [
+  'draft',
+  'sent',
+  'awaiting_signature',
+  'countersigned',
+  'completed',
+  'cancelled',
+] as const;
+
+export type ProfessionalContractStatus = (typeof professionalContractStatusOptions)[number];
+
+export const professionalTemplateTypeOptions = ['quote', 'invoice', 'receipt', 'contract'] as const;
+export type ProfessionalTemplateType = (typeof professionalTemplateTypeOptions)[number];
+
+export type ProfessionalContractRecord = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  userId: string;
+  role: CommercialDocumentRole;
+  title: string;
+  status: ProfessionalContractStatus;
+  recipientName: string;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  weddingName: string | null;
+  clientId: string | null;
+  vendorListingId: string | null;
+  vendorId: string | null;
+  eventDate: string | null;
+  sentAt: string | null;
+  signedAt: string | null;
+  cancelledAt: string | null;
+  summary: string | null;
+  notes: string | null;
+  terms: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type DocumentTemplateItem = {
+  description: string;
+  quantity?: number;
+  unitPrice?: number;
+};
+
+export type ProfessionalDocumentTemplateRecord = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  userId: string;
+  role: CommercialDocumentRole;
+  templateType: ProfessionalTemplateType;
+  name: string;
+  description: string | null;
+  defaultTitle: string | null;
+  defaultNotes: string | null;
+  defaultTerms: string | null;
+  defaultItems: DocumentTemplateItem[];
+  metadata: Record<string, unknown>;
+};
+
+export type ProfessionalContractListFilters = {
+  role: CommercialDocumentRole;
+  status?: ProfessionalContractStatus;
+  clientId?: string | null;
+  vendorListingId?: string | null;
+  vendorId?: string | null;
+  search?: string;
+};
+
+export type CreateProfessionalContractInput = {
+  role: CommercialDocumentRole;
+  title: string;
+  status?: ProfessionalContractStatus;
+  recipientName: string;
+  recipientEmail?: string | null;
+  recipientPhone?: string | null;
+  weddingName?: string | null;
+  clientId?: string | null;
+  vendorListingId?: string | null;
+  vendorId?: string | null;
+  eventDate?: string | null;
+  summary?: string | null;
+  notes?: string | null;
+  terms?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type UpdateProfessionalContractInput = Partial<Omit<ProfessionalContractRecord, 'id' | 'createdAt' | 'updatedAt' | 'userId' | 'role'>> & {
+  metadata?: Record<string, unknown>;
+};
+
+export type DocumentTemplateListFilters = {
+  role: CommercialDocumentRole;
+  templateType?: ProfessionalTemplateType;
+  search?: string;
+};
+
+export type CreateDocumentTemplateInput = {
+  role: CommercialDocumentRole;
+  templateType: ProfessionalTemplateType;
+  name: string;
+  description?: string | null;
+  defaultTitle?: string | null;
+  defaultNotes?: string | null;
+  defaultTerms?: string | null;
+  defaultItems?: DocumentTemplateItem[];
+  metadata?: Record<string, unknown>;
+};
+
+export type UpdateDocumentTemplateInput = Partial<Omit<ProfessionalDocumentTemplateRecord, 'id' | 'createdAt' | 'updatedAt' | 'userId' | 'role' | 'templateType'>> & {
+  templateType?: ProfessionalTemplateType;
+  defaultItems?: DocumentTemplateItem[];
+  metadata?: Record<string, unknown>;
+};
+
 function toNumber(value: unknown) {
   const numeric = Number(value ?? 0);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -311,6 +427,62 @@ function mapCommercialDocumentPayment(row: Record<string, unknown>): CommercialD
   };
 }
 
+function mapProfessionalContract(row: Record<string, unknown>): ProfessionalContractRecord {
+  return {
+    id: String(row.id),
+    createdAt: String(row.created_at ?? ''),
+    updatedAt: String(row.updated_at ?? ''),
+    userId: String(row.user_id ?? ''),
+    role: row.role === 'planner' ? 'planner' : 'vendor',
+    title: String(row.title ?? ''),
+    status: String(row.status ?? 'draft') as ProfessionalContractStatus,
+    recipientName: String(row.recipient_name ?? ''),
+    recipientEmail: typeof row.recipient_email === 'string' ? row.recipient_email : null,
+    recipientPhone: typeof row.recipient_phone === 'string' ? row.recipient_phone : null,
+    weddingName: typeof row.wedding_name === 'string' ? row.wedding_name : null,
+    clientId: typeof row.client_id === 'string' ? row.client_id : null,
+    vendorListingId: typeof row.vendor_listing_id === 'string' ? row.vendor_listing_id : null,
+    vendorId: typeof row.vendor_id === 'string' ? row.vendor_id : null,
+    eventDate: typeof row.event_date === 'string' ? row.event_date : null,
+    sentAt: typeof row.sent_at === 'string' ? row.sent_at : null,
+    signedAt: typeof row.signed_at === 'string' ? row.signed_at : null,
+    cancelledAt: typeof row.cancelled_at === 'string' ? row.cancelled_at : null,
+    summary: typeof row.summary === 'string' ? row.summary : null,
+    notes: typeof row.notes === 'string' ? row.notes : null,
+    terms: typeof row.terms === 'string' ? row.terms : null,
+    metadata: toObject(row.metadata),
+  };
+}
+
+function mapDocumentTemplate(row: Record<string, unknown>): ProfessionalDocumentTemplateRecord {
+  return {
+    id: String(row.id),
+    createdAt: String(row.created_at ?? ''),
+    updatedAt: String(row.updated_at ?? ''),
+    userId: String(row.user_id ?? ''),
+    role: row.role === 'planner' ? 'planner' : 'vendor',
+    templateType:
+      row.template_type === 'invoice' || row.template_type === 'receipt' || row.template_type === 'contract'
+        ? row.template_type
+        : 'quote',
+    name: String(row.name ?? ''),
+    description: typeof row.description === 'string' ? row.description : null,
+    defaultTitle: typeof row.default_title === 'string' ? row.default_title : null,
+    defaultNotes: typeof row.default_notes === 'string' ? row.default_notes : null,
+    defaultTerms: typeof row.default_terms === 'string' ? row.default_terms : null,
+    defaultItems: Array.isArray(row.default_items)
+      ? row.default_items.map((item) => ({
+          description: String((item as Record<string, unknown>).description ?? ''),
+          quantity: (item as Record<string, unknown>).quantity == null ? undefined : toNumber((item as Record<string, unknown>).quantity),
+          unitPrice: (item as Record<string, unknown>).unit_price == null && (item as Record<string, unknown>).unitPrice == null
+            ? undefined
+            : toNumber((item as Record<string, unknown>).unit_price ?? (item as Record<string, unknown>).unitPrice),
+        }))
+      : [],
+    metadata: toObject(row.metadata),
+  };
+}
+
 function mapCommercialDocumentDetail(row: Record<string, unknown>): CommercialDocumentDetail {
   const document = mapCommercialDocument(row);
   const items = Array.isArray(row.commercial_document_items)
@@ -382,6 +554,38 @@ export function commercialDocumentPaymentMethodLabel(method: CommercialDocumentP
     case 'other':
     default:
       return 'Other';
+  }
+}
+
+export function professionalContractStatusLabel(status: ProfessionalContractStatus | string | null | undefined) {
+  switch (status) {
+    case 'sent':
+      return 'Sent';
+    case 'awaiting_signature':
+      return 'Awaiting signature';
+    case 'countersigned':
+      return 'Countersigned';
+    case 'completed':
+      return 'Completed';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'draft':
+    default:
+      return 'Draft';
+  }
+}
+
+export function professionalTemplateTypeLabel(type: ProfessionalTemplateType | string | null | undefined) {
+  switch (type) {
+    case 'invoice':
+      return 'Invoice';
+    case 'receipt':
+      return 'Receipt';
+    case 'contract':
+      return 'Contract';
+    case 'quote':
+    default:
+      return 'Quote';
   }
 }
 
@@ -718,25 +922,199 @@ export async function listVendorListingOptions() {
 
 export async function listVendorBookingOptions() {
   const db = supabase as any;
+  const { data: listing, error: listingError } = await db
+    .from('vendor_listings')
+    .select('id')
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle();
+
+  if (listingError) throw listingError;
+  if (!listing?.id) return [];
+
   const { data, error } = await db
     .from('vendors')
-    .select('id, name, quoted_amount, payment_status, wedding_id, weddings(name)')
+    .select('id, name, quoted_amount, payment_status')
+    .eq('vendor_listing_id', listing.id)
     .order('name', { ascending: true });
 
   if (error) throw error;
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
-    const wedding = Array.isArray(row.weddings)
-      ? (row.weddings[0] as Record<string, unknown> | undefined)
-      : (row.weddings as Record<string, unknown> | null | undefined);
-    const coupleName = typeof wedding?.name === 'string' ? wedding.name : 'Wedding workspace';
+    const coupleName = String(row.name ?? 'Vendor booking');
 
     return {
       id: String(row.id),
-      label: `${String(row.name ?? 'Booking')} · ${coupleName}`,
+      label: coupleName,
       coupleName,
       paymentStatus: typeof row.payment_status === 'string' ? row.payment_status : null,
       quotedAmount: row.quoted_amount == null ? null : toNumber(row.quoted_amount),
     } satisfies VendorBookingOption;
   });
+}
+
+export async function listProfessionalContracts(filters: ProfessionalContractListFilters) {
+  const db = supabase as any;
+  let query = db
+    .from('professional_contracts')
+    .select('*')
+    .eq('role', filters.role)
+    .order('event_date', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
+
+  if (filters.status) query = query.eq('status', filters.status);
+  if (filters.clientId) query = query.eq('client_id', filters.clientId);
+  if (filters.vendorListingId) query = query.eq('vendor_listing_id', filters.vendorListingId);
+  if (filters.vendorId) query = query.eq('vendor_id', filters.vendorId);
+  if (filters.search?.trim()) {
+    const search = filters.search.trim();
+    query = query.or(`title.ilike.%${search}%,recipient_name.ilike.%${search}%,wedding_name.ilike.%${search}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map(mapProfessionalContract);
+}
+
+export async function createProfessionalContract(input: CreateProfessionalContractInput) {
+  const payload = {
+    role: input.role,
+    title: input.title,
+    status: input.status ?? 'draft',
+    recipient_name: input.recipientName,
+    recipient_email: input.recipientEmail ?? null,
+    recipient_phone: input.recipientPhone ?? null,
+    wedding_name: input.weddingName ?? null,
+    client_id: input.clientId ?? null,
+    vendor_listing_id: input.vendorListingId ?? null,
+    vendor_id: input.vendorId ?? null,
+    event_date: input.eventDate ?? null,
+    summary: input.summary ?? null,
+    notes: input.notes ?? null,
+    terms: input.terms ?? null,
+    metadata: input.metadata ?? {},
+  };
+
+  const { data, error } = await (supabase as any)
+    .from('professional_contracts')
+    .insert(payload)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return mapProfessionalContract(data as Record<string, unknown>);
+}
+
+export async function updateProfessionalContract(contractId: string, input: UpdateProfessionalContractInput) {
+  const payload: Record<string, unknown> = {};
+  if (input.title !== undefined) payload.title = input.title;
+  if (input.status !== undefined) payload.status = input.status;
+  if (input.recipientName !== undefined) payload.recipient_name = input.recipientName;
+  if (input.recipientEmail !== undefined) payload.recipient_email = input.recipientEmail;
+  if (input.recipientPhone !== undefined) payload.recipient_phone = input.recipientPhone;
+  if (input.weddingName !== undefined) payload.wedding_name = input.weddingName;
+  if (input.clientId !== undefined) payload.client_id = input.clientId;
+  if (input.vendorListingId !== undefined) payload.vendor_listing_id = input.vendorListingId;
+  if (input.vendorId !== undefined) payload.vendor_id = input.vendorId;
+  if (input.eventDate !== undefined) payload.event_date = input.eventDate;
+  if (input.summary !== undefined) payload.summary = input.summary;
+  if (input.notes !== undefined) payload.notes = input.notes;
+  if (input.terms !== undefined) payload.terms = input.terms;
+  if (input.sentAt !== undefined) payload.sent_at = input.sentAt;
+  if (input.signedAt !== undefined) payload.signed_at = input.signedAt;
+  if (input.cancelledAt !== undefined) payload.cancelled_at = input.cancelledAt;
+  if (input.metadata !== undefined) payload.metadata = input.metadata;
+
+  const { data, error } = await (supabase as any)
+    .from('professional_contracts')
+    .update(payload)
+    .eq('id', contractId)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return mapProfessionalContract(data as Record<string, unknown>);
+}
+
+export async function deleteProfessionalContract(contractId: string) {
+  const { error } = await (supabase as any).from('professional_contracts').delete().eq('id', contractId);
+  if (error) throw error;
+}
+
+export async function listDocumentTemplates(filters: DocumentTemplateListFilters) {
+  const db = supabase as any;
+  let query = db
+    .from('professional_document_templates')
+    .select('*')
+    .eq('role', filters.role)
+    .order('updated_at', { ascending: false });
+
+  if (filters.templateType) query = query.eq('template_type', filters.templateType);
+  if (filters.search?.trim()) {
+    const search = filters.search.trim();
+    query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%,default_title.ilike.%${search}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map(mapDocumentTemplate);
+}
+
+export async function createDocumentTemplate(input: CreateDocumentTemplateInput) {
+  const payload = {
+    role: input.role,
+    template_type: input.templateType,
+    name: input.name,
+    description: input.description ?? null,
+    default_title: input.defaultTitle ?? null,
+    default_notes: input.defaultNotes ?? null,
+    default_terms: input.defaultTerms ?? null,
+    default_items: (input.defaultItems ?? []).map((item) => ({
+      description: item.description,
+      quantity: item.quantity ?? 1,
+      unit_price: item.unitPrice ?? 0,
+    })),
+    metadata: input.metadata ?? {},
+  };
+
+  const { data, error } = await (supabase as any)
+    .from('professional_document_templates')
+    .insert(payload)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return mapDocumentTemplate(data as Record<string, unknown>);
+}
+
+export async function updateDocumentTemplate(templateId: string, input: UpdateDocumentTemplateInput) {
+  const payload: Record<string, unknown> = {};
+  if (input.templateType !== undefined) payload.template_type = input.templateType;
+  if (input.name !== undefined) payload.name = input.name;
+  if (input.description !== undefined) payload.description = input.description;
+  if (input.defaultTitle !== undefined) payload.default_title = input.defaultTitle;
+  if (input.defaultNotes !== undefined) payload.default_notes = input.defaultNotes;
+  if (input.defaultTerms !== undefined) payload.default_terms = input.defaultTerms;
+  if (input.defaultItems !== undefined) {
+    payload.default_items = input.defaultItems.map((item) => ({
+      description: item.description,
+      quantity: item.quantity ?? 1,
+      unit_price: item.unitPrice ?? 0,
+    }));
+  }
+  if (input.metadata !== undefined) payload.metadata = input.metadata;
+
+  const { data, error } = await (supabase as any)
+    .from('professional_document_templates')
+    .update(payload)
+    .eq('id', templateId)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return mapDocumentTemplate(data as Record<string, unknown>);
+}
+
+export async function deleteDocumentTemplate(templateId: string) {
+  const { error } = await (supabase as any).from('professional_document_templates').delete().eq('id', templateId);
+  if (error) throw error;
 }

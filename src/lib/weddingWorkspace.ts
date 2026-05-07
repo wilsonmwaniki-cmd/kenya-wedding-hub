@@ -6,6 +6,10 @@ const PENDING_WEDDING_SETUP_STORAGE_KEY = 'zania-pending-wedding-setup';
 
 export type WeddingSignupIntent = 'create_wedding' | 'join_wedding' | 'professional';
 export type WeddingOwnerRole = 'bride' | 'groom';
+export type WeddingPlanningMode = 'local' | 'diaspora';
+export type WeddingReferenceCurrency = 'GBP' | 'USD' | 'EUR' | 'CAD' | 'AUD';
+
+export const weddingReferenceCurrencies: WeddingReferenceCurrency[] = ['GBP', 'USD', 'EUR', 'CAD', 'AUD'];
 
 export type PendingWeddingSetup = {
   intent: Exclude<WeddingSignupIntent, 'professional'>;
@@ -17,6 +21,10 @@ export type PendingWeddingSetup = {
   weddingCounty?: string | null;
   weddingTown?: string | null;
   weddingDate?: string | null;
+  planningMode?: WeddingPlanningMode | null;
+  planningCountry?: string | null;
+  referenceCurrency?: WeddingReferenceCurrency | null;
+  ownerTimezone?: string | null;
 };
 
 type PendingWeddingSetupMetadata = Record<string, unknown> & {
@@ -29,6 +37,10 @@ type PendingWeddingSetupMetadata = Record<string, unknown> & {
   wedding_county?: string | null;
   wedding_town?: string | null;
   wedding_date?: string | null;
+  planning_mode?: WeddingPlanningMode | null;
+  planning_country?: string | null;
+  reference_currency?: WeddingReferenceCurrency | null;
+  owner_timezone?: string | null;
 };
 
 type CreateWeddingWorkspaceRow = {
@@ -263,6 +275,17 @@ function readPendingWeddingSetupFromMetadata(
     weddingCounty: typeof userMetadata.wedding_county === 'string' ? userMetadata.wedding_county : null,
     weddingTown: typeof userMetadata.wedding_town === 'string' ? userMetadata.wedding_town : null,
     weddingDate: typeof userMetadata.wedding_date === 'string' ? userMetadata.wedding_date : null,
+    planningMode: userMetadata.planning_mode === 'diaspora' ? 'diaspora' : 'local',
+    planningCountry: typeof userMetadata.planning_country === 'string' ? userMetadata.planning_country : null,
+    referenceCurrency:
+      userMetadata.reference_currency === 'GBP'
+      || userMetadata.reference_currency === 'USD'
+      || userMetadata.reference_currency === 'EUR'
+      || userMetadata.reference_currency === 'CAD'
+      || userMetadata.reference_currency === 'AUD'
+        ? userMetadata.reference_currency
+        : null,
+    ownerTimezone: typeof userMetadata.owner_timezone === 'string' ? userMetadata.owner_timezone : null,
   };
 }
 
@@ -308,6 +331,10 @@ async function markWeddingSetupComplete(
     wedding_county: null,
     wedding_town: null,
     wedding_date: null,
+    planning_mode: null,
+    planning_country: null,
+    reference_currency: null,
+    owner_timezone: null,
     ...overrides,
   };
 
@@ -404,6 +431,18 @@ export async function completePendingWeddingSetup(user: User): Promise<{
         })
         .eq('user_id', user.id);
 
+      if (row?.wedding_id) {
+        await (supabase as any)
+          .from('weddings')
+          .update({
+            planning_mode: pendingSetup.planningMode ?? 'local',
+            planning_country: pendingSetup.planningMode === 'diaspora' ? pendingSetup.planningCountry ?? null : null,
+            reference_currency: pendingSetup.planningMode === 'diaspora' ? pendingSetup.referenceCurrency ?? null : null,
+            owner_timezone: pendingSetup.planningMode === 'diaspora' ? pendingSetup.ownerTimezone ?? null : null,
+          })
+          .eq('id', row.wedding_id);
+      }
+
       await markWeddingSetupComplete(user, {
         role: 'couple',
         planner_type: null,
@@ -419,6 +458,16 @@ export async function completePendingWeddingSetup(user: User): Promise<{
         partnerInviteSent,
       };
     }
+
+    await (supabase as any)
+      .from('weddings')
+      .update({
+        planning_mode: pendingSetup.planningMode ?? 'local',
+        planning_country: pendingSetup.planningMode === 'diaspora' ? pendingSetup.planningCountry ?? null : null,
+        reference_currency: pendingSetup.planningMode === 'diaspora' ? pendingSetup.referenceCurrency ?? null : null,
+        owner_timezone: pendingSetup.planningMode === 'diaspora' ? pendingSetup.ownerTimezone ?? null : null,
+      })
+      .eq('id', existingWeddingId);
 
     await markWeddingSetupComplete(user, {
       role: 'couple',

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, type RolePreview } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
@@ -6,7 +6,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen
+  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,14 @@ import { getHomeRouteForRole, isProfessionalSetupPending, type PlannerType } fro
 import AssistantPanel from '@/components/AssistantPanel';
 import { AssistantPanelProvider } from '@/contexts/AssistantPanelContext';
 
-const coupleNavItems = [
+type NavItem = {
+  path: string;
+  label: string;
+  icon: any;
+  children?: Array<{ path: string; label: string }>;
+};
+
+const coupleNavItems: NavItem[] = [
   { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
@@ -28,9 +35,21 @@ const coupleNavItems = [
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
-const plannerNavItems = [
+const plannerNavItems: NavItem[] = [
   { path: '/clients', label: 'My Weddings', icon: Briefcase },
-  { path: '/planner-documents', label: 'Documents', icon: NotebookPen },
+  {
+    path: '/planner-documents',
+    label: 'Documents',
+    icon: NotebookPen,
+    children: [
+      { path: '/planner-documents', label: 'Overview' },
+      { path: '/planner-documents/quotes', label: 'Quotes' },
+      { path: '/planner-documents/invoices', label: 'Invoices' },
+      { path: '/planner-documents/receipts', label: 'Receipts' },
+      { path: '/planner-documents/contracts', label: 'Contracts' },
+      { path: '/planner-documents/templates', label: 'Templates' },
+    ],
+  },
   { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
@@ -44,25 +63,38 @@ const plannerNavItems = [
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
-const vendorNavItems = [
+const vendorNavItems: NavItem[] = [
   { path: '/vendor-dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/vendor-documents', label: 'Documents', icon: NotebookPen },
+  {
+    path: '/vendor-documents',
+    label: 'Documents',
+    icon: NotebookPen,
+    children: [
+      { path: '/vendor-documents', label: 'Overview' },
+      { path: '/vendor-documents/quotes', label: 'Quotes' },
+      { path: '/vendor-documents/invoices', label: 'Invoices' },
+      { path: '/vendor-documents/receipts', label: 'Receipts' },
+      { path: '/vendor-documents/contracts', label: 'Contracts' },
+      { path: '/vendor-documents/templates', label: 'Templates' },
+    ],
+  },
   { path: '/vendor-settings', label: 'My Listing', icon: Store },
   { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
-const adminNavItems = [
+const adminNavItems: NavItem[] = [
   { path: '/admin', label: 'Admin Portal', icon: ShieldCheck },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
-const professionalSetupNavItems = [
+const professionalSetupNavItems: NavItem[] = [
   { path: '/settings', label: 'Complete Setup', icon: Settings },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expandedNavItems, setExpandedNavItems] = useState<Record<string, boolean>>({});
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut, profile, baseProfile, isSuperAdmin, rolePreview, setRolePreview } = useAuth();
@@ -140,6 +172,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       window.location.assign('/auth');
     }
   };
+
+  useEffect(() => {
+    setExpandedNavItems((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      navItems.forEach((item) => {
+        if (!item.children?.length) return;
+        const shouldBeOpen = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+        if (shouldBeOpen && !next[item.path]) {
+          next[item.path] = true;
+          changed = true;
+        }
+      });
+
+      return changed ? next : current;
+    });
+  }, [location.pathname, navItems]);
 
   return (
     <AssistantPanelProvider>
@@ -237,33 +287,92 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           <nav className="flex-1 space-y-1.5 px-3 py-4">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path;
+              const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
               const disabled = needsClient && planningPaths.includes(item.path);
+              const hasChildren = Boolean(item.children?.length);
+              const isExpanded = expandedNavItems[item.path] ?? isActive;
               return (
-                <Link
-                  key={item.path}
-                  to={disabled ? '#' : item.path}
-                  onClick={(e) => {
-                    if (disabled) { e.preventDefault(); return; }
-                    setSidebarOpen(false);
-                  }}
-                  className={`
-                    flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all
-                    ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
-                    ${isActive
-                      ? 'border-primary/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_28px_rgba(15,8,6,0.24)]'
-                      : 'border-transparent bg-black/[0.12] text-white/90 hover:border-white/10 hover:bg-white/[0.12] hover:text-white'
-                    }
-                  `}
-                >
-                  <item.icon className={`h-4.5 w-4.5 ${isActive ? 'text-primary' : 'text-white/80'}`} />
-                  <span className="flex-1">{item.label}</span>
-                  {(badgeCounts[item.path] || 0) > 0 && (
-                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
-                      {badgeCounts[item.path]}
-                    </span>
+                <div key={item.path} className="space-y-1">
+                  {hasChildren ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (disabled) return;
+                        setExpandedNavItems((current) => ({
+                          ...current,
+                          [item.path]: !(current[item.path] ?? isActive),
+                        }));
+                      }}
+                      className={`
+                        flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium text-left transition-all
+                        ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
+                        ${isActive
+                          ? 'border-primary/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_28px_rgba(15,8,6,0.24)]'
+                          : 'border-transparent bg-black/[0.12] text-white/90 hover:border-white/10 hover:bg-white/[0.12] hover:text-white'
+                        }
+                      `}
+                    >
+                      <item.icon className={`h-4.5 w-4.5 ${isActive ? 'text-primary' : 'text-white/80'}`} />
+                      <span className="flex-1">{item.label}</span>
+                      {(badgeCounts[item.path] || 0) > 0 && (
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                          {badgeCounts[item.path]}
+                        </span>
+                      )}
+                      <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180 text-white/80' : 'text-white/55'}`} />
+                    </button>
+                  ) : (
+                    <Link
+                      to={disabled ? '#' : item.path}
+                      onClick={(e) => {
+                        if (disabled) { e.preventDefault(); return; }
+                        setSidebarOpen(false);
+                      }}
+                      className={`
+                        flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all
+                        ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
+                        ${isActive
+                          ? 'border-primary/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_28px_rgba(15,8,6,0.24)]'
+                          : 'border-transparent bg-black/[0.12] text-white/90 hover:border-white/10 hover:bg-white/[0.12] hover:text-white'
+                        }
+                      `}
+                    >
+                      <item.icon className={`h-4.5 w-4.5 ${isActive ? 'text-primary' : 'text-white/80'}`} />
+                      <span className="flex-1">{item.label}</span>
+                      {(badgeCounts[item.path] || 0) > 0 && (
+                        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                          {badgeCounts[item.path]}
+                        </span>
+                      )}
+                    </Link>
                   )}
-                </Link>
+                  {hasChildren && isExpanded ? (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="space-y-1 overflow-hidden pl-4"
+                    >
+                      {item.children.map((child) => {
+                        const childActive = location.pathname === child.path;
+                        return (
+                          <Link
+                            key={child.path}
+                            to={child.path}
+                            onClick={() => setSidebarOpen(false)}
+                            className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
+                              childActive
+                                ? 'bg-white/[0.12] text-white'
+                                : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
+                            }`}
+                          >
+                            {child.label}
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  ) : null}
+                </div>
               );
             })}
           </nav>

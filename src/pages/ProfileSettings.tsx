@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -24,6 +25,9 @@ import {
   getPendingWeddingSetup,
   sendWeddingInviteEmail,
   type MyWeddingOwnershipSummary,
+  type WeddingPlanningMode,
+  type WeddingReferenceCurrency,
+  weddingReferenceCurrencies,
 } from '@/lib/weddingWorkspace';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
@@ -73,6 +77,20 @@ export default function ProfileSettings() {
   const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
   const metadataPartnerEmail =
     typeof user?.user_metadata?.partner_email === 'string' ? user.user_metadata.partner_email : null;
+  const metadataPlanningMode: WeddingPlanningMode =
+    user?.user_metadata?.planning_mode === 'diaspora' ? 'diaspora' : 'local';
+  const metadataPlanningCountry =
+    typeof user?.user_metadata?.planning_country === 'string' ? user.user_metadata.planning_country : '';
+  const metadataReferenceCurrency =
+    user?.user_metadata?.reference_currency === 'GBP'
+    || user?.user_metadata?.reference_currency === 'USD'
+    || user?.user_metadata?.reference_currency === 'EUR'
+    || user?.user_metadata?.reference_currency === 'CAD'
+    || user?.user_metadata?.reference_currency === 'AUD'
+      ? (user.user_metadata.reference_currency as WeddingReferenceCurrency)
+      : '';
+  const metadataOwnerTimezone =
+    typeof user?.user_metadata?.owner_timezone === 'string' ? user.user_metadata.owner_timezone : '';
 
   const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 6000, message = 'Request timed out') => {
     return await Promise.race<T>([
@@ -90,6 +108,10 @@ export default function ProfileSettings() {
     wedding_location: '',
     wedding_county: '',
     wedding_town: '',
+    planning_mode: 'local' as WeddingPlanningMode,
+    planning_country: '',
+    reference_currency: '' as WeddingReferenceCurrency | '',
+    owner_timezone: '',
     company_name: '',
     company_email: '',
     company_phone: '',
@@ -163,6 +185,10 @@ export default function ProfileSettings() {
         wedding_location: profile.wedding_location || '',
         wedding_county: profile.wedding_county || '',
         wedding_town: profile.wedding_town || '',
+        planning_mode: pendingWeddingSetup?.planningMode ?? metadataPlanningMode,
+        planning_country: pendingWeddingSetup?.planningCountry ?? metadataPlanningCountry,
+        reference_currency: pendingWeddingSetup?.referenceCurrency ?? metadataReferenceCurrency,
+        owner_timezone: pendingWeddingSetup?.ownerTimezone ?? metadataOwnerTimezone,
         company_name: profile.company_name || '',
         company_email: profile.company_email || '',
         company_phone: profile.company_phone || '',
@@ -179,6 +205,30 @@ export default function ProfileSettings() {
       });
     }
   }, [profile]);
+
+  const loadWeddingPlanningSettings = async (weddingId: string) => {
+    const { data, error } = await (supabase as any)
+      .from('weddings')
+      .select('planning_mode, planning_country, reference_currency, owner_timezone')
+      .eq('id', weddingId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    return {
+      planningMode: data?.planning_mode === 'diaspora' ? 'diaspora' : 'local',
+      planningCountry: typeof data?.planning_country === 'string' ? data.planning_country : '',
+      referenceCurrency:
+        data?.reference_currency === 'GBP'
+        || data?.reference_currency === 'USD'
+        || data?.reference_currency === 'EUR'
+        || data?.reference_currency === 'CAD'
+        || data?.reference_currency === 'AUD'
+          ? (data.reference_currency as WeddingReferenceCurrency)
+          : '',
+      ownerTimezone: typeof data?.owner_timezone === 'string' ? data.owner_timezone : '',
+    };
+  };
 
   const loadCommitteeMembers = async () => {
     if (!profile?.user_id || !isCommittee) {
@@ -239,12 +289,17 @@ export default function ProfileSettings() {
 
       setOwnedWedding(summary);
       setPartnerEmailInput(summary.partnerEmail ?? '');
+      const planningSettings = summary.weddingId ? await loadWeddingPlanningSettings(summary.weddingId) : null;
       setForm((prev) => ({
         ...prev,
         wedding_date: summary.weddingDate || prev.wedding_date || '',
         wedding_county: summary.locationCounty || prev.wedding_county || '',
         wedding_town: summary.locationTown || prev.wedding_town || '',
         wedding_location: buildKenyaLocationLabel(summary.locationCounty || prev.wedding_county || '', summary.locationTown || prev.wedding_town || ''),
+        planning_mode: planningSettings?.planningMode ?? prev.planning_mode,
+        planning_country: planningSettings?.planningCountry ?? prev.planning_country,
+        reference_currency: planningSettings?.referenceCurrency ?? prev.reference_currency,
+        owner_timezone: planningSettings?.ownerTimezone ?? prev.owner_timezone,
       }));
     } catch (error: any) {
       console.error('Could not load wedding ownership state:', error);
@@ -291,6 +346,20 @@ export default function ProfileSettings() {
         updates.wedding_town = form.wedding_town || null;
         updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
       } else if (isCouple) {
+        if (form.planning_mode === 'diaspora') {
+          if (!form.planning_country.trim()) {
+            throw new Error('Add the country you are planning from before saving diaspora mode.');
+          }
+
+          if (!form.reference_currency) {
+            throw new Error('Choose a reference currency before saving diaspora mode.');
+          }
+
+          if (!form.owner_timezone.trim()) {
+            throw new Error('Add your timezone before saving diaspora mode.');
+          }
+        }
+
         if (ownedWedding?.weddingId) {
           const { error: weddingError } = await supabase
             .from('weddings')
@@ -298,6 +367,10 @@ export default function ProfileSettings() {
               wedding_date: form.wedding_date || null,
               location_county: form.wedding_county || null,
               location_town: form.wedding_town || null,
+              planning_mode: form.planning_mode,
+              planning_country: form.planning_mode === 'diaspora' ? form.planning_country || null : null,
+              reference_currency: form.planning_mode === 'diaspora' ? form.reference_currency || null : null,
+              owner_timezone: form.planning_mode === 'diaspora' ? form.owner_timezone || null : null,
             })
             .eq('id', ownedWedding.weddingId);
 
@@ -1242,6 +1315,73 @@ export default function ProfileSettings() {
               <div className="space-y-2">
                 <Label>Wedding Date</Label>
                 <Input type="date" value={form.wedding_date} onChange={e => setForm(f => ({ ...f, wedding_date: e.target.value }))} />
+              </div>
+              <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">Planning mode</p>
+                  <p className="text-xs text-muted-foreground">
+                    Tell Zania whether this wedding is being managed locally or from abroad.
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {([
+                    { value: 'local', title: 'Planning from Kenya', copy: 'Use the standard local planning view.' },
+                    { value: 'diaspora', title: 'Planning from abroad', copy: 'Keep diaspora settings like timezone and reference currency.' },
+                  ] as const).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setForm((current) => ({ ...current, planning_mode: option.value }))}
+                      className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                        form.planning_mode === option.value
+                          ? 'border-primary bg-primary/5 text-foreground'
+                          : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                      }`}
+                    >
+                      <p className="font-medium">{option.title}</p>
+                      <p className="mt-1 text-xs">{option.copy}</p>
+                    </button>
+                  ))}
+                </div>
+
+                {form.planning_mode === 'diaspora' && (
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label>Planning country</Label>
+                      <Input
+                        value={form.planning_country}
+                        onChange={(e) => setForm((current) => ({ ...current, planning_country: e.target.value }))}
+                        placeholder="e.g. United Kingdom"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Reference currency</Label>
+                      <Select
+                        value={form.reference_currency}
+                        onValueChange={(value) => setForm((current) => ({ ...current, reference_currency: value as WeddingReferenceCurrency }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose currency" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {weddingReferenceCurrencies.map((currency) => (
+                            <SelectItem key={currency} value={currency}>
+                              {currency}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Timezone</Label>
+                      <Input
+                        value={form.owner_timezone}
+                        onChange={(e) => setForm((current) => ({ ...current, owner_timezone: e.target.value }))}
+                        placeholder="e.g. Europe/London"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
               <KenyaLocationFields
                 county={form.wedding_county}
