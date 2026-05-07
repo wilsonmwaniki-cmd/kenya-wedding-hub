@@ -32,6 +32,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
+import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
 import {
   buildCommercialDocumentShareEmailDraft,
   buildCommercialDocumentShareUrl,
@@ -729,6 +731,20 @@ export default function VendorDocuments() {
           ? 'Receipts appear after you record real payments against invoices.'
           : 'Start with a quote for a couple, then turn it into an invoice once the work is confirmed.';
 
+  if (activeSection === 'contracts') {
+    return (
+      <ContractsWorkspace
+        role="vendor"
+        vendorListings={vendorListings}
+        vendorBookings={vendorBookings}
+      />
+    );
+  }
+
+  if (activeSection === 'templates') {
+    return <TemplatesWorkspace role="vendor" />;
+  }
+
   return (
     <div className="space-y-6">
       <Card className="border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.08),rgba(255,255,255,0.98)_32%,rgba(255,247,242,0.9))] shadow-card">
@@ -773,31 +789,6 @@ export default function VendorDocuments() {
         </CardContent>
       </Card>
 
-      {!showDocumentWorkspace ? (
-        <Card className="border-border/70 shadow-card">
-          <CardHeader>
-            <CardTitle className="font-display text-2xl">{pageTitle}</CardTitle>
-            <CardDescription>
-              {activeSection === 'contracts'
-                ? 'This is the next clean step for the documents area: agreements live here instead of being mixed into invoices and receipts.'
-                : 'Reusable invoice, quote, and contract starting points will live here so new paperwork is faster to prepare.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-10 text-center">
-              <NotebookPen className="mx-auto mb-4 h-6 w-6 text-primary" />
-              <p className="font-medium text-foreground">
-                {activeSection === 'contracts' ? 'Contracts workspace coming next' : 'Templates workspace coming next'}
-              </p>
-              <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                {activeSection === 'contracts'
-                  ? 'We have separated contracts into their own submenu so this area can stay focused and uncluttered. The agreement workflow will land here next.'
-                  : 'We have separated templates into their own submenu so the billing workspace stays lighter. Reusable templates will land here next.'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <Card className="border-border/70 shadow-card">
           <CardHeader className="space-y-4">
@@ -1245,7 +1236,6 @@ export default function VendorDocuments() {
           </CardContent>
         </Card>
       </section>
-      )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
