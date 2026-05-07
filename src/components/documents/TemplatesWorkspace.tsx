@@ -263,11 +263,11 @@ export default function TemplatesWorkspace({ role }: Props) {
 
   return (
     <section className="space-y-6">
-      <Card className="border-border/70 bg-card/95 shadow-card">
+      <Card className="border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.08),rgba(255,255,255,0.98)_32%,rgba(255,247,242,0.9))] shadow-card">
         <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Reusable starters</p>
-            <CardTitle className="font-display text-3xl text-foreground">Templates</CardTitle>
+            <CardTitle className="font-display text-[2.1rem] leading-tight text-foreground">Templates</CardTitle>
             <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
               Save your standard quote, invoice, receipt, and contract building blocks so the next document starts faster.
             </CardDescription>
@@ -278,19 +278,19 @@ export default function TemplatesWorkspace({ role }: Props) {
           </Button>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+          <div className="rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Templates</p>
             <p className="mt-2 text-2xl font-semibold text-foreground">{stats.total}</p>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+          <div className="rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Billing starters</p>
             <p className="mt-2 text-2xl font-semibold text-foreground">{stats.billing}</p>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+          <div className="rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Contract starters</p>
             <p className="mt-2 text-2xl font-semibold text-foreground">{stats.contracts}</p>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+          <div className="rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Quote starters</p>
             <p className="mt-2 text-2xl font-semibold text-foreground">{stats.quoteStarters}</p>
           </div>
@@ -298,7 +298,7 @@ export default function TemplatesWorkspace({ role }: Props) {
       </Card>
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <Card className="border-border/70 shadow-card">
+        <Card className="border-border/70 bg-white/95 shadow-card">
           <CardHeader className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -307,7 +307,12 @@ export default function TemplatesWorkspace({ role }: Props) {
               </div>
               {refreshing && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin text-primary" />Refreshing</div>}
             </div>
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by template name or default title" />
+            <div className="grid gap-3 sm:grid-cols-[1.3fr_0.7fr]">
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by template name or default title" />
+              <div className="flex items-center rounded-xl border border-border bg-muted/20 px-4 text-sm text-muted-foreground">
+                Showing <span className="mx-1 font-medium text-foreground">reusable starters</span> from the left menu
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
             {templates.length === 0 ? (
@@ -354,7 +359,7 @@ export default function TemplatesWorkspace({ role }: Props) {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 shadow-card">
+        <Card className="border-border/70 bg-white/95 shadow-card">
           <CardHeader>
             <CardTitle className="font-display text-xl">Template details</CardTitle>
             <CardDescription>
