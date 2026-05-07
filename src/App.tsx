@@ -102,7 +102,9 @@ const App = () => (
                   <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
                   <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
                   <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
+                  <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
                   <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
+                  <Route path="/planner-documents/:section" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
                   <Route path="/documents/:documentId/print" element={<ProtectedRoute allowedRoles={['vendor', 'planner']}><CommercialDocumentPrint /></ProtectedRoute>} />
                   <Route path="/documents/share/:token" element={<CommercialDocumentShare />} />
                   <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />

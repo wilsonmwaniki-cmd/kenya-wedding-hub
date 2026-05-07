@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, type RolePreview } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
@@ -94,6 +94,7 @@ const professionalSetupNavItems: NavItem[] = [
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expandedNavItems, setExpandedNavItems] = useState<Record<string, boolean>>({});
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut, profile, baseProfile, isSuperAdmin, rolePreview, setRolePreview } = useAuth();
@@ -171,6 +172,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       window.location.assign('/auth');
     }
   };
+
+  useEffect(() => {
+    setExpandedNavItems((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      navItems.forEach((item) => {
+        if (!item.children?.length) return;
+        const shouldBeOpen = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+        if (shouldBeOpen && !next[item.path]) {
+          next[item.path] = true;
+          changed = true;
+        }
+      });
+
+      return changed ? next : current;
+    });
+  }, [location.pathname, navItems]);
 
   return (
     <AssistantPanelProvider>
@@ -270,36 +289,70 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {navItems.map((item) => {
               const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
               const disabled = needsClient && planningPaths.includes(item.path);
+              const hasChildren = Boolean(item.children?.length);
+              const isExpanded = expandedNavItems[item.path] ?? isActive;
               return (
                 <div key={item.path} className="space-y-1">
-                  <Link
-                    to={disabled ? '#' : item.path}
-                    onClick={(e) => {
-                      if (disabled) { e.preventDefault(); return; }
-                      setSidebarOpen(false);
-                    }}
-                    className={`
-                      flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all
-                      ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
-                      ${isActive
-                        ? 'border-primary/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_28px_rgba(15,8,6,0.24)]'
-                        : 'border-transparent bg-black/[0.12] text-white/90 hover:border-white/10 hover:bg-white/[0.12] hover:text-white'
-                      }
-                    `}
-                  >
-                    <item.icon className={`h-4.5 w-4.5 ${isActive ? 'text-primary' : 'text-white/80'}`} />
-                    <span className="flex-1">{item.label}</span>
-                    {item.children?.length ? (
-                      <ChevronDown className={`h-4 w-4 transition-transform ${isActive ? 'rotate-180 text-white/80' : 'text-white/55'}`} />
-                    ) : null}
-                    {(badgeCounts[item.path] || 0) > 0 && (
-                      <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
-                        {badgeCounts[item.path]}
-                      </span>
-                    )}
-                  </Link>
-                  {item.children?.length && isActive ? (
-                    <div className="space-y-1 pl-4">
+                  {hasChildren ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (disabled) return;
+                        setExpandedNavItems((current) => ({
+                          ...current,
+                          [item.path]: !(current[item.path] ?? isActive),
+                        }));
+                      }}
+                      className={`
+                        flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium text-left transition-all
+                        ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
+                        ${isActive
+                          ? 'border-primary/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_28px_rgba(15,8,6,0.24)]'
+                          : 'border-transparent bg-black/[0.12] text-white/90 hover:border-white/10 hover:bg-white/[0.12] hover:text-white'
+                        }
+                      `}
+                    >
+                      <item.icon className={`h-4.5 w-4.5 ${isActive ? 'text-primary' : 'text-white/80'}`} />
+                      <span className="flex-1">{item.label}</span>
+                      {(badgeCounts[item.path] || 0) > 0 && (
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                          {badgeCounts[item.path]}
+                        </span>
+                      )}
+                      <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180 text-white/80' : 'text-white/55'}`} />
+                    </button>
+                  ) : (
+                    <Link
+                      to={disabled ? '#' : item.path}
+                      onClick={(e) => {
+                        if (disabled) { e.preventDefault(); return; }
+                        setSidebarOpen(false);
+                      }}
+                      className={`
+                        flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all
+                        ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
+                        ${isActive
+                          ? 'border-primary/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_28px_rgba(15,8,6,0.24)]'
+                          : 'border-transparent bg-black/[0.12] text-white/90 hover:border-white/10 hover:bg-white/[0.12] hover:text-white'
+                        }
+                      `}
+                    >
+                      <item.icon className={`h-4.5 w-4.5 ${isActive ? 'text-primary' : 'text-white/80'}`} />
+                      <span className="flex-1">{item.label}</span>
+                      {(badgeCounts[item.path] || 0) > 0 && (
+                        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                          {badgeCounts[item.path]}
+                        </span>
+                      )}
+                    </Link>
+                  )}
+                  {hasChildren && isExpanded ? (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="space-y-1 overflow-hidden pl-4"
+                    >
                       {item.children.map((child) => {
                         const childActive = location.pathname === child.path;
                         return (
@@ -317,7 +370,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           </Link>
                         );
                       })}
-                    </div>
+                    </motion.div>
                   ) : null}
                 </div>
               );
