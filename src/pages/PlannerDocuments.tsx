@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   ArrowRight,
   BadgeCheck,
@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Select,
@@ -84,6 +83,7 @@ type PaymentDraft = {
 };
 
 type FilterType = 'all' | CommercialDocumentType;
+type DocumentsSection = 'overview' | 'quotes' | 'invoices' | 'receipts' | 'contracts' | 'templates';
 
 function formatCurrency(amount: number) {
   return `KES ${amount.toLocaleString()}`;
@@ -108,6 +108,7 @@ function nextDueDateValue(type: CommercialDocumentType) {
 
 export default function PlannerDocuments() {
   const { toast } = useToast();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [documents, setDocuments] = useState<CommercialDocumentRecord[]>([]);
@@ -116,7 +117,6 @@ export default function PlannerDocuments() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [plannerClients, setPlannerClients] = useState<PlannerClientOption[]>([]);
   const [search, setSearch] = useState('');
-  const [activeType, setActiveType] = useState<FilterType>('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [savingHeader, setSavingHeader] = useState(false);
@@ -158,6 +158,22 @@ export default function PlannerDocuments() {
     terms: string;
   } | null>(null);
   const [itemDrafts, setItemDrafts] = useState<SaveCommercialDocumentItemInput[]>([]);
+
+  const activeSection: DocumentsSection = useMemo(() => {
+    if (location.pathname.endsWith('/quotes')) return 'quotes';
+    if (location.pathname.endsWith('/invoices')) return 'invoices';
+    if (location.pathname.endsWith('/receipts')) return 'receipts';
+    if (location.pathname.endsWith('/contracts')) return 'contracts';
+    if (location.pathname.endsWith('/templates')) return 'templates';
+    return 'overview';
+  }, [location.pathname]);
+
+  const activeType: FilterType = useMemo(() => {
+    if (activeSection === 'quotes') return 'quote';
+    if (activeSection === 'invoices') return 'invoice';
+    if (activeSection === 'receipts') return 'receipt';
+    return 'all';
+  }, [activeSection]);
 
   const loadDocuments = async (preferredId?: string | null) => {
     const next = await listCommercialDocuments({
@@ -641,88 +657,129 @@ export default function PlannerDocuments() {
     );
   }
 
+  const pageTitle =
+    activeSection === 'quotes'
+      ? 'Quotes'
+      : activeSection === 'invoices'
+        ? 'Invoices'
+        : activeSection === 'receipts'
+          ? 'Receipts'
+          : activeSection === 'contracts'
+            ? 'Contracts'
+            : activeSection === 'templates'
+              ? 'Templates'
+              : 'Documents';
+
+  const pageDescription =
+    activeSection === 'quotes'
+      ? 'Draft proposals for couples without the rest of the billing workflow crowding the page.'
+      : activeSection === 'invoices'
+        ? 'Stay focused on what is due, what is paid, and what still needs follow-up.'
+        : activeSection === 'receipts'
+          ? 'Keep issued receipts in one clean trail for every real payment you record.'
+          : activeSection === 'contracts'
+            ? 'Keep agreements separate from billing so service terms live in their own calmer workspace.'
+            : activeSection === 'templates'
+              ? 'Keep reusable document starting points in one place so new paperwork is faster to create.'
+              : 'Use the left menu to move between your overview, quotes, invoices, receipts, contracts, and templates.';
+
+  const sectionBadgeLabel =
+    activeSection === 'overview'
+      ? 'Quotes'
+      : activeSection === 'quotes'
+        ? 'Quotes'
+        : activeSection === 'invoices'
+          ? 'Invoices'
+          : activeSection === 'receipts'
+            ? 'Receipts'
+            : activeSection === 'contracts'
+              ? 'Contracts'
+              : 'Templates';
+
+  const showDocumentWorkspace =
+    activeSection === 'overview' ||
+    activeSection === 'quotes' ||
+    activeSection === 'invoices' ||
+    activeSection === 'receipts';
+
+  const emptyStateCopy =
+    activeSection === 'quotes'
+      ? 'Create your first quote for a couple, then turn it into an invoice once the work is confirmed.'
+      : activeSection === 'invoices'
+        ? 'Once a quote is approved, your invoices will gather here for due-date and payment follow-up.'
+        : activeSection === 'receipts'
+          ? 'Receipts appear after you record real payments against invoices.'
+          : 'Start with a quote for a couple, then turn it into an invoice once the work is confirmed.';
+
   return (
     <div className="space-y-6">
-      <section className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        <Card className="overflow-hidden border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.12),rgba(255,255,255,0.98)_38%,rgba(255,243,237,0.9))] shadow-card">
-          <CardHeader className="space-y-3">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Commercial documents</p>
-                <CardTitle className="font-display text-3xl text-foreground">Quotes, invoices, and receipts</CardTitle>
-                <CardDescription className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                  Keep every client-facing document in one planner workspace so your proposal, invoice, and receipt story always matches.
-                </CardDescription>
-              </div>
-              <Button onClick={() => setCreateOpen(true)} className="gap-2">
-                <FilePlus2 className="h-4 w-4" />
-                New document
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-3">
-            {[
-              {
-                icon: NotebookPen,
-                title: 'Start with a quote',
-                body: 'Capture your service lines before the couple conversation gets messy.',
-              },
-              {
-                icon: CircleDollarSign,
-                title: 'Track payment clearly',
-                body: 'See what has been paid, what is due, and what still needs follow-up.',
-              },
-              {
-                icon: Receipt,
-                title: 'Close the loop',
-                body: 'Issue receipts from real payments so your records stay audit-friendly.',
-              },
-            ].map((item) => (
-              <div key={item.title} className="rounded-2xl border border-white/70 bg-white/75 p-4 shadow-sm backdrop-blur">
-                <item.icon className="mb-3 h-4 w-4 text-primary" />
-                <p className="font-medium text-foreground">{item.title}</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.body}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+      <Card className="border-border/70 bg-card/95 shadow-card">
+        <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Commercial documents</p>
+            <CardTitle className="font-display text-3xl text-foreground">{pageTitle}</CardTitle>
+            <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
+              {pageDescription}
+            </CardDescription>
+          </div>
+          <Button onClick={() => setCreateOpen(true)} className="gap-2 self-start">
+            <FilePlus2 className="h-4 w-4" />
+            New document
+          </Button>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Documents</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{stats.total}</p>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{sectionBadgeLabel}</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">
+              {activeSection === 'quotes'
+                ? stats.quotes
+                : activeSection === 'invoices'
+                  ? stats.invoices
+                  : activeSection === 'receipts'
+                    ? stats.receipts
+                    : 0}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Collected</p>
+            <p className="mt-2 text-lg font-semibold text-emerald-700">{formatCurrency(stats.collected)}</p>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Outstanding</p>
+            <p className="mt-2 text-lg font-semibold text-amber-700">{formatCurrency(stats.outstanding)}</p>
+          </div>
+        </CardContent>
+      </Card>
 
-        <Card className="border-border/70 bg-card shadow-card">
+      {!showDocumentWorkspace ? (
+        <Card className="border-border/70 shadow-card">
           <CardHeader>
-            <CardTitle className="font-display text-lg">At a glance</CardTitle>
-            <CardDescription>Quick health check for the money trail behind your planner work.</CardDescription>
+            <CardTitle className="font-display text-2xl">{pageTitle}</CardTitle>
+            <CardDescription>
+              {activeSection === 'contracts'
+                ? 'This is the next clean step for the documents area: agreements live here instead of being mixed into invoices and receipts.'
+                : 'Reusable quote, invoice, receipt, and contract starters will live here so new paperwork is faster to prepare.'}
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Documents</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{stats.total}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Quotes</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{stats.quotes}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Collected</p>
-                <p className="mt-2 text-lg font-semibold text-emerald-700">{formatCurrency(stats.collected)}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Outstanding</p>
-                <p className="mt-2 text-lg font-semibold text-amber-700">{formatCurrency(stats.outstanding)}</p>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">Recommended next move</p>
-              <p className="mt-1 leading-6">
-                {stats.outstanding > 0
-                  ? 'Open the invoice with the biggest unpaid balance and record the latest payment or send a follow-up.'
-                  : 'Start the next quote while the wedding conversation is still fresh.'}
+          <CardContent>
+            <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-10 text-center">
+              <NotebookPen className="mx-auto mb-4 h-6 w-6 text-primary" />
+              <p className="font-medium text-foreground">
+                {activeSection === 'contracts' ? 'Contracts workspace coming next' : 'Templates workspace coming next'}
+              </p>
+              <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                {activeSection === 'contracts'
+                  ? 'We have separated contracts into their own submenu so this area can stay focused and uncluttered. The agreement workflow will land here next.'
+                  : 'We have separated templates into their own submenu so the billing workspace stays lighter. Reusable templates will land here next.'}
               </p>
             </div>
           </CardContent>
         </Card>
-      </section>
-
+      ) : (
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <Card className="border-border/70 shadow-card">
           <CardHeader className="space-y-4">
@@ -744,14 +801,9 @@ export default function PlannerDocuments() {
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search by document number, recipient, or wedding"
               />
-              <Tabs value={activeType} onValueChange={(value) => setActiveType(value as FilterType)}>
-                <TabsList className="grid w-full grid-cols-4">
-                  <TabsTrigger value="all">All</TabsTrigger>
-                  <TabsTrigger value="quote">Quotes</TabsTrigger>
-                  <TabsTrigger value="invoice">Invoices</TabsTrigger>
-                  <TabsTrigger value="receipt">Receipts</TabsTrigger>
-                </TabsList>
-              </Tabs>
+              <div className="flex items-center rounded-xl border border-border bg-muted/20 px-4 text-sm text-muted-foreground">
+                Showing <span className="mx-1 font-medium text-foreground">{pageTitle}</span> from the left menu
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -759,62 +811,58 @@ export default function PlannerDocuments() {
               <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-8 text-center">
                 <FileSpreadsheet className="mx-auto mb-3 h-5 w-5 text-primary" />
                 <p className="font-medium text-foreground">No documents yet</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Start with a quote for a couple, then turn it into an invoice once the work is confirmed.
-                </p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{emptyStateCopy}</p>
                 <Button className="mt-4 gap-2" onClick={() => setCreateOpen(true)}>
                   <FilePlus2 className="h-4 w-4" />
                   Create first document
                 </Button>
               </div>
             ) : (
-              documents.map((document) => {
-                const isActive = document.id === selectedDocumentId;
-                return (
-                  <button
-                    key={document.id}
-                    type="button"
-                    onClick={() => setSelectedDocumentId(document.id)}
-                    className={`w-full rounded-2xl border p-4 text-left transition ${
-                      isActive
-                        ? 'border-primary/35 bg-primary/5 shadow-sm'
-                        : 'border-border bg-card hover:border-primary/20 hover:bg-muted/10'
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
+              <div className="overflow-hidden rounded-2xl border border-border">
+                <div className="hidden grid-cols-[1.1fr_1.4fr_0.9fr_0.9fr_1fr] gap-4 border-b border-border bg-muted/20 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground md:grid">
+                  <span>Document</span>
+                  <span>Recipient</span>
+                  <span>Total</span>
+                  <span>Due</span>
+                  <span>Status</span>
+                </div>
+                <div className="divide-y divide-border">
+                  {documents.map((document) => {
+                    const isActive = document.id === selectedDocumentId;
+                    return (
+                      <button
+                        key={document.id}
+                        type="button"
+                        onClick={() => setSelectedDocumentId(document.id)}
+                        className={`grid w-full gap-3 px-4 py-4 text-left transition md:grid-cols-[1.1fr_1.4fr_0.9fr_0.9fr_1fr] md:items-center ${
+                          isActive ? 'bg-primary/6' : 'bg-card hover:bg-muted/10'
+                        }`}
+                      >
+                        <div>
                           <p className="font-semibold text-foreground">{document.documentNumber}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{document.title}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{document.recipientName}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{document.weddingName || 'No wedding label'}</p>
+                        </div>
+                        <div className="text-sm font-semibold text-foreground">{formatCurrency(document.totalAmount)}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {document.documentType !== 'receipt' && document.dueDate
+                            ? new Date(document.dueDate).toLocaleDateString()
+                            : 'No due date'}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="secondary">{commercialDocumentTypeLabel(document.documentType)}</Badge>
                           <Badge variant={document.status === 'paid' || document.status === 'accepted' || document.status === 'issued' ? 'default' : 'outline'}>
                             {commercialDocumentStatusLabel(document.status)}
                           </Badge>
                         </div>
-                        <p className="mt-1 text-sm font-medium text-foreground">{document.title}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {document.recipientName}
-                          {document.weddingName ? ` · ${document.weddingName}` : ''}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-foreground">{formatCurrency(document.totalAmount)}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Issued {new Date(document.issueDate).toLocaleDateString()}
-                        </p>
-                        {document.documentType !== 'receipt' && document.dueDate && (
-                          <p className="text-xs text-muted-foreground">
-                            Due {new Date(document.dueDate).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                      <span>Paid: {formatCurrency(document.amountPaid)}</span>
-                      <span>Balance: {formatCurrency(document.balanceDue)}</span>
-                    </div>
-                  </button>
-                );
-              })
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -1179,6 +1227,7 @@ export default function PlannerDocuments() {
           </CardContent>
         </Card>
       </section>
+      )}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
