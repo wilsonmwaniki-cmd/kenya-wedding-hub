@@ -13,6 +13,8 @@ import {
 import {
   completePendingWeddingSetup,
   getPendingWeddingSetup,
+  type WeddingPlanningMode,
+  type WeddingReferenceCurrency,
   type WeddingOwnerRole,
   type WeddingSignupIntent,
 } from '@/lib/weddingWorkspace';
@@ -81,6 +83,10 @@ interface AuthContextType {
       weddingTown?: string | null;
       primaryCounty?: string | null;
       primaryTown?: string | null;
+      planningMode?: WeddingPlanningMode | null;
+      planningCountry?: string | null;
+      referenceCurrency?: WeddingReferenceCurrency | null;
+      ownerTimezone?: string | null;
       professionalRoleLocked?: boolean | null;
     }
   ) => Promise<void>;
@@ -1111,6 +1117,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       weddingTown?: string | null;
       primaryCounty?: string | null;
       primaryTown?: string | null;
+      planningMode?: WeddingPlanningMode | null;
+      planningCountry?: string | null;
+      referenceCurrency?: WeddingReferenceCurrency | null;
+      ownerTimezone?: string | null;
       professionalRoleLocked?: boolean | null;
     },
   ) => {
@@ -1125,6 +1135,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const weddingCode = options?.weddingCode?.trim().toUpperCase() || null;
     const signupIntent = options?.signupIntent ?? 'professional';
     const weddingDate = options?.weddingDate?.trim() || null;
+    const planningMode = options?.planningMode === 'diaspora' ? 'diaspora' : 'local';
+    const planningCountry = planningMode === 'diaspora' ? options?.planningCountry?.trim() || null : null;
+    const referenceCurrency = planningMode === 'diaspora' ? options?.referenceCurrency ?? null : null;
+    const ownerTimezone = planningMode === 'diaspora' ? options?.ownerTimezone?.trim() || null : null;
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -1145,6 +1159,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           wedding_town: weddingTown,
           wedding_date: weddingDate,
           wedding_location: weddingTown || weddingCounty ? [weddingTown, weddingCounty].filter(Boolean).join(', ') : null,
+          planning_mode: signupIntent === 'create_wedding' ? planningMode : null,
+          planning_country: signupIntent === 'create_wedding' ? planningCountry : null,
+          reference_currency: signupIntent === 'create_wedding' ? referenceCurrency : null,
+          owner_timezone: signupIntent === 'create_wedding' ? ownerTimezone : null,
           primary_county: primaryCounty,
           primary_town: primaryTown,
         },

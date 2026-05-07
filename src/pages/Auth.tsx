@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, isProfessionalSetupPending, type SignupRole } from '@/lib/roles';
@@ -26,6 +27,9 @@ import {
   getPendingWeddingSetup,
   persistPendingWeddingSetup,
   type PendingWeddingSetup,
+  type WeddingPlanningMode,
+  type WeddingReferenceCurrency,
+  weddingReferenceCurrencies,
   type WeddingOwnerRole,
   type WeddingSignupIntent,
 } from '@/lib/weddingWorkspace';
@@ -105,6 +109,12 @@ export default function Auth() {
   const [weddingCounty, setWeddingCounty] = useState('');
   const [weddingTown, setWeddingTown] = useState('');
   const [weddingDate, setWeddingDate] = useState('');
+  const [planningMode, setPlanningMode] = useState<WeddingPlanningMode>('local');
+  const [planningCountry, setPlanningCountry] = useState('');
+  const [referenceCurrency, setReferenceCurrency] = useState<WeddingReferenceCurrency | ''>('');
+  const [ownerTimezone, setOwnerTimezone] = useState(() =>
+    typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone || '' : '',
+  );
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
@@ -314,6 +324,11 @@ export default function Auth() {
       weddingCounty: signupPath === 'create_wedding' ? weddingCounty : null,
       weddingTown: signupPath === 'create_wedding' ? weddingTown : null,
       weddingDate: signupPath === 'create_wedding' ? weddingDate : null,
+      planningMode: signupPath === 'create_wedding' ? planningMode : null,
+      planningCountry: signupPath === 'create_wedding' && planningMode === 'diaspora' ? planningCountry : null,
+      referenceCurrency:
+        signupPath === 'create_wedding' && planningMode === 'diaspora' && referenceCurrency ? referenceCurrency : null,
+      ownerTimezone: signupPath === 'create_wedding' && planningMode === 'diaspora' ? ownerTimezone : null,
     };
 
     persistPendingWeddingSetup(payload);
@@ -341,6 +356,20 @@ export default function Auth() {
 
       if (!weddingDate.trim()) {
         throw new Error('Add the wedding date before continuing.');
+      }
+
+      if (planningMode === 'diaspora') {
+        if (!planningCountry.trim()) {
+          throw new Error('Add the country you are planning from before continuing.');
+        }
+
+        if (!referenceCurrency) {
+          throw new Error('Choose your reference currency before continuing.');
+        }
+
+        if (!ownerTimezone.trim()) {
+          throw new Error('Add your timezone before continuing.');
+        }
       }
     }
 
@@ -399,6 +428,10 @@ export default function Auth() {
             weddingCounty,
             weddingTown,
             weddingDate,
+            planningMode,
+            planningCountry,
+            referenceCurrency: referenceCurrency || null,
+            ownerTimezone,
           });
           toast({
             title: 'Account created!',
@@ -526,6 +559,7 @@ export default function Auth() {
     if (nextAudience === 'couple') {
       setSignupPath('create_wedding');
       setWeddingOwnerRole(null);
+      setPlanningMode('local');
       return;
     }
 
@@ -840,6 +874,80 @@ export default function Auth() {
                               required
                             />
                           </div>
+                        </div>
+
+                        <div className="space-y-3 rounded-2xl border border-border/60 bg-background/70 p-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">Where will you be planning from?</p>
+                            <p className="text-xs text-muted-foreground">
+                              We’ll tailor the wedding workspace for local planning or a remote diaspora setup.
+                            </p>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {([
+                              { value: 'local', title: 'Planning from Kenya', copy: 'Use the standard local planning flow.' },
+                              { value: 'diaspora', title: 'Planning from abroad', copy: 'Add your country, timezone, and reference currency.' },
+                            ] as const).map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setPlanningMode(option.value)}
+                                className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                                  planningMode === option.value
+                                    ? 'border-primary bg-primary/5 text-foreground'
+                                    : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                                }`}
+                              >
+                                <p className="font-medium">{option.title}</p>
+                                <p className="mt-1 text-xs">{option.copy}</p>
+                              </button>
+                            ))}
+                          </div>
+
+                          {planningMode === 'diaspora' && (
+                            <div className="grid gap-4 md:grid-cols-3">
+                              <div className="space-y-2">
+                                <Label htmlFor="planning-country">Planning country</Label>
+                                <Input
+                                  id="planning-country"
+                                  value={planningCountry}
+                                  onChange={(event) => setPlanningCountry(event.target.value)}
+                                  placeholder="e.g. United Kingdom"
+                                  required={planningMode === 'diaspora'}
+                                />
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label>Reference currency</Label>
+                                <Select
+                                  value={referenceCurrency}
+                                  onValueChange={(value) => setReferenceCurrency(value as WeddingReferenceCurrency)}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Choose currency" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {weddingReferenceCurrencies.map((currency) => (
+                                      <SelectItem key={currency} value={currency}>
+                                        {currency}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label htmlFor="owner-timezone">Timezone</Label>
+                                <Input
+                                  id="owner-timezone"
+                                  value={ownerTimezone}
+                                  onChange={(event) => setOwnerTimezone(event.target.value)}
+                                  placeholder="e.g. Europe/London"
+                                  required={planningMode === 'diaspora'}
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </>
                     )}
