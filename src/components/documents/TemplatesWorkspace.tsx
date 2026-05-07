@@ -277,22 +277,22 @@ export default function TemplatesWorkspace({ role }: Props) {
             New template
           </Button>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-border/70 bg-white/80 p-4">
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Templates</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{stats.total}</p>
+            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.total}</p>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-white/80 p-4">
+          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Billing starters</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{stats.billing}</p>
+            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.billing}</p>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-white/80 p-4">
+          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Contract starters</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{stats.contracts}</p>
+            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.contracts}</p>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-white/80 p-4">
+          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Quote starters</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{stats.quoteStarters}</p>
+            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.quoteStarters}</p>
           </div>
         </CardContent>
       </Card>
@@ -309,8 +309,8 @@ export default function TemplatesWorkspace({ role }: Props) {
             </div>
             <div className="grid gap-3 sm:grid-cols-[1.3fr_0.7fr]">
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by template name or default title" />
-              <div className="flex items-center rounded-xl border border-border bg-muted/20 px-4 text-sm text-muted-foreground">
-                Showing <span className="mx-1 font-medium text-foreground">reusable starters</span> from the left menu
+              <div className="flex min-h-12 items-center rounded-xl border border-border bg-muted/20 px-4 py-2 text-sm leading-5 text-muted-foreground">
+                Viewing <span className="mx-1 break-words font-medium text-foreground">reusable starters</span>
               </div>
             </div>
           </CardHeader>
@@ -342,14 +342,14 @@ export default function TemplatesWorkspace({ role }: Props) {
                         onClick={() => setSelectedId(template.id)}
                         className={`grid w-full gap-3 px-4 py-4 text-left transition md:grid-cols-[1.2fr_0.9fr_1.5fr] md:items-center ${active ? 'bg-primary/6' : 'bg-card hover:bg-muted/10'}`}
                       >
-                        <div>
-                          <p className="font-semibold text-foreground">{template.name}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{template.description || 'No description yet'}</p>
+                        <div className="min-w-0">
+                          <p className="break-words font-semibold leading-5 text-foreground">{template.name}</p>
+                          <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{template.description || 'No description yet'}</p>
                         </div>
                         <div>
                           <Badge variant="secondary">{professionalTemplateTypeLabel(template.templateType)}</Badge>
                         </div>
-                        <div className="text-sm text-muted-foreground">{template.defaultTitle || 'No default title yet'}</div>
+                        <div className="min-w-0 break-words text-sm leading-5 text-muted-foreground">{template.defaultTitle || 'No default title yet'}</div>
                       </button>
                     );
                   })}

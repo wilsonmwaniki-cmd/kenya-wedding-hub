@@ -723,7 +723,7 @@ export default function PlannerDocuments() {
 
   return (
     <div className="space-y-6">
-      <Card className="border-border/70 bg-card/95 shadow-card">
+      <Card className="border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.08),rgba(255,255,255,0.98)_32%,rgba(255,247,242,0.9))] shadow-card">
         <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Commercial documents</p>
@@ -737,14 +737,14 @@ export default function PlannerDocuments() {
             New document
           </Button>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Documents</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{stats.total}</p>
+            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.total}</p>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{sectionBadgeLabel}</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">
+            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">
               {activeSection === 'quotes'
                 ? stats.quotes
                 : activeSection === 'invoices'
@@ -754,13 +754,13 @@ export default function PlannerDocuments() {
                     : 0}
             </p>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Collected</p>
-            <p className="mt-2 text-lg font-semibold text-emerald-700">{formatCurrency(stats.collected)}</p>
+            <p className="mt-2 break-words text-lg font-semibold leading-tight text-emerald-700">{formatCurrency(stats.collected)}</p>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Outstanding</p>
-            <p className="mt-2 text-lg font-semibold text-amber-700">{formatCurrency(stats.outstanding)}</p>
+            <p className="mt-2 break-words text-lg font-semibold leading-tight text-amber-700">{formatCurrency(stats.outstanding)}</p>
           </div>
         </CardContent>
       </Card>
@@ -786,8 +786,8 @@ export default function PlannerDocuments() {
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search by document number, recipient, or wedding"
               />
-              <div className="flex items-center rounded-xl border border-border bg-muted/20 px-4 text-sm text-muted-foreground">
-                Showing <span className="mx-1 font-medium text-foreground">{pageTitle}</span> from the left menu
+              <div className="flex min-h-12 items-center rounded-xl border border-border bg-muted/20 px-4 py-2 text-sm leading-5 text-muted-foreground">
+                Viewing <span className="mx-1 break-words font-medium text-foreground">{pageTitle}</span>
               </div>
             </div>
           </CardHeader>
@@ -823,13 +823,13 @@ export default function PlannerDocuments() {
                           isActive ? 'bg-primary/6' : 'bg-card hover:bg-muted/10'
                         }`}
                       >
-                        <div>
+                        <div className="min-w-0">
                           <p className="font-semibold text-foreground">{document.documentNumber}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{document.title}</p>
+                          <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{document.title}</p>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{document.recipientName}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{document.weddingName || 'No wedding label'}</p>
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-medium leading-5 text-foreground">{document.recipientName}</p>
+                          <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{document.weddingName || 'No wedding label'}</p>
                         </div>
                         <div className="text-sm font-semibold text-foreground">{formatCurrency(document.totalAmount)}</div>
                         <div className="text-sm text-muted-foreground">
