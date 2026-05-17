@@ -1,0 +1,38 @@
+name: Sync Release Branch To Main
+
+on:
+  push:
+    branches:
+      - release/wedding-invites-v2
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-release-to-main:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch branches
+        run: |
+          git fetch origin main
+          git fetch origin release/wedding-invites-v2
+
+      - name: Merge release into main
+        run: |
+          git checkout main
+          git merge --no-ff --no-edit origin/release/wedding-invites-v2
+
+      - name: Push updated main
+        run: git push origin main

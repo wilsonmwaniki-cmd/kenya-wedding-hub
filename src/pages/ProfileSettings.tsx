@@ -23,10 +23,15 @@ import {
   getMyWeddingOwnershipSummary,
   getMyWeddingOwnershipSummaryFromTables,
   getPendingWeddingSetup,
+  getTimezoneOptions,
+  persistPendingWeddingSetup,
+  planningCountryOptions,
   sendWeddingInviteEmail,
   type MyWeddingOwnershipSummary,
   type WeddingPlanningMode,
+  type WeddingOwnerRole,
   type WeddingReferenceCurrency,
+  weddingReferenceCurrencyLabels,
   weddingReferenceCurrencies,
 } from '@/lib/weddingWorkspace';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
@@ -64,6 +69,8 @@ export default function ProfileSettings() {
   const [ownershipLoading, setOwnershipLoading] = useState(false);
   const [ownershipError, setOwnershipError] = useState<string | null>(null);
   const [repairingWeddingSetup, setRepairingWeddingSetup] = useState(false);
+  const [setupWeddingName, setSetupWeddingName] = useState('');
+  const [setupWeddingOwnerRole, setSetupWeddingOwnerRole] = useState<WeddingOwnerRole | null>(null);
   const [professionalSetupRole, setProfessionalSetupRole] = useState<'planner' | 'vendor' | null>(null);
   const [completingProfessionalSetup, setCompletingProfessionalSetup] = useState(false);
 
@@ -91,6 +98,12 @@ export default function ProfileSettings() {
       : '';
   const metadataOwnerTimezone =
     typeof user?.user_metadata?.owner_timezone === 'string' ? user.user_metadata.owner_timezone : '';
+  const timezoneOptions = getTimezoneOptions();
+
+  const buildSuggestedWeddingName = (name: string) => {
+    const firstName = name.trim().split(/\s+/)[0];
+    return firstName ? `${firstName}'s Wedding` : 'Our Wedding';
+  };
 
   const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 6000, message = 'Request timed out') => {
     return await Promise.race<T>([
@@ -205,6 +218,22 @@ export default function ProfileSettings() {
       });
     }
   }, [profile]);
+
+  useEffect(() => {
+    const metadataWeddingName =
+      typeof user?.user_metadata?.wedding_name === 'string' ? user.user_metadata.wedding_name : '';
+    const metadataWeddingOwnerRole =
+      user?.user_metadata?.wedding_owner_role === 'bride' || user?.user_metadata?.wedding_owner_role === 'groom'
+        ? (user.user_metadata.wedding_owner_role as WeddingOwnerRole)
+        : null;
+
+    setSetupWeddingName(
+      pendingWeddingSetup?.weddingName
+        || metadataWeddingName
+        || buildSuggestedWeddingName(form.full_name || profile?.full_name || ''),
+    );
+    setSetupWeddingOwnerRole(pendingWeddingSetup?.weddingOwnerRole ?? metadataWeddingOwnerRole);
+  }, [pendingWeddingSetup?.weddingName, pendingWeddingSetup?.weddingOwnerRole, form.full_name, profile?.full_name, user?.user_metadata]);
 
   const loadWeddingPlanningSettings = async (weddingId: string) => {
     const { data, error } = await (supabase as any)
@@ -556,6 +585,46 @@ export default function ProfileSettings() {
     setRepairingWeddingSetup(true);
 
     try {
+      if (pendingWeddingSetup.intent === 'create_wedding') {
+        if (!setupWeddingOwnerRole) {
+          throw new Error('Choose whether you are starting this wedding as the bride or the groom.');
+        }
+
+        if (!partnerEmailInput.trim()) {
+          throw new Error('Add your spouse email before finishing wedding setup.');
+        }
+
+        if (form.planning_mode === 'diaspora') {
+          if (!form.planning_country.trim()) {
+            throw new Error('Choose the country you are planning from before saving diaspora mode.');
+          }
+
+          if (!form.reference_currency) {
+            throw new Error('Choose a reference currency before saving diaspora mode.');
+          }
+
+          if (!form.owner_timezone.trim()) {
+            throw new Error('Choose your timezone before saving diaspora mode.');
+          }
+        }
+
+        persistPendingWeddingSetup({
+          ...pendingWeddingSetup,
+          intent: 'create_wedding',
+          email: user.email ?? pendingWeddingSetup.email ?? null,
+          weddingOwnerRole: setupWeddingOwnerRole,
+          partnerEmail: partnerEmailInput.trim().toLowerCase(),
+          weddingName: setupWeddingName.trim() || buildSuggestedWeddingName(form.full_name || profile?.full_name || ''),
+          weddingCounty: form.wedding_county || null,
+          weddingTown: form.wedding_town || null,
+          weddingDate: form.wedding_date || null,
+          planningMode: form.planning_mode,
+          planningCountry: form.planning_mode === 'diaspora' ? form.planning_country.trim() || null : null,
+          referenceCurrency: form.planning_mode === 'diaspora' ? form.reference_currency || null : null,
+          ownerTimezone: form.planning_mode === 'diaspora' ? form.owner_timezone.trim() || null : null,
+        });
+      }
+
       const completion = await completePendingWeddingSetup(user);
       toast({
         title: completion.action === 'created' ? 'Wedding setup completed' : 'Wedding setup refreshed',
@@ -940,18 +1009,63 @@ export default function ProfileSettings() {
                   </p>
                 </div>
               </>
-            ) : pendingWeddingSetup ? (
+            ) : pendingWeddingSetup?.intent === 'create_wedding' ? (
               <>
                 <div className="rounded-lg border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground">
-                  Your wedding signup details were saved, but the wedding workspace has not finished setting up yet.
+                  Your account is ready. Finish the wedding details here and we’ll create the shared wedding workspace for both of you.
+                </div>
+                <div className="space-y-2">
+                  <Label>Wedding name</Label>
+                  <Input
+                    value={setupWeddingName}
+                    onChange={(e) => setSetupWeddingName(e.target.value)}
+                    placeholder="e.g. Mary & James Wedding"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>I am starting this wedding as</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {([
+                      { value: 'bride', title: 'I am the bride', copy: 'We’ll invite the groom as the second owner.' },
+                      { value: 'groom', title: 'I am the groom', copy: 'We’ll invite the bride as the second owner.' },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setSetupWeddingOwnerRole(option.value)}
+                        className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                          setupWeddingOwnerRole === option.value
+                            ? 'border-primary bg-primary/5 text-foreground'
+                            : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                        }`}
+                      >
+                        <p className="font-medium">{option.title}</p>
+                        <p className="mt-1 text-xs">{option.copy}</p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Partner email</Label>
-                  <Input value={pendingWeddingSetup.partnerEmail ?? ''} readOnly />
+                  <Input
+                    type="email"
+                    value={partnerEmailInput}
+                    onChange={(e) => setPartnerEmailInput(e.target.value)}
+                    placeholder={setupWeddingOwnerRole === 'bride' ? 'groom@example.com' : 'bride@example.com'}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Use the email your spouse will sign in with.
+                  </p>
                 </div>
-                <div className="space-y-1 text-sm text-muted-foreground">
-                  <p>Wedding name: <span className="font-medium text-foreground">{pendingWeddingSetup.weddingName ?? 'Not set'}</span></p>
-                  <p>Owner role: <span className="font-medium capitalize text-foreground">{pendingWeddingSetup.weddingOwnerRole ?? 'Not set'}</span></p>
+                <Button type="button" onClick={repairWeddingSetup} disabled={repairingWeddingSetup}>
+                  {repairingWeddingSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Create wedding workspace
+                </Button>
+              </>
+            ) : pendingWeddingSetup ? (
+              <>
+                <div className="rounded-lg border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground">
+                  Your signup details were saved, but the shared wedding workspace has not finished setting up yet.
                 </div>
                 <Button type="button" onClick={repairWeddingSetup} disabled={repairingWeddingSetup}>
                   {repairingWeddingSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -1348,11 +1462,21 @@ export default function ProfileSettings() {
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="space-y-2">
                       <Label>Planning country</Label>
-                      <Input
+                      <Select
                         value={form.planning_country}
-                        onChange={(e) => setForm((current) => ({ ...current, planning_country: e.target.value }))}
-                        placeholder="e.g. United Kingdom"
-                      />
+                        onValueChange={(value) => setForm((current) => ({ ...current, planning_country: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose country" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {planningCountryOptions.map((country) => (
+                            <SelectItem key={country} value={country}>
+                              {country}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label>Reference currency</Label>
@@ -1366,7 +1490,7 @@ export default function ProfileSettings() {
                         <SelectContent>
                           {weddingReferenceCurrencies.map((currency) => (
                             <SelectItem key={currency} value={currency}>
-                              {currency}
+                              {weddingReferenceCurrencyLabels[currency]}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1374,11 +1498,21 @@ export default function ProfileSettings() {
                     </div>
                     <div className="space-y-2">
                       <Label>Timezone</Label>
-                      <Input
+                      <Select
                         value={form.owner_timezone}
-                        onChange={(e) => setForm((current) => ({ ...current, owner_timezone: e.target.value }))}
-                        placeholder="e.g. Europe/London"
-                      />
+                        onValueChange={(value) => setForm((current) => ({ ...current, owner_timezone: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose timezone" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {timezoneOptions.map((timezone) => (
+                            <SelectItem key={timezone} value={timezone}>
+                              {timezone}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                 )}
