@@ -43,6 +43,40 @@ type AuthEntryState = {
 type ProfessionalSignupRole = 'planner' | 'vendor';
 type AuthAudience = 'couple' | 'professional';
 
+const planningCountryOptions = [
+  'Australia', 'Austria', 'Belgium', 'Botswana', 'Canada', 'Denmark', 'Finland', 'France', 'Germany', 'Ghana',
+  'India', 'Ireland', 'Italy', 'Japan', 'Kenya', 'Netherlands', 'New Zealand', 'Nigeria', 'Norway', 'Qatar',
+  'Rwanda', 'Saudi Arabia', 'South Africa', 'Spain', 'Sweden', 'Switzerland', 'Tanzania', 'Uganda',
+  'United Arab Emirates', 'United Kingdom', 'United States',
+];
+
+const currencyLabels: Record<WeddingReferenceCurrency, string> = {
+  GBP: 'GBP · British Pound',
+  USD: 'USD · US Dollar',
+  EUR: 'EUR · Euro',
+  CAD: 'CAD · Canadian Dollar',
+  AUD: 'AUD · Australian Dollar',
+};
+
+function getTimezoneOptions() {
+  if (typeof Intl !== 'undefined' && typeof (Intl as any).supportedValuesOf === 'function') {
+    return ((Intl as any).supportedValuesOf('timeZone') as string[]).filter((value) =>
+      /Africa|Europe|America|Asia|Australia|Pacific/.test(value),
+    );
+  }
+
+  return [
+    'Africa/Nairobi',
+    'Europe/London',
+    'Europe/Paris',
+    'America/New_York',
+    'America/Toronto',
+    'America/Los_Angeles',
+    'Asia/Dubai',
+    'Australia/Sydney',
+  ];
+}
+
 function mapEntryRoleToSignupPath(role?: SignupRole): {
   signupPath: WeddingSignupIntent;
   professionalRole: ProfessionalSignupRole;
@@ -138,6 +172,7 @@ export default function Auth() {
   const hasChosenPath = hasChosenAudiencePath && hasProfessionalSelection;
   const showTopGoogleAuth = showGoogleAuth && hasChosenPath && (!isSignUp || audience === 'professional');
   const showCoupleSignupGoogleAuth = showGoogleAuth && isSignUp && audience === 'couple' && !!signupPath;
+  const timezoneOptions = useMemo(() => getTimezoneOptions(), []);
   const authErrorMessage = useMemo(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('auth_error') !== 'missing_role') return null;
@@ -354,10 +389,6 @@ export default function Auth() {
         throw new Error('Choose whether the bride or groom is creating this wedding first.');
       }
 
-      if (!weddingDate.trim()) {
-        throw new Error('Add the wedding date before continuing.');
-      }
-
       if (planningMode === 'diaspora') {
         if (!planningCountry.trim()) {
           throw new Error('Add the country you are planning from before continuing.');
@@ -412,10 +443,6 @@ export default function Auth() {
 
           if (!partnerEmail.trim()) {
             throw new Error('Add your partner’s email to create the wedding properly.');
-          }
-
-          if (!weddingDate.trim()) {
-            throw new Error('Add your wedding date before you continue.');
           }
 
           const resolvedWeddingName = weddingName.trim() || getSuggestedWeddingName();
@@ -816,142 +843,6 @@ export default function Auth() {
                       </div>
                     )}
 
-                    {showWeddingDetails && (
-                      <>
-                        <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium text-foreground">Who is starting the wedding?</p>
-                            <p className="text-xs text-muted-foreground">
-                              Pick bride or groom and we’ll add your spouse as the second owner.
-                            </p>
-                          </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {(['bride', 'groom'] as WeddingOwnerRole[]).map((value) => (
-                              <button
-                                key={value}
-                                type="button"
-                                onClick={() => setWeddingOwnerRole(value)}
-                                className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                                  weddingOwnerRole === value
-                                    ? 'border-primary bg-primary/5 text-foreground'
-                                    : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
-                                }`}
-                              >
-                                <p className="font-medium capitalize">{value}</p>
-                                <p className="mt-1 text-xs">
-                                  {value === 'bride'
-                                    ? 'We’ll invite the groom as the second owner.'
-                                    : 'We’ll invite the bride as the second owner.'}
-                                </p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="partner-email">Your spouse’s email</Label>
-                            <Input
-                              id="partner-email"
-                              type="email"
-                              value={partnerEmail}
-                              onChange={(event) => setPartnerEmail(event.target.value)}
-                              placeholder={weddingOwnerRole === 'bride' ? 'groom@example.com' : 'bride@example.com'}
-                              required
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Use the email they will sign in with.
-                            </p>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="wedding-date">Wedding date</Label>
-                            <Input
-                              id="wedding-date"
-                              type="date"
-                              value={weddingDate}
-                              onChange={(event) => setWeddingDate(event.target.value)}
-                              required
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-3 rounded-2xl border border-border/60 bg-background/70 p-4">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium text-foreground">Where will you be planning from?</p>
-                            <p className="text-xs text-muted-foreground">
-                              We’ll tailor the wedding workspace for local planning or a remote diaspora setup.
-                            </p>
-                          </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {([
-                              { value: 'local', title: 'Planning from Kenya', copy: 'Use the standard local planning flow.' },
-                              { value: 'diaspora', title: 'Planning from abroad', copy: 'Add your country, timezone, and reference currency.' },
-                            ] as const).map((option) => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => setPlanningMode(option.value)}
-                                className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                                  planningMode === option.value
-                                    ? 'border-primary bg-primary/5 text-foreground'
-                                    : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
-                                }`}
-                              >
-                                <p className="font-medium">{option.title}</p>
-                                <p className="mt-1 text-xs">{option.copy}</p>
-                              </button>
-                            ))}
-                          </div>
-
-                          {planningMode === 'diaspora' && (
-                            <div className="grid gap-4 md:grid-cols-3">
-                              <div className="space-y-2">
-                                <Label htmlFor="planning-country">Planning country</Label>
-                                <Input
-                                  id="planning-country"
-                                  value={planningCountry}
-                                  onChange={(event) => setPlanningCountry(event.target.value)}
-                                  placeholder="e.g. United Kingdom"
-                                  required={planningMode === 'diaspora'}
-                                />
-                              </div>
-
-                              <div className="space-y-2">
-                                <Label>Reference currency</Label>
-                                <Select
-                                  value={referenceCurrency}
-                                  onValueChange={(value) => setReferenceCurrency(value as WeddingReferenceCurrency)}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Choose currency" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {weddingReferenceCurrencies.map((currency) => (
-                                      <SelectItem key={currency} value={currency}>
-                                        {currency}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              <div className="space-y-2">
-                                <Label htmlFor="owner-timezone">Timezone</Label>
-                                <Input
-                                  id="owner-timezone"
-                                  value={ownerTimezone}
-                                  onChange={(event) => setOwnerTimezone(event.target.value)}
-                                  placeholder="e.g. Europe/London"
-                                  required={planningMode === 'diaspora'}
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-
                     {showJoinDetails && (
                       <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
                         <div className="space-y-1">
@@ -974,11 +865,11 @@ export default function Auth() {
                     )}
 
                     {showCoupleSignupGoogleAuth && (
-                      <div className="space-y-4 rounded-2xl border border-border/60 bg-background/70 p-4">
+                      <div className="space-y-3">
                         <div className="space-y-1">
                           <p className="text-sm font-medium text-foreground">Create your account</p>
                           <p className="text-xs text-muted-foreground">
-                            Use Google for the fastest path, or continue with email below.
+                            Continue with Google or use email and password below.
                           </p>
                         </div>
                         <GoogleAuthButton
@@ -990,9 +881,145 @@ export default function Auth() {
                           <div className="absolute inset-0 flex items-center">
                             <span className="w-full border-t border-border" />
                           </div>
-                          <div className="relative flex justify-center text-xs uppercase">
+                          <div className="relative flex justify-center text-[11px] uppercase tracking-[0.12em]">
                             <span className="bg-card px-2 text-muted-foreground">or use email below</span>
                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {showWeddingDetails && (
+                      <div className="space-y-4 rounded-2xl border border-border/60 bg-muted/15 p-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">Wedding setup</p>
+                          <p className="text-xs text-muted-foreground">
+                            Keep this light for now. We can finish the rest inside your wedding workspace.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>I am starting this wedding as</Label>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {([
+                              { value: 'bride', title: 'I am the bride', copy: 'We’ll invite the groom as the second owner.' },
+                              { value: 'groom', title: 'I am the groom', copy: 'We’ll invite the bride as the second owner.' },
+                            ] as const).map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setWeddingOwnerRole(option.value)}
+                                className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                                  weddingOwnerRole === option.value
+                                    ? 'border-primary bg-primary/5 text-foreground'
+                                    : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                                }`}
+                              >
+                                <p className="font-medium">{option.title}</p>
+                                <p className="mt-1 text-xs">{option.copy}</p>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor="partner-email">Your spouse’s email</Label>
+                            <Input
+                              id="partner-email"
+                              type="email"
+                              value={partnerEmail}
+                              onChange={(event) => setPartnerEmail(event.target.value)}
+                              placeholder={weddingOwnerRole === 'bride' ? 'groom@example.com' : 'bride@example.com'}
+                              required
+                            />
+                            <p className="text-xs text-muted-foreground">Use the email they will sign in with.</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="wedding-date">Wedding date (optional)</Label>
+                            <Input
+                              id="wedding-date"
+                              type="date"
+                              value={weddingDate}
+                              onChange={(event) => setWeddingDate(event.target.value)}
+                            />
+                            <p className="text-xs text-muted-foreground">You can always add or change this during setup.</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-3 rounded-xl border border-border/60 bg-background px-4 py-3">
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-foreground">Planning from abroad?</p>
+                              <p className="text-xs text-muted-foreground">
+                                Turn this on only if you want diaspora-specific country, currency, and timezone settings.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant={planningMode === 'diaspora' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => setPlanningMode((current) => (current === 'diaspora' ? 'local' : 'diaspora'))}
+                              className="shrink-0"
+                            >
+                              {planningMode === 'diaspora' ? 'Yes' : 'No'}
+                            </Button>
+                          </div>
+
+                          {planningMode === 'diaspora' && (
+                            <div className="grid gap-4 md:grid-cols-3">
+                              <div className="space-y-2">
+                                <Label>Planning country</Label>
+                                <Select value={planningCountry} onValueChange={setPlanningCountry}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Choose country" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {planningCountryOptions.map((country) => (
+                                      <SelectItem key={country} value={country}>
+                                        {country}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label>Reference currency</Label>
+                                <Select
+                                  value={referenceCurrency}
+                                  onValueChange={(value) => setReferenceCurrency(value as WeddingReferenceCurrency)}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Choose currency" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {weddingReferenceCurrencies.map((currency) => (
+                                      <SelectItem key={currency} value={currency}>
+                                        {currencyLabels[currency]}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label>Timezone</Label>
+                                <Select value={ownerTimezone} onValueChange={setOwnerTimezone}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Choose timezone" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {timezoneOptions.map((timezone) => (
+                                      <SelectItem key={timezone} value={timezone}>
+                                        {timezone}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
