@@ -23,14 +23,9 @@ import {
 } from '@/lib/professionalSetupState';
 import {
   clearPendingWeddingSetup,
-  completePendingWeddingSetup,
   getPendingWeddingSetup,
   persistPendingWeddingSetup,
   type PendingWeddingSetup,
-  type WeddingPlanningMode,
-  type WeddingReferenceCurrency,
-  weddingReferenceCurrencies,
-  type WeddingOwnerRole,
   type WeddingSignupIntent,
 } from '@/lib/weddingWorkspace';
 
@@ -42,40 +37,6 @@ type AuthEntryState = {
 } | null;
 type ProfessionalSignupRole = 'planner' | 'vendor';
 type AuthAudience = 'couple' | 'professional';
-
-const planningCountryOptions = [
-  'Australia', 'Austria', 'Belgium', 'Botswana', 'Canada', 'Denmark', 'Finland', 'France', 'Germany', 'Ghana',
-  'India', 'Ireland', 'Italy', 'Japan', 'Kenya', 'Netherlands', 'New Zealand', 'Nigeria', 'Norway', 'Qatar',
-  'Rwanda', 'Saudi Arabia', 'South Africa', 'Spain', 'Sweden', 'Switzerland', 'Tanzania', 'Uganda',
-  'United Arab Emirates', 'United Kingdom', 'United States',
-];
-
-const currencyLabels: Record<WeddingReferenceCurrency, string> = {
-  GBP: 'GBP · British Pound',
-  USD: 'USD · US Dollar',
-  EUR: 'EUR · Euro',
-  CAD: 'CAD · Canadian Dollar',
-  AUD: 'AUD · Australian Dollar',
-};
-
-function getTimezoneOptions() {
-  if (typeof Intl !== 'undefined' && typeof (Intl as any).supportedValuesOf === 'function') {
-    return ((Intl as any).supportedValuesOf('timeZone') as string[]).filter((value) =>
-      /Africa|Europe|America|Asia|Australia|Pacific/.test(value),
-    );
-  }
-
-  return [
-    'Africa/Nairobi',
-    'Europe/London',
-    'Europe/Paris',
-    'America/New_York',
-    'America/Toronto',
-    'America/Los_Angeles',
-    'Asia/Dubai',
-    'Australia/Sydney',
-  ];
-}
 
 function mapEntryRoleToSignupPath(role?: SignupRole): {
   signupPath: WeddingSignupIntent;
@@ -136,19 +97,7 @@ export default function Auth() {
   const [fullName, setFullName] = useState('');
   const [selectedAudience, setSelectedAudience] = useState<AuthAudience | null>(null);
   const [signupPath, setSignupPath] = useState<WeddingSignupIntent | null>(null);
-  const [weddingOwnerRole, setWeddingOwnerRole] = useState<WeddingOwnerRole | null>(null);
-  const [weddingName, setWeddingName] = useState('');
-  const [partnerEmail, setPartnerEmail] = useState('');
   const [weddingCode, setWeddingCode] = useState('');
-  const [weddingCounty, setWeddingCounty] = useState('');
-  const [weddingTown, setWeddingTown] = useState('');
-  const [weddingDate, setWeddingDate] = useState('');
-  const [planningMode, setPlanningMode] = useState<WeddingPlanningMode>('local');
-  const [planningCountry, setPlanningCountry] = useState('');
-  const [referenceCurrency, setReferenceCurrency] = useState<WeddingReferenceCurrency | ''>('');
-  const [ownerTimezone, setOwnerTimezone] = useState(() =>
-    typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone || '' : '',
-  );
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
@@ -163,7 +112,6 @@ export default function Auth() {
     [user],
   );
   const audience: AuthAudience | null = selectedAudience;
-  const showWeddingDetails = isSignUp && selectedAudience === 'couple' && signupPath === 'create_wedding';
   const showJoinDetails = isSignUp && selectedAudience === 'couple' && signupPath === 'join_wedding';
   const showProfessionalDetails = selectedAudience === 'professional' && signupPath === 'professional';
   const showGoogleAuth = !isForgot;
@@ -172,7 +120,6 @@ export default function Auth() {
   const hasChosenPath = hasChosenAudiencePath && hasProfessionalSelection;
   const showTopGoogleAuth = showGoogleAuth && hasChosenPath && (!isSignUp || audience === 'professional');
   const showCoupleSignupGoogleAuth = showGoogleAuth && isSignUp && audience === 'couple' && !!signupPath;
-  const timezoneOptions = useMemo(() => getTimezoneOptions(), []);
   const authErrorMessage = useMemo(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('auth_error') !== 'missing_role') return null;
@@ -272,7 +219,7 @@ export default function Auth() {
 
         if (pendingSetup) {
           if (!active) return;
-          navigate('/dashboard', { replace: true });
+          navigate('/settings', { replace: true });
           return;
         }
 
@@ -331,18 +278,11 @@ export default function Auth() {
     );
   }
 
-  const getSuggestedWeddingName = () => {
-    const firstName = fullName.trim().split(/\s+/)[0];
-    return firstName ? `${firstName}'s Wedding` : 'Our Wedding';
-  };
-
   const persistWeddingIntentIfNeeded = () => {
     if (!signupPath) {
       clearPendingWeddingSetup();
       return;
     }
-
-    const coupleWeddingName = weddingName.trim() || getSuggestedWeddingName();
 
     if (signupPath === 'professional') {
       clearPendingWeddingSetup();
@@ -352,18 +292,7 @@ export default function Auth() {
     const payload: PendingWeddingSetup = {
       intent: signupPath,
       email,
-      weddingOwnerRole: signupPath === 'create_wedding' ? weddingOwnerRole : null,
-      partnerEmail: signupPath === 'create_wedding' ? partnerEmail : null,
-      weddingName: signupPath === 'create_wedding' ? coupleWeddingName : null,
       weddingCode: signupPath === 'join_wedding' ? normalizeJoinCode(weddingCode) : null,
-      weddingCounty: signupPath === 'create_wedding' ? weddingCounty : null,
-      weddingTown: signupPath === 'create_wedding' ? weddingTown : null,
-      weddingDate: signupPath === 'create_wedding' ? weddingDate : null,
-      planningMode: signupPath === 'create_wedding' ? planningMode : null,
-      planningCountry: signupPath === 'create_wedding' && planningMode === 'diaspora' ? planningCountry : null,
-      referenceCurrency:
-        signupPath === 'create_wedding' && planningMode === 'diaspora' && referenceCurrency ? referenceCurrency : null,
-      ownerTimezone: signupPath === 'create_wedding' && planningMode === 'diaspora' ? ownerTimezone : null,
     };
 
     persistPendingWeddingSetup(payload);
@@ -378,30 +307,6 @@ export default function Auth() {
 
     if (!selectedAudience || !signupPath) {
       throw new Error('Choose how you are signing up before continuing.');
-    }
-
-    if (signupPath === 'create_wedding') {
-      if (!partnerEmail.trim()) {
-        throw new Error('Add your partner’s email before continuing.');
-      }
-
-      if (!weddingOwnerRole) {
-        throw new Error('Choose whether the bride or groom is creating this wedding first.');
-      }
-
-      if (planningMode === 'diaspora') {
-        if (!planningCountry.trim()) {
-          throw new Error('Add the country you are planning from before continuing.');
-        }
-
-        if (!referenceCurrency) {
-          throw new Error('Choose your reference currency before continuing.');
-        }
-
-        if (!ownerTimezone.trim()) {
-          throw new Error('Add your timezone before continuing.');
-        }
-      }
     }
 
     if (signupPath === 'join_wedding' && !normalizeJoinCode(weddingCode)) {
@@ -437,40 +342,19 @@ export default function Auth() {
         }
 
         if (signupPath === 'create_wedding') {
-          if (!weddingOwnerRole) {
-            throw new Error('Choose whether the bride or groom is creating this wedding.');
-          }
-
-          if (!partnerEmail.trim()) {
-            throw new Error('Add your partner’s email to create the wedding properly.');
-          }
-
-          const resolvedWeddingName = weddingName.trim() || getSuggestedWeddingName();
           persistWeddingIntentIfNeeded();
           await signUp(email, password, fullName, 'couple', {
             signupIntent: 'create_wedding',
-            weddingOwnerRole,
-            partnerEmail,
-            weddingName: resolvedWeddingName,
-            weddingCounty,
-            weddingTown,
-            weddingDate,
-            planningMode,
-            planningCountry,
-            referenceCurrency: referenceCurrency || null,
-            ownerTimezone,
           });
           toast({
             title: 'Account created!',
-            description: partnerEmail.trim()
-              ? 'Check your email to confirm your account. Once you finish, we will create the wedding and queue your partner invite.'
-              : 'Check your email to confirm your account, then we will create your wedding workspace.',
+            description: 'Check your email to confirm your account, then finish your wedding setup in Settings.',
           });
           setIsSignUp(false);
           setIsForgot(false);
           setPassword('');
           setPostSignupMessage(
-            'Account created. Check your email to confirm it, then sign in to continue setting up your wedding.',
+            'Account created. Check your email to confirm it, then sign in to finish your wedding setup in Settings.',
           );
         } else if (signupPath === 'join_wedding') {
           if (!normalizeJoinCode(weddingCode)) {
@@ -582,13 +466,11 @@ export default function Auth() {
 
   const switchAudience = (nextAudience: 'couple' | 'professional') => {
     setPostSignupMessage(null);
-    setSelectedAudience(nextAudience);
-    if (nextAudience === 'couple') {
-      setSignupPath('create_wedding');
-      setWeddingOwnerRole(null);
-      setPlanningMode('local');
-      return;
-    }
+      setSelectedAudience(nextAudience);
+      if (nextAudience === 'couple') {
+        setSignupPath('create_wedding');
+        return;
+      }
 
     setSignupPath('professional');
   };
@@ -630,7 +512,7 @@ export default function Auth() {
                 : signupPath === 'join_wedding'
                   ? 'Use the wedding code from the couple and the same email that was invited.'
                   : isSignUp
-                    ? 'Add your spouse and wedding date. We’ll create the wedding for both of you.'
+                    ? 'Create your account now. You will finish the wedding setup inside your workspace.'
                     : 'Sign in to your wedding workspace.'}
           </CardDescription>
         </CardHeader>
@@ -779,7 +661,7 @@ export default function Auth() {
                       {audience === 'couple' && signupPath === 'join_wedding'
                         ? 'Use the code the couple sent you.'
                         : audience === 'couple'
-                          ? 'A short setup and you are in.'
+                          ? 'Create the account first, then finish the wedding inside Settings.'
                           : audience === 'professional'
                             ? isSignUp
                               ? 'Create your login first. You will choose Planner or Vendor inside Settings.'
@@ -884,142 +766,6 @@ export default function Auth() {
                           <div className="relative flex justify-center text-[11px] uppercase tracking-[0.12em]">
                             <span className="bg-card px-2 text-muted-foreground">or use email below</span>
                           </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {showWeddingDetails && (
-                      <div className="space-y-4 rounded-2xl border border-border/60 bg-muted/15 p-4">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-foreground">Wedding setup</p>
-                          <p className="text-xs text-muted-foreground">
-                            Keep this light for now. We can finish the rest inside your wedding workspace.
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>I am starting this wedding as</Label>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {([
-                              { value: 'bride', title: 'I am the bride', copy: 'We’ll invite the groom as the second owner.' },
-                              { value: 'groom', title: 'I am the groom', copy: 'We’ll invite the bride as the second owner.' },
-                            ] as const).map((option) => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => setWeddingOwnerRole(option.value)}
-                                className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                                  weddingOwnerRole === option.value
-                                    ? 'border-primary bg-primary/5 text-foreground'
-                                    : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
-                                }`}
-                              >
-                                <p className="font-medium">{option.title}</p>
-                                <p className="mt-1 text-xs">{option.copy}</p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="partner-email">Your spouse’s email</Label>
-                            <Input
-                              id="partner-email"
-                              type="email"
-                              value={partnerEmail}
-                              onChange={(event) => setPartnerEmail(event.target.value)}
-                              placeholder={weddingOwnerRole === 'bride' ? 'groom@example.com' : 'bride@example.com'}
-                              required
-                            />
-                            <p className="text-xs text-muted-foreground">Use the email they will sign in with.</p>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="wedding-date">Wedding date (optional)</Label>
-                            <Input
-                              id="wedding-date"
-                              type="date"
-                              value={weddingDate}
-                              onChange={(event) => setWeddingDate(event.target.value)}
-                            />
-                            <p className="text-xs text-muted-foreground">You can always add or change this during setup.</p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div className="flex items-start justify-between gap-3 rounded-xl border border-border/60 bg-background px-4 py-3">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium text-foreground">Planning from abroad?</p>
-                              <p className="text-xs text-muted-foreground">
-                                Turn this on only if you want diaspora-specific country, currency, and timezone settings.
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant={planningMode === 'diaspora' ? 'default' : 'outline'}
-                              size="sm"
-                              onClick={() => setPlanningMode((current) => (current === 'diaspora' ? 'local' : 'diaspora'))}
-                              className="shrink-0"
-                            >
-                              {planningMode === 'diaspora' ? 'Yes' : 'No'}
-                            </Button>
-                          </div>
-
-                          {planningMode === 'diaspora' && (
-                            <div className="grid gap-4 md:grid-cols-3">
-                              <div className="space-y-2">
-                                <Label>Planning country</Label>
-                                <Select value={planningCountry} onValueChange={setPlanningCountry}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Choose country" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {planningCountryOptions.map((country) => (
-                                      <SelectItem key={country} value={country}>
-                                        {country}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              <div className="space-y-2">
-                                <Label>Reference currency</Label>
-                                <Select
-                                  value={referenceCurrency}
-                                  onValueChange={(value) => setReferenceCurrency(value as WeddingReferenceCurrency)}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Choose currency" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {weddingReferenceCurrencies.map((currency) => (
-                                      <SelectItem key={currency} value={currency}>
-                                        {currencyLabels[currency]}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              <div className="space-y-2">
-                                <Label>Timezone</Label>
-                                <Select value={ownerTimezone} onValueChange={setOwnerTimezone}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Choose timezone" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {timezoneOptions.map((timezone) => (
-                                      <SelectItem key={timezone} value={timezone}>
-                                        {timezone}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </div>
                     )}

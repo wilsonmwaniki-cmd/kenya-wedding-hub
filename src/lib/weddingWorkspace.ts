@@ -11,6 +11,40 @@ export type WeddingReferenceCurrency = 'GBP' | 'USD' | 'EUR' | 'CAD' | 'AUD';
 
 export const weddingReferenceCurrencies: WeddingReferenceCurrency[] = ['GBP', 'USD', 'EUR', 'CAD', 'AUD'];
 
+export const planningCountryOptions = [
+  'Australia', 'Austria', 'Belgium', 'Botswana', 'Canada', 'Denmark', 'Finland', 'France', 'Germany', 'Ghana',
+  'India', 'Ireland', 'Italy', 'Japan', 'Kenya', 'Netherlands', 'New Zealand', 'Nigeria', 'Norway', 'Qatar',
+  'Rwanda', 'Saudi Arabia', 'South Africa', 'Spain', 'Sweden', 'Switzerland', 'Tanzania', 'Uganda',
+  'United Arab Emirates', 'United Kingdom', 'United States',
+];
+
+export const weddingReferenceCurrencyLabels: Record<WeddingReferenceCurrency, string> = {
+  GBP: 'GBP · British Pound',
+  USD: 'USD · US Dollar',
+  EUR: 'EUR · Euro',
+  CAD: 'CAD · Canadian Dollar',
+  AUD: 'AUD · Australian Dollar',
+};
+
+export function getTimezoneOptions() {
+  if (typeof Intl !== 'undefined' && typeof (Intl as any).supportedValuesOf === 'function') {
+    return ((Intl as any).supportedValuesOf('timeZone') as string[]).filter((value) =>
+      /Africa|Europe|America|Asia|Australia|Pacific/.test(value),
+    );
+  }
+
+  return [
+    'Africa/Nairobi',
+    'Europe/London',
+    'Europe/Paris',
+    'America/New_York',
+    'America/Toronto',
+    'America/Los_Angeles',
+    'Asia/Dubai',
+    'Australia/Sydney',
+  ];
+}
+
 export type PendingWeddingSetup = {
   intent: Exclude<WeddingSignupIntent, 'professional'>;
   email: string | null;
