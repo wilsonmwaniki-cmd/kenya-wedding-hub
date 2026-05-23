@@ -228,18 +228,40 @@ export default function AssistantPanel({
       <motion.button
         type="button"
         onClick={() => assistantPanel.setOpen(true)}
-        whileHover={{ y: -2, scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        className="fixed bottom-5 right-5 z-30 inline-flex h-12 items-center gap-2 rounded-full border border-white/30 bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_rgba(216,91,50,0.34)] transition-colors hover:bg-primary/95 lg:bottom-7 lg:right-7"
+        initial={false}
+        animate={{
+          y: [0, -4, 0],
+          boxShadow: [
+            '0 18px 44px rgba(216,91,50,0.30)',
+            '0 22px 58px rgba(216,91,50,0.44)',
+            '0 18px 44px rgba(216,91,50,0.30)',
+          ],
+        }}
+        transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+        whileHover={{ y: -5, scale: 1.03 }}
+        whileTap={{ scale: 0.97 }}
+        className="group fixed bottom-5 right-5 z-30 inline-flex h-12 items-center gap-2 overflow-hidden rounded-full border border-white/45 bg-[linear-gradient(135deg,rgba(225,96,53,0.98),rgba(205,113,72,0.92))] px-4 text-sm font-semibold text-white shadow-[0_18px_44px_rgba(216,91,50,0.30)] transition-colors lg:bottom-7 lg:right-7"
       >
-        <Sparkles className="h-4 w-4" />
-        Ask Zania
+        <motion.span
+          aria-hidden="true"
+          className="absolute inset-y-0 -left-8 w-8 rotate-12 bg-white/35 blur-sm"
+          animate={{ x: ['0%', '520%'] }}
+          transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 1.5, ease: 'easeInOut' }}
+        />
+        <motion.span
+          aria-hidden="true"
+          className="absolute inset-0 rounded-full border border-white/25"
+          animate={{ opacity: [0.55, 1, 0.55] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <Sparkles className="relative h-4 w-4" />
+        <span className="relative">Ask Zania</span>
       </motion.button>
 
       <AnimatePresence>
         {assistantPanel.open ? (
           <motion.div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/22 p-3 backdrop-blur-[2px] sm:items-center sm:p-5 lg:justify-end lg:p-6"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/12 p-3 backdrop-blur-[1px] sm:p-5 lg:justify-end lg:p-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -249,42 +271,42 @@ export default function AssistantPanel({
               role="dialog"
               aria-modal="true"
               aria-label="Ask Zania assistant"
-              className="relative flex h-[min(760px,calc(100vh-1.5rem))] w-full max-w-[560px] flex-col overflow-hidden rounded-[2rem] border border-white/50 bg-[linear-gradient(145deg,rgba(115,76,57,0.76),rgba(210,160,113,0.62)_38%,rgba(44,41,37,0.72)_100%)] text-white shadow-[0_32px_90px_rgba(40,24,18,0.35)] backdrop-blur-2xl sm:h-[min(780px,calc(100vh-2.5rem))] sm:rounded-[2.25rem]"
-              initial={{ opacity: 0, y: 34, scale: 0.96, filter: 'blur(10px)' }}
+              className="relative flex w-full max-w-[520px] flex-col overflow-hidden rounded-[1.9rem] border border-white/50 bg-[linear-gradient(140deg,rgba(126,94,75,0.76),rgba(211,169,128,0.62)_42%,rgba(71,68,59,0.72)_100%)] text-white shadow-[0_24px_70px_rgba(40,24,18,0.30)] backdrop-blur-2xl sm:max-w-[560px] sm:rounded-[2rem]"
+              initial={{ opacity: 0, y: 34, scale: 0.94, filter: 'blur(10px)' }}
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, y: 24, scale: 0.97, filter: 'blur(8px)' }}
+              exit={{ opacity: 0, y: 24, scale: 0.95, filter: 'blur(8px)' }}
               transition={{ type: 'spring', stiffness: 210, damping: 24 }}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.34),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(248,240,222,0.48),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.03)_46%,rgba(0,0,0,0.16))]" />
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.32),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(248,240,222,0.42),transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.03)_48%,rgba(0,0,0,0.12))]" />
               <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/45" />
 
-              <header className="relative border-b border-white/18 px-5 py-5 sm:px-7">
+              <header className="relative border-b border-white/18 px-5 py-4 sm:px-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <h2 className="font-display text-3xl leading-none text-white drop-shadow-sm sm:text-4xl">Ask Zania</h2>
+                      <h2 className="font-display text-3xl leading-none text-white drop-shadow-sm sm:text-[2.1rem]">Ask Zania</h2>
                       <span className="text-[0.68rem] font-semibold uppercase tracking-[0.34em] text-white/66">
                         {assistantEyebrow}
                       </span>
                     </div>
-                    <p className="mt-3 max-w-md text-sm leading-6 text-white/78 sm:text-base">
+                    <p className="mt-2 max-w-md text-sm leading-6 text-white/78">
                       {surface.description}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => assistantPanel.setOpen(false)}
-                    className="grid h-14 w-14 shrink-0 place-items-center rounded-full border border-white/45 bg-white/8 text-white/80 transition-colors hover:bg-white/16 hover:text-white"
+                    className="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-white/45 bg-white/8 text-white/80 transition-colors hover:bg-white/16 hover:text-white"
                     aria-label="Close Zania assistant"
                   >
-                    <X className="h-6 w-6" />
+                    <X className="h-5 w-5" />
                   </button>
                 </div>
               </header>
 
-              <div className="relative flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+              <div className="relative flex flex-col">
+                <div className="max-h-[48vh] overflow-y-auto px-5 py-5 sm:px-6">
                   {assistant.decision && !assistant.canUseAssistant ? (
                     <div className="rounded-[1.5rem] border border-white/35 bg-white/82 p-4 text-foreground shadow-sm">
                       <InlineUpgradePrompt decision={assistant.decision} />
@@ -295,7 +317,7 @@ export default function AssistantPanel({
                         initial={{ opacity: 0, y: 14 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.08 }}
-                        className="rounded-[1.65rem] border border-white/68 bg-white/10 px-5 py-5 text-[1.05rem] leading-8 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:px-6 sm:py-6 sm:text-xl sm:leading-9"
+                        className="rounded-[1.5rem] border border-white/68 bg-white/10 px-5 py-4 text-base leading-7 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:text-[1.05rem] sm:leading-8"
                       >
                         {greeting}
                       </motion.div>
@@ -341,13 +363,13 @@ export default function AssistantPanel({
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -8 }}
-                            className="rounded-[1.4rem] border border-white/22 bg-black/8 px-5 py-4"
+                            className="rounded-[1.35rem] border border-white/22 bg-black/8 px-5 py-3"
                           >
-                            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-white/90">
                               <MessageSquare className="h-4 w-4" />
                               Current context: {surface.label}
                             </div>
-                            <p className="mt-2 text-sm leading-6 text-white/72">
+                            <p className="mt-1 text-sm leading-6 text-white/72">
                               Pick a suggestion below or type your own question. Zania will read the current page context automatically.
                             </p>
                           </motion.div>
@@ -357,7 +379,7 @@ export default function AssistantPanel({
                   )}
                 </div>
 
-                <footer className="relative border-t border-white/18 bg-black/10 px-5 py-4 sm:px-7">
+                <footer className="relative border-t border-white/18 bg-black/10 px-5 py-4 sm:px-6">
                   {!(assistant.decision && !assistant.canUseAssistant) ? (
                     <div className="mb-4 flex flex-wrap gap-2">
                       {surface.prompts.map((prompt) => (
@@ -374,9 +396,9 @@ export default function AssistantPanel({
                     </div>
                   ) : null}
 
-                  <div className="rounded-[1.45rem] border border-white/30 bg-white/10 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+                  <div className="rounded-[1.35rem] border border-white/30 bg-white/10 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
                     <div className="flex items-end gap-2">
-                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 text-white/78">
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/10 text-white/78">
                         <Bot className="h-5 w-5" />
                       </div>
                       <Textarea
@@ -389,7 +411,7 @@ export default function AssistantPanel({
                           }
                         }}
                         placeholder={`Ask about ${surface.label.toLowerCase()}...`}
-                        className="min-h-12 flex-1 resize-none border-0 bg-transparent px-1 py-3 text-base text-white placeholder:text-white/45 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        className="min-h-10 flex-1 resize-none border-0 bg-transparent px-1 py-2 text-base text-white placeholder:text-white/45 focus-visible:ring-0 focus-visible:ring-offset-0"
                         disabled={assistant.decision ? !assistant.canUseAssistant : false}
                       />
                       <Button
@@ -397,7 +419,7 @@ export default function AssistantPanel({
                         size="icon"
                         onClick={submitCustomPrompt}
                         disabled={assistantBusy || !customPrompt.trim() || (assistant.decision ? !assistant.canUseAssistant : false)}
-                        className="h-11 w-11 shrink-0 rounded-2xl bg-white text-primary shadow-none hover:bg-white/90"
+                        className="h-10 w-10 shrink-0 rounded-2xl bg-white text-primary shadow-none hover:bg-white/90"
                         aria-label="Ask Zania"
                       >
                         {assistant.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -405,7 +427,7 @@ export default function AssistantPanel({
                     </div>
                   </div>
 
-                  <Button asChild variant="ghost" className="mt-3 h-auto gap-2 px-1 text-white/78 hover:bg-transparent hover:text-white">
+                  <Button asChild variant="ghost" className="mt-3 h-auto gap-2 px-1 py-0 text-white/78 hover:bg-transparent hover:text-white">
                     <Link to="/ai-chat" onClick={() => assistantPanel.setOpen(false)}>
                       Open full assistant panel
                       <ArrowRight className="h-4 w-4" />
