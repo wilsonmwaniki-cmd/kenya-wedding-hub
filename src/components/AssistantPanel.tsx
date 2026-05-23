@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowRight, Bot, Loader2, Send, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Bot, Loader2, Send, X } from 'lucide-react';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -266,21 +266,20 @@ export default function AssistantPanel({
         transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
         whileHover={{ y: -5, scale: 1.03 }}
         whileTap={{ scale: 0.97 }}
-        className="group fixed bottom-5 right-5 z-30 inline-flex h-12 items-center gap-2 overflow-hidden rounded-full border border-white/45 bg-[linear-gradient(135deg,rgba(225,96,53,0.98),rgba(205,113,72,0.92))] px-4 text-sm font-semibold text-white shadow-[0_18px_44px_rgba(216,91,50,0.30)] transition-colors lg:bottom-7 lg:right-7"
+        className="group fixed bottom-5 right-5 z-30 inline-flex h-[4.35rem] items-center overflow-hidden rounded-[2.25rem] border border-white/55 bg-[linear-gradient(145deg,rgba(227,101,59,0.98),rgba(203,111,73,0.96))] px-9 text-2xl font-bold tracking-[-0.02em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.34),inset_0_-4px_12px_rgba(115,50,30,0.18),0_18px_44px_rgba(216,91,50,0.30)] transition-colors lg:bottom-7 lg:right-7"
       >
         <motion.span
           aria-hidden="true"
-          className="absolute inset-y-0 -left-8 w-8 rotate-12 bg-white/35 blur-sm"
-          animate={{ x: ['0%', '520%'] }}
+          className="absolute inset-y-0 -left-10 w-10 rotate-12 bg-white/32 blur-md"
+          animate={{ x: ['0%', '760%'] }}
           transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 1.5, ease: 'easeInOut' }}
         />
         <motion.span
           aria-hidden="true"
-          className="absolute inset-0 rounded-full border border-white/25"
+          className="absolute inset-[3px] rounded-[2rem] border border-white/18"
           animate={{ opacity: [0.55, 1, 0.55] }}
           transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
         />
-        <Sparkles className="relative h-4 w-4" />
         <span className="relative">Ask Zania</span>
       </motion.button>
 
@@ -362,6 +361,24 @@ export default function AssistantPanel({
                     </Button>
                   </div>
                 </div>
+
+                {!(assistant.decision && !assistant.canUseAssistant) && !assistant.response && !assistantBusy && !assistant.error ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {surface.prompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => {
+                          setCustomPrompt(prompt);
+                          void assistant.runPrompt(prompt, { contextSource: surface.contextSource });
+                        }}
+                        className="rounded-full border border-white/70 bg-white/10 px-4 py-2 text-left text-sm leading-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] transition hover:bg-white/18"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
 
                 <div className="mt-4 max-h-[42vh] overflow-y-auto">
                   {assistant.decision && !assistant.canUseAssistant ? (
