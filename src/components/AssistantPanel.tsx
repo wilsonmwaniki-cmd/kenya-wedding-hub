@@ -194,7 +194,7 @@ export default function AssistantPanel({
   }, [location.pathname, starterPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!assistantPanel?.open || !surface.prompts.length) return undefined;
+    if (!surface.prompts.length) return undefined;
 
     let characterIndex = 0;
     let deleting = false;
@@ -231,7 +231,7 @@ export default function AssistantPanel({
     timeoutId = setTimeout(tick, 260);
 
     return () => clearTimeout(timeoutId);
-  }, [activePrompt, assistantPanel?.open, surface.prompts]);
+  }, [activePrompt, surface.prompts]);
 
   useEffect(() => {
     if (!assistantPanel?.launchRequest) return;
@@ -251,59 +251,66 @@ export default function AssistantPanel({
 
   return (
     <>
-      <motion.button
-        type="button"
-        onClick={() => assistantPanel.setOpen(true)}
-        initial={false}
-        animate={{
-          y: [0, -4, 0],
-          boxShadow: [
-            '0 18px 44px rgba(216,91,50,0.30)',
-            '0 22px 58px rgba(216,91,50,0.44)',
-            '0 18px 44px rgba(216,91,50,0.30)',
-          ],
-        }}
-        transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
-        whileHover={{ y: -5, scale: 1.03 }}
-        whileTap={{ scale: 0.97 }}
-        className="group fixed bottom-5 right-5 z-30 inline-flex h-[4.35rem] items-center overflow-hidden rounded-[2.25rem] border border-white/55 bg-[linear-gradient(145deg,rgba(227,101,59,0.98),rgba(203,111,73,0.96))] px-9 text-2xl font-bold tracking-[-0.02em] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.34),inset_0_-4px_12px_rgba(115,50,30,0.18),0_18px_44px_rgba(216,91,50,0.30)] transition-colors lg:bottom-7 lg:right-7"
-      >
-        <motion.span
-          aria-hidden="true"
-          className="absolute inset-y-0 -left-10 w-10 rotate-12 bg-white/32 blur-md"
-          animate={{ x: ['0%', '760%'] }}
-          transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 1.5, ease: 'easeInOut' }}
-        />
-        <motion.span
-          aria-hidden="true"
-          className="absolute inset-[3px] rounded-[2rem] border border-white/18"
-          animate={{ opacity: [0.55, 1, 0.55] }}
-          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-        />
-        <span className="relative">Ask Zania</span>
-      </motion.button>
+      <AnimatePresence initial={false}>
+        {!assistantPanel.open ? (
+          <motion.button
+            type="button"
+            onClick={() => assistantPanel.setOpen(true)}
+            initial={{ opacity: 0, y: 20, scale: 0.97, filter: 'blur(8px)' }}
+            animate={{
+              opacity: 1,
+              y: [0, -3, 0],
+              scale: 1,
+              filter: 'blur(0px)',
+            }}
+            exit={{ opacity: 0, y: 18, scale: 0.97, filter: 'blur(8px)' }}
+            transition={{ duration: 3.6, repeat: Infinity, ease: 'easeInOut' }}
+            whileHover={{ y: -5, scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
+            className="fixed bottom-4 right-4 z-30 w-[calc(100vw-2rem)] max-w-[560px] overflow-hidden rounded-[2rem] border border-white/55 bg-[radial-gradient(circle_at_80%_25%,rgba(255,255,255,0.42),transparent_36%),linear-gradient(140deg,rgba(105,99,88,0.78),rgba(210,178,140,0.58)_48%,rgba(113,119,94,0.70))] p-4 text-left text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.32),0_24px_70px_rgba(42,36,29,0.24)] backdrop-blur-2xl lg:bottom-7 lg:right-7"
+            aria-label="Open Ask Zania assistant"
+          >
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent,rgba(255,255,255,0.22)_42%,transparent_62%)] opacity-70" />
+            <div className="relative mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-display text-2xl leading-none text-white sm:text-3xl">Ask Zania</span>
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.34em] text-white/70">
+                {assistantEyebrow}
+              </span>
+            </div>
+            <div className="relative flex min-h-[5.4rem] items-center gap-3 rounded-[1.55rem] border border-white/70 bg-white/8 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
+              <Bot className="h-5 w-5 shrink-0 text-white/78" />
+              <span className="min-w-0 flex-1 truncate text-lg text-white/88 sm:text-xl">
+                {animatedPrompt || `Ask about ${surface.label.toLowerCase()}...`}
+                <span className="ml-0.5 animate-pulse">|</span>
+              </span>
+              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-white/16 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
+                <Send className="h-6 w-6" />
+              </span>
+            </div>
+          </motion.button>
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {assistantPanel.open ? (
           <motion.div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/12 p-3 backdrop-blur-[1px] sm:p-5 lg:justify-end lg:p-6"
+            className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center p-3 sm:p-5 lg:justify-end lg:p-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => assistantPanel.setOpen(false)}
           >
             <motion.aside
               role="dialog"
               aria-modal="true"
               aria-label="Ask Zania assistant"
-              className="relative flex w-full max-w-[560px] flex-col overflow-hidden rounded-[1.9rem] border border-white/50 bg-[linear-gradient(140deg,rgba(126,94,75,0.76),rgba(211,169,128,0.62)_42%,rgba(71,68,59,0.72)_100%)] text-white shadow-[0_24px_70px_rgba(40,24,18,0.30)] backdrop-blur-2xl sm:max-w-[620px] sm:rounded-[2rem]"
+              className="pointer-events-auto relative flex w-full max-w-[560px] flex-col overflow-hidden rounded-[2rem] border border-white/55 bg-[radial-gradient(circle_at_80%_25%,rgba(255,255,255,0.42),transparent_36%),linear-gradient(140deg,rgba(105,99,88,0.78),rgba(210,178,140,0.58)_48%,rgba(113,119,94,0.70))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.32),0_24px_70px_rgba(42,36,29,0.24)] backdrop-blur-2xl sm:max-w-[620px]"
               initial={{ opacity: 0, y: 34, scale: 0.94, filter: 'blur(10px)' }}
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 24, scale: 0.95, filter: 'blur(8px)' }}
               transition={{ type: 'spring', stiffness: 210, damping: 24 }}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.32),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(248,240,222,0.42),transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.03)_48%,rgba(0,0,0,0.12))]" />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent,rgba(255,255,255,0.22)_42%,transparent_62%)] opacity-70" />
               <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/45" />
 
               <header className="relative px-5 pb-3 pt-5 sm:px-6">
@@ -315,9 +322,6 @@ export default function AssistantPanel({
                         {assistantEyebrow}
                       </span>
                     </div>
-                    <p className="mt-2 max-w-md text-sm leading-6 text-white/78">
-                      {surface.description}
-                    </p>
                   </div>
                   <button
                     type="button"
@@ -362,7 +366,7 @@ export default function AssistantPanel({
                   </div>
                 </div>
 
-                {!(assistant.decision && !assistant.canUseAssistant) && !assistant.response && !assistantBusy && !assistant.error ? (
+                {!(assistant.decision && !assistant.canUseAssistant) && !assistantBusy && !assistant.error ? (
                   <div className="mt-4 flex flex-wrap gap-2">
                     {surface.prompts.map((prompt) => (
                       <button
