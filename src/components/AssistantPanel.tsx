@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowRight, Bot, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Bot, Loader2, Send, Sparkles, X } from 'lucide-react';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -161,18 +161,6 @@ function getAssistantEyebrow(role?: string | null, plannerType?: PlannerType | n
   return 'WEDDING ASSISTANT';
 }
 
-function getAssistantGreeting(role?: string | null, surfaceLabel?: string) {
-  if (role === 'vendor') {
-    return `Hello, I’m your Zania vendor assistant. I can help you tighten leads, listings, documents, and follow-ups step by step. To start, what would you like to work on in ${surfaceLabel ?? 'this workspace'}?`;
-  }
-
-  if (role === 'planner') {
-    return `Hello, I’m your Zania planner assistant. I can help you spot what needs attention, prepare client work, and turn the current page into a clear next action. What should we untangle first?`;
-  }
-
-  return `Hello, I’m your Zania wedding assistant. I can help you plan this wedding step by step, from budgets and vendors to guests, tasks, and timelines. To start, what do you want help with?`;
-}
-
 export default function AssistantPanel({
   role,
   plannerType,
@@ -182,6 +170,8 @@ export default function AssistantPanel({
 }) {
   const location = useLocation();
   const [customPrompt, setCustomPrompt] = useState('');
+  const [promptIndex, setPromptIndex] = useState(0);
+  const [animatedPrompt, setAnimatedPrompt] = useState('');
   const assistantPanel = useAssistantPanel();
   const feature = useMemo(() => getAssistantFeature(role, plannerType), [plannerType, role]);
   const surface = useMemo(() => getAssistantSurface(location.pathname, role), [location.pathname, role]);
@@ -193,29 +183,65 @@ export default function AssistantPanel({
     contextSource: surface.contextSource,
   });
   const starterPrompt = surface.prompts[0] ?? '';
+  const activePrompt = surface.prompts[promptIndex % Math.max(surface.prompts.length, 1)] ?? starterPrompt;
   const assistantBusy = assistant.loading || assistant.usageLoading || assistant.accessLoading;
-  const greeting = useMemo(() => getAssistantGreeting(role, surface.label), [role, surface.label]);
   const assistantEyebrow = useMemo(() => getAssistantEyebrow(role, plannerType), [plannerType, role]);
 
   useEffect(() => {
     assistant.clearResponse();
-    setCustomPrompt(starterPrompt);
+    setCustomPrompt('');
+    setPromptIndex(0);
   }, [location.pathname, starterPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!assistantPanel?.open) return;
-    setCustomPrompt((current) => current.trim() ? current : starterPrompt);
-  }, [assistantPanel?.open, starterPrompt]);
+    if (!assistantPanel?.open || !surface.prompts.length) return undefined;
+
+    let characterIndex = 0;
+    let deleting = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    setAnimatedPrompt('');
+
+    const tick = () => {
+      if (!deleting) {
+        characterIndex += 1;
+        setAnimatedPrompt(activePrompt.slice(0, characterIndex));
+
+        if (characterIndex >= activePrompt.length) {
+          deleting = true;
+          timeoutId = setTimeout(tick, 1700);
+          return;
+        }
+
+        timeoutId = setTimeout(tick, 34);
+        return;
+      }
+
+      characterIndex -= 1;
+      setAnimatedPrompt(activePrompt.slice(0, Math.max(characterIndex, 0)));
+
+      if (characterIndex <= 0) {
+        setPromptIndex((current) => (current + 1) % surface.prompts.length);
+        return;
+      }
+
+      timeoutId = setTimeout(tick, 18);
+    };
+
+    timeoutId = setTimeout(tick, 260);
+
+    return () => clearTimeout(timeoutId);
+  }, [activePrompt, assistantPanel?.open, surface.prompts]);
 
   useEffect(() => {
     if (!assistantPanel?.launchRequest) return;
-    setCustomPrompt(assistantPanel.launchRequest.prompt ?? starterPrompt);
-  }, [assistantPanel?.launchRequest?.id, assistantPanel?.launchRequest?.prompt, starterPrompt]);
+    setCustomPrompt(assistantPanel.launchRequest.prompt ?? '');
+  }, [assistantPanel?.launchRequest?.id, assistantPanel?.launchRequest?.prompt]);
 
   if (!assistantPanel || !feature || location.pathname === '/ai-chat') return null;
 
   const submitCustomPrompt = async () => {
-    const prompt = customPrompt.trim();
+    const prompt = customPrompt.trim() || activePrompt.trim();
     if (!prompt) return;
     await assistant.runPrompt(prompt, {
       contextSource: surface.contextSource,
@@ -271,7 +297,7 @@ export default function AssistantPanel({
               role="dialog"
               aria-modal="true"
               aria-label="Ask Zania assistant"
-              className="relative flex w-full max-w-[520px] flex-col overflow-hidden rounded-[1.9rem] border border-white/50 bg-[linear-gradient(140deg,rgba(126,94,75,0.76),rgba(211,169,128,0.62)_42%,rgba(71,68,59,0.72)_100%)] text-white shadow-[0_24px_70px_rgba(40,24,18,0.30)] backdrop-blur-2xl sm:max-w-[560px] sm:rounded-[2rem]"
+              className="relative flex w-full max-w-[560px] flex-col overflow-hidden rounded-[1.9rem] border border-white/50 bg-[linear-gradient(140deg,rgba(126,94,75,0.76),rgba(211,169,128,0.62)_42%,rgba(71,68,59,0.72)_100%)] text-white shadow-[0_24px_70px_rgba(40,24,18,0.30)] backdrop-blur-2xl sm:max-w-[620px] sm:rounded-[2rem]"
               initial={{ opacity: 0, y: 34, scale: 0.94, filter: 'blur(10px)' }}
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 24, scale: 0.95, filter: 'blur(8px)' }}
@@ -281,7 +307,7 @@ export default function AssistantPanel({
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.32),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(248,240,222,0.42),transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.03)_48%,rgba(0,0,0,0.12))]" />
               <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/45" />
 
-              <header className="relative border-b border-white/18 px-5 py-4 sm:px-6">
+              <header className="relative px-5 pb-3 pt-5 sm:px-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -305,23 +331,45 @@ export default function AssistantPanel({
                 </div>
               </header>
 
-              <div className="relative flex flex-col">
-                <div className="max-h-[48vh] overflow-y-auto px-5 py-5 sm:px-6">
+              <div className="relative flex flex-col px-5 pb-5 sm:px-6">
+                <div className="rounded-[1.55rem] border border-white/52 bg-white/10 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 text-white/78">
+                      <Bot className="h-5 w-5" />
+                    </div>
+                    <Textarea
+                      value={customPrompt}
+                      onChange={(event) => setCustomPrompt(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                          event.preventDefault();
+                          void submitCustomPrompt();
+                        }
+                      }}
+                      placeholder={animatedPrompt ? `${animatedPrompt}|` : `Ask about ${surface.label.toLowerCase()}...`}
+                      className="min-h-12 flex-1 resize-none border-0 bg-transparent px-1 py-3 text-lg text-white placeholder:text-white/76 focus-visible:ring-0 focus-visible:ring-offset-0"
+                      disabled={assistant.decision ? !assistant.canUseAssistant : false}
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      onClick={submitCustomPrompt}
+                      disabled={assistantBusy || (!customPrompt.trim() && !activePrompt.trim()) || (assistant.decision ? !assistant.canUseAssistant : false)}
+                      className="h-12 w-12 shrink-0 rounded-full bg-white/22 text-white shadow-none backdrop-blur hover:bg-white/30 disabled:opacity-50"
+                      aria-label="Ask Zania"
+                    >
+                      {assistant.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-5 w-5" />}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-4 max-h-[42vh] overflow-y-auto">
                   {assistant.decision && !assistant.canUseAssistant ? (
                     <div className="rounded-[1.5rem] border border-white/35 bg-white/82 p-4 text-foreground shadow-sm">
                       <InlineUpgradePrompt decision={assistant.decision} />
                     </div>
                   ) : (
                     <div className="space-y-5">
-                      <motion.div
-                        initial={{ opacity: 0, y: 14 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.08 }}
-                        className="rounded-[1.5rem] border border-white/68 bg-white/10 px-5 py-4 text-base leading-7 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:text-[1.05rem] sm:leading-8"
-                      >
-                        {greeting}
-                      </motion.div>
-
                       <AnimatePresence mode="wait">
                         {assistantBusy ? (
                           <motion.div
@@ -357,77 +405,14 @@ export default function AssistantPanel({
                               <ReactMarkdown>{assistant.response}</ReactMarkdown>
                             </div>
                           </motion.div>
-                        ) : (
-                          <motion.div
-                            key="empty"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -8 }}
-                            className="rounded-[1.35rem] border border-white/22 bg-black/8 px-5 py-3"
-                          >
-                            <div className="flex items-center gap-2 text-sm font-semibold text-white/90">
-                              <MessageSquare className="h-4 w-4" />
-                              Current context: {surface.label}
-                            </div>
-                            <p className="mt-1 text-sm leading-6 text-white/72">
-                              Pick a suggestion below or type your own question. Zania will read the current page context automatically.
-                            </p>
-                          </motion.div>
-                        )}
+                        ) : null}
                       </AnimatePresence>
                     </div>
                   )}
                 </div>
 
-                <footer className="relative border-t border-white/18 bg-black/10 px-5 py-4 sm:px-6">
-                  {!(assistant.decision && !assistant.canUseAssistant) ? (
-                    <div className="mb-4 flex flex-wrap gap-2">
-                      {surface.prompts.map((prompt) => (
-                        <button
-                          key={prompt}
-                          type="button"
-                          onClick={() => assistant.runPrompt(prompt, { contextSource: surface.contextSource })}
-                          disabled={assistantBusy}
-                          className="rounded-full border border-white/70 bg-white/10 px-4 py-2 text-left text-sm leading-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] transition hover:bg-white/18 disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          {prompt}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <div className="rounded-[1.35rem] border border-white/30 bg-white/10 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
-                    <div className="flex items-end gap-2">
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/10 text-white/78">
-                        <Bot className="h-5 w-5" />
-                      </div>
-                      <Textarea
-                        value={customPrompt}
-                        onChange={(event) => setCustomPrompt(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                            event.preventDefault();
-                            void submitCustomPrompt();
-                          }
-                        }}
-                        placeholder={`Ask about ${surface.label.toLowerCase()}...`}
-                        className="min-h-10 flex-1 resize-none border-0 bg-transparent px-1 py-2 text-base text-white placeholder:text-white/45 focus-visible:ring-0 focus-visible:ring-offset-0"
-                        disabled={assistant.decision ? !assistant.canUseAssistant : false}
-                      />
-                      <Button
-                        type="button"
-                        size="icon"
-                        onClick={submitCustomPrompt}
-                        disabled={assistantBusy || !customPrompt.trim() || (assistant.decision ? !assistant.canUseAssistant : false)}
-                        className="h-10 w-10 shrink-0 rounded-2xl bg-white text-primary shadow-none hover:bg-white/90"
-                        aria-label="Ask Zania"
-                      >
-                        {assistant.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <Button asChild variant="ghost" className="mt-3 h-auto gap-2 px-1 py-0 text-white/78 hover:bg-transparent hover:text-white">
+                <footer className="relative mt-3">
+                  <Button asChild variant="ghost" className="h-auto gap-2 px-1 py-0 text-white/78 hover:bg-transparent hover:text-white">
                     <Link to="/ai-chat" onClick={() => assistantPanel.setOpen(false)}>
                       Open full assistant panel
                       <ArrowRight className="h-4 w-4" />
