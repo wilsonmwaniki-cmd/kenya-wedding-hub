@@ -1,19 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowRight, Loader2, MessageSquare, Sparkles } from 'lucide-react';
+import { ArrowRight, Bot, Loader2, MessageSquare, Send, Sparkles, X } from 'lucide-react';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
 import type { PlannerType } from '@/lib/roles';
@@ -162,6 +154,25 @@ function getAssistantSurface(pathname: string, role?: string | null) {
   };
 }
 
+function getAssistantEyebrow(role?: string | null, plannerType?: PlannerType | null) {
+  if (role === 'vendor') return 'VENDOR ASSISTANT';
+  if (role === 'planner' && plannerType === 'committee') return 'COMMITTEE ASSISTANT';
+  if (role === 'planner') return 'PLANNER ASSISTANT';
+  return 'WEDDING ASSISTANT';
+}
+
+function getAssistantGreeting(role?: string | null, surfaceLabel?: string) {
+  if (role === 'vendor') {
+    return `Hello, I’m your Zania vendor assistant. I can help you tighten leads, listings, documents, and follow-ups step by step. To start, what would you like to work on in ${surfaceLabel ?? 'this workspace'}?`;
+  }
+
+  if (role === 'planner') {
+    return `Hello, I’m your Zania planner assistant. I can help you spot what needs attention, prepare client work, and turn the current page into a clear next action. What should we untangle first?`;
+  }
+
+  return `Hello, I’m your Zania wedding assistant. I can help you plan this wedding step by step, from budgets and vendors to guests, tasks, and timelines. To start, what do you want help with?`;
+}
+
 export default function AssistantPanel({
   role,
   plannerType,
@@ -182,6 +193,9 @@ export default function AssistantPanel({
     contextSource: surface.contextSource,
   });
   const starterPrompt = surface.prompts[0] ?? '';
+  const assistantBusy = assistant.loading || assistant.usageLoading || assistant.accessLoading;
+  const greeting = useMemo(() => getAssistantGreeting(role, surface.label), [role, surface.label]);
+  const assistantEyebrow = useMemo(() => getAssistantEyebrow(role, plannerType), [plannerType, role]);
 
   useEffect(() => {
     assistant.clearResponse();
@@ -210,122 +224,199 @@ export default function AssistantPanel({
   };
 
   return (
-    <Sheet open={assistantPanel.open} onOpenChange={assistantPanel.setOpen}>
-      <SheetTrigger asChild>
-        <Button
-          type="button"
-          className="fixed bottom-5 right-5 z-30 h-12 rounded-full px-4 shadow-xl lg:bottom-7 lg:right-7"
-        >
-          <Sparkles className="mr-2 h-4 w-4" />
-          Ask Zania
-        </Button>
-      </SheetTrigger>
-      <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-xl">
-        <div className="flex min-h-full flex-col">
-          <SheetHeader className="border-b border-border px-6 py-5 text-left">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="gap-1">
-                <MessageSquare className="h-3.5 w-3.5" />
-                {surface.label}
-              </Badge>
-            </div>
-            <SheetTitle className="font-display text-2xl">{surface.title}</SheetTitle>
-            <SheetDescription>{surface.description}</SheetDescription>
-          </SheetHeader>
+    <>
+      <motion.button
+        type="button"
+        onClick={() => assistantPanel.setOpen(true)}
+        whileHover={{ y: -2, scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        className="fixed bottom-5 right-5 z-30 inline-flex h-12 items-center gap-2 rounded-full border border-white/30 bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_18px_44px_rgba(216,91,50,0.34)] transition-colors hover:bg-primary/95 lg:bottom-7 lg:right-7"
+      >
+        <Sparkles className="h-4 w-4" />
+        Ask Zania
+      </motion.button>
 
-          <div className="flex-1 space-y-6 px-6 py-5">
-            {assistant.decision && !assistant.canUseAssistant ? (
-              <InlineUpgradePrompt decision={assistant.decision} />
-            ) : (
-              <>
-                <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/25 p-4">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-foreground">Ask a question about this page</p>
-                    {starterPrompt ? (
-                      <p className="text-xs text-muted-foreground">
-                        We’ve prefilled a useful starter question for this page. You can send it as-is or edit it first.
-                      </p>
-                    ) : null}
-                  </div>
-                  <Textarea
-                    value={customPrompt}
-                    onChange={(event) => setCustomPrompt(event.target.value)}
-                    placeholder={`Ask about ${surface.label.toLowerCase()}...`}
-                    className="min-h-28 resize-none bg-background"
-                  />
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs text-muted-foreground">The assistant will use the context from this page automatically.</p>
-                    <Button
-                      type="button"
-                      className="gap-2"
-                      onClick={submitCustomPrompt}
-                      disabled={assistant.loading || assistant.usageLoading || assistant.accessLoading || !customPrompt.trim()}
-                    >
-                      {assistant.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                      Ask
-                    </Button>
-                  </div>
-                </div>
+      <AnimatePresence>
+        {assistantPanel.open ? (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/22 p-3 backdrop-blur-[2px] sm:items-center sm:p-5 lg:justify-end lg:p-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => assistantPanel.setOpen(false)}
+          >
+            <motion.aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="Ask Zania assistant"
+              className="relative flex h-[min(760px,calc(100vh-1.5rem))] w-full max-w-[560px] flex-col overflow-hidden rounded-[2rem] border border-white/50 bg-[linear-gradient(145deg,rgba(115,76,57,0.76),rgba(210,160,113,0.62)_38%,rgba(44,41,37,0.72)_100%)] text-white shadow-[0_32px_90px_rgba(40,24,18,0.35)] backdrop-blur-2xl sm:h-[min(780px,calc(100vh-2.5rem))] sm:rounded-[2.25rem]"
+              initial={{ opacity: 0, y: 34, scale: 0.96, filter: 'blur(10px)' }}
+              animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, y: 24, scale: 0.97, filter: 'blur(8px)' }}
+              transition={{ type: 'spring', stiffness: 210, damping: 24 }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.34),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(248,240,222,0.48),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.03)_46%,rgba(0,0,0,0.16))]" />
+              <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/45" />
 
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Suggested prompts
-                  </p>
-                  <div className="grid gap-2">
-                    {surface.prompts.map((prompt) => (
-                      <Button
-                        key={prompt}
-                        type="button"
-                        variant="outline"
-                        className="h-auto justify-start whitespace-normal px-4 py-3 text-left"
-                        onClick={() => assistant.runPrompt(prompt, { contextSource: surface.contextSource })}
-                        disabled={assistant.loading || assistant.usageLoading || assistant.accessLoading}
-                      >
-                        <Sparkles className="mt-0.5 h-4 w-4 text-primary" />
-                        <span>{prompt}</span>
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-border/70 bg-background p-4">
-                  {assistant.loading || assistant.usageLoading || assistant.accessLoading ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      Thinking through your workspace...
+              <header className="relative border-b border-white/18 px-5 py-5 sm:px-7">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <h2 className="font-display text-3xl leading-none text-white drop-shadow-sm sm:text-4xl">Ask Zania</h2>
+                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.34em] text-white/66">
+                        {assistantEyebrow}
+                      </span>
                     </div>
-                  ) : assistant.error ? (
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-destructive">Could not load AI guidance</p>
-                      <p className="text-sm text-muted-foreground">{assistant.error}</p>
-                    </div>
-                  ) : assistant.response ? (
-                    <div className="prose prose-sm max-w-none text-foreground prose-p:my-2 prose-ul:my-2 prose-li:my-1">
-                      <ReactMarkdown>{assistant.response}</ReactMarkdown>
+                    <p className="mt-3 max-w-md text-sm leading-6 text-white/78 sm:text-base">
+                      {surface.description}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => assistantPanel.setOpen(false)}
+                    className="grid h-14 w-14 shrink-0 place-items-center rounded-full border border-white/45 bg-white/8 text-white/80 transition-colors hover:bg-white/16 hover:text-white"
+                    aria-label="Close Zania assistant"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+              </header>
+
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
+                  {assistant.decision && !assistant.canUseAssistant ? (
+                    <div className="rounded-[1.5rem] border border-white/35 bg-white/82 p-4 text-foreground shadow-sm">
+                      <InlineUpgradePrompt decision={assistant.decision} />
                     </div>
                   ) : (
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-foreground">Ask for one clear next step</p>
-                      <p className="text-sm text-muted-foreground">
-                        Use a suggested prompt or type your own question. This panel keeps the current page context so you do not have to explain everything from scratch.
-                      </p>
+                    <div className="space-y-5">
+                      <motion.div
+                        initial={{ opacity: 0, y: 14 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.08 }}
+                        className="rounded-[1.65rem] border border-white/68 bg-white/10 px-5 py-5 text-[1.05rem] leading-8 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:px-6 sm:py-6 sm:text-xl sm:leading-9"
+                      >
+                        {greeting}
+                      </motion.div>
+
+                      <AnimatePresence mode="wait">
+                        {assistantBusy ? (
+                          <motion.div
+                            key="thinking"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -8 }}
+                            className="flex items-center gap-3 rounded-[1.4rem] border border-white/35 bg-white/12 px-5 py-4 text-sm text-white/82"
+                          >
+                            <Loader2 className="h-4 w-4 animate-spin text-white" />
+                            Thinking through your workspace...
+                          </motion.div>
+                        ) : assistant.error ? (
+                          <motion.div
+                            key="error"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -8 }}
+                            className="rounded-[1.4rem] border border-red-100/60 bg-red-950/24 px-5 py-4"
+                          >
+                            <p className="text-sm font-semibold text-white">Could not load AI guidance</p>
+                            <p className="mt-1 text-sm leading-6 text-white/78">{assistant.error}</p>
+                          </motion.div>
+                        ) : assistant.response ? (
+                          <motion.div
+                            key="response"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -8 }}
+                            className="rounded-[1.4rem] border border-white/54 bg-white/90 px-5 py-4 text-foreground shadow-sm"
+                          >
+                            <div className="prose prose-sm max-w-none text-foreground prose-p:my-2 prose-ul:my-2 prose-li:my-1">
+                              <ReactMarkdown>{assistant.response}</ReactMarkdown>
+                            </div>
+                          </motion.div>
+                        ) : (
+                          <motion.div
+                            key="empty"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -8 }}
+                            className="rounded-[1.4rem] border border-white/22 bg-black/8 px-5 py-4"
+                          >
+                            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                              <MessageSquare className="h-4 w-4" />
+                              Current context: {surface.label}
+                            </div>
+                            <p className="mt-2 text-sm leading-6 text-white/72">
+                              Pick a suggestion below or type your own question. Zania will read the current page context automatically.
+                            </p>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   )}
                 </div>
-              </>
-            )}
-          </div>
 
-          <div className="border-t border-border px-6 py-4">
-            <Button asChild variant="ghost" className="gap-2">
-              <Link to="/ai-chat">
-                Open full assistant
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
+                <footer className="relative border-t border-white/18 bg-black/10 px-5 py-4 sm:px-7">
+                  {!(assistant.decision && !assistant.canUseAssistant) ? (
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {surface.prompts.map((prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          onClick={() => assistant.runPrompt(prompt, { contextSource: surface.contextSource })}
+                          disabled={assistantBusy}
+                          className="rounded-full border border-white/70 bg-white/10 px-4 py-2 text-left text-sm leading-5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] transition hover:bg-white/18 disabled:cursor-not-allowed disabled:opacity-55"
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-[1.45rem] border border-white/30 bg-white/10 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+                    <div className="flex items-end gap-2">
+                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 text-white/78">
+                        <Bot className="h-5 w-5" />
+                      </div>
+                      <Textarea
+                        value={customPrompt}
+                        onChange={(event) => setCustomPrompt(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                            event.preventDefault();
+                            void submitCustomPrompt();
+                          }
+                        }}
+                        placeholder={`Ask about ${surface.label.toLowerCase()}...`}
+                        className="min-h-12 flex-1 resize-none border-0 bg-transparent px-1 py-3 text-base text-white placeholder:text-white/45 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        disabled={assistant.decision ? !assistant.canUseAssistant : false}
+                      />
+                      <Button
+                        type="button"
+                        size="icon"
+                        onClick={submitCustomPrompt}
+                        disabled={assistantBusy || !customPrompt.trim() || (assistant.decision ? !assistant.canUseAssistant : false)}
+                        className="h-11 w-11 shrink-0 rounded-2xl bg-white text-primary shadow-none hover:bg-white/90"
+                        aria-label="Ask Zania"
+                      >
+                        {assistant.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Button asChild variant="ghost" className="mt-3 h-auto gap-2 px-1 text-white/78 hover:bg-transparent hover:text-white">
+                    <Link to="/ai-chat" onClick={() => assistantPanel.setOpen(false)}>
+                      Open full assistant panel
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </footer>
+              </div>
+            </motion.aside>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </>
   );
 }
