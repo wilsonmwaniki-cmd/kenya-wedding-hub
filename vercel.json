@@ -1,4 +1,17 @@
 {
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "zaniaweddings.com"
+        }
+      ],
+      "destination": "https://www.zaniaweddings.com/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!assets/|favicon.ico|robots.txt|manifest.json).*)",
