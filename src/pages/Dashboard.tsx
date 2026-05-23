@@ -290,6 +290,14 @@ export default function Dashboard() {
     stats.totalGuests > 0 ? `${stats.totalGuests} guests` : null,
     weddingLocation || null,
   ].filter(Boolean) as string[];
+  const contributionSummary = useMemo(
+    () => summarizeContributions(contributionRows),
+    [contributionRows],
+  );
+  const contributionCoveragePercentage = stats.totalBudget > 0
+    ? Math.min((contributionSummary.totalSupport / stats.totalBudget) * 100, 100)
+    : 0;
+  const contributionGap = Math.max(stats.totalBudget - contributionSummary.totalSupport, 0);
   const moduleCards = [
     {
       label: 'Budget',
@@ -398,14 +406,6 @@ export default function Dashboard() {
         .slice(0, 3),
     [pendingTasks],
   );
-  const contributionSummary = useMemo(
-    () => summarizeContributions(contributionRows),
-    [contributionRows],
-  );
-  const contributionCoveragePercentage = stats.totalBudget > 0
-    ? Math.min((contributionSummary.totalSupport / stats.totalBudget) * 100, 100)
-    : 0;
-  const contributionGap = Math.max(stats.totalBudget - contributionSummary.totalSupport, 0);
 
   const vendorDecisionsPending = useMemo(() => {
     const byCategory = vendorDigestRows.reduce((summary, vendor) => {
