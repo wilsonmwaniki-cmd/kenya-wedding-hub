@@ -24,6 +24,8 @@ import {
   getMyWeddingOwnershipSummary,
   getMyWeddingOwnershipSummaryFromTables,
   getPendingWeddingSetup,
+  getSuggestedReferenceCurrencyForPlanningCountry,
+  getSuggestedTimezoneForPlanningCountry,
   getTimezoneOptions,
   persistPendingWeddingSetup,
   planningCountryOptions,
@@ -237,6 +239,23 @@ export default function ProfileSettings() {
     );
     setSetupWeddingOwnerRole(pendingWeddingSetup?.weddingOwnerRole ?? metadataWeddingOwnerRole);
   }, [pendingWeddingSetup?.weddingName, pendingWeddingSetup?.weddingOwnerRole, form.full_name, profile?.full_name, user?.user_metadata]);
+
+  useEffect(() => {
+    if (form.planning_mode !== 'diaspora') return;
+    const suggestedTimezone = getSuggestedTimezoneForPlanningCountry(form.planning_country);
+    const suggestedCurrency = getSuggestedReferenceCurrencyForPlanningCountry(form.planning_country);
+    if (
+      (!suggestedTimezone || form.owner_timezone === suggestedTimezone) &&
+      (!suggestedCurrency || form.reference_currency === suggestedCurrency)
+    ) {
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      owner_timezone: suggestedTimezone ?? current.owner_timezone,
+      reference_currency: suggestedCurrency ?? current.reference_currency,
+    }));
+  }, [form.owner_timezone, form.planning_country, form.planning_mode, form.reference_currency]);
 
   const loadWeddingPlanningSettings = async (weddingId: string) => {
     const { data, error } = await (supabase as any)

@@ -26,6 +26,74 @@ export const weddingReferenceCurrencyLabels: Record<WeddingReferenceCurrency, st
   AUD: 'AUD · Australian Dollar',
 };
 
+const planningCountryPrimaryTimezones: Record<string, string> = {
+  Australia: 'Australia/Sydney',
+  Austria: 'Europe/Vienna',
+  Belgium: 'Europe/Brussels',
+  Botswana: 'Africa/Gaborone',
+  Canada: 'America/Toronto',
+  Denmark: 'Europe/Copenhagen',
+  Finland: 'Europe/Helsinki',
+  France: 'Europe/Paris',
+  Germany: 'Europe/Berlin',
+  Ghana: 'Africa/Accra',
+  India: 'Asia/Kolkata',
+  Ireland: 'Europe/Dublin',
+  Italy: 'Europe/Rome',
+  Japan: 'Asia/Tokyo',
+  Kenya: 'Africa/Nairobi',
+  Netherlands: 'Europe/Amsterdam',
+  'New Zealand': 'Pacific/Auckland',
+  Nigeria: 'Africa/Lagos',
+  Norway: 'Europe/Oslo',
+  Qatar: 'Asia/Qatar',
+  Rwanda: 'Africa/Kigali',
+  'Saudi Arabia': 'Asia/Riyadh',
+  'South Africa': 'Africa/Johannesburg',
+  Spain: 'Europe/Madrid',
+  Sweden: 'Europe/Stockholm',
+  Switzerland: 'Europe/Zurich',
+  Tanzania: 'Africa/Dar_es_Salaam',
+  Uganda: 'Africa/Kampala',
+  'United Arab Emirates': 'Asia/Dubai',
+  'United Kingdom': 'Europe/London',
+  'United States': 'America/New_York',
+};
+
+const planningCountryReferenceCurrencies: Record<string, WeddingReferenceCurrency> = {
+  Australia: 'AUD',
+  Austria: 'EUR',
+  Belgium: 'EUR',
+  Botswana: 'USD',
+  Canada: 'CAD',
+  Denmark: 'EUR',
+  Finland: 'EUR',
+  France: 'EUR',
+  Germany: 'EUR',
+  Ghana: 'USD',
+  India: 'USD',
+  Ireland: 'EUR',
+  Italy: 'EUR',
+  Japan: 'USD',
+  Kenya: 'USD',
+  Netherlands: 'EUR',
+  'New Zealand': 'AUD',
+  Nigeria: 'USD',
+  Norway: 'EUR',
+  Qatar: 'USD',
+  Rwanda: 'USD',
+  'Saudi Arabia': 'USD',
+  'South Africa': 'USD',
+  Spain: 'EUR',
+  Sweden: 'EUR',
+  Switzerland: 'EUR',
+  Tanzania: 'USD',
+  Uganda: 'USD',
+  'United Arab Emirates': 'USD',
+  'United Kingdom': 'GBP',
+  'United States': 'USD',
+};
+
 export function getTimezoneOptions() {
   if (typeof Intl !== 'undefined' && typeof (Intl as any).supportedValuesOf === 'function') {
     return ((Intl as any).supportedValuesOf('timeZone') as string[]).filter((value) =>
@@ -43,6 +111,16 @@ export function getTimezoneOptions() {
     'Asia/Dubai',
     'Australia/Sydney',
   ];
+}
+
+export function getSuggestedTimezoneForPlanningCountry(country: string | null | undefined) {
+  if (!country) return null;
+  return planningCountryPrimaryTimezones[country] ?? null;
+}
+
+export function getSuggestedReferenceCurrencyForPlanningCountry(country: string | null | undefined) {
+  if (!country) return null;
+  return planningCountryReferenceCurrencies[country] ?? null;
 }
 
 export type PendingWeddingSetup = {

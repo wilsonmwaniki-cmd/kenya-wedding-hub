@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
   CheckCircle2,
+  Clock3,
+  Globe2,
   Heart,
   Loader2,
   MapPin,
@@ -24,6 +26,8 @@ import {
   clearPendingWeddingSetup,
   completePendingWeddingSetup,
   getPendingWeddingSetup,
+  getSuggestedReferenceCurrencyForPlanningCountry,
+  getSuggestedTimezoneForPlanningCountry,
   getTimezoneOptions,
   persistPendingWeddingSetup,
   planningCountryOptions,
@@ -74,6 +78,17 @@ function summarizePlanningMode(mode: WeddingPlanningMode, country: string, curre
   return [country, currency, timezone].filter(Boolean).join(' · ');
 }
 
+function formatWeddingDate(value: string) {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('en-KE', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 export default function WeddingSetup() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -84,6 +99,7 @@ export default function WeddingSetup() {
     [user],
   );
   const timezoneOptions = useMemo(() => getTimezoneOptions(), []);
+  const hydratedSetupKeyRef = useRef<string | null>(null);
 
   const [currentStep, setCurrentStep] = useState<CreateStep>('basics');
   const [weddingName, setWeddingName] = useState('');
@@ -109,7 +125,25 @@ export default function WeddingSetup() {
   }, [timezoneOptions]);
 
   useEffect(() => {
+    if (planningMode !== 'diaspora') return;
+    const suggestedTimezone = getSuggestedTimezoneForPlanningCountry(planningCountry);
+    const suggestedCurrency = getSuggestedReferenceCurrencyForPlanningCountry(planningCountry);
+    if (suggestedTimezone) {
+      setOwnerTimezone(suggestedTimezone);
+    }
+    if (suggestedCurrency) {
+      setReferenceCurrency(suggestedCurrency);
+    }
+  }, [planningCountry, planningMode]);
+
+  const pendingSetupHydrationKey = useMemo(
+    () => JSON.stringify(pendingSetup ?? null),
+    [pendingSetup],
+  );
+
+  useEffect(() => {
     if (!pendingSetup) return;
+    if (hydratedSetupKeyRef.current === pendingSetupHydrationKey) return;
 
     setWeddingName(
       pendingSetup.weddingName
@@ -125,8 +159,9 @@ export default function WeddingSetup() {
     setPlanningMode(pendingSetup.planningMode ?? 'local');
     setPlanningCountry(pendingSetup.planningCountry ?? '');
     setReferenceCurrency(pendingSetup.referenceCurrency ?? '');
-    setOwnerTimezone(pendingSetup.ownerTimezone ?? ownerTimezone);
-  }, [ownerTimezone, pendingSetup, profile?.full_name, user?.email]);
+    setOwnerTimezone((currentTimezone) => pendingSetup.ownerTimezone ?? currentTimezone);
+    hydratedSetupKeyRef.current = pendingSetupHydrationKey;
+  }, [pendingSetup, pendingSetupHydrationKey, profile?.full_name, user?.email]);
 
   useEffect(() => {
     if (loading || completion) return;
@@ -221,6 +256,23 @@ export default function WeddingSetup() {
 
   const goPreviousStep = () => {
     setCurrentStep(createSteps[Math.max(activeStepIndex - 1, 0)].id);
+  };
+
+  const goToStep = (nextStep: CreateStep) => {
+    const nextIndex = createSteps.findIndex((step) => step.id === nextStep);
+    if (nextIndex <= activeStepIndex) {
+      setCurrentStep(nextStep);
+      return;
+    }
+
+    try {
+      for (let index = 0; index < nextIndex; index += 1) {
+        validateCreateStep(createSteps[index].id);
+      }
+      setCurrentStep(nextStep);
+    } catch (error: any) {
+      toast({ title: 'Almost there', description: error.message, variant: 'destructive' });
+    }
   };
 
   const finishSetup = async () => {
@@ -360,7 +412,7 @@ export default function WeddingSetup() {
                 <button
                   key={step.id}
                   type="button"
-                  onClick={() => setCurrentStep(step.id)}
+                  onClick={() => goToStep(step.id)}
                   className={`w-full rounded-[1.35rem] border px-4 py-4 text-left transition ${
                     currentStep === step.id
                       ? 'border-[#ffcfb1]/28 bg-white/[0.10]'
@@ -616,51 +668,75 @@ export default function WeddingSetup() {
 
                 {currentStep === 'review' ? (
                   <div className="grid gap-6">
-                    <Card className="border-primary/20 bg-primary/5 shadow-none">
+                    <Card className="overflow-hidden border-primary/20 bg-[radial-gradient(circle_at_top_right,rgba(228,122,57,0.14),transparent_32%),linear-gradient(180deg,rgba(255,247,240,0.96),rgba(255,251,247,0.98))] shadow-[0_22px_50px_rgba(78,48,29,0.08)]">
                       <CardHeader>
-                        <CardTitle className="flex items-center gap-2 font-display">
-                          <CheckCircle2 className="h-5 w-5 text-primary" />
-                          Ready to create
-                        </CardTitle>
-                        <CardDescription>
-                          This is what we will use to create the wedding workspace. You can edit details later from inside Zania.
-                        </CardDescription>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-primary/10 text-primary">
+                            <CheckCircle2 className="h-6 w-6" />
+                          </span>
+                          <div className="space-y-1">
+                            <CardTitle className="font-display text-4xl leading-none">Ready to create</CardTitle>
+                            <CardDescription className="text-base">
+                              Your wedding workspace will start with these details.
+                            </CardDescription>
+                          </div>
+                        </div>
                       </CardHeader>
-                      <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        <div className="rounded-2xl border border-border/70 bg-card p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Wedding</p>
-                          <p className="mt-2 text-lg font-semibold text-foreground">{weddingName || 'Not set'}</p>
+                      <CardContent className="space-y-5">
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                          <div className="rounded-[1.7rem] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_rgba(99,68,48,0.08)]">
+                            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                              <Heart className="h-4 w-4 text-primary" fill="currentColor" />
+                              Wedding
+                            </div>
+                            <p className="mt-4 text-3xl font-semibold leading-tight text-foreground">{weddingName || 'Not set'}</p>
+                          </div>
+                          <div className="rounded-[1.7rem] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_rgba(99,68,48,0.08)]">
+                            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                              <UserRound className="h-4 w-4 text-primary" />
+                              Owner role
+                            </div>
+                            <p className="mt-4 text-3xl font-semibold leading-tight capitalize text-foreground">{weddingOwnerRole || 'Not set'}</p>
+                          </div>
+                          <div className="rounded-[1.7rem] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_rgba(99,68,48,0.08)]">
+                            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                              <CalendarDays className="h-4 w-4 text-primary" />
+                              Date & location
+                            </div>
+                            <p className="mt-4 text-2xl font-semibold leading-tight text-foreground">
+                              {formatWeddingDate(weddingDate) || 'Add later'}
+                            </p>
+                            <p className="mt-3 text-base leading-7 text-muted-foreground">
+                              {[weddingTown, weddingCounty].filter(Boolean).join(', ') || 'Location to be confirmed'}
+                            </p>
+                          </div>
+                          <div className="rounded-[1.7rem] border border-white/80 bg-white/88 p-5 shadow-[0_10px_30px_rgba(99,68,48,0.08)]">
+                            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                              <Globe2 className="h-4 w-4 text-primary" />
+                              Planning mode
+                            </div>
+                            <p className="mt-4 text-2xl font-semibold leading-tight text-foreground">
+                              {planningMode === 'local' ? 'Planning from Kenya' : planningCountry || 'Planning from abroad'}
+                            </p>
+                            <p className="mt-3 text-base leading-7 text-muted-foreground">
+                              {planningMode === 'local'
+                                ? 'Kenya-first defaults'
+                                : [referenceCurrency, ownerTimezone].filter(Boolean).join(' · ') || 'Diaspora setup'}
+                            </p>
+                          </div>
                         </div>
-                        <div className="rounded-2xl border border-border/70 bg-card p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Owner role</p>
-                          <p className="mt-2 text-lg font-semibold capitalize text-foreground">{weddingOwnerRole || 'Not set'}</p>
+                        <div className="flex flex-wrap items-center gap-3 rounded-[1.4rem] border border-primary/15 bg-white/72 px-4 py-3 text-sm text-muted-foreground">
+                          <span className="inline-flex items-center gap-2 rounded-full bg-primary/8 px-3 py-1 font-medium text-foreground">
+                            <Clock3 className="h-4 w-4 text-primary" />
+                            You can edit everything later
+                          </span>
+                          {partnerEmail ? (
+                            <span className="inline-flex items-center gap-2 rounded-full bg-primary/8 px-3 py-1 font-medium text-foreground">
+                              <UserRound className="h-4 w-4 text-primary" />
+                              Partner invite ready for {partnerEmail}
+                            </span>
+                          ) : null}
                         </div>
-                        <div className="rounded-2xl border border-border/70 bg-card p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Date & location</p>
-                          <p className="mt-2 text-lg font-semibold text-foreground">
-                            {[weddingDate || null, [weddingTown, weddingCounty].filter(Boolean).join(', ') || null].filter(Boolean).join(' · ') || 'Add later'}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-border/70 bg-card p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Planning mode</p>
-                          <p className="mt-2 text-lg font-semibold text-foreground">
-                            {summarizePlanningMode(planningMode, planningCountry, referenceCurrency, ownerTimezone)}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="border-border/70 shadow-none">
-                      <CardHeader>
-                        <CardTitle className="font-display text-xl">What happens after create</CardTitle>
-                        <CardDescription>
-                          You will land in Wedding Home with space to keep planning right away.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3 text-sm text-muted-foreground">
-                        <p>We will create the shared wedding workspace and store your planning context immediately.</p>
-                        <p>If you added a partner email, we will queue the invite so the second owner can join using that email.</p>
-                        <p>You can keep refining budget, tasks, vendors, timeline, and guest coordination after the workspace opens.</p>
                       </CardContent>
                     </Card>
                   </div>
