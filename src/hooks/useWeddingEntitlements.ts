@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -46,113 +46,102 @@ export function useWeddingEntitlements() {
     [user, profile?.role, isSuperAdmin, rolePreview, isPlanner, selectedClient],
   );
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadEntitlements = useCallback(async () => {
+    if (!shouldLoad || !user) {
+      setState({
+        weddingId: null,
+        entitlements: {},
+        couplePlanTier: 'free',
+        loading: false,
+      });
+      return;
+    }
 
-    const load = async () => {
-      if (!shouldLoad || !user) {
-        if (!cancelled) {
-          setState({
-            weddingId: null,
-            entitlements: {},
-            couplePlanTier: 'free',
-            loading: false,
-          });
-        }
+    setState((current) => ({ ...current, loading: true }));
+
+    try {
+      const db = supabase as any;
+      let activeWeddingId: string | null = null;
+
+      if (isPlanner && selectedClient) {
+        const { data: plannerClientRow, error: plannerClientError } = await db
+          .from('planner_clients')
+          .select('wedding_id')
+          .eq('id', selectedClient.id)
+          .maybeSingle();
+
+        if (plannerClientError) throw plannerClientError;
+        activeWeddingId = plannerClientRow?.wedding_id ?? null;
+      }
+
+      if (!activeWeddingId) {
+        const { data: memberships, error: membershipError } = await db
+          .from('wedding_memberships')
+          .select('wedding_id, role, is_owner, membership_status, created_at')
+          .eq('user_id', user.id)
+          .in('membership_status', ['active', 'invited'])
+          .order('is_owner', { ascending: false })
+          .order('created_at', { ascending: true })
+          .limit(10);
+
+        if (membershipError) throw membershipError;
+        activeWeddingId = memberships?.[0]?.wedding_id ?? null;
+      }
+
+      if (!activeWeddingId) {
+        setState({
+          weddingId: null,
+          entitlements: {},
+          couplePlanTier: 'free',
+          loading: false,
+        });
         return;
       }
 
-      setState((current) => ({ ...current, loading: true }));
+      const { data: entitlementRows, error: entitlementError } = await db
+        .from('wedding_entitlements')
+        .select('feature_key, status, effective_from, effective_to')
+        .eq('wedding_id', activeWeddingId)
+        .eq('status', 'active');
 
-      try {
-        const db = supabase as any;
-        let activeWeddingId: string | null = null;
+      if (entitlementError) throw entitlementError;
 
-        if (isPlanner && selectedClient) {
-          const { data: plannerClientRow, error: plannerClientError } = await db
-            .from('planner_clients')
-            .select('wedding_id')
-            .eq('id', selectedClient.id)
-            .maybeSingle();
-
-          if (plannerClientError) throw plannerClientError;
-          activeWeddingId = plannerClientRow?.wedding_id ?? null;
-        }
-
-        if (!activeWeddingId) {
-          const { data: memberships, error: membershipError } = await db
-            .from('wedding_memberships')
-            .select('wedding_id, role, is_owner, membership_status, created_at')
-            .eq('user_id', user.id)
-            .in('membership_status', ['active', 'invited'])
-            .order('is_owner', { ascending: false })
-            .order('created_at', { ascending: true })
-            .limit(10);
-
-          if (membershipError) throw membershipError;
-          activeWeddingId = memberships?.[0]?.wedding_id ?? null;
-        }
-
-        if (!activeWeddingId) {
-          if (!cancelled) {
-            setState({
-              weddingId: null,
-              entitlements: {},
-              couplePlanTier: 'free',
-              loading: false,
-            });
+      const now = Date.now();
+      const entitlements = (entitlementRows ?? []).reduce<Partial<Record<CoupleEntitlementKey, boolean>>>(
+        (summary, row: { feature_key: CoupleEntitlementKey; effective_from: string; effective_to: string | null }) => {
+          const effectiveFrom = row.effective_from ? new Date(row.effective_from).getTime() : 0;
+          const effectiveTo = row.effective_to ? new Date(row.effective_to).getTime() : null;
+          if (effectiveFrom <= now && (effectiveTo == null || effectiveTo > now)) {
+            summary[row.feature_key] = true;
           }
-          return;
-        }
+          return summary;
+        },
+        {},
+      );
 
-        const { data: entitlementRows, error: entitlementError } = await db
-          .from('wedding_entitlements')
-          .select('feature_key, status, effective_from, effective_to')
-          .eq('wedding_id', activeWeddingId)
-          .eq('status', 'active');
+      setState({
+        weddingId: activeWeddingId,
+        entitlements,
+        couplePlanTier: inferCouplePlanTier(entitlements),
+        loading: false,
+      });
+    } catch (error) {
+      console.error('Could not load wedding entitlements:', error);
+      setState({
+        weddingId: null,
+        entitlements: {},
+        couplePlanTier: 'free',
+        loading: false,
+      });
+    }
+  }, [isPlanner, selectedClient, shouldLoad, user]);
 
-        if (entitlementError) throw entitlementError;
+  useEffect(() => {
+    void loadEntitlements();
+  }, [loadEntitlements]);
 
-        const now = Date.now();
-        const entitlements = (entitlementRows ?? []).reduce<Partial<Record<CoupleEntitlementKey, boolean>>>(
-          (summary, row: { feature_key: CoupleEntitlementKey; effective_from: string; effective_to: string | null }) => {
-            const effectiveFrom = row.effective_from ? new Date(row.effective_from).getTime() : 0;
-            const effectiveTo = row.effective_to ? new Date(row.effective_to).getTime() : null;
-            if (effectiveFrom <= now && (effectiveTo == null || effectiveTo > now)) {
-              summary[row.feature_key] = true;
-            }
-            return summary;
-          },
-          {},
-        );
-
-        if (!cancelled) {
-          setState({
-            weddingId: activeWeddingId,
-            entitlements,
-            couplePlanTier: inferCouplePlanTier(entitlements),
-            loading: false,
-          });
-        }
-      } catch (error) {
-        console.error('Could not load wedding entitlements:', error);
-        if (!cancelled) {
-          setState({
-            weddingId: null,
-            entitlements: {},
-            couplePlanTier: 'free',
-            loading: false,
-          });
-        }
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [shouldLoad, user, isPlanner, selectedClient]);
-
-  return state;
+  return {
+    ...state,
+    refresh: loadEntitlements,
+  };
 }

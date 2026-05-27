@@ -39,6 +39,7 @@ import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 import { getHomeRouteForRole, isProfessionalSetupPending } from '@/lib/roles';
 import { clearPendingProfessionalSetup } from '@/lib/professionalSetupState';
+import { hasActiveBetaTrial } from '@/lib/betaTrial';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 
@@ -531,6 +532,7 @@ export default function ProfileSettings() {
 
   const plannerSubscriptionActive = plannerHasActiveSubscription(profile);
   const plannerFullAccess = plannerHasFullAccess(profile);
+  const betaTrialActive = hasActiveBetaTrial(profile);
   const coupleExportDecision = !isPlanner && !isVendor && !isAdmin
     ? getEntitlementDecision('couple.export_progress', { profile, weddingEntitlements, couplePlanTier })
     : null;
@@ -842,7 +844,7 @@ export default function ProfileSettings() {
             <div className="flex flex-wrap gap-2">
               <Badge variant={plannerSubscriptionActive ? 'secondary' : 'outline'}>
                 <CreditCard className="mr-1 h-3 w-3" />
-                {profile.planner_subscription_status}
+                {betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'trial' : profile.planner_subscription_status}
               </Badge>
               <Badge variant={profile.planner_verified ? 'secondary' : 'outline'}>
                 <ShieldCheck className="mr-1 h-3 w-3" />
@@ -952,7 +954,7 @@ export default function ProfileSettings() {
             <div className="flex flex-wrap gap-2">
               <Badge variant={plannerSubscriptionActive ? 'secondary' : 'outline'}>
                 <CreditCard className="mr-1 h-3 w-3" />
-                {profile.planner_subscription_status}
+                {betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'trial' : profile.planner_subscription_status}
               </Badge>
               <Badge variant={profile.planner_verified ? 'secondary' : 'outline'}>
                 <ShieldCheck className="mr-1 h-3 w-3" />

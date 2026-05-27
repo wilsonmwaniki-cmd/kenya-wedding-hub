@@ -37,6 +37,9 @@ interface VendorListing {
   subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
   subscription_started_at: string | null;
   subscription_expires_at: string | null;
+  beta_trial_status?: 'inactive' | 'active' | 'expired' | 'cancelled' | null;
+  beta_trial_started_at?: string | null;
+  beta_trial_expires_at?: string | null;
   social_instagram: string | null;
   social_facebook: string | null;
   social_tiktok: string | null;
@@ -108,6 +111,14 @@ export default function VendorSettings() {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
+  const effectiveListing = listing
+    ? {
+        ...listing,
+        beta_trial_status: profile?.beta_trial_status ?? null,
+        beta_trial_started_at: profile?.beta_trial_started_at ?? null,
+        beta_trial_expires_at: profile?.beta_trial_expires_at ?? null,
+      }
+    : null;
 
   useEffect(() => {
     if (!user) return;
@@ -294,9 +305,9 @@ export default function VendorSettings() {
     }
   };
 
-  const subscriptionActive = vendorPreviewMode || vendorHasActiveSubscription(listing);
-  const fullAccess = vendorPreviewMode || vendorHasFullAccess(listing);
-  const verificationRequestOpen = Boolean(listing?.verification_requested);
+  const subscriptionActive = vendorPreviewMode || vendorHasActiveSubscription(effectiveListing);
+  const fullAccess = vendorPreviewMode || vendorHasFullAccess(effectiveListing);
+  const verificationRequestOpen = Boolean(effectiveListing?.verification_requested);
   const previewLocation = buildKenyaLocationLabel(form.location_county, form.location_town);
   const previewBudgetBand = formatBudgetBand(
     form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null,
@@ -384,7 +395,7 @@ export default function VendorSettings() {
                 {listing.is_approved ? 'Approved' : 'Approval pending'}
               </Badge>
               <Badge variant={subscriptionActive ? 'secondary' : 'outline'}>
-                Subscription: {listing.subscription_status}
+                Subscription: {subscriptionActive && listing.subscription_status === 'inactive' ? 'trial' : listing.subscription_status}
               </Badge>
               <Badge variant={listing.is_verified ? 'secondary' : 'outline'}>
                 {listing.is_verified ? 'Verified' : verificationRequestOpen ? 'Verification requested' : 'Unverified'}
@@ -393,7 +404,7 @@ export default function VendorSettings() {
 
             <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">Current access status</p>
-              <p className="mt-1">{vendorAccessMessage(listing)}</p>
+              <p className="mt-1">{vendorAccessMessage(effectiveListing)}</p>
               {listing.subscription_expires_at && (
                 <p className="mt-1 text-xs">
                   Subscription expiry: {new Date(listing.subscription_expires_at).toLocaleDateString()}

@@ -362,6 +362,9 @@ export type Database = {
         Row: {
           avatar_url: string | null
           bio: string | null
+          beta_trial_expires_at: string | null
+          beta_trial_started_at: string | null
+          beta_trial_status: string
           collaboration_code: string | null
           company_email: string | null
           company_name: string | null
@@ -401,6 +404,9 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           bio?: string | null
+          beta_trial_expires_at?: string | null
+          beta_trial_started_at?: string | null
+          beta_trial_status?: string
           collaboration_code?: string | null
           company_email?: string | null
           company_name?: string | null
@@ -440,6 +446,9 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           bio?: string | null
+          beta_trial_expires_at?: string | null
+          beta_trial_started_at?: string | null
+          beta_trial_status?: string
           collaboration_code?: string | null
           company_email?: string | null
           company_name?: string | null

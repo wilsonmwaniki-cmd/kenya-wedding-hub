@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ExternalLink, Gift, Loader2, ShoppingBag, Trash2 } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
-import { startStripeCheckout } from '@/lib/billing';
+import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -80,10 +80,12 @@ function formatKes(value: number | null) {
 
 export default function GiftRegistry() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { profile, isSuperAdmin, rolePreview } = useAuth();
-  const { weddingId, entitlements, couplePlanTier, loading } = useWeddingEntitlements();
+  const { weddingId, entitlements, couplePlanTier, loading, refresh } = useWeddingEntitlements();
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
   const [items, setItems] = useState<RegistryItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsError, setItemsError] = useState<string | null>(null);
@@ -102,6 +104,7 @@ export default function GiftRegistry() {
   const addon = getCoupleAddonDefinition('gift_registry_addon');
   const isFocusedUpgradeFlow = searchParams.get('intent') === 'upgrade';
   const upgradeState = searchParams.get('upgrade');
+  const checkoutSessionId = searchParams.get('checkout_session_id');
 
   const statusMessage = useMemo(() => {
     if (upgradeState === 'success') {
@@ -122,6 +125,49 @@ export default function GiftRegistry() {
 
     return null;
   }, [upgradeState]);
+
+  useEffect(() => {
+    if (
+      upgradeState !== 'success'
+      || !checkoutSessionId
+      || processedCheckoutSessionId === checkoutSessionId
+      || !profile
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setProcessedCheckoutSessionId(checkoutSessionId);
+
+    const runSync = async () => {
+      try {
+        await syncCoupleCheckout(checkoutSessionId);
+        if (cancelled) return;
+
+        await refresh();
+        if (cancelled) return;
+
+        toast({
+          title: 'Gift Registry unlocked',
+          description: 'Your registry add-on is now active for this wedding workspace.',
+        });
+        navigate('/gift-registry?upgrade=success', { replace: true });
+      } catch (error: any) {
+        if (cancelled) return;
+        toast({
+          title: 'Payment completed but activation is still pending',
+          description: error?.message || 'The checkout succeeded, but we could not sync your Gift Registry access yet.',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    void runSync();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkoutSessionId, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
 
   useEffect(() => {
     if (!canAccessRegistry || !weddingId) {
@@ -215,7 +261,7 @@ export default function GiftRegistry() {
         lookupKey: addon.stripeMonthlyLookupKey,
         cadence: 'monthly',
         weddingId,
-        successPath: '/gift-registry?upgrade=success',
+        successPath: withCheckoutSessionId('/gift-registry?upgrade=success'),
         cancelPath: '/gift-registry?intent=upgrade&upgrade=cancelled',
       });
     } catch (error: any) {

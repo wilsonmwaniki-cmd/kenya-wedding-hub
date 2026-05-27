@@ -26,7 +26,7 @@ import {
   type PricingAudience,
   type PricingCheckoutCadence,
 } from '@/lib/pricingPlans';
-import { startStripeCheckout } from '@/lib/billing';
+import { startStripeCheckout, withCheckoutSessionId } from '@/lib/billing';
 
 const roleLabels = {
   couple: 'Couple',
@@ -90,6 +90,21 @@ export default function Pricing() {
     requestedPlanCode === 'couple_basic' ? 'basic'
       : requestedPlanCode === 'couple_premium' ? 'premium'
         : null;
+  const inferredCoupleTier =
+    requestedFeature === 'couple.connect_vendors' || requestedFeature === 'couple.connect_planners'
+      ? 'basic'
+      : requestedFeature === 'couple.ai_assistant'
+        || requestedFeature === 'couple.calendar_sync'
+        || requestedFeature === 'couple.export_progress'
+        ? 'premium'
+        : null;
+  const focusedCoupleAddon =
+    requestedFeature === 'couple.gift_registry'
+      ? 'gift_registry_addon'
+      : requestedFeature === 'couple.guest_rsvp_management'
+        ? 'guest_rsvp_management_addon'
+        : null;
+  const resolvedCoupleTier = focusedCoupleTier ?? inferredCoupleTier;
   const isFocusedUpgradeView =
     Boolean(targetAudience)
     && Boolean(requestedPlanCode || requestedFeature || professionalAddon)
@@ -312,7 +327,7 @@ export default function Pricing() {
         lookupKey,
         cadence,
         weddingId,
-        successPath: '/budget?upgrade=success',
+        successPath: withCheckoutSessionId('/budget?upgrade=success'),
         cancelPath: '/pricing?upgrade=cancelled',
       });
     } catch (error: any) {
@@ -355,7 +370,9 @@ export default function Pricing() {
         lookupKey: addon.stripeMonthlyLookupKey,
         cadence: 'monthly',
         weddingId,
-        successPath: code === 'guest_rsvp_management_addon' ? '/guests?upgrade=success' : '/gift-registry?upgrade=success',
+        successPath: withCheckoutSessionId(
+          code === 'guest_rsvp_management_addon' ? '/guests?upgrade=success' : '/gift-registry?upgrade=success',
+        ),
         cancelPath:
           code === 'guest_rsvp_management_addon'
             ? '/guests?intent=upgrade&upgrade=cancelled'
@@ -472,8 +489,8 @@ export default function Pricing() {
   const renderFocusedUpgrade = () => {
     if (!targetAudience) return null;
 
-    if (targetAudience === 'couple' && focusedCoupleTier) {
-      const plan = couplePlanDefinitions.find((item) => item.tier === focusedCoupleTier);
+    if (targetAudience === 'couple' && resolvedCoupleTier) {
+      const plan = couplePlanDefinitions.find((item) => item.tier === resolvedCoupleTier);
       if (!plan) return null;
 
       const cadence = selectedCoupleCadence[plan.tier];
@@ -547,6 +564,63 @@ export default function Pricing() {
                   {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
                   {!isLoading && <ArrowRight className="h-4 w-4" />}
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      );
+    }
+
+    if (targetAudience === 'couple' && focusedCoupleAddon) {
+      const addon = coupleAddonDefinitions.find((item) => item.code === focusedCoupleAddon);
+      if (!addon) return null;
+
+      const isLoading = checkoutTarget === `addon-${addon.code}`;
+
+      return (
+        <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
+          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
+            <CardHeader className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge className="rounded-full px-3 py-1">{addon.title}</Badge>
+                {highlightedFeature ? (
+                  <Badge variant="outline" className="rounded-full px-3 py-1">
+                    For {highlightedFeature}
+                  </Badge>
+                ) : null}
+              </div>
+              <div>
+                <CardTitle className="font-display text-4xl">Add {addon.title}</CardTitle>
+                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
+                  {addon.supportCopy}
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
+                <div>
+                  <p className="font-display text-3xl font-semibold">
+                    {addon.stripeMonthlyLookupKey ? 'Paid add-on' : 'Contact sales'}
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Add this only when you are ready to use it in a live wedding workflow.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  onClick={() => void handleCoupleAddonCheckout(addon.code)}
+                  className="gap-2"
+                  disabled={isLoading || !addon.stripeMonthlyLookupKey}
+                >
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {user ? `Continue with ${addon.title}` : 'Sign in to continue'}
+                  {!isLoading && addon.stripeMonthlyLookupKey ? <ArrowRight className="h-4 w-4" /> : null}
                 </Button>
                 <Button asChild variant="outline">
                   <Link to="/pricing?audience=couple">See all wedding pricing</Link>
@@ -726,6 +800,8 @@ export default function Pricing() {
     return null;
   };
 
+  const focusedUpgradeContent = isFocusedUpgradeView ? renderFocusedUpgrade() : null;
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#fcf8f3_0%,#fffdfa_24%,#ffffff_100%)] text-foreground">
       <nav className="sticky top-0 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
@@ -748,8 +824,8 @@ export default function Pricing() {
         </div>
       </nav>
 
-      {isFocusedUpgradeView ? (
-        renderFocusedUpgrade()
+      {focusedUpgradeContent ? (
+        focusedUpgradeContent
       ) : (
         <>
           <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
@@ -758,12 +834,16 @@ export default function Pricing() {
                 <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
                   Simple pricing
                 </Badge>
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-900">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Every new account starts with a 14-day full-access beta trial
+                </div>
                 <h1 className="mt-6 max-w-4xl font-display text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
                   Start free. Upgrade when the wedding or the business gets real.
                 </h1>
                 <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">
                   Couples begin with the essentials, then upgrade when planning becomes collaborative and operational.
-                  Planners and vendors list for free, then upgrade when they need bookings, invoices, contracts, and visible trust.
+                  Planners and vendors list for free, and every account gets two weeks of premium beta access before paid upgrades take over.
                 </p>
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                   <Link to="/auth">

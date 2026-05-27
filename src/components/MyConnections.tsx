@@ -163,7 +163,7 @@ export default function MyConnections() {
         .from('wedding_subscription_bundles')
         .select('seat_limit')
         .eq('wedding_id', weddingId)
-        .eq('bundle_type', 'committee_bundle')
+        .in('bundle_type', ['committee_bundle', 'wedding_pass'])
         .in('status', ['active', 'grace'])
         .order('seat_limit', { ascending: false })
         .limit(1),

@@ -720,6 +720,15 @@ export default function Auth() {
                 </motion.div>
               )}
 
+              {isSignUp && hasChosenAudiencePath && (
+                <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">14-day full-access beta trial</p>
+                  <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                    New accounts start with two weeks of premium access, so you can test the full experience before any upgrade is required.
+                  </p>
+                </div>
+              )}
+
               {showTopGoogleAuth && (
                 <div className="space-y-4">
                   <GoogleAuthButton

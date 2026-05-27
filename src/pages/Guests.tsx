@@ -25,7 +25,7 @@ import InfoTip from '@/components/InfoTip';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
-import { startStripeCheckout } from '@/lib/billing';
+import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 
 const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
 
@@ -125,7 +125,7 @@ function downloadCsvFile(filename: string, rows: string[][]) {
 export default function Guests() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
-  const { weddingId, entitlements, couplePlanTier, loading: entitlementsLoading } = useWeddingEntitlements();
+  const { weddingId, entitlements, couplePlanTier, loading: entitlementsLoading, refresh } = useWeddingEntitlements();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
@@ -163,6 +163,7 @@ export default function Guests() {
   const [progress, setProgress] = useState({ sent: 0, failed: 0, total: 0 });
   const [upgradePromptOpen, setUpgradePromptOpen] = useState(false);
   const [guestAddonCheckoutLoading, setGuestAddonCheckoutLoading] = useState(false);
+  const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) navigate('/clients');
@@ -279,6 +280,50 @@ export default function Guests() {
   const guestAddon = getCoupleAddonDefinition('guest_rsvp_management_addon');
   const isFocusedGuestUpgrade = searchParams.get('intent') === 'upgrade';
   const guestUpgradeState = searchParams.get('upgrade');
+  const checkoutSessionId = searchParams.get('checkout_session_id');
+
+  useEffect(() => {
+    if (
+      guestUpgradeState !== 'success'
+      || !checkoutSessionId
+      || processedCheckoutSessionId === checkoutSessionId
+      || !profile
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setProcessedCheckoutSessionId(checkoutSessionId);
+
+    const runSync = async () => {
+      try {
+        await syncCoupleCheckout(checkoutSessionId);
+        if (cancelled) return;
+
+        await refresh();
+        if (cancelled) return;
+
+        toast({
+          title: 'RSVP & Guest Management unlocked',
+          description: 'Your wedding can now collect RSVPs and manage guest coordination in one flow.',
+        });
+        navigate('/guests?upgrade=success', { replace: true });
+      } catch (error: any) {
+        if (cancelled) return;
+        toast({
+          title: 'Payment completed but activation is still pending',
+          description: error?.message || 'The checkout succeeded, but we could not sync RSVP & Guest Management yet.',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    void runSync();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkoutSessionId, guestUpgradeState, navigate, processedCheckoutSessionId, profile, refresh, toast]);
 
   const handleGuestAddonCheckout = async () => {
     if (!profile) return;
@@ -318,7 +363,7 @@ export default function Guests() {
         lookupKey: guestAddon.stripeMonthlyLookupKey,
         cadence: 'monthly',
         weddingId,
-        successPath: '/guests?upgrade=success',
+        successPath: withCheckoutSessionId('/guests?upgrade=success'),
         cancelPath: '/guests?intent=upgrade&upgrade=cancelled',
       });
     } catch (error: any) {

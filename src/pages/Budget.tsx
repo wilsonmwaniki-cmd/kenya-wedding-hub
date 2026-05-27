@@ -12,7 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, Loader2, Save, Receipt, Sparkles, Lock, CalendarDays, Download, HandCoins, Search, ChevronRight, CircleDashed, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
@@ -27,6 +27,7 @@ import InlineAssistantCard from '@/components/InlineAssistantCard';
 import InfoTip from '@/components/InfoTip';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { syncCoupleCheckout } from '@/lib/billing';
 
 interface BudgetCategory {
   id: string;
@@ -138,8 +139,9 @@ function getBudgetAssistantFeature(role?: string | null, plannerType?: string | 
 export default function Budget() {
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
-  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
+  const { entitlements: weddingEntitlements, couplePlanTier, refresh } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
@@ -184,6 +186,53 @@ export default function Budget() {
     reference: '',
     notes: '',
   });
+  const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
+  const upgradeState = searchParams.get('upgrade');
+  const checkoutSessionId = searchParams.get('checkout_session_id');
+
+  useEffect(() => {
+    if (
+      upgradeState !== 'success'
+      || !checkoutSessionId
+      || processedCheckoutSessionId === checkoutSessionId
+      || !profile
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    setProcessedCheckoutSessionId(checkoutSessionId);
+
+    const runSync = async () => {
+      try {
+        const result = await syncCoupleCheckout(checkoutSessionId);
+        if (cancelled) return;
+
+        await refresh();
+        if (cancelled) return;
+
+        const planLabel = result.couplePlanTier === 'premium' ? 'Premium' : 'Basic';
+        toast({
+          title: `${planLabel} activated`,
+          description: 'Your wedding workspace now has the upgraded planning access.',
+        });
+        navigate('/budget?upgrade=success', { replace: true });
+      } catch (error: any) {
+        if (cancelled) return;
+        toast({
+          title: 'Payment completed but activation is still pending',
+          description: error?.message || 'The checkout succeeded, but we could not sync your wedding upgrade yet.',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    void runSync();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkoutSessionId, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
 
   useEffect(() => {
     if (isPlanner && !selectedClient) navigate('/clients');
