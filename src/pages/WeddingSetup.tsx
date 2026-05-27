@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
@@ -164,18 +164,6 @@ export default function WeddingSetup() {
   }, [pendingSetup, pendingSetupHydrationKey, profile?.full_name, user?.email]);
 
   useEffect(() => {
-    if (loading || completion) return;
-    if (!user) {
-      navigate('/auth', { replace: true });
-      return;
-    }
-
-    if (!pendingSetup) {
-      navigate(profile?.role === 'couple' ? '/dashboard' : '/settings', { replace: true });
-    }
-  }, [completion, loading, navigate, pendingSetup, profile?.role, user]);
-
-  useEffect(() => {
     if (!user || !pendingSetup || completion) return;
 
     if (pendingSetup.intent === 'create_wedding') {
@@ -220,12 +208,20 @@ export default function WeddingSetup() {
     weddingTown,
   ]);
 
-  if (loading || !user || !pendingSetup) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
+  }
+
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  if (!pendingSetup) {
+    return <Navigate to={profile?.role === 'couple' ? '/dashboard' : '/settings'} replace />;
   }
 
   const isCreateFlow = pendingSetup.intent === 'create_wedding';
