@@ -12,11 +12,12 @@ import {
   type ProfessionalAudience,
   type PricingAudience,
 } from '@/lib/pricingPlans';
+import { hasActiveBetaTrial } from '@/lib/betaTrial';
 import { isCommitteePlanner, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
 import { vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 
 const ENTITLEMENT_TEST_MODE_STORAGE_KEY = 'zania-unlock-all-features';
-const TEMPORARILY_UNLOCK_ALL_FEATURES_FOR_TESTING = true;
+const TEMPORARILY_UNLOCK_ALL_FEATURES_FOR_TESTING = false;
 
 export type PlanningPassStatus = 'inactive' | 'active' | 'past_due' | 'cancelled';
 
@@ -58,6 +59,9 @@ export interface EntitlementProfileLike {
   planner_subscription_expires_at?: string | null;
   planning_pass_status?: string | null;
   planning_pass_expires_at?: string | null;
+  beta_trial_status?: string | null;
+  beta_trial_started_at?: string | null;
+  beta_trial_expires_at?: string | null;
 }
 
 export interface EntitlementVendorLike {
@@ -66,6 +70,9 @@ export interface EntitlementVendorLike {
   verification_requested?: boolean | null;
   subscription_status?: string | null;
   subscription_expires_at?: string | null;
+  beta_trial_status?: string | null;
+  beta_trial_started_at?: string | null;
+  beta_trial_expires_at?: string | null;
 }
 
 export interface EntitlementDecision {
@@ -138,6 +145,9 @@ export function getPricingAudience(profile?: EntitlementProfileLike | null): Pri
 
 function plannerReasons(profile?: EntitlementProfileLike | null) {
   const reasons: string[] = [];
+  if (hasActiveBetaTrial(profile)) {
+    return reasons;
+  }
   if (!plannerHasActiveSubscription(profile)) {
     reasons.push(isCommitteePlanner(profile) ? 'Your committee subscription is not active yet.' : 'Your Planner Pro subscription is not active yet.');
   }
@@ -149,8 +159,11 @@ function plannerReasons(profile?: EntitlementProfileLike | null) {
   return reasons;
 }
 
-function vendorReasons(vendorListing?: EntitlementVendorLike | null) {
+function vendorReasons(vendorListing?: EntitlementVendorLike | null, profile?: EntitlementProfileLike | null) {
   const reasons: string[] = [];
+  if (hasActiveBetaTrial(profile) || hasActiveBetaTrial(vendorListing)) {
+    return reasons;
+  }
   if (!vendorListing?.is_approved) reasons.push('Your vendor listing still needs approval.');
   if (!vendorHasActiveSubscription(vendorListing)) reasons.push('Your Vendor Pro subscription is not active yet.');
   if (vendorListing?.verification_requested && !vendorListing?.is_verified) {
@@ -168,12 +181,12 @@ function planningPassReasons() {
 function hasWeddingEntitlement(context: EntitlementContext, entitlementKey: CoupleEntitlementKey) {
   const explicitValue = context.weddingEntitlements?.[entitlementKey];
   if (typeof explicitValue === 'boolean') return explicitValue;
-  return hasActivePlanningPass(context.profile);
+  return hasActiveBetaTrial(context.profile) || hasActivePlanningPass(context.profile);
 }
 
 function hasProfessionalEntitlement(context: EntitlementContext, entitlementKey: ProfessionalEntitlementKey) {
   const explicitValue = context.professionalEntitlements?.[entitlementKey];
-  return Boolean(explicitValue);
+  return hasActiveBetaTrial(context.profile) || Boolean(explicitValue);
 }
 
 function getEffectiveCouplePlanTier(context: EntitlementContext, requiredTier: Exclude<CouplePlanTier, 'free'>) {
@@ -183,7 +196,7 @@ function getEffectiveCouplePlanTier(context: EntitlementContext, requiredTier: E
       : requiredTier;
   }
 
-  return hasActivePlanningPass(context.profile) ? 'premium' : requiredTier;
+  return hasActiveBetaTrial(context.profile) || hasActivePlanningPass(context.profile) ? 'premium' : requiredTier;
 }
 
 function buildCouplePricingHref(tier: Exclude<CouplePlanTier, 'free'>, feature?: string) {
@@ -486,13 +499,13 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
       return buildDecision(feature, 'vendor', vendorHasFullAccess(context.vendorListing), {
         title: 'Upgrade to start receiving direct leads',
         description: 'Vendor Pro unlocks direct connection requests and lead handling once your listing is approved, verified, and subscribed.',
-        reasons: vendorReasons(context.vendorListing),
+        reasons: vendorReasons(context.vendorListing, context.profile),
       });
     case 'vendor.analytics':
       return buildDecision(feature, 'vendor', vendorHasFullAccess(context.vendorListing), {
         title: 'Upgrade to unlock vendor analytics',
         description: 'Vendor Pro unlocks analytics, performance insights, and the premium business tools behind your listing.',
-        reasons: vendorReasons(context.vendorListing),
+        reasons: vendorReasons(context.vendorListing, context.profile),
       });
     case 'planner.media_portfolio':
       return buildProfessionalAddonDecision(

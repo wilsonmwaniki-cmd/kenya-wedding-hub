@@ -97,10 +97,13 @@ interface VendorListingAccess {
   verification_requested: boolean;
   subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
   subscription_expires_at: string | null;
+  beta_trial_status?: 'inactive' | 'active' | 'expired' | 'cancelled' | null;
+  beta_trial_started_at?: string | null;
+  beta_trial_expires_at?: string | null;
 }
 
 export default function VendorDashboard() {
-  const { user, isSuperAdmin, rolePreview } = useAuth();
+  const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
@@ -134,7 +137,12 @@ export default function VendorDashboard() {
       if (listing) {
         setListing(listing as VendorListingAccess);
         setListingId(listing.id);
-        if (vendorPreviewMode || vendorHasFullAccess(listing as VendorListingAccess)) {
+        if (vendorPreviewMode || vendorHasFullAccess({
+          ...(listing as VendorListingAccess),
+          beta_trial_status: profile?.beta_trial_status ?? null,
+          beta_trial_started_at: profile?.beta_trial_started_at ?? null,
+          beta_trial_expires_at: profile?.beta_trial_expires_at ?? null,
+        })) {
           const { data } = await supabase
             .from('vendors')
             .select('id, user_id, name, category, status, price, phone, email, notes, vendor_internal_notes, payment_status, amount_paid, payment_due_date, vendor_calendar_synced_at, created_at')
@@ -183,7 +191,7 @@ export default function VendorDashboard() {
       setLoading(false);
     };
     load();
-  }, [user, vendorPreviewMode]);
+  }, [profile?.beta_trial_expires_at, profile?.beta_trial_started_at, profile?.beta_trial_status, user, vendorPreviewMode]);
 
   const loadBookingContext = async (rows: Booking[]) => {
     const userIds = [...new Set(rows.map((row) => row.user_id).filter(Boolean))];

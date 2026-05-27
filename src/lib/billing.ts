@@ -16,6 +16,24 @@ type CheckoutResponse = {
   sessionId: string;
 };
 
+export type CoupleCheckoutSyncResponse = {
+  weddingId: string;
+  bundleCode: string;
+  bundleType: string;
+  activatedFeatures: string[];
+  couplePlanTier: 'free' | 'basic' | 'premium' | null;
+  seatLimits: {
+    committee: number;
+    family: number;
+  } | null;
+};
+
+export function withCheckoutSessionId(successPath: string) {
+  const url = new URL(successPath, 'https://zania.local');
+  url.searchParams.set('checkout_session_id', '{CHECKOUT_SESSION_ID}');
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export async function startStripeCheckout({
   audience,
   feature,
@@ -48,4 +66,22 @@ export async function startStripeCheckout({
   }
 
   window.location.assign(data.url);
+}
+
+export async function syncCoupleCheckout(sessionId: string) {
+  const { data, error } = await supabase.functions.invoke<CoupleCheckoutSyncResponse>('sync-couple-checkout', {
+    body: {
+      sessionId,
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Couple checkout sync did not return a response.');
+  }
+
+  return data;
 }
