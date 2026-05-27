@@ -14,7 +14,12 @@ import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, Shi
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
-import { getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
+import {
+  getVendorLearningProfile,
+  getVendorPriceBenchmark,
+  type VendorLearningProfile,
+  type VendorPriceBenchmark,
+} from '@/lib/vendorPriceIntelligence';
 import type { WeddingTaskPhase } from '@/lib/weddingTaskTemplates';
 import {
   setVendorSelectionStatus,
@@ -170,6 +175,30 @@ function benchmarkSummary(benchmark?: VendorPriceBenchmark | null) {
   return 'No market observations captured yet for this segment.';
 }
 
+function learningConfidenceLabel(score: number) {
+  if (score >= 80) return 'High confidence';
+  if (score >= 50) return 'Building confidence';
+  return 'Early signal';
+}
+
+function learningConfidenceTone(score: number) {
+  if (score >= 80) return 'default' as const;
+  if (score >= 50) return 'secondary' as const;
+  return 'outline' as const;
+}
+
+function learningMarketPosition(
+  predictedPrice: number | null | undefined,
+  benchmark?: VendorPriceBenchmark | null,
+) {
+  if (!predictedPrice || !benchmark?.benchmark_visible || !benchmark.median_amount) return null;
+
+  const ratio = predictedPrice / benchmark.median_amount;
+  if (ratio <= 0.85) return 'Below market';
+  if (ratio >= 1.15) return 'Premium';
+  return 'Near market';
+}
+
 function reputationSummary(benchmark?: VendorReputationBenchmark | null) {
   if (!benchmark) return 'Loading planner trust data...';
   if (benchmark.benchmark_visible && benchmark.average_overall_rating != null) {
@@ -314,6 +343,8 @@ export default function Vendors() {
   const [benchmarksLoading, setBenchmarksLoading] = useState(false);
   const [categoryBenchmarks, setCategoryBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
   const [listingBenchmarks, setListingBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
+  const [vendorLearningProfiles, setVendorLearningProfiles] = useState<Record<string, VendorLearningProfile | null>>({});
+  const [vendorLearningLoadingListingId, setVendorLearningLoadingListingId] = useState<string | null>(null);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [paymentDrafts, setPaymentDrafts] = useState<Record<string, PaymentDraft>>({});
   const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
@@ -1335,6 +1366,18 @@ export default function Vendors() {
       balance,
     };
   }, [selectedVendor]);
+  const selectedVendorLearningProfile = useMemo(() => {
+    if (!selectedVendor?.vendor_listing_id) return null;
+    return vendorLearningProfiles[selectedVendor.vendor_listing_id] ?? null;
+  }, [selectedVendor, vendorLearningProfiles]);
+  const selectedVendorActiveBenchmark = useMemo(() => {
+    if (!selectedVendor) return null;
+    const categoryBenchmark = categoryBenchmarks[benchmarkKey(selectedVendor.category)];
+    const listingBenchmark = selectedVendor.vendor_listing_id
+      ? listingBenchmarks[selectedVendor.vendor_listing_id]
+      : null;
+    return listingBenchmark?.benchmark_visible ? listingBenchmark : categoryBenchmark;
+  }, [categoryBenchmarks, listingBenchmarks, selectedVendor]);
   const vendorsAssistantFeature = useMemo(
     () => getVendorsAssistantFeature(profile?.role, profile?.planner_type),
     [profile?.planner_type, profile?.role],
@@ -1472,6 +1515,35 @@ export default function Vendors() {
       setSelectedVendorTab('details');
     }
   }, [selectedVendorId, selectedVendor]);
+
+  useEffect(() => {
+    if (!selectedVendor?.vendor_listing_id) return;
+
+    const listingId = selectedVendor.vendor_listing_id;
+    if (Object.prototype.hasOwnProperty.call(vendorLearningProfiles, listingId)) return;
+
+    let cancelled = false;
+    setVendorLearningLoadingListingId(listingId);
+
+    void getVendorLearningProfile(listingId)
+      .then((profile) => {
+        if (cancelled) return;
+        setVendorLearningProfiles((prev) => ({ ...prev, [listingId]: profile }));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Failed to load vendor learning profile:', error);
+        setVendorLearningProfiles((prev) => ({ ...prev, [listingId]: null }));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setVendorLearningLoadingListingId((current) => (current === listingId ? null : current));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedVendor, vendorLearningProfiles]);
 
   useEffect(() => {
     if (!recordVendorPaymentOpen || !selectedVendor) return;
@@ -2157,6 +2229,131 @@ export default function Vendors() {
                           <p className="mt-1 text-lg font-semibold text-foreground">{formatCurrency(selectedVendorPaymentSummary.balance)}</p>
                         </div>
                       </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="shadow-card">
+                    <CardContent className="space-y-4 py-6">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-foreground">Learned price signal</p>
+                            <InfoTip content="Zania blends this vendor's stated range, quotes, invoice-stage amounts, and fully paid outcomes to estimate where the real working price is landing." />
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            This gets smarter as more real quotes, invoices, and paid work flow through the platform.
+                          </p>
+                        </div>
+                        {selectedVendorLearningProfile ? (
+                          <Badge variant={learningConfidenceTone(selectedVendorLearningProfile.confidence_score)}>
+                            {learningConfidenceLabel(selectedVendorLearningProfile.confidence_score)}
+                          </Badge>
+                        ) : null}
+                      </div>
+
+                      {!selectedVendor.vendor_listing_id ? (
+                        <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+                          Link this vendor to a directory listing to learn from their stated price range, commercial quotes, invoices, and receipt-backed outcomes.
+                        </div>
+                      ) : vendorLearningLoadingListingId === selectedVendor.vendor_listing_id && !selectedVendorLearningProfile ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Building the latest vendor pricing profile...
+                        </div>
+                      ) : selectedVendorLearningProfile ? (
+                        <>
+                          <div className="grid gap-3 md:grid-cols-4">
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs uppercase tracking-wide text-muted-foreground">Predicted price</p>
+                              <p className="mt-2 text-xl font-semibold text-foreground">
+                                {formatCurrency(selectedVendorLearningProfile.predicted_price)}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {learningMarketPosition(selectedVendorLearningProfile.predicted_price, selectedVendorActiveBenchmark) ?? 'Waiting for broader market context'}
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs uppercase tracking-wide text-muted-foreground">Declared range</p>
+                              <p className="mt-2 text-lg font-semibold text-foreground">
+                                {selectedVendorLearningProfile.declared_min_price != null || selectedVendorLearningProfile.declared_max_price != null
+                                  ? `${formatCurrency(selectedVendorLearningProfile.declared_min_price)} - ${formatCurrency(selectedVendorLearningProfile.declared_max_price)}`
+                                  : 'Not set'}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Midpoint {formatCurrency(selectedVendorLearningProfile.declared_midpoint_price)}
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs uppercase tracking-wide text-muted-foreground">Quote average</p>
+                              <p className="mt-2 text-lg font-semibold text-foreground">
+                                {formatCurrency(selectedVendorLearningProfile.quote_average_amount)}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {selectedVendorLearningProfile.quote_observation_count} quote signal{selectedVendorLearningProfile.quote_observation_count === 1 ? '' : 's'}
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs uppercase tracking-wide text-muted-foreground">Final paid average</p>
+                              <p className="mt-2 text-lg font-semibold text-foreground">
+                                {formatCurrency(selectedVendorLearningProfile.final_paid_average_amount)}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {selectedVendorLearningProfile.final_paid_observation_count} paid outcome{selectedVendorLearningProfile.final_paid_observation_count === 1 ? '' : 's'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-border/70 bg-background px-4 py-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium text-foreground">How the model is learning</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {selectedVendorLearningProfile.total_observation_count} weighted pricing signal{selectedVendorLearningProfile.total_observation_count === 1 ? '' : 's'} captured across the platform.
+                                </p>
+                              </div>
+                              <Badge variant="outline">
+                                Confidence {selectedVendorLearningProfile.confidence_score}/100
+                              </Badge>
+                            </div>
+                            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                              <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3">
+                                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Booked / invoice stage</p>
+                                <p className="mt-1 text-sm font-semibold text-foreground">
+                                  {formatCurrency(selectedVendorLearningProfile.booked_average_amount)}
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {selectedVendorLearningProfile.booked_observation_count} stronger commitment signal{selectedVendorLearningProfile.booked_observation_count === 1 ? '' : 's'}
+                                </p>
+                              </div>
+                              <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3">
+                                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Quote to paid shift</p>
+                                <p className="mt-1 text-sm font-semibold text-foreground">
+                                  {selectedVendorLearningProfile.quote_to_paid_delta_percent != null
+                                    ? `${selectedVendorLearningProfile.quote_to_paid_delta_percent > 0 ? '+' : ''}${selectedVendorLearningProfile.quote_to_paid_delta_percent}%`
+                                    : 'Not enough paid history'}
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  Shows whether accepted work usually lands above or below early quotes.
+                                </p>
+                              </div>
+                              <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3">
+                                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Last refreshed</p>
+                                <p className="mt-1 text-sm font-semibold text-foreground">
+                                  {selectedVendorLearningProfile.last_observed_at
+                                    ? new Date(selectedVendorLearningProfile.last_observed_at).toLocaleDateString()
+                                    : 'No live signals yet'}
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  Updates as this vendor sends new commercial documents or gets paid through Zania.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+                          No learned price signal yet. Once this vendor shares a range, sends a quote, or closes paid work through Zania, this profile will start estimating the real working price.
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </section>
