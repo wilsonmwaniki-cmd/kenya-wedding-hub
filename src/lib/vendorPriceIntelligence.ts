@@ -26,6 +26,25 @@ export interface VendorPriceBenchmarkFilters {
   minSampleSize?: number;
 }
 
+export interface VendorLearningProfile {
+  vendor_listing_id: string;
+  declared_min_price: number | null;
+  declared_max_price: number | null;
+  declared_midpoint_price: number | null;
+  quote_average_amount: number | null;
+  booked_average_amount: number | null;
+  final_paid_average_amount: number | null;
+  predicted_price: number | null;
+  quote_observation_count: number;
+  booked_observation_count: number;
+  final_paid_observation_count: number;
+  declared_range_count: number;
+  total_observation_count: number;
+  confidence_score: number;
+  quote_to_paid_delta_percent: number | null;
+  last_observed_at: string | null;
+}
+
 export interface RecordVendorPriceObservationInput {
   amount: number;
   category: string;
@@ -142,5 +161,37 @@ export async function getVendorPriceBenchmark(
     percentile_75_amount: row?.percentile_75_amount ?? null,
     vendor_count: row?.vendor_count ?? 0,
     last_observation_at: row?.last_observation_at ?? null,
+  };
+}
+
+export async function getVendorLearningProfile(
+  vendorListingId: string,
+): Promise<VendorLearningProfile | null> {
+  const { data, error } = await supabase.rpc('get_vendor_learning_profile', {
+    listing_id_input: vendorListingId,
+  });
+
+  if (error) throw error;
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+
+  return {
+    vendor_listing_id: row.vendor_listing_id,
+    declared_min_price: row.declared_min_price ?? null,
+    declared_max_price: row.declared_max_price ?? null,
+    declared_midpoint_price: row.declared_midpoint_price ?? null,
+    quote_average_amount: row.quote_average_amount ?? null,
+    booked_average_amount: row.booked_average_amount ?? null,
+    final_paid_average_amount: row.final_paid_average_amount ?? null,
+    predicted_price: row.predicted_price ?? null,
+    quote_observation_count: row.quote_observation_count ?? 0,
+    booked_observation_count: row.booked_observation_count ?? 0,
+    final_paid_observation_count: row.final_paid_observation_count ?? 0,
+    declared_range_count: row.declared_range_count ?? 0,
+    total_observation_count: row.total_observation_count ?? 0,
+    confidence_score: row.confidence_score ?? 0,
+    quote_to_paid_delta_percent: row.quote_to_paid_delta_percent ?? null,
+    last_observed_at: row.last_observed_at ?? null,
   };
 }

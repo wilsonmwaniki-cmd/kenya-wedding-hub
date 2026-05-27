@@ -1430,6 +1430,29 @@ export type Database = {
           vendor_count: number
         }[]
       }
+      get_vendor_learning_profile: {
+        Args: {
+          listing_id_input: string
+        }
+        Returns: {
+          booked_average_amount: number | null
+          booked_observation_count: number
+          confidence_score: number
+          declared_max_price: number | null
+          declared_midpoint_price: number | null
+          declared_min_price: number | null
+          declared_range_count: number
+          final_paid_average_amount: number | null
+          final_paid_observation_count: number
+          last_observed_at: string | null
+          predicted_price: number | null
+          quote_average_amount: number | null
+          quote_observation_count: number
+          quote_to_paid_delta_percent: number | null
+          total_observation_count: number
+          vendor_listing_id: string
+        }[]
+      }
       get_vendor_reputation_benchmark: {
         Args: {
           category_filter?: string | null
