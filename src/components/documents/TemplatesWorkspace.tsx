@@ -140,6 +140,30 @@ export default function TemplatesWorkspace({ role }: Props) {
     quoteStarters: templates.filter((item) => item.templateType === 'quote').length,
   }), [templates]);
 
+  const workspaceFocus = useMemo(() => {
+    if (selectedTemplate) {
+      return {
+        title: `Refine ${selectedTemplate.name}`,
+        body: `Tighten the reusable title, terms, notes, and default lines so the next ${professionalTemplateTypeLabel(selectedTemplate.templateType).toLowerCase()} starts nearly finished.`,
+        actionLabel: 'Save current template',
+      };
+    }
+
+    if (stats.total === 0) {
+      return {
+        title: 'Create your first reusable starter',
+        body: 'Capture your most repeated document structure once, then reuse it whenever a new quote, invoice, receipt, or contract needs to move faster.',
+        actionLabel: 'Create first template',
+      };
+    }
+
+    return {
+      title: 'Choose a template to refine',
+      body: 'Select a starter from the library to adjust the default title, notes, terms, and line items without leaving this workspace.',
+      actionLabel: 'Review template library',
+    };
+  }, [selectedTemplate, stats.total]);
+
   const sanitizedItems = (items: DocumentTemplateItem[]) =>
     items
       .map((item) => ({
@@ -264,35 +288,45 @@ export default function TemplatesWorkspace({ role }: Props) {
   return (
     <section className="space-y-6">
       <Card className="border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.08),rgba(255,255,255,0.98)_32%,rgba(255,247,242,0.9))] shadow-card">
-        <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
+        <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.7fr)_340px]">
+          <div className="space-y-5">
+            <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Reusable starters</p>
             <CardTitle className="font-display text-[2.1rem] leading-tight text-foreground">Templates</CardTitle>
             <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
               Save your standard quote, invoice, receipt, and contract building blocks so the next document starts faster.
             </CardDescription>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Templates</p>
+                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.total}</p>
+              </div>
+              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Billing starters</p>
+                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.billing}</p>
+              </div>
+              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Contract starters</p>
+                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.contracts}</p>
+              </div>
+              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Quote starters</p>
+                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.quoteStarters}</p>
+              </div>
+            </div>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2 self-start">
-            <CopyPlus className="h-4 w-4" />
-            New template
-          </Button>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Templates</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.total}</p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Billing starters</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.billing}</p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Contract starters</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.contracts}</p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Quote starters</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.quoteStarters}</p>
+
+          <div className="rounded-[1.6rem] border border-border/70 bg-white/88 p-6 shadow-sm">
+            <div className="space-y-3">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Next Best Move</p>
+              <h2 className="text-2xl font-semibold text-foreground">{workspaceFocus.title}</h2>
+              <p className="text-sm leading-6 text-muted-foreground">{workspaceFocus.body}</p>
+            </div>
+            <Button onClick={() => setCreateOpen(true)} className="mt-6 w-full gap-2">
+              <CopyPlus className="h-4 w-4" />
+              {workspaceFocus.actionLabel === 'Save current template' ? 'New template' : workspaceFocus.actionLabel}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -310,7 +344,7 @@ export default function TemplatesWorkspace({ role }: Props) {
             <div className="grid gap-3 sm:grid-cols-[1.3fr_0.7fr]">
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by template name or default title" />
               <div className="flex min-h-12 items-center rounded-xl border border-border bg-muted/20 px-4 py-2 text-sm leading-5 text-muted-foreground">
-                Viewing <span className="mx-1 break-words font-medium text-foreground">reusable starters</span>
+                Viewing <span className="mx-1 break-words font-medium text-foreground">{templates.length}</span> reusable starter{templates.length === 1 ? '' : 's'}
               </div>
             </div>
           </CardHeader>
@@ -368,11 +402,30 @@ export default function TemplatesWorkspace({ role }: Props) {
           </CardHeader>
           <CardContent>
             {!selectedTemplate || !detailDraft ? (
-              <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-10 text-center text-sm text-muted-foreground">
-                Pick a template from the library to continue.
+              <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-10 text-center">
+                <p className="text-sm font-medium text-foreground">Nothing selected yet</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Choose a starter from the library to refine it here, or create a new template if you want to capture a fresh workflow.
+                </p>
+                <Button type="button" variant="outline" className="mt-4 gap-2" onClick={() => setCreateOpen(true)}>
+                  <FilePlus2 className="h-4 w-4" />
+                  Create template
+                </Button>
               </div>
             ) : (
               <div className="space-y-5">
+                <div className="rounded-2xl border border-border/70 bg-muted/10 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{selectedTemplate.name}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {detailDraft.defaultItems.filter((item) => item.description.trim().length > 0).length} saved line
+                        {detailDraft.defaultItems.filter((item) => item.description.trim().length > 0).length === 1 ? '' : 's'} ready to reuse
+                      </p>
+                    </div>
+                    <Badge variant="secondary">{professionalTemplateTypeLabel(detailDraft.templateType)}</Badge>
+                  </div>
+                </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Template name</Label>

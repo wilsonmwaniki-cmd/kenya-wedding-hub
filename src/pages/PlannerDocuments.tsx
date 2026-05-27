@@ -34,6 +34,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
+import InfoTip from '@/components/InfoTip';
 import {
   buildCommercialDocumentShareEmailDraft,
   buildCommercialDocumentShareUrl,
@@ -713,6 +714,48 @@ export default function PlannerDocuments() {
           ? 'Receipts appear after you record real payments against invoices.'
           : 'Start with a quote for a couple, then turn it into an invoice once the work is confirmed.';
 
+  const currentSectionCount =
+    activeSection === 'quotes'
+      ? stats.quotes
+      : activeSection === 'invoices'
+        ? stats.invoices
+        : activeSection === 'receipts'
+          ? stats.receipts
+          : stats.total;
+
+  const documentPrimaryAction = selectedDetail
+    ? selectedDetail.documentType === 'invoice' && selectedDetail.balanceDue > 0
+      ? {
+          title: 'Collect the next invoice payment',
+          body: `${selectedDetail.documentNumber} still has ${formatCurrency(selectedDetail.balanceDue)} outstanding. Record the next payment or share the invoice link so the couple can act.`,
+          actionLabel: 'Record payment',
+          actionType: 'payment' as const,
+        }
+      : {
+          title: `Keep ${selectedDetail.documentNumber} moving`,
+          body: `Use the detail pane to refine line items, update status, print, or share this ${commercialDocumentTypeLabel(selectedDetail.documentType).toLowerCase()} without leaving the workspace.`,
+          actionLabel: 'Copy share link',
+          actionType: 'share' as const,
+        }
+    : {
+        title: activeSection === 'quotes'
+          ? 'Start the next quote'
+          : activeSection === 'invoices'
+            ? 'Keep invoice follow-up moving'
+            : activeSection === 'receipts'
+              ? 'Keep the payment trail complete'
+              : 'Keep your document library moving',
+        body: activeSection === 'quotes'
+          ? 'Create a fresh proposal for a couple, then turn it into an invoice once the scope is confirmed.'
+          : activeSection === 'invoices'
+            ? 'Open an invoice from the library or create a new one so payment follow-up stays visible.'
+            : activeSection === 'receipts'
+              ? 'Receipts appear after real payments are recorded, giving you a clean paper trail for every booking.'
+              : 'Quotes, invoices, and receipts all live here so your commercial paperwork stays tidy and easy to share.',
+        actionLabel: 'New document',
+        actionType: 'create' as const,
+      };
+
   if (activeSection === 'contracts') {
     return <ContractsWorkspace role="planner" plannerClients={plannerClients} />;
   }
@@ -724,43 +767,70 @@ export default function PlannerDocuments() {
   return (
     <div className="space-y-6">
       <Card className="border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.08),rgba(255,255,255,0.98)_32%,rgba(255,247,242,0.9))] shadow-card">
-        <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Commercial documents</p>
-            <CardTitle className="font-display text-3xl text-foreground">{pageTitle}</CardTitle>
-            <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              {pageDescription}
-            </CardDescription>
+        <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.7fr)_360px]">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Commercial documents</p>
+                <InfoTip content={pageDescription} />
+              </div>
+              <CardTitle className="font-display text-3xl text-foreground sm:text-4xl">{pageTitle}</CardTitle>
+              <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                Quotes, invoices, and receipts in one place.
+              </CardDescription>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Documents</p>
+                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.total}</p>
+              </div>
+              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{sectionBadgeLabel}</p>
+                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{currentSectionCount}</p>
+              </div>
+              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Collected</p>
+                <p className="mt-2 break-words text-lg font-semibold leading-tight text-emerald-700">{formatCurrency(stats.collected)}</p>
+              </div>
+              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Outstanding</p>
+                <p className="mt-2 break-words text-lg font-semibold leading-tight text-amber-700">{formatCurrency(stats.outstanding)}</p>
+              </div>
+            </div>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2 self-start">
-            <FilePlus2 className="h-4 w-4" />
-            New document
-          </Button>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Documents</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.total}</p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{sectionBadgeLabel}</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">
-              {activeSection === 'quotes'
-                ? stats.quotes
-                : activeSection === 'invoices'
-                  ? stats.invoices
-                  : activeSection === 'receipts'
-                    ? stats.receipts
-                    : 0}
-            </p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Collected</p>
-            <p className="mt-2 break-words text-lg font-semibold leading-tight text-emerald-700">{formatCurrency(stats.collected)}</p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Outstanding</p>
-            <p className="mt-2 break-words text-lg font-semibold leading-tight text-amber-700">{formatCurrency(stats.outstanding)}</p>
+
+          <div className="rounded-[1.6rem] border border-border/70 bg-white/85 p-5 shadow-sm">
+            <div className="flex items-center gap-2">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Next Best Move</p>
+              <InfoTip content={documentPrimaryAction.body} />
+            </div>
+            <h3 className="mt-3 text-2xl font-semibold text-foreground">{documentPrimaryAction.title}</h3>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">Best next move right now.</p>
+            <div className="mt-5 space-y-3">
+              <Button
+                onClick={() => {
+                  if (documentPrimaryAction.actionType === 'payment') {
+                    setPaymentOpen(true);
+                    return;
+                  }
+                  if (documentPrimaryAction.actionType === 'share') {
+                    void handleCopyShareLink();
+                    return;
+                  }
+                  setCreateOpen(true);
+                }}
+                className="w-full gap-2"
+                disabled={documentPrimaryAction.actionType === 'share' && !!selectedDetail && sharingDocumentId === selectedDetail.id}
+              >
+                <FilePlus2 className="h-4 w-4" />
+                {documentPrimaryAction.actionLabel}
+              </Button>
+              <div className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground">
+                {documents.length === 0
+                  ? 'No live documents yet.'
+                  : `${documents.length} document${documents.length === 1 ? '' : 's'} visible in this section.`}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -771,7 +841,7 @@ export default function PlannerDocuments() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <CardTitle className="font-display text-xl">Document library</CardTitle>
-                <CardDescription>Filter your live quote, invoice, and receipt stack.</CardDescription>
+                <CardDescription>Filter your live documents.</CardDescription>
               </div>
               {refreshing && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -787,7 +857,7 @@ export default function PlannerDocuments() {
                 placeholder="Search by document number, recipient, or wedding"
               />
               <div className="flex min-h-12 items-center rounded-xl border border-border bg-muted/20 px-4 py-2 text-sm leading-5 text-muted-foreground">
-                Viewing <span className="mx-1 break-words font-medium text-foreground">{pageTitle}</span>
+                Viewing <span className="mx-1 break-words font-medium text-foreground">{pageTitle}</span> · {documents.length} result{documents.length === 1 ? '' : 's'}
               </div>
             </div>
           </CardHeader>

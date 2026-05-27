@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState, useRef } from 'react';
+import { Suspense, lazy, useEffect, useState, useRef, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import GuestInsights from '@/components/guests/GuestInsights';
+import InfoTip from '@/components/InfoTip';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
@@ -137,6 +138,8 @@ export default function Guests() {
   const [activeTab, setActiveTab] = useState('list');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGroup, setFilterGroup] = useState<string>('all');
+  const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
+  const [savingGuestId, setSavingGuestId] = useState<string | null>(null);
 
   // Add guest form
   const [name, setName] = useState('');
@@ -145,6 +148,8 @@ export default function Guests() {
   const [rsvp, setRsvp] = useState('pending');
   const [groupName, setGroupName] = useState('');
   const [category, setCategory] = useState('general');
+  const [mealPreference, setMealPreference] = useState('');
+  const [plusOne, setPlusOne] = useState<'yes' | 'no'>('no');
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -226,11 +231,13 @@ export default function Guests() {
     const insert: any = {
       user_id: user.id, name: name.trim(), email: email || null, phone: phone || null,
       rsvp_status: rsvp, group_name: groupName || null, category,
+      meal_preference: mealPreference.trim() || null,
+      plus_one: plusOne === 'yes',
     };
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
     const { error } = await supabase.from('guests').insert(insert);
     if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general');
+    setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general'); setMealPreference(''); setPlusOne('no');
     setOpen(false); load();
   };
 
@@ -242,6 +249,18 @@ export default function Guests() {
   const deleteGuest = async (id: string) => {
     await supabase.from('guests').delete().eq('id', id);
     load();
+  };
+
+  const saveGuestDetails = async (guest: Guest, updates: Partial<Guest>) => {
+    setSavingGuestId(guest.id);
+    const { error } = await supabase.from('guests').update(updates).eq('id', guest.id);
+    if (error) {
+      toast({ title: 'Could not update guest', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Guest updated', description: `${guest.name} is now up to date.` });
+      await load();
+    }
+    setSavingGuestId(null);
   };
 
   const guestRsvpDecision = getEntitlementDecision('couple.guest_rsvp_management', {
@@ -371,12 +390,35 @@ export default function Guests() {
 
   // Filtered guests
   const visibleGuests = guests.filter(g => {
-    const matchesSearch = !searchTerm || g.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = !searchTerm || [g.name, g.email, g.phone, g.group_name, g.category]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase());
     const matchesGroup = filterGroup === 'all' || g.group_name === filterGroup;
     return matchesSearch && matchesGroup;
   });
 
   const uniqueGroups = [...new Set(guests.map(g => g.group_name).filter(Boolean))] as string[];
+  const pendingGuests = guests.filter(g => g.rsvp_status === 'pending').length;
+  const declinedGuests = guests.filter(g => g.rsvp_status === 'declined').length;
+  const guestsWithEmail = guests.filter(g => Boolean(g.email)).length;
+
+  const selectedGuest = useMemo(
+    () => visibleGuests.find((guest) => guest.id === selectedGuestId) ?? null,
+    [selectedGuestId, visibleGuests],
+  );
+
+  useEffect(() => {
+    if (visibleGuests.length === 0) {
+      if (selectedGuestId !== null) setSelectedGuestId(null);
+      return;
+    }
+
+    if (!selectedGuestId || !visibleGuests.some((guest) => guest.id === selectedGuestId)) {
+      setSelectedGuestId(visibleGuests[0].id);
+    }
+  }, [selectedGuestId, visibleGuests]);
 
   if (isPlanner && !selectedClient) return null;
   if (checkInMode) {
@@ -397,6 +439,13 @@ export default function Guests() {
   }
 
   const confirmed = guests.filter(g => g.rsvp_status === 'confirmed').length;
+  const guestPrimaryAction = guests.length === 0
+    ? 'Add the first guest'
+    : pendingWithEmail.length > 0
+      ? `Send ${pendingWithEmail.length} pending invite${pendingWithEmail.length === 1 ? '' : 's'}`
+      : pendingGuests > 0
+        ? 'Follow up missing contact details'
+        : 'Review confirmed seating and VIP groups';
 
   return (
     <div className="space-y-6">
@@ -429,85 +478,156 @@ export default function Guests() {
         </Card>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Guest List</h1>
-          <p className="text-muted-foreground">{guests.length} guests · {confirmed} confirmed</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <input type="file" ref={fileInputRef} accept=".csv" onChange={handleFileUpload} className="hidden" />
-          <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
-            <Download className="h-4 w-4" /> CSV Template
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="gap-2">
-            <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload CSV'}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} className="gap-2">
-            <UserCheck className="h-4 w-4" /> Check-In
-          </Button>
-          {pendingWithEmail.length > 0 && (
-            <Button variant="outline" size="sm" onClick={() => openCompose()} className="gap-2">
-              <Send className="h-4 w-4" /> Invite All ({pendingWithEmail.length})
-            </Button>
-          )}
-          <Dialog open={open} onOpenChange={setOpen}>
-            <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add Guest
-            </Button>
-            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-              <DialogHeader><DialogTitle className="font-display">Add Guest</DialogTitle></DialogHeader>
-              <form onSubmit={addGuest} className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>Name</Label>
-                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="Guest name" required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Email</Label>
-                    <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="guest@example.com" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Phone</Label>
-                    <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+254..." />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Group</Label>
-                    <Select value={groupName} onValueChange={setGroupName}>
-                      <SelectTrigger><SelectValue placeholder="Select group" /></SelectTrigger>
-                      <SelectContent>
-                        {GUEST_GROUPS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Select value={category} onValueChange={setCategory}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {GUEST_CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>RSVP Status</Label>
-                    <Select value={rsvp} onValueChange={setRsvp}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="confirmed">Confirmed</SelectItem>
-                        <SelectItem value="declined">Declined</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <Button type="submit" className="w-full">Add Guest</Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
+        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.3fr_0.95fr] lg:p-8">
+          <div className="space-y-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Guest Workspace</p>
+                <InfoTip content="Manage your guest list, RSVP replies, contact details, groups, and invite follow-up in one place." />
+              </div>
+              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Keep the guest list moving</h1>
+              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
+                Guests, RSVPs, and invites in one flow.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-4">
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Total guests</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{guests.length}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Everyone currently on the list</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Confirmed</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{confirmed}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Guests who have said yes</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Pending</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{pendingGuests}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Still waiting on RSVP replies</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{guestPrimaryAction}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest actions</p>
+              <InfoTip content="Use quick actions here to import guests, export a template, start check-in, or send invites in bulk." />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <input type="file" ref={fileInputRef} accept=".csv" onChange={handleFileUpload} className="hidden" />
+              <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
+                <Download className="h-4 w-4" /> CSV Template
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="gap-2">
+                <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload CSV'}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} className="gap-2">
+                <UserCheck className="h-4 w-4" /> Check-In
+              </Button>
+              {pendingWithEmail.length > 0 && (
+                <Button variant="outline" size="sm" onClick={() => openCompose()} className="gap-2">
+                  <Send className="h-4 w-4" /> Invite All ({pendingWithEmail.length})
+                </Button>
+              )}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <p className="text-sm font-medium text-foreground">
+                {guests.length === 0
+                  ? 'Start light, then enrich the details'
+                  : `${guestsWithEmail} guest${guestsWithEmail === 1 ? '' : 's'} are email-ready`}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {guests.length === 0
+                  ? 'A first pass is enough to get started.'
+                  : pendingWithEmail.length > 0
+                    ? 'You can send invites now.'
+                    : 'Focus on missing contact details and RSVP accuracy.'}
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <Dialog open={open} onOpenChange={setOpen}>
+                <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  Add Guest
+                </Button>
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+                  <DialogHeader><DialogTitle className="font-display">Add Guest</DialogTitle></DialogHeader>
+                  <form onSubmit={addGuest} className="space-y-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Name</Label>
+                        <Input value={name} onChange={e => setName(e.target.value)} placeholder="Guest name" required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Email</Label>
+                        <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="guest@example.com" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Phone</Label>
+                        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+254..." />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Group</Label>
+                        <Select value={groupName} onValueChange={setGroupName}>
+                          <SelectTrigger><SelectValue placeholder="Select group" /></SelectTrigger>
+                          <SelectContent>
+                            {GUEST_GROUPS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Category</Label>
+                        <Select value={category} onValueChange={setCategory}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {GUEST_CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>RSVP Status</Label>
+                        <Select value={rsvp} onValueChange={setRsvp}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="confirmed">Confirmed</SelectItem>
+                            <SelectItem value="declined">Declined</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Plus One</Label>
+                        <Select value={plusOne} onValueChange={(value: 'yes' | 'no') => setPlusOne(value)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="no">No</SelectItem>
+                            <SelectItem value="yes">Yes</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Meal Preference</Label>
+                        <Input value={mealPreference} onChange={e => setMealPreference(e.target.value)} placeholder="Optional meal or dietary note" />
+                      </div>
+                    </div>
+                    <Button type="submit" className="w-full">Add Guest</Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {!entitlementsLoading && !guestRsvpDecision.allowed && !isFocusedGuestUpgrade && !guestUpgradeState && (
         <InlineUpgradePrompt decision={guestRsvpDecision} />
@@ -531,7 +651,6 @@ export default function Guests() {
         </TabsContent>
 
         <TabsContent value="list" className="mt-4 space-y-4">
-          {/* Search & filter bar */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="relative min-w-0 flex-1 sm:min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -553,54 +672,297 @@ export default function Guests() {
             )}
           </div>
 
-          {/* Guest cards */}
-          <div className="space-y-2">
-            {visibleGuests.map(g => (
-              <Card key={g.id} className="shadow-card">
-                <CardContent className="flex items-center gap-3 py-3">
-                  <Users className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-card-foreground truncate">{g.name}</p>
-                      {g.category && g.category !== 'general' && (
-                        <Badge variant="secondary" className="text-[10px] capitalize h-5">{g.category}</Badge>
-                      )}
-                      {g.group_name && (
-                        <Badge variant="outline" className="text-[10px] h-5">{g.group_name}</Badge>
-                      )}
+          <Card className="overflow-hidden shadow-card">
+            <CardContent className="p-0">
+              <div className="grid lg:grid-cols-[360px_minmax(0,1fr)]">
+                <div className="border-b border-border/70 bg-muted/20 lg:border-b-0 lg:border-r">
+                  <div className="grid gap-3 p-5 sm:grid-cols-3 lg:grid-cols-1">
+                    <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Visible</p>
+                      <p className="mt-2 text-xl font-semibold text-foreground">{visibleGuests.length}</p>
                     </div>
-                    {g.email && <p className="text-xs text-muted-foreground">{g.email}</p>}
-                    {g.phone && !g.email && <p className="text-xs text-muted-foreground">{g.phone}</p>}
+                    <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Invite ready</p>
+                      <p className="mt-2 text-xl font-semibold text-foreground">{pendingWithEmail.length}</p>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Declined</p>
+                      <p className="mt-2 text-xl font-semibold text-foreground">{declinedGuests}</p>
+                    </div>
                   </div>
-                  {/* RSVP link copy */}
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => copyRsvpLink(g)} title="Copy RSVP link">
-                    <Link2 className="h-4 w-4" />
-                  </Button>
-                  {g.email && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openCompose(g)} title="Send invite">
-                      <Mail className="h-4 w-4" />
-                    </Button>
+
+                  <div className="max-h-[620px] space-y-2 overflow-y-auto border-t border-border/70 p-3">
+                    {visibleGuests.length > 0 ? (
+                      visibleGuests.map((g) => {
+                        const isSelected = selectedGuest?.id === g.id;
+                        return (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => setSelectedGuestId(g.id)}
+                            className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                              isSelected
+                                ? 'border-primary bg-primary/6 shadow-sm'
+                                : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-foreground">{g.name}</p>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <Badge variant={g.rsvp_status === 'confirmed' ? 'default' : g.rsvp_status === 'declined' ? 'destructive' : 'secondary'} className="capitalize">
+                                    {g.rsvp_status || 'pending'}
+                                  </Badge>
+                                  {g.category && g.category !== 'general' && (
+                                    <Badge variant="secondary" className="text-[10px] capitalize">{g.category}</Badge>
+                                  )}
+                                  {g.group_name && (
+                                    <Badge variant="outline" className="text-[10px]">{g.group_name}</Badge>
+                                  )}
+                                </div>
+                              </div>
+                              <Users className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                            </div>
+                            <p className="mt-3 truncate text-xs text-muted-foreground">
+                              {g.email || g.phone || 'No contact details yet'}
+                            </p>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
+                        <p className="text-sm font-medium text-foreground">
+                          {searchTerm || filterGroup !== 'all' ? 'No guests match this view' : 'No guests added yet'}
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {searchTerm || filterGroup !== 'all'
+                            ? 'Try a different name, phone, email, or group search.'
+                            : 'Add the first guest and start shaping the wedding headcount.'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-background">
+                  {selectedGuest ? (
+                    <div className="space-y-6 p-5 lg:p-6">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={selectedGuest.rsvp_status === 'confirmed' ? 'default' : selectedGuest.rsvp_status === 'declined' ? 'destructive' : 'secondary'} className="capitalize">
+                              {selectedGuest.rsvp_status || 'pending'}
+                            </Badge>
+                            {selectedGuest.category && selectedGuest.category !== 'general' && (
+                              <Badge variant="secondary" className="capitalize">{selectedGuest.category}</Badge>
+                            )}
+                            {selectedGuest.group_name && (
+                              <Badge variant="outline">{selectedGuest.group_name}</Badge>
+                            )}
+                          </div>
+                          <div>
+                            <h2 className="font-display text-2xl font-semibold text-foreground">{selectedGuest.name}</h2>
+                            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                              Everything for this guest, in one place.
+                            </p>
+                          </div>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="gap-2 text-destructive hover:text-destructive"
+                          onClick={() => deleteGuest(selectedGuest.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete guest
+                        </Button>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Contact</p>
+                          <p className="mt-2 text-sm font-medium text-foreground">{selectedGuest.email || selectedGuest.phone || 'Missing'}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Plus One</p>
+                          <p className="mt-2 text-sm font-medium text-foreground">{selectedGuest.plus_one ? 'Allowed' : 'Not listed'}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Meal</p>
+                          <p className="mt-2 text-sm font-medium text-foreground">{selectedGuest.meal_preference || 'Not set'}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                        <div className="space-y-4">
+                          <div className="rounded-2xl border border-border/70 bg-background p-4">
+                            <p className="text-sm font-medium text-foreground">Guest details</p>
+                            <p className="mt-1 text-sm text-muted-foreground">Update and save core details.</p>
+
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                              <div className="space-y-2 sm:col-span-2">
+                                <Label>Name</Label>
+                                <Input
+                                  value={selectedGuest.name}
+                                  onChange={(e) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, name: e.target.value } : guest))}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Email</Label>
+                                <Input
+                                  type="email"
+                                  value={selectedGuest.email || ''}
+                                  onChange={(e) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, email: e.target.value || null } : guest))}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Phone</Label>
+                                <Input
+                                  value={selectedGuest.phone || ''}
+                                  onChange={(e) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, phone: e.target.value || null } : guest))}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Group</Label>
+                                <Select
+                                  value={selectedGuest.group_name || '__none__'}
+                                  onValueChange={(value) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, group_name: value === '__none__' ? null : value } : guest))}
+                                >
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none__">No group yet</SelectItem>
+                                    {GUEST_GROUPS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Category</Label>
+                                <Select
+                                  value={selectedGuest.category || 'general'}
+                                  onValueChange={(value) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, category: value } : guest))}
+                                >
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    {GUEST_CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Meal Preference</Label>
+                                <Input
+                                  value={selectedGuest.meal_preference || ''}
+                                  onChange={(e) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, meal_preference: e.target.value || null } : guest))}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Plus One</Label>
+                                <Select
+                                  value={selectedGuest.plus_one ? 'yes' : 'no'}
+                                  onValueChange={(value) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, plus_one: value === 'yes' } : guest))}
+                                >
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="no">No</SelectItem>
+                                    <SelectItem value="yes">Yes</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 flex justify-end">
+                              <Button
+                                type="button"
+                                className="gap-2"
+                                onClick={() =>
+                                  saveGuestDetails(selectedGuest, {
+                                    name: selectedGuest.name,
+                                    email: selectedGuest.email,
+                                    phone: selectedGuest.phone,
+                                    group_name: selectedGuest.group_name,
+                                    category: selectedGuest.category,
+                                    meal_preference: selectedGuest.meal_preference,
+                                    plus_one: selectedGuest.plus_one,
+                                  } as Partial<Guest>)
+                                }
+                                disabled={savingGuestId === selectedGuest.id}
+                              >
+                                {savingGuestId === selectedGuest.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                Save Guest
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="rounded-2xl border border-border/70 bg-background p-4">
+                            <p className="text-sm font-medium text-foreground">RSVP and invite actions</p>
+                            <p className="mt-1 text-sm text-muted-foreground">Update status, then send or copy the invite.</p>
+
+                            <div className="mt-4 space-y-3">
+                              <div className="space-y-2">
+                                <Label>RSVP Status</Label>
+                                <Select
+                                  value={selectedGuest.rsvp_status || 'pending'}
+                                  onValueChange={(value) => void updateRsvp(selectedGuest.id, value)}
+                                >
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="pending">Pending</SelectItem>
+                                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                                    <SelectItem value="declined">Declined</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <Button variant="outline" className="gap-2" onClick={() => copyRsvpLink(selectedGuest)}>
+                                  <Copy className="h-4 w-4" />
+                                  Copy RSVP Link
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  className="gap-2"
+                                  onClick={() => openCompose(selectedGuest)}
+                                  disabled={!selectedGuest.email}
+                                >
+                                  <Mail className="h-4 w-4" />
+                                  Send Invite
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                            <p className="text-sm font-medium text-foreground">Guest readiness</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {!selectedGuest.email && !selectedGuest.phone
+                                ? 'This guest still needs at least one contact method before outreach gets easier.'
+                                : selectedGuest.rsvp_status === 'pending'
+                                  ? 'This guest is ready for follow-up. Send the RSVP link and keep them moving toward a response.'
+                                  : selectedGuest.rsvp_status === 'confirmed'
+                                    ? 'This guest is confirmed. You can now use group, meal, and plus-one details for seating and service planning.'
+                                    : 'This guest has declined, so the slot is no longer part of the active headcount.'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex min-h-[420px] items-center justify-center p-8">
+                      <div className="max-w-md text-center">
+                        <Users className="mx-auto h-10 w-10 text-muted-foreground" />
+                        <h2 className="mt-4 font-display text-2xl font-semibold text-foreground">No guest selected</h2>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          Pick a guest to manage details and RSVP actions.
+                        </p>
+                      </div>
+                    </div>
                   )}
-                  <Select value={g.rsvp_status || 'pending'} onValueChange={(v) => updateRsvp(g.id, v)}>
-                    <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="confirmed">Confirmed</SelectItem>
-                      <SelectItem value="declined">Declined</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <button onClick={() => deleteGuest(g.id)} className="text-muted-foreground hover:text-destructive transition-colors">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </CardContent>
-              </Card>
-            ))}
-            {visibleGuests.length === 0 && (
-              <p className="text-center text-muted-foreground py-12">
-                {searchTerm || filterGroup !== 'all' ? 'No guests match your filter.' : 'No guests added yet. Start building your guest list!'}
-              </p>
-            )}
-          </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 

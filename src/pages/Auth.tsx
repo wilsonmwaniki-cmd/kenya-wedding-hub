@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Briefcase, Heart, Loader2, Users } from 'lucide-react';
+import { Briefcase, Copy, Eye, EyeOff, Heart, Loader2, RefreshCw, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -94,6 +94,8 @@ export default function Auth() {
   const [isForgot, setIsForgot] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
   const [selectedAudience, setSelectedAudience] = useState<AuthAudience | null>(null);
   const [signupPath, setSignupPath] = useState<WeddingSignupIntent | null>(null);
@@ -219,7 +221,7 @@ export default function Auth() {
 
         if (pendingSetup) {
           if (!active) return;
-          navigate('/settings', { replace: true });
+          navigate('/wedding-setup', { replace: true });
           return;
         }
 
@@ -269,6 +271,39 @@ export default function Auth() {
       active = false;
     };
   }, [loading, navigate, profile?.planner_type, profile?.role, redirecting, toast, user]);
+
+  const createGeneratedPassword = () => {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+    const randomValues = new Uint32Array(16);
+    window.crypto.getRandomValues(randomValues);
+    const nextPassword = Array.from(randomValues, (value) => alphabet[value % alphabet.length]).join('');
+
+    setPassword(nextPassword);
+    setGeneratedPassword(nextPassword);
+    setShowPassword(true);
+    toast({
+      title: 'Secure password generated',
+      description: 'You can use this as-is or replace it with your own password.',
+    });
+  };
+
+  const copyGeneratedPassword = async () => {
+    if (!password) return;
+
+    try {
+      await navigator.clipboard.writeText(password);
+      toast({
+        title: 'Password copied',
+        description: 'Paste it somewhere safe if you want to keep a copy.',
+      });
+    } catch {
+      toast({
+        title: 'Could not copy password',
+        description: 'You can still reveal it and copy it manually.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   if (loading || redirecting) {
     return (
@@ -348,13 +383,13 @@ export default function Auth() {
           });
           toast({
             title: 'Account created!',
-            description: 'Check your email to confirm your account, then finish your wedding setup in Settings.',
+            description: 'Check your email to confirm your account, then finish setting up your wedding.',
           });
           setIsSignUp(false);
           setIsForgot(false);
           setPassword('');
           setPostSignupMessage(
-            'Account created. Check your email to confirm it, then sign in to finish your wedding setup in Settings.',
+            'Account created. Check your email to confirm it, then sign in to finish setting up your wedding.',
           );
         } else if (signupPath === 'join_wedding') {
           if (!normalizeJoinCode(weddingCode)) {
@@ -510,9 +545,9 @@ export default function Auth() {
                   ? 'Create your professional account first. You will choose Planner or Vendor after sign-in.'
                   : 'Sign in to your professional workspace.'
                 : signupPath === 'join_wedding'
-                  ? 'Use the wedding code from the couple and the same email that was invited.'
-                  : isSignUp
-                    ? 'Create your account now. You will finish the wedding setup inside your workspace.'
+                    ? 'Use the wedding code from the couple and the same email that was invited.'
+                    : isSignUp
+                    ? 'Create your account now. You will finish your wedding setup in the next step.'
                     : 'Sign in to your wedding workspace.'}
           </CardDescription>
         </CardHeader>
@@ -661,7 +696,7 @@ export default function Auth() {
                       {audience === 'couple' && signupPath === 'join_wedding'
                         ? 'Use the code the couple sent you.'
                         : audience === 'couple'
-                          ? 'Create the account first, then finish the wedding inside Settings.'
+                          ? 'Create the account first, then finish setting up the wedding in the next step.'
                           : audience === 'professional'
                             ? isSignUp
                               ? 'Create your login first. You will choose Planner or Vendor inside Settings.'
@@ -799,13 +834,63 @@ export default function Auth() {
                       </div>
                       <Input
                         id="password"
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         value={password}
-                        onChange={(event) => setPassword(event.target.value)}
+                        onChange={(event) => {
+                          setPassword(event.target.value);
+                          if (generatedPassword && event.target.value !== generatedPassword) {
+                            setGeneratedPassword(null);
+                          }
+                        }}
                         placeholder="••••••••"
                         required
                         minLength={6}
                       />
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isSignUp && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="gap-2"
+                              onClick={createGeneratedPassword}
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              Generate secure password
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => setShowPassword((current) => !current)}
+                          >
+                            {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            {showPassword ? 'Hide' : 'Show'}
+                          </Button>
+                          {isSignUp && password && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => void copyGeneratedPassword()}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                              Copy
+                            </Button>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {generatedPassword
+                            ? 'Generated for you. Save it somewhere safe before continuing.'
+                            : isSignUp
+                              ? 'Use at least 6 characters, or generate one instantly.'
+                              : 'Use the password linked to this account.'}
+                        </p>
+                      </div>
                     </div>
 
                     <Button type="submit" className="w-full" disabled={submitting || googleSubmitting || !hasChosenPath}>

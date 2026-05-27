@@ -38,6 +38,7 @@ const PlannerProfile = lazy(() => import("./pages/PlannerProfile"));
 const PlannerDirectory = lazy(() => import("./pages/PlannerDirectory"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const WeddingSetup = lazy(() => import("./pages/WeddingSetup"));
 const AdminPortal = lazy(() => import("./pages/AdminPortal"));
 const TimelinePage = lazy(() => import("./pages/Timeline"));
 const TimelineShare = lazy(() => import("./pages/TimelineShare"));
@@ -87,6 +88,7 @@ const App = () => (
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
+                  <Route path="/wedding-setup" element={<ProtectedRoute allowedRoles={['couple']}><WeddingSetup /></ProtectedRoute>} />
                   <Route path="/pricing" element={<Pricing />} />
                   <Route path="/planners" element={<PlannerDirectory />} />
                   <Route path="/vendors-directory" element={<VendorDirectory />} />

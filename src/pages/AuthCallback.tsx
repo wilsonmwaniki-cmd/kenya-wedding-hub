@@ -14,7 +14,7 @@ import {
   persistPendingProfessionalSetup,
   readPendingProfessionalSetup,
 } from '@/lib/professionalSetupState';
-import { completePendingWeddingSetup, getPendingWeddingSetup } from '@/lib/weddingWorkspace';
+import { completePendingWeddingSetup, getPendingWeddingSetup, isPendingWeddingSetupReadyForCompletion } from '@/lib/weddingWorkspace';
 
 function getAuthTargetFromMetadata(
   userMetadata: Record<string, unknown> | null | undefined,
@@ -408,6 +408,11 @@ export default function AuthCallback() {
         const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
 
         if (user && pendingWeddingSetup) {
+          if (!isPendingWeddingSetupReadyForCompletion(pendingWeddingSetup)) {
+            navigate('/wedding-setup', { replace: true });
+            return;
+          }
+
           const completion = await withTimeout(
             completePendingWeddingSetup(user),
             5000,

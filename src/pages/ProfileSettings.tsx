@@ -11,13 +11,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyhole, AlertTriangle, UserCog, Phone } from 'lucide-react';
+import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyhole, AlertTriangle, UserCog, Phone, BriefcaseBusiness, Store, Sparkles, CheckCircle2 } from 'lucide-react';
 import AvatarUpload from '@/components/AvatarUpload';
 import { committeeResponsibilityOptions } from '@/lib/committeeRoles';
 import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
+import InfoTip from '@/components/InfoTip';
 import {
   completePendingWeddingSetup,
   getMyWeddingOwnershipSummary,
@@ -81,6 +82,7 @@ export default function ProfileSettings() {
   const isProfessionalPlanner = isPlanner && !isCommittee;
   const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata, profile?.role, user?.email ?? null);
   const isCouple = profile?.role === 'couple' && !professionalSetupPending;
+  const isProfessionalWorkspace = professionalSetupPending || isPlanner || isVendor || isCommittee;
   const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
   const metadataPartnerEmail =
     typeof user?.user_metadata?.partner_email === 'string' ? user.user_metadata.partner_email : null;
@@ -689,11 +691,13 @@ export default function ProfileSettings() {
   };
 
   return (
-    <div className="space-y-6 max-w-xl">
+    <div className={isProfessionalWorkspace ? 'max-w-4xl space-y-6' : 'max-w-xl space-y-6'}>
       <div>
         <h1 className="font-display text-3xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground">
-          {isProfessionalPlanner
+          {professionalSetupPending
+            ? 'Choose your account type and finish your business profile.'
+            : isProfessionalPlanner
             ? 'Manage your planner profile & company details'
             : isCommittee
               ? 'Manage your committee profile, members, and access'
@@ -706,53 +710,102 @@ export default function ProfileSettings() {
       </div>
 
       {professionalSetupPending && (
-        <Card className="shadow-card border-primary/20 bg-primary/5">
-        <CardHeader>
-          <CardTitle className="font-display">Finish Your Professional Setup</CardTitle>
-          <CardDescription>
-            Choose whether this account is a planner or vendor account. Once saved, this cannot be changed.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
+        <Card className="overflow-hidden border-primary/20 bg-[linear-gradient(180deg,rgba(241,115,64,0.08),rgba(255,255,255,0.96)_48%)] shadow-card">
+          <CardHeader className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary" className="gap-1.5 border border-primary/20 bg-background/80 text-foreground">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                Professional onboarding
+              </Badge>
+              <Badge variant="outline" className="border-primary/25 bg-background/65 text-muted-foreground">
+                1 step left
+              </Badge>
+            </div>
+            <div className="max-w-3xl space-y-2">
+              <CardTitle className="font-display text-4xl leading-tight sm:text-[2.7rem]">
+                Finish Your Professional Setup
+              </CardTitle>
+              <CardDescription className="max-w-2xl text-base leading-7 text-muted-foreground">
+                Choose whether this account will operate as a planner or a vendor. Once you save this choice, we tailor the rest of your workspace around it and it cannot be changed later.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-4 lg:grid-cols-2">
               {(['planner', 'vendor'] as const).map((value) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => setProfessionalSetupRole(value)}
-                  className={`rounded-xl border px-4 py-4 text-left transition-all ${
+                  className={`rounded-2xl border px-5 py-5 text-left transition-all ${
                     professionalSetupRole === value
-                      ? 'border-primary bg-primary/5 text-foreground'
-                      : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                      ? 'border-primary bg-background shadow-[0_14px_36px_rgba(241,115,64,0.12)]'
+                      : 'border-border/60 bg-background/80 text-muted-foreground hover:border-primary/40 hover:bg-background'
                   }`}
+                  aria-pressed={professionalSetupRole === value}
                 >
-                  <p className="font-medium capitalize">{value}</p>
-                  <p className="mt-1 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className={`grid h-11 w-11 place-items-center rounded-2xl ${
+                      professionalSetupRole === value ? 'bg-primary/12 text-primary' : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {value === 'planner' ? <BriefcaseBusiness className="h-5 w-5" /> : <Store className="h-5 w-5" />}
+                    </div>
+                    {professionalSetupRole === value ? <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" /> : null}
+                  </div>
+                  <p className="mt-5 text-2xl font-semibold capitalize text-foreground">{value}</p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
                     {value === 'planner'
                       ? 'Use this if you will manage clients and planning workspaces.'
                       : 'Use this if you will list and manage a wedding business.'}
                   </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {(value === 'planner'
+                      ? ['Client workspaces', 'Planning operations', 'Business profile']
+                      : ['Vendor listing', 'Packages & offers', 'Business profile']
+                    ).map((item) => (
+                      <span
+                        key={item}
+                        className="rounded-full border border-border/60 bg-muted/35 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
                 </button>
               ))}
             </div>
 
-            {professionalSetupRole === 'planner' && (
-              <div className="rounded-xl border border-border/60 bg-background/50 p-4 text-sm text-muted-foreground">
-                Next, we will keep you here and open your planner profile fields so you can add your business location,
-                specialties, service areas, and other planner details in one place.
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div className="rounded-2xl border border-border/60 bg-background/90 p-5 text-sm text-muted-foreground shadow-sm">
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-foreground">What happens next</p>
+                  <InfoTip
+                    content={professionalSetupRole === 'planner'
+                      ? 'Planner accounts stay here first so you can finish your business profile, location, specialties, and service areas without leaving settings.'
+                      : professionalSetupRole === 'vendor'
+                        ? 'Vendor accounts move into the listing flow so you can add business details and storefront information without repeating work.'
+                        : 'Choose the account type that best matches how you plan to use Zania, then the app will guide you into the right business setup flow.'}
+                  />
+                </div>
+                <p className="mt-2 leading-7">
+                  {professionalSetupRole
+                    ? 'You’ll continue into the right business setup flow.'
+                    : 'Choose the account type that matches your work.'}
+                </p>
               </div>
-            )}
 
-            {professionalSetupRole === 'vendor' && (
-              <div className="rounded-xl border border-border/60 bg-background/50 p-4 text-sm text-muted-foreground">
-                You will add your business location on the next screen when you complete your vendor listing, so we do not ask for it twice here.
-              </div>
-            )}
-
-            <Button type="button" onClick={completeProfessionalSetup} disabled={completingProfessionalSetup}>
-              {completingProfessionalSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Complete professional setup
-            </Button>
+              <Button
+                type="button"
+                onClick={completeProfessionalSetup}
+                disabled={completingProfessionalSetup || !professionalSetupRole}
+                className="w-full lg:min-w-[280px]"
+              >
+                {completingProfessionalSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {professionalSetupRole
+                  ? `Continue as ${professionalSetupRole}`
+                  : 'Choose an account type first'}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -940,10 +993,11 @@ export default function ProfileSettings() {
       {isCouple && (
         <Card className="shadow-card border-primary/20 bg-primary/5">
           <CardHeader>
-            <CardTitle className="font-display">Wedding Ownership</CardTitle>
-            <CardDescription>
-              Manage your partner invite, wedding code, and the shared ownership of this wedding.
-            </CardDescription>
+            <div className="flex items-center gap-2">
+              <CardTitle className="font-display">Wedding Ownership</CardTitle>
+              <InfoTip content="Use this section to manage your partner invite, wedding code, and who has shared ownership of the wedding workspace." />
+            </div>
+            <CardDescription>Partner invite, code, and shared ownership.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {ownershipLoading ? (
@@ -1088,9 +1142,9 @@ export default function ProfileSettings() {
             <CardTitle className="font-display">Personal Details</CardTitle>
             <CardDescription>Your name and contact information</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="grid gap-4 md:grid-cols-2">
             {isPlanner && (
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2">
                 <Label>Profile Photo / Logo</Label>
                 <AvatarUpload />
               </div>
@@ -1529,10 +1583,12 @@ export default function ProfileSettings() {
           </Card>
         ) : null}
 
-        <Button type="submit" disabled={saving} className="w-full">
-          {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-          Save Changes
-        </Button>
+        <div className="flex justify-end">
+          <Button type="submit" disabled={saving} className="w-full sm:min-w-[240px] sm:w-auto">
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save Changes
+          </Button>
+        </div>
       </form>
     </div>
   );

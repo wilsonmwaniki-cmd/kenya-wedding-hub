@@ -13,6 +13,7 @@ import {
 import {
   completePendingWeddingSetup,
   getPendingWeddingSetup,
+  isPendingWeddingSetupReadyForCompletion,
   type WeddingPlanningMode,
   type WeddingReferenceCurrency,
   type WeddingOwnerRole,
@@ -263,6 +264,13 @@ const buildPreviewProfile = (baseProfile: Profile, preview: RolePreview): Profil
     planner_subscription_expires_at: plannerPreviewExpiry(),
   };
 };
+
+const normalizeAdminBaseProfile = (profile: Profile): Profile => ({
+  ...profile,
+  role: 'admin',
+  planner_type: null,
+  committee_name: null,
+});
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -793,6 +801,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (!isPendingWeddingSetupReadyForCompletion(pendingSetup)) {
+      pendingWeddingRecoveryRef.current = null;
+      return;
+    }
+
     const attemptKey = `${user.id}:${pendingSetup.intent}:${pendingSetup.weddingName ?? ''}:${pendingSetup.partnerEmail ?? ''}:${pendingSetup.weddingCode ?? ''}`;
     if (pendingWeddingRecoveryRef.current === attemptKey) return;
     pendingWeddingRecoveryRef.current = attemptKey;
@@ -900,16 +913,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(ROLE_PREVIEW_STORAGE_KEY, rolePreview);
   }, [rolePreview]);
 
+  const hasAdminMembership = useMemo(() => {
+    if (baseProfile?.role === 'admin') return true;
+    if (availableRoles.includes('admin')) return true;
+    return user?.user_metadata?.role === 'admin';
+  }, [availableRoles, baseProfile?.role, user?.user_metadata?.role]);
+
+  const normalizedBaseProfile = useMemo(() => {
+    if (!baseProfile) return null;
+    if (!hasAdminMembership) return baseProfile;
+    if (baseProfile.role === 'admin') return baseProfile;
+    return normalizeAdminBaseProfile(baseProfile);
+  }, [baseProfile, hasAdminMembership]);
+
   useEffect(() => {
-    if (!baseProfile) return;
-    if (baseProfile.role === 'admin') return;
+    if (!normalizedBaseProfile) return;
+    if (normalizedBaseProfile.role === 'admin') return;
     if (rolePreview !== 'admin') {
       setRolePreviewState('admin');
     }
-  }, [baseProfile?.role]);
+  }, [normalizedBaseProfile?.role, rolePreview]);
 
   const profile = useMemo(() => {
-    if (!baseProfile) {
+    if (!normalizedBaseProfile) {
       if (!user) return null;
 
       const requestedSignupState = getRequestedSignupState(user);
@@ -938,15 +964,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ?? buildFallbackProfile(user, inferredRole).committee_name,
       };
 
+      if (hasAdminMembership) {
+        return buildPreviewProfile(normalizeAdminBaseProfile(fallbackProfile), rolePreview);
+      }
+
       if (fallbackProfile.role !== 'admin') return fallbackProfile;
       return buildPreviewProfile(fallbackProfile, rolePreview);
     }
 
-    if (baseProfile.role !== 'admin') return baseProfile;
-    return buildPreviewProfile(baseProfile, rolePreview);
-  }, [baseProfile, rolePreview, user]);
+    if (normalizedBaseProfile.role !== 'admin') return normalizedBaseProfile;
+    return buildPreviewProfile(normalizedBaseProfile, rolePreview);
+  }, [normalizedBaseProfile, hasAdminMembership, rolePreview, user]);
 
-  const isSuperAdmin = baseProfile?.role === 'admin';
+  const isSuperAdmin = hasAdminMembership;
 
   useEffect(() => {
     if (!user || baseProfile) return;
