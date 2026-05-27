@@ -333,6 +333,16 @@ export function getPendingWeddingSetup(
   return readPendingWeddingSetupFromMetadata(userMetadata as PendingWeddingSetupMetadata | null | undefined);
 }
 
+export function isPendingWeddingSetupReadyForCompletion(pendingSetup: PendingWeddingSetup | null): boolean {
+  if (!pendingSetup) return false;
+
+  if (pendingSetup.intent === 'create_wedding') {
+    return Boolean(pendingSetup.weddingOwnerRole && pendingSetup.weddingName?.trim());
+  }
+
+  return Boolean(pendingSetup.weddingCode?.trim());
+}
+
 function resolveLegacyRoleForWeddingRole(weddingRole: string | null | undefined): { role: AppRole; plannerType: PlannerType | null } {
   switch (weddingRole) {
     case 'committee_chair':

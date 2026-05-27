@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import InfoTip from '@/components/InfoTip';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -14,7 +15,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Heart, Plus, Trash2, Copy, ExternalLink, Star, Loader2, Eye, Tag, X } from 'lucide-react';
-import { motion } from 'framer-motion';
 
 const STYLE_SUGGESTIONS = ['Garden', 'Church', 'Beach', 'Traditional', 'Modern', 'Rustic', 'Luxury', 'Intimate', 'Outdoor', 'Cultural'];
 
@@ -247,6 +247,16 @@ export default function ManagePortfolio() {
     toast({ title: 'Link copied!' });
   };
 
+  const reviewableVendors = useMemo(
+    () => vendors.filter(v => v.vendor_listing_id && !reviews.find(r => r.vendor_listing_id === v.vendor_listing_id)),
+    [reviews, vendors],
+  );
+
+  const averageRating = useMemo(
+    () => (reviews.length ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length : 0),
+    [reviews],
+  );
+
   if (loading) {
     return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
@@ -254,55 +264,145 @@ export default function ManagePortfolio() {
   if (!portfolio) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Wedding Portfolio</h1>
-          <p className="mt-1 text-muted-foreground">Create a beautiful wedding story page from your workspace data.</p>
-        </div>
-        <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="flex flex-col items-center gap-4 py-10">
-            <Heart className="h-12 w-12 text-primary" />
-            <p className="text-center text-muted-foreground max-w-sm">
-              Generate your wedding story automatically from your timeline, vendors, and guest data. Share it publicly or keep it private.
-            </p>
-            <Button onClick={createPortfolio} className="gap-2">
-              <Plus className="h-4 w-4" /> Create Wedding Portfolio
-            </Button>
+        <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-amber-50/60 shadow-card">
+          <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.7fr)_360px]">
+            <div className="space-y-4">
+              <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-primary">
+                Wedding Portfolio
+              </Badge>
+              <div className="space-y-2">
+                <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+                  Turn your wedding workspace into a beautiful public story
+                </h1>
+                <p className="max-w-3xl text-sm leading-7 text-muted-foreground sm:text-base">
+                  Pull together your wedding details, style, vendor credits, and trusted reviews into one page you can publish and share when you are ready.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Story</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">Wedding details</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Date, place, style, and story.</p>
+                </div>
+                <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Credits</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">Wedding team</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Show the vendors behind the day.</p>
+                </div>
+                <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Social proof</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">Trusted reviews</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Add reviews that build trust.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[1.6rem] border border-border/70 bg-background/90 p-6 shadow-sm">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Next Best Move</p>
+                  <InfoTip content="Zania will generate the foundation from your existing workspace so you can polish it instead of starting from scratch." />
+                </div>
+                <h2 className="text-2xl font-semibold text-foreground">Create your portfolio hub</h2>
+                <p className="text-sm leading-6 text-muted-foreground">Start with a ready foundation.</p>
+              </div>
+              <Button onClick={createPortfolio} className="mt-6 w-full gap-2">
+                <Plus className="h-4 w-4" /> Create Wedding Portfolio
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
     );
   }
-
-  const reviewableVendors = vendors.filter(v => v.vendor_listing_id && !reviews.find(r => r.vendor_listing_id === v.vendor_listing_id));
   const shareUrl = `${window.location.origin}/wedding/${portfolio.share_token}`;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Wedding Portfolio</h1>
-          <p className="mt-1 text-muted-foreground">Your wedding story page</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {isPublished && (
-            <a href={shareUrl} target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" size="sm" className="gap-1.5">
-                <Eye className="h-4 w-4" /> Preview
+      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-amber-50/60 shadow-card">
+        <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.7fr)_360px]">
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-primary">
+                Wedding Portfolio
+              </Badge>
+              <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">{title || 'Wedding story'}</h1>
+              <p className="max-w-3xl text-sm leading-7 text-muted-foreground sm:text-base">
+                Shape the public version of your wedding story.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Status</p>
+                <p className="mt-2 text-lg font-semibold text-foreground">{isPublished ? 'Published' : 'Draft'}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{isPublished ? 'Visible by link' : 'Visible inside your workspace'}</p>
+              </div>
+              <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Vendors</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{vendors.length}</p>
+                <p className="mt-1 text-sm text-muted-foreground">credited team members</p>
+              </div>
+              <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Reviews</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{reviews.length}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {reviews.length > 0 ? `${averageRating.toFixed(1)} average rating` : 'No review signals yet'}
+                </p>
+              </div>
+              <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Style Tags</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{styleTags.length}</p>
+                <p className="mt-1 text-sm text-muted-foreground">story cues for the page</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[1.6rem] border border-border/70 bg-background/90 p-6 shadow-sm">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Next Best Move</p>
+                <InfoTip content={isPublished
+                  ? 'Preview the live page, copy the public link, and keep vendor credits or reviews fresh as your wedding story evolves.'
+                  : 'Add final details, vendor credits, and reviews so the page feels rich before you make it public.'} />
+              </div>
+              <h2 className="text-2xl font-semibold text-foreground">
+                {isPublished ? 'Share your portfolio confidently' : 'Finish the story, then publish it'}
+              </h2>
+              <p className="text-sm leading-6 text-muted-foreground">
+                {isPublished ? 'Preview, copy, and share.' : 'Add the final details, then publish.'}
+              </p>
+            </div>
+            <div className="mt-6 space-y-3">
+              {isPublished ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <a href={shareUrl} target="_blank" rel="noopener noreferrer" className="w-full">
+                    <Button variant="outline" className="w-full gap-1.5">
+                      <Eye className="h-4 w-4" /> Preview
+                    </Button>
+                  </a>
+                  <Button onClick={copyShareLink} variant="outline" className="w-full gap-1.5">
+                    <Copy className="h-4 w-4" /> Copy Link
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground">
+                  The share link will go live once you switch publishing on and save your changes.
+                </div>
+              )}
+              <Button onClick={savePortfolio} disabled={saving} className="w-full">
+                {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                Save Changes
               </Button>
-            </a>
-          )}
-          <Button onClick={copyShareLink} variant="outline" size="sm" className="gap-1.5">
-            <Copy className="h-4 w-4" /> Copy Link
-          </Button>
-          <Button onClick={savePortfolio} disabled={saving} size="sm">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            Save Changes
-          </Button>
-        </div>
-      </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground break-all">
+                {shareUrl}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Basic Info */}
-      <Card>
+      <Card className="shadow-card">
         <CardHeader><CardTitle className="text-lg">Wedding Details</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -367,7 +467,7 @@ export default function ManagePortfolio() {
       </Card>
 
       {/* Vendor Credits */}
-      <Card>
+      <Card className="shadow-card">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg">Wedding Team</CardTitle>
           <Dialog open={addVendorOpen} onOpenChange={setAddVendorOpen}>
@@ -394,7 +494,12 @@ export default function ManagePortfolio() {
         </CardHeader>
         <CardContent>
           {vendors.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No vendors added yet.</p>
+            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 py-8 text-center">
+              <p className="text-sm font-medium text-foreground">No vendor credits yet</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Add the planner, photographer, caterer, stylist, and other key contributors you want highlighted on the public page.
+              </p>
+            </div>
           ) : (
             <div className="space-y-2">
               {vendors.map(v => (
@@ -414,7 +519,7 @@ export default function ManagePortfolio() {
       </Card>
 
       {/* Reviews */}
-      <Card>
+      <Card className="shadow-card">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg">Reviews</CardTitle>
           {reviewableVendors.length > 0 && (
@@ -460,7 +565,12 @@ export default function ManagePortfolio() {
         </CardHeader>
         <CardContent>
           {reviews.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No reviews yet. Review vendors who participated in this wedding.</p>
+            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 py-8 text-center">
+              <p className="text-sm font-medium text-foreground">No public reviews yet</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Add a few thoughtful vendor reviews to give future couples more confidence in the team behind your wedding.
+              </p>
+            </div>
           ) : (
             <div className="space-y-3">
               {reviews.map(r => {

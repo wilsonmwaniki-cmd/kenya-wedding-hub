@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
+import InfoTip from '@/components/InfoTip';
 import { sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
 import {
   approvePlannerCodeLinkRequest,
@@ -103,6 +104,43 @@ export default function MyConnections() {
 
   const effectiveCoupleView = profile?.role === 'couple' || (isSuperAdmin && rolePreview === 'couple');
   const plannerConnectDecision = getEntitlementDecision('couple.connect_planners', { profile, weddingEntitlements, couplePlanTier, bypass: isSuperAdmin && rolePreview === 'couple' });
+  const activeConnections = useMemo(
+    () => connections.filter((conn) => ['approved', 'accepted'].includes(conn.status)).length,
+    [connections],
+  );
+  const pendingConnections = useMemo(
+    () => connections.filter((conn) => conn.status === 'pending').length,
+    [connections],
+  );
+  const plannerConnectionsCount = useMemo(
+    () => connections.filter((conn) => conn.type === 'planner').length,
+    [connections],
+  );
+  const vendorConnectionsCount = useMemo(
+    () => connections.filter((conn) => conn.type === 'vendor').length,
+    [connections],
+  );
+  const activeCommitteeMembers = useMemo(
+    () => committeeWorkspace?.members.filter((member) => member.membership_status === 'active').length ?? 0,
+    [committeeWorkspace],
+  );
+  const pendingCommitteeInvites = committeeWorkspace?.pendingInvites.length ?? 0;
+
+  const collaborationFocus = useMemo(() => {
+    if (effectiveCoupleView && ownedWedding?.partnerStatus === 'pending') {
+      return 'Your partner invite is still pending. A resend now could get shared planning moving faster.';
+    }
+    if (pendingCommitteeInvites > 0) {
+      return `${pendingCommitteeInvites} committee invite${pendingCommitteeInvites === 1 ? ' is' : 's are'} still waiting for a response.`;
+    }
+    if (pendingConnections > 0) {
+      return `${pendingConnections} connection request${pendingConnections === 1 ? ' is' : 's are'} still waiting on approval or a reply.`;
+    }
+    if (effectiveCoupleView && !collaborationCode) {
+      return 'Generate and share your collaboration code when you want a planner to connect to this wedding workspace.';
+    }
+    return 'Your collaboration layer is set up. Use this hub to keep owners, planners, committee members, and vendors aligned.';
+  }, [collaborationCode, effectiveCoupleView, ownedWedding?.partnerStatus, pendingCommitteeInvites, pendingConnections]);
 
   const loadCommitteeWorkspaceAccess = async (weddingId: string) => {
     const db = supabase as any;
@@ -490,6 +528,64 @@ export default function MyConnections() {
 
   return (
     <div className="space-y-4">
+      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-amber-50/60 shadow-card">
+        <CardContent className="space-y-6 p-6 sm:p-8">
+          <div className="space-y-3">
+            <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-primary">
+              {effectiveCoupleView ? 'Collaboration Hub' : 'Workspace Connections'}
+            </Badge>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <h2 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+                  {effectiveCoupleView
+                    ? 'Bring your partner, planner, and committee into the same wedding workspace'
+                    : 'Keep linked planners and vendors in one coordinated workspace'}
+                </h2>
+                <InfoTip content={collaborationFocus} className="mt-1 shrink-0" />
+              </div>
+              <p className="max-w-3xl text-sm leading-7 text-muted-foreground sm:text-base">
+                {effectiveCoupleView ? 'Everything shared in one place.' : 'Linked relationships in one place.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Connected</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{activeConnections}</p>
+              <p className="mt-1 text-sm text-muted-foreground">active workspace relationships</p>
+            </div>
+            <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Pending</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{pendingConnections + pendingCommitteeInvites}</p>
+              <p className="mt-1 text-sm text-muted-foreground">requests or invites still waiting</p>
+            </div>
+            <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+                {effectiveCoupleView ? 'Committee Active' : 'Planner Links'}
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">
+                {effectiveCoupleView ? activeCommitteeMembers : plannerConnectionsCount}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {effectiveCoupleView ? 'committee seats already in use' : 'planner relationships tracked here'}
+              </p>
+            </div>
+            <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+                {effectiveCoupleView ? 'Seats Left' : 'Vendor Links'}
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">
+                {effectiveCoupleView ? (committeeWorkspace?.seatsRemaining ?? 0) : vendorConnectionsCount}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {effectiveCoupleView ? 'committee invites still available' : 'vendor collaboration requests tracked'}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {effectiveCoupleView && ownedWedding && (
         <Card className="shadow-card border-primary/20 bg-primary/5">
           <CardHeader>
@@ -544,7 +640,7 @@ export default function MyConnections() {
                     {ownedWedding.partnerStatus === 'pending' ? 'Resend partner invite' : 'Send partner invite'}
                   </Button>
                   <p className="text-xs text-muted-foreground">
-                    Owners share the wedding and can invite committee members or planners from the workspace.
+                    Owners share the same wedding workspace.
                   </p>
                 </div>
               </div>
@@ -563,7 +659,7 @@ export default function MyConnections() {
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Invite your chair and committee members using the same wedding workspace. Seat limits come from the wedding-level committee bundle.
+                    Invite committee members from the same workspace.
                   </p>
                 </div>
               </div>
@@ -692,7 +788,7 @@ export default function MyConnections() {
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm text-muted-foreground">
-                Share this code with your planner so they can request access to your existing wedding workspace.
+                Share this code with your planner to request access.
               </p>
               <p className="mt-2 font-display text-2xl tracking-[0.2em] text-foreground">{collaborationCode}</p>
             </div>
@@ -712,75 +808,85 @@ export default function MyConnections() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-        {connections.map(conn => {
-          const config = statusConfig[conn.status] || statusConfig.pending;
-          const StatusIcon = config.icon;
-          const plannerConn = conn.type === 'planner' ? conn as PlannerConnection : null;
-          const plannerNeedsApproval = plannerConn?.request_source === 'planner_code' && plannerConn.status === 'pending';
-          return (
-            <div key={conn.id} className="flex items-center gap-3 rounded-lg border border-border p-3">
-              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                {conn.type === 'planner' ? (
-                  <Users className="h-4 w-4 text-primary" />
-                ) : (
-                  <Store className="h-4 w-4 text-primary" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-card-foreground truncate">{conn.name}</p>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                    {conn.type === 'planner' ? 'Planner' : (conn as VendorConnection).category}
-                  </Badge>
-                  {plannerConn?.request_source === 'planner_code' && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                      Planner requested access
-                    </Badge>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <div className={`flex items-center gap-1 text-xs ${config.className}`}>
-                  <StatusIcon className="h-3.5 w-3.5" />
-                  {config.label}
-                </div>
-                {plannerNeedsApproval ? (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => declinePlannerRequest(conn.id)}
-                      disabled={cancelling === conn.id}
-                    >
-                      Decline
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => (plannerConnectDecision.allowed ? approvePlannerRequest(conn.id) : setUpgradeOpen(true))}
-                      disabled={cancelling === conn.id}
-                    >
-                      {cancelling === conn.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Approve'}
-                    </Button>
-                  </div>
-                ) : conn.status === 'pending' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => cancelRequest(conn)}
-                    disabled={cancelling === conn.id}
-                  >
-                    {cancelling === conn.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <X className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
-                )}
-              </div>
+          {connections.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+              No connections yet.
             </div>
-          );
-        })}
+          ) : (
+            connections.map(conn => {
+              const config = statusConfig[conn.status] || statusConfig.pending;
+              const StatusIcon = config.icon;
+              const plannerConn = conn.type === 'planner' ? conn as PlannerConnection : null;
+              const plannerNeedsApproval = plannerConn?.request_source === 'planner_code' && plannerConn.status === 'pending';
+              return (
+                <div key={conn.id} className="flex flex-col gap-3 rounded-xl border border-border p-4 sm:flex-row sm:items-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 shrink-0">
+                    {conn.type === 'planner' ? (
+                      <Users className="h-4 w-4 text-primary" />
+                    ) : (
+                      <Store className="h-4 w-4 text-primary" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-card-foreground truncate">{conn.name}</p>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        {conn.type === 'planner' ? 'Planner' : (conn as VendorConnection).category}
+                      </Badge>
+                      {plannerConn?.request_source === 'planner_code' && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          Planner requested access
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <div className={`flex items-center gap-1 ${config.className}`}>
+                        <StatusIcon className="h-3.5 w-3.5" />
+                        {config.label}
+                      </div>
+                      <span>Added {new Date(conn.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 sm:shrink-0">
+                    {plannerNeedsApproval ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => declinePlannerRequest(conn.id)}
+                          disabled={cancelling === conn.id}
+                        >
+                          Decline
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => (plannerConnectDecision.allowed ? approvePlannerRequest(conn.id) : setUpgradeOpen(true))}
+                          disabled={cancelling === conn.id}
+                        >
+                          {cancelling === conn.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Approve'}
+                        </Button>
+                      </>
+                    ) : conn.status === 'pending' ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-2 text-muted-foreground hover:text-destructive"
+                        onClick={() => cancelRequest(conn)}
+                        disabled={cancelling === conn.id}
+                      >
+                        {cancelling === conn.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <X className="h-3.5 w-3.5" />
+                        )}
+                        Cancel
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </CardContent>
       </Card>
       <UpgradePromptDialog

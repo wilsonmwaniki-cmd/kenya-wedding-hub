@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Globe, Loader2, Mail, Phone, Printer } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ExternalLink, Globe, Loader2, Mail, Phone, Printer, ShieldCheck, Wallet } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -51,6 +51,10 @@ export default function CommercialDocumentShare() {
     () => document?.payments.reduce((sum, payment) => sum + payment.amount, 0) ?? 0,
     [document],
   );
+  const paymentProgress = useMemo(() => {
+    if (!document?.totalAmount) return 0;
+    return Math.min(100, Math.round((document.amountPaid / document.totalAmount) * 100));
+  }, [document]);
 
   if (loading) {
     return (
@@ -93,64 +97,112 @@ export default function CommercialDocumentShare() {
         </div>
 
         <Card className="overflow-hidden border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.12),rgba(255,255,255,0.98)_38%,rgba(255,243,237,0.9))] shadow-card print:shadow-none">
-          <CardHeader className="space-y-4">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
+          <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.55fr)_300px]">
+            <div className="space-y-5">
+              <div className="space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">
                   Shared {commercialDocumentTypeLabel(document.documentType)}
                 </p>
-                <CardTitle className="mt-2 font-display text-3xl text-foreground">{document.title}</CardTitle>
-                <CardDescription className="mt-2 text-sm text-muted-foreground">
+                <CardTitle className="font-display text-3xl text-foreground">{document.title}</CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
                   {document.documentNumber} • {commercialDocumentStatusLabel(document.status)}
                 </CardDescription>
               </div>
+
               <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary">{commercialDocumentTypeLabel(document.documentType)}</Badge>
                 <Badge variant={document.status === 'paid' || document.status === 'accepted' || document.status === 'issued' ? 'default' : 'outline'}>
                   {commercialDocumentStatusLabel(document.status)}
                 </Badge>
               </div>
-            </div>
 
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="rounded-2xl border border-white/80 bg-white/80 p-5 shadow-sm">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Issued by</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{document.issuerName}</p>
-                <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                  {document.issuerEmail && (
-                    <a className="flex items-center gap-2 hover:text-foreground" href={`mailto:${document.issuerEmail}`}>
-                      <Mail className="h-4 w-4 text-primary" />
-                      {document.issuerEmail}
-                    </a>
-                  )}
-                  {document.issuerPhone && (
-                    <p className="flex items-center gap-2">
-                      <Phone className="h-4 w-4 text-primary" />
-                      {document.issuerPhone}
-                    </p>
-                  )}
-                  {document.issuerWebsite && (
-                    <a className="flex items-center gap-2 hover:text-foreground" href={document.issuerWebsite} target="_blank" rel="noreferrer">
-                      <Globe className="h-4 w-4 text-primary" />
-                      {document.issuerWebsite.replace(/^https?:\/\//, '')}
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  )}
-                  {document.issuerLocation && <p>{document.issuerLocation}</p>}
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="rounded-2xl border border-white/80 bg-white/80 p-5 shadow-sm">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Issued by</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">{document.issuerName}</p>
+                  <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                    {document.issuerEmail && (
+                      <a className="flex items-center gap-2 hover:text-foreground" href={`mailto:${document.issuerEmail}`}>
+                        <Mail className="h-4 w-4 text-primary" />
+                        {document.issuerEmail}
+                      </a>
+                    )}
+                    {document.issuerPhone && (
+                      <p className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-primary" />
+                        {document.issuerPhone}
+                      </p>
+                    )}
+                    {document.issuerWebsite && (
+                      <a className="flex items-center gap-2 hover:text-foreground" href={document.issuerWebsite} target="_blank" rel="noreferrer">
+                        <Globe className="h-4 w-4 text-primary" />
+                        {document.issuerWebsite.replace(/^https?:\/\//, '')}
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                    {document.issuerLocation && <p>{document.issuerLocation}</p>}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/80 bg-white/80 p-5 shadow-sm md:text-right">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Recipient</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">{document.recipientName}</p>
+                  <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                    {document.recipientEmail && <p>{document.recipientEmail}</p>}
+                    {document.recipientPhone && <p>{document.recipientPhone}</p>}
+                    {document.weddingName && <p>{document.weddingName}</p>}
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/80 bg-white/80 p-5 shadow-sm md:text-right">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Recipient</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{document.recipientName}</p>
-                <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                  {document.recipientEmail && <p>{document.recipientEmail}</p>}
-                  {document.recipientPhone && <p>{document.recipientPhone}</p>}
-                  {document.weddingName && <p>{document.weddingName}</p>}
+            </div>
+
+            <div className="rounded-[1.5rem] border border-border/70 bg-white/88 p-6 shadow-sm">
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Next Best Move</p>
+                <h2 className="text-2xl font-semibold text-foreground">
+                  {document.balanceDue > 0 ? 'Review the amount still outstanding' : 'This document is fully covered'}
+                </h2>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {document.balanceDue > 0
+                    ? 'Use this shared copy to confirm the commercial breakdown, payment history, and remaining balance before taking the next step with the issuer.'
+                    : 'Everything recorded against this document is visible here, including the final payment trail and reference details.'}
+                </p>
+              </div>
+              <div className="mt-6 space-y-3">
+                <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium text-foreground">Payment progress</p>
+                  </div>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{paymentProgress}%</p>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-border/60">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${paymentProgress}%` }} />
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium text-foreground">Shared for clarity</p>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    This public copy is designed for easy review, printing, and record keeping without exposing the editor workspace.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium text-foreground">Current balance</p>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {document.balanceDue > 0
+                      ? `${formatCurrency(document.balanceDue)} remains due on this document.`
+                      : 'No remaining balance is recorded on this document.'}
+                  </p>
                 </div>
               </div>
             </div>
-          </CardHeader>
+          </CardContent>
         </Card>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

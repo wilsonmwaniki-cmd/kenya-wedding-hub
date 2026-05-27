@@ -7,10 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Wallet, Loader2, Save, Receipt, Sparkles, Lock, CalendarDays, Download, HandCoins } from 'lucide-react';
+import { Plus, Trash2, Loader2, Save, Receipt, Sparkles, Lock, CalendarDays, Download, HandCoins, Search, ChevronRight, CircleDashed, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -24,6 +24,7 @@ import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
+import InfoTip from '@/components/InfoTip';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 
@@ -149,6 +150,8 @@ export default function Budget() {
   const [newCategoryScope, setNewCategoryScope] = useState<BudgetScope>('wedding');
   const [activeBudgetScope, setActiveBudgetScope] = useState<BudgetScope>('wedding');
   const [budgetViewMode, setBudgetViewMode] = useState<BudgetViewMode>('by_category');
+  const [categorySearch, setCategorySearch] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [spentDrafts, setSpentDrafts] = useState<Record<string, string>>({});
   const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, BudgetWorkflowDraft>>({});
   const [savingSpentId, setSavingSpentId] = useState<string | null>(null);
@@ -888,6 +891,117 @@ export default function Budget() {
     return source.filter((template) => !existingNames.has(template.name.toLowerCase().trim()));
   }, [categories, newCategoryScope]);
 
+  const filteredVisibleCategories = useMemo(() => {
+    const searchTerm = categorySearch.trim().toLowerCase();
+    return visibleCategories
+      .filter((category) => {
+        if (!searchTerm) return true;
+        const searchBlob = [
+          category.name,
+          category.committee_role_in_charge,
+          contractStatusLabel(category.contract_status),
+          category.visibility,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return searchBlob.includes(searchTerm);
+      })
+      .sort((left, right) => {
+        const leftPressure = left.allocated > 0 ? left.spent / left.allocated : 0;
+        const rightPressure = right.allocated > 0 ? right.spent / right.allocated : 0;
+        if (leftPressure !== rightPressure) return rightPressure - leftPressure;
+        return left.name.localeCompare(right.name);
+      });
+  }, [categorySearch, visibleCategories]);
+
+  const selectedBudgetCategory = useMemo(
+    () => filteredVisibleCategories.find((category) => category.id === selectedCategoryId) ?? null,
+    [filteredVisibleCategories, selectedCategoryId],
+  );
+
+  const selectedCategoryPayments = useMemo(() => {
+    if (!selectedBudgetCategory) return [];
+    return currentScopePayments
+      .filter(
+        (payment) =>
+          normalizeCategoryName(payment.category_name) === normalizeCategoryName(selectedBudgetCategory.name),
+      )
+      .slice(0, 5);
+  }, [currentScopePayments, selectedBudgetCategory]);
+
+  const selectedCategoryBenchmark =
+    selectedBudgetCategory?.budget_scope === 'wedding'
+      ? categoryBenchmarks[benchmarkKey(selectedBudgetCategory.name)]
+      : null;
+  const selectedCategorySpentPercentage =
+    selectedBudgetCategory && selectedBudgetCategory.allocated > 0
+      ? Math.min((selectedBudgetCategory.spent / selectedBudgetCategory.allocated) * 100, 100)
+      : 0;
+  const selectedCategoryRemaining = selectedBudgetCategory
+    ? Math.max(selectedBudgetCategory.allocated - selectedBudgetCategory.spent, 0)
+    : 0;
+  const selectedCategoryOverMedian =
+    selectedBudgetCategory?.budget_scope === 'wedding'
+    && selectedCategoryBenchmark?.benchmark_visible
+    && selectedCategoryBenchmark.median_amount != null
+    && selectedBudgetCategory.spent > selectedCategoryBenchmark.median_amount;
+
+  useEffect(() => {
+    if (filteredVisibleCategories.length === 0) {
+      if (selectedCategoryId !== null) setSelectedCategoryId(null);
+      return;
+    }
+
+    if (!selectedCategoryId || !filteredVisibleCategories.some((category) => category.id === selectedCategoryId)) {
+      setSelectedCategoryId(filteredVisibleCategories[0].id);
+    }
+  }, [filteredVisibleCategories, selectedCategoryId]);
+
+  const visibleSpentPercentage = visibleAllocated > 0
+    ? Math.min(Math.round((visibleSpent / visibleAllocated) * 100), 999)
+    : 0;
+  const paymentCoveragePercentage = invoiceTotal > 0
+    ? Math.min(Math.round((currentScopePaymentTotal / invoiceTotal) * 100), 999)
+    : 0;
+
+  const budgetPrimaryAction = (() => {
+    if (visibleCategories.length === 0) {
+      return {
+        label: activeBudgetScope === 'personal' ? 'Add private budget lines' : 'Add wedding budget lines',
+        description: activeBudgetScope === 'personal'
+          ? 'Start the couple-only budget so private spending does not get lost.'
+          : 'Build the first wedding categories before payments start spreading across WhatsApp and M-PESA.',
+      };
+    }
+
+    if (visibleOverBudgetCategories[0]) {
+      return {
+        label: `Rebalance ${visibleOverBudgetCategories[0].name}`,
+        description: 'One or more categories have already gone over the limit and need attention first.',
+      };
+    }
+
+    if (paymentsDueSoon[0]) {
+      return {
+        label: `Review ${paymentsDueSoon[0].name} payment`,
+        description: 'A vendor payment is coming up soon and should be checked before the deadline slips.',
+      };
+    }
+
+    if (currentScopePayments.length === 0) {
+      return {
+        label: 'Record the first payment',
+        description: 'Start a visible payment history so the real cash movement matches the budget.',
+      };
+    }
+
+    return {
+      label: 'Review category pressure',
+      description: 'Open the category workspace and check which lines are tightening up.',
+    };
+  })();
+
   const exportBudgetData = () => {
     const rows = visibleCategories.map((category) => ({
       scope: category.budget_scope,
@@ -924,52 +1038,147 @@ export default function Budget() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Budget</h1>
-          <p className="text-muted-foreground">
-            Split your shared wedding spend from the couple-only personal budget.
-          </p>
-        </div>
+      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
+        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.35fr_0.95fr] lg:p-8">
+          <div className="space-y-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Budget Workspace</p>
+                <InfoTip content="Track shared wedding spending separately from private couple-only costs, then record real payments against each budget line." />
+              </div>
+              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Keep the money visible</h1>
+              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
+                Shared and private spend, clearly separated.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Budget used</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {visibleCategories.length > 0 ? `${visibleSpentPercentage}%` : 'Not started'}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  KES {visibleSpent.toLocaleString()} spent of KES {visibleAllocated.toLocaleString()}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Payments logged</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {currentScopePayments.length > 0 ? `${paymentCoveragePercentage}%` : 'No payments yet'}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {currentScopePayments.length > 0
+                    ? `${formatCurrency(currentScopePaymentTotal)} recorded so far`
+                    : 'Start a payment trail for this budget scope'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{budgetPrimaryAction.label}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
+              </div>
+            </div>
+
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
+                <Button
+                  type="button"
+                  variant={activeBudgetScope === 'wedding' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setActiveBudgetScope('wedding')}
+                >
+                  Wedding Budget
+                </Button>
+                {showPersonalBudget && (
+                  <Button
+                    type="button"
+                    variant={activeBudgetScope === 'personal' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setActiveBudgetScope('personal')}
+                  >
+                    Personal Budget
+                  </Button>
+                )}
+              </div>
+              <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
+                <Button
+                  type="button"
+                  variant={budgetViewMode === 'payments_made' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setBudgetViewMode('payments_made')}
+                >
+                  Payments Made
+                </Button>
+                <Button
+                  type="button"
+                  variant={budgetViewMode === 'by_category' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setBudgetViewMode('by_category')}
+                >
+                  By Category
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Budget health</p>
+              <InfoTip content="This panel highlights pressure points like overspend, categories nearing the limit, and vendor payments that may need attention soon." />
+            </div>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-sm font-medium text-foreground">
+                  {visibleOverBudgetCategories.length > 0
+                    ? `${visibleOverBudgetCategories.length} category${visibleOverBudgetCategories.length === 1 ? '' : 'ies'} over the limit`
+                    : visibleNearLimitCategories.length > 0
+                      ? `${visibleNearLimitCategories.length} category${visibleNearLimitCategories.length === 1 ? '' : 'ies'} close to the limit`
+                      : 'Budget pressure is under control right now'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {visibleOverBudgetCategories[0]
+                    ? `${visibleOverBudgetCategories[0].name} is already over plan and should be reviewed first.`
+                    : visibleNearLimitCategories[0]
+                      ? `${visibleNearLimitCategories[0].name} is approaching its cap.`
+                      : 'Keep payments and spent totals current so this picture stays useful.'}
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Remaining budget</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(remainingBudget)}</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Outstanding balance</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(totalBalance)}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                <p className="text-sm font-medium text-foreground">
+                  {paymentsDueSoon.length > 0
+                    ? `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due in 14 days`
+                    : activeBudgetScope === 'wedding'
+                      ? 'No urgent vendor payment deadlines right now'
+                      : 'Private budget lines stay inside the couple workflow'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {paymentsDueSoon[0]
+                    ? `${paymentsDueSoon[0].name} is the next likely payment to check.`
+                    : activeBudgetScope === 'wedding'
+                      ? 'Use the category workspace below to keep planned and real spend aligned.'
+                      : 'Track honeymoon, rings, dowry, and home setup without mixing them into shared spending.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
-          <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
-            <Button
-              type="button"
-              variant={activeBudgetScope === 'wedding' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setActiveBudgetScope('wedding')}
-            >
-              Wedding Budget
-            </Button>
-            {showPersonalBudget && (
-              <Button
-                type="button"
-                variant={activeBudgetScope === 'personal' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setActiveBudgetScope('personal')}
-              >
-                Personal Budget
-              </Button>
-            )}
-          </div>
-          <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
-            <Button
-              type="button"
-              variant={budgetViewMode === 'payments_made' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setBudgetViewMode('payments_made')}
-            >
-              Payments Made
-            </Button>
-            <Button
-              type="button"
-              variant={budgetViewMode === 'by_category' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setBudgetViewMode('by_category')}
-            >
-              By Category
-            </Button>
-          </div>
           <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
             <DialogTrigger asChild>
               <Button className="w-full gap-2 sm:w-auto" variant="outline">
@@ -1133,108 +1342,112 @@ export default function Budget() {
             Track Contributions
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-            <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add Category
-            </Button>
-          <DialogContent>
-            <DialogHeader><DialogTitle className="font-display">Add Budget Category</DialogTitle></DialogHeader>
-            <form onSubmit={addCategory} className="space-y-4">
-              {newCategoryScope === 'wedding' ? (
-                <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    {addModalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
-                    Market signal for this category
+            <DialogTrigger asChild>
+              <Button type="button" className="gap-2">
+                <Plus className="h-4 w-4" />
+                Add Category
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="font-display">Add Budget Category</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={addCategory} className="space-y-4">
+                {newCategoryScope === 'wedding' ? (
+                  <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      {addModalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
+                      Market signal for this category
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {addModalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(addModalBenchmark)}
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {addModalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(addModalBenchmark)}
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Lock className="h-4 w-4 text-primary" />
-                    Private couple spending
+                ) : (
+                  <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Lock className="h-4 w-4 text-primary" />
+                      Private couple spending
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Personal budget lines are hidden from shared planner views and stay tied to the couple or committee workspace.
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Personal budget lines are hidden from shared planner views and stay tied to the couple or committee workspace.
-                  </p>
-                </div>
-              )}
-              {showPersonalBudget && (
+                )}
+                {showPersonalBudget && (
+                  <div className="space-y-2">
+                    <Label>Budget Type</Label>
+                    <div className="flex items-center rounded-full border border-border bg-background p-1">
+                      <Button
+                        type="button"
+                        variant={newCategoryScope === 'wedding' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setNewCategoryScope('wedding')}
+                      >
+                        Wedding
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={newCategoryScope === 'personal' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setNewCategoryScope('personal')}
+                      >
+                        Personal
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2">
-                  <Label>Budget Type</Label>
-                  <div className="flex items-center rounded-full border border-border bg-background p-1">
-                    <Button
-                      type="button"
-                      variant={newCategoryScope === 'wedding' ? 'default' : 'ghost'}
-                      size="sm"
-                      onClick={() => setNewCategoryScope('wedding')}
-                    >
-                      Wedding
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={newCategoryScope === 'personal' ? 'default' : 'ghost'}
-                      size="sm"
-                      onClick={() => setNewCategoryScope('personal')}
-                    >
-                      Personal
-                    </Button>
-                  </div>
+                  <Label>Suggested Category</Label>
+                  <Select
+                    value={selectedTemplateName || 'custom'}
+                    onValueChange={(value) => {
+                      if (value === 'custom') {
+                        setSelectedTemplateName('');
+                        setName('');
+                        return;
+                      }
+                      setSelectedTemplateName(value);
+                      setName(value);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={`Choose a ${newCategoryScope} budget category`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {suggestedTemplates.map((template) => (
+                        <SelectItem key={template.name} value={template.name}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="custom">Custom category</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Suggestions come from the planner spreadsheet templates we mapped into the app.
+                  </p>
                 </div>
-              )}
-              <div className="space-y-2">
-                <Label>Suggested Category</Label>
-                <Select
-                  value={selectedTemplateName || 'custom'}
-                  onValueChange={(value) => {
-                    if (value === 'custom') {
-                      setSelectedTemplateName('');
-                      setName('');
-                      return;
-                    }
-                    setSelectedTemplateName(value);
-                    setName(value);
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={`Choose a ${newCategoryScope} budget category`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suggestedTemplates.map((template) => (
-                      <SelectItem key={template.name} value={template.name}>
-                        {template.name}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="custom">Custom category</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Suggestions come from the planner spreadsheet templates we mapped into the app.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label>{selectedTemplateName ? 'Selected Category' : 'Category Name'}</Label>
-                <Input
-                  value={name}
-                  onChange={e => {
-                    setName(e.target.value);
-                    if (selectedTemplateName && e.target.value !== selectedTemplateName) {
-                      setSelectedTemplateName('');
-                    }
-                  }}
-                  placeholder={newCategoryScope === 'personal' ? 'e.g. Honeymoon, Wedding Bands' : 'e.g. Venue, Catering'}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Allocated Amount (KES)</Label>
-                <Input type="number" value={allocated} onChange={e => setAllocated(e.target.value)} placeholder="0" required />
-              </div>
-              <Button type="submit" className="w-full">Add Category</Button>
-            </form>
-          </DialogContent>
+                <div className="space-y-2">
+                  <Label>{selectedTemplateName ? 'Selected Category' : 'Category Name'}</Label>
+                  <Input
+                    value={name}
+                    onChange={e => {
+                      setName(e.target.value);
+                      if (selectedTemplateName && e.target.value !== selectedTemplateName) {
+                        setSelectedTemplateName('');
+                      }
+                    }}
+                    placeholder={newCategoryScope === 'personal' ? 'e.g. Honeymoon, Wedding Bands' : 'e.g. Venue, Catering'}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Allocated Amount (KES)</Label>
+                  <Input type="number" value={allocated} onChange={e => setAllocated(e.target.value)} placeholder="0" required />
+                </div>
+                <Button type="submit" className="w-full">Add Category</Button>
+              </form>
+            </DialogContent>
           </Dialog>
           <UpgradePromptDialog
             open={exportUpgradeOpen}
@@ -1243,19 +1456,6 @@ export default function Budget() {
           />
         </div>
       </div>
-
-      <Card className="shadow-card">
-        <CardContent className="flex items-center gap-6 py-5">
-          <Wallet className="h-10 w-10 text-primary" />
-          <div className="flex-1">
-            <div className="flex justify-between text-sm text-muted-foreground mb-1">
-              <span>KES {visibleSpent.toLocaleString()} spent</span>
-              <span>KES {visibleAllocated.toLocaleString()} budget</span>
-            </div>
-            <Progress value={visibleAllocated ? (visibleSpent / visibleAllocated) * 100 : 0} className="h-2.5" />
-          </div>
-        </CardContent>
-      </Card>
 
       {!budgetNudgeDismissed && budgetNudge && assistantPanel && (
         <Card className="border-primary/20 bg-primary/5 shadow-card">
@@ -1508,202 +1708,450 @@ export default function Budget() {
         </Card>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {visibleCategories.map((category) => {
-          const pct = category.allocated ? Math.min((category.spent / category.allocated) * 100, 100) : 0;
-          const benchmark = categoryBenchmarks[benchmarkKey(category.name)];
-          const overMedian =
-            category.budget_scope === 'wedding'
-            && benchmark?.benchmark_visible
-            && benchmark.median_amount != null
-            && category.spent > benchmark.median_amount;
-
-          return (
-            <Card key={category.id} className="shadow-card">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
+      <Card className="overflow-hidden shadow-card">
+        <CardContent className="p-0">
+          <div className="grid lg:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="border-b border-border/70 bg-muted/20 lg:border-b-0 lg:border-r">
+              <div className="space-y-4 p-5">
                 <div className="space-y-1">
-                  <CardTitle className="text-base font-medium">{category.name}</CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={category.budget_scope === 'personal' ? 'secondary' : 'outline'}>
-                      {category.budget_scope === 'personal' ? 'Personal' : 'Wedding'}
-                    </Badge>
-                    {category.visibility === 'private' && (
-                      <Badge variant="secondary" className="gap-1">
-                        <Lock className="h-3 w-3" />
-                        Private
-                      </Badge>
-                    )}
+                  <p className="text-sm font-medium text-foreground">Budget lines</p>
+                  <p className="text-sm text-muted-foreground">
+                    Search the categories in this scope, then open one line at a time to update the real spend and ownership details.
+                  </p>
+                </div>
+
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={categorySearch}
+                    onChange={(e) => setCategorySearch(e.target.value)}
+                    placeholder={
+                      activeBudgetScope === 'personal'
+                        ? 'Search honeymoon, rings, dowry...'
+                        : 'Search venue, catering, decor...'
+                    }
+                    className="pl-9"
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                  <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Lines in scope</p>
+                    <p className="mt-2 text-xl font-semibold text-foreground">{filteredVisibleCategories.length}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Over the limit</p>
+                    <p className="mt-2 text-xl font-semibold text-foreground">{visibleOverBudgetCategories.length}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Near the edge</p>
+                    <p className="mt-2 text-xl font-semibold text-foreground">{visibleNearLimitCategories.length}</p>
                   </div>
                 </div>
-                <button onClick={() => deleteCategory(category.id)} className="text-muted-foreground hover:text-destructive transition-colors">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {category.budget_scope === 'wedding' ? (
-                  <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-foreground">Market benchmark</p>
-                      <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                        {benchmark?.sample_size ?? 0} obs
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {benchmarkSummary(benchmark)}
-                    </p>
-                    {overMedian && (
-                      <p className="mt-2 text-xs font-medium text-foreground">
-                        Current spend is above the benchmark median.
-                      </p>
-                    )}
-                  </div>
+              </div>
+
+              <div className="max-h-[620px] space-y-2 overflow-y-auto border-t border-border/70 p-3">
+                {filteredVisibleCategories.length > 0 ? (
+                  filteredVisibleCategories.map((category) => {
+                    const isSelected = selectedBudgetCategory?.id === category.id;
+                    const isOverBudget = category.allocated > 0 && category.spent > category.allocated;
+                    const isNearLimit =
+                      category.allocated > 0 &&
+                      category.spent <= category.allocated &&
+                      category.spent / category.allocated >= 0.85;
+                    const categoryProgress = category.allocated
+                      ? Math.min((category.spent / category.allocated) * 100, 100)
+                      : 0;
+
+                    return (
+                      <button
+                        key={category.id}
+                        type="button"
+                        onClick={() => setSelectedCategoryId(category.id)}
+                        className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                          isSelected
+                            ? 'border-primary bg-primary/6 shadow-sm'
+                            : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">{category.name}</p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <Badge variant={category.budget_scope === 'personal' ? 'secondary' : 'outline'}>
+                                {category.budget_scope === 'personal' ? 'Personal' : 'Wedding'}
+                              </Badge>
+                              {category.visibility === 'private' && (
+                                <Badge variant="secondary" className="gap-1">
+                                  <Lock className="h-3 w-3" />
+                                  Private
+                                </Badge>
+                              )}
+                              {isOverBudget ? (
+                                <Badge variant="destructive" className="gap-1">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  Over limit
+                                </Badge>
+                              ) : isNearLimit ? (
+                                <Badge variant="secondary">Near limit</Badge>
+                              ) : null}
+                            </div>
+                          </div>
+                          <ChevronRight className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                        </div>
+
+                        <div className="mt-4">
+                          <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{formatCurrency(category.spent)} spent</span>
+                            <span>{formatCurrency(category.allocated)} planned</span>
+                          </div>
+                          <Progress value={categoryProgress} className="h-2" />
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                          <span>
+                            {category.committee_role_in_charge || (category.budget_scope === 'wedding' ? 'No owner yet' : 'Couple managed')}
+                          </span>
+                          <span>{formatCurrency(Math.max(category.allocated - category.spent, 0))} left</span>
+                        </div>
+                      </button>
+                    );
+                  })
                 ) : (
-                  <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      <Lock className="h-4 w-4 text-primary" />
-                      Personal budget line
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Use this board for private couple costs that should stay separate from shared wedding vendor planning.
+                  <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
+                    <CircleDashed className="mx-auto h-8 w-8 text-muted-foreground" />
+                    <p className="mt-3 text-sm font-medium text-foreground">No budget lines match this search</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {visibleCategories.length === 0
+                        ? activeBudgetScope === 'personal'
+                          ? 'Add the first private budget line to track costs the couple wants to keep separate.'
+                          : 'Add the first wedding budget line to start planning costs properly.'
+                        : 'Try a different category name, role, or status search.'}
                     </p>
                   </div>
                 )}
+              </div>
+            </div>
 
-                <div className="flex justify-between text-sm text-muted-foreground mb-1">
-                  <span>KES {category.spent.toLocaleString()}</span>
-                  <span>KES {category.allocated.toLocaleString()}</span>
-                </div>
-                <Progress value={pct} className="h-2" />
-
-                {category.budget_scope === 'wedding' && (
-                  <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Ownership & contract</p>
-                        <p className="text-sm text-muted-foreground">
-                          Match this budget line to the committee role handling it and track whether a contract exists.
+            <div className="bg-background">
+              {selectedBudgetCategory ? (
+                <div className="space-y-6 p-5 lg:p-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={selectedBudgetCategory.budget_scope === 'personal' ? 'secondary' : 'outline'}>
+                          {selectedBudgetCategory.budget_scope === 'personal' ? 'Personal budget line' : 'Wedding budget line'}
+                        </Badge>
+                        {selectedBudgetCategory.visibility === 'private' && (
+                          <Badge variant="secondary" className="gap-1">
+                            <Lock className="h-3 w-3" />
+                            Private
+                          </Badge>
+                        )}
+                        {selectedCategoryOverMedian && (
+                          <Badge variant="secondary" className="gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            Above benchmark median
+                          </Badge>
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h2 className="font-display text-2xl font-semibold text-foreground">
+                            {selectedBudgetCategory.name}
+                          </h2>
+                          <InfoTip
+                            content={selectedBudgetCategory.budget_scope === 'wedding'
+                              ? 'Use this line to compare the planned amount, the real spend, and who is responsible for keeping it on track.'
+                              : 'Use private lines for couple-only costs like rings, dowry, honeymoon, or home setup without mixing them into the shared wedding budget.'}
+                          />
+                        </div>
+                        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                          {selectedBudgetCategory.budget_scope === 'wedding'
+                            ? 'Track this line from plan to payment.'
+                            : 'Keep couple-only costs separate here.'}
                         </p>
                       </div>
-                      <Badge variant="outline" className="text-[10px]">
-                        {contractStatusLabel(workflowDrafts[category.id]?.contractStatus ?? category.contract_status)}
-                      </Badge>
                     </div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Role in charge</Label>
-                        <Select
-                          value={workflowDrafts[category.id]?.committeeRoleInCharge ?? 'unassigned'}
-                          onValueChange={(value) =>
-                            setWorkflowDrafts((prev) => ({
-                              ...prev,
-                              [category.id]: {
-                                ...(prev[category.id] ?? {
-                                  committeeRoleInCharge: 'unassigned',
-                                  contractStatus: category.contract_status,
-                                }),
-                                committeeRoleInCharge: value,
-                              },
-                            }))
-                          }
-                        >
-                          <SelectTrigger className="h-10 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                            {committeeResponsibilityOptions.map((role) => (
-                              <SelectItem key={role} value={role}>{role}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Contract status</Label>
-                        <Select
-                          value={workflowDrafts[category.id]?.contractStatus ?? category.contract_status}
-                          onValueChange={(value) =>
-                            setWorkflowDrafts((prev) => ({
-                              ...prev,
-                              [category.id]: {
-                                ...(prev[category.id] ?? {
-                                  committeeRoleInCharge: category.committee_role_in_charge ?? 'unassigned',
-                                  contractStatus: category.contract_status,
-                                }),
-                                contractStatus: value,
-                              },
-                            }))
-                          }
-                        >
-                          <SelectTrigger className="h-10 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {contractStatusOptions.map((status) => (
-                              <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex justify-end">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="gap-2"
-                        onClick={() => saveWorkflow(category)}
-                        disabled={savingWorkflowId === category.id}
-                      >
-                        {savingWorkflowId === category.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                        Save Workflow
-                      </Button>
-                    </div>
-                  </div>
-                )}
 
-                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                  <div className="space-y-2">
-                    <Label htmlFor={`spent-${category.id}`}>Spent so far</Label>
-                    <Input
-                      id={`spent-${category.id}`}
-                      type="number"
-                      value={spentDrafts[category.id] ?? ''}
-                      onChange={(e) => setSpentDrafts((prev) => ({ ...prev, [category.id]: e.target.value }))}
-                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="gap-2 text-destructive hover:text-destructive"
+                      onClick={() => deleteCategory(selectedBudgetCategory.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete line
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => saveSpent(category)}
-                    disabled={savingSpentId === category.id}
-                  >
-                    {savingSpentId === category.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                    Save Spent
-                  </Button>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Allocated</p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">
+                        {formatCurrency(selectedBudgetCategory.allocated)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Spent so far</p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">
+                        {formatCurrency(selectedBudgetCategory.spent)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Remaining</p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">
+                        {formatCurrency(selectedCategoryRemaining)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/70 bg-background px-4 py-4">
+                    <div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
+                      <span>{formatCurrency(selectedBudgetCategory.spent)} spent</span>
+                      <span>{formatCurrency(selectedBudgetCategory.allocated)} planned</span>
+                    </div>
+                    <Progress value={selectedCategorySpentPercentage} className="h-2.5" />
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                    <div className="space-y-4">
+                      {selectedBudgetCategory.budget_scope === 'wedding' ? (
+                        <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Market benchmark</p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {benchmarkSummary(selectedCategoryBenchmark)}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="text-[10px]">
+                              {selectedCategoryBenchmark?.sample_size ?? 0} obs
+                            </Badge>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                            <Lock className="h-4 w-4 text-primary" />
+                            Couple-only spending
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Keep private costs here when they should not show up in the shared wedding budget discussions.
+                          </p>
+                        </div>
+                      )}
+
+                      {selectedBudgetCategory.budget_scope === 'wedding' && (
+                        <div className="rounded-2xl border border-border/70 bg-background p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Ownership & contract</p>
+                              <p className="text-sm text-muted-foreground">
+                                Match this budget line to the role responsible and track whether the vendor contract is still pending.
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="text-[10px]">
+                              {contractStatusLabel(
+                                workflowDrafts[selectedBudgetCategory.id]?.contractStatus ?? selectedBudgetCategory.contract_status,
+                              )}
+                            </Badge>
+                          </div>
+
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label>Role in charge</Label>
+                              <Select
+                                value={workflowDrafts[selectedBudgetCategory.id]?.committeeRoleInCharge ?? 'unassigned'}
+                                onValueChange={(value) =>
+                                  setWorkflowDrafts((prev) => ({
+                                    ...prev,
+                                    [selectedBudgetCategory.id]: {
+                                      ...(prev[selectedBudgetCategory.id] ?? {
+                                        committeeRoleInCharge: 'unassigned',
+                                        contractStatus: selectedBudgetCategory.contract_status,
+                                      }),
+                                      committeeRoleInCharge: value,
+                                    },
+                                  }))
+                                }
+                              >
+                                <SelectTrigger className="h-10 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                                  {committeeResponsibilityOptions.map((role) => (
+                                    <SelectItem key={role} value={role}>{role}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Contract status</Label>
+                              <Select
+                                value={workflowDrafts[selectedBudgetCategory.id]?.contractStatus ?? selectedBudgetCategory.contract_status}
+                                onValueChange={(value) =>
+                                  setWorkflowDrafts((prev) => ({
+                                    ...prev,
+                                    [selectedBudgetCategory.id]: {
+                                      ...(prev[selectedBudgetCategory.id] ?? {
+                                        committeeRoleInCharge: selectedBudgetCategory.committee_role_in_charge ?? 'unassigned',
+                                        contractStatus: selectedBudgetCategory.contract_status,
+                                      }),
+                                      contractStatus: value,
+                                    },
+                                  }))
+                                }
+                              >
+                                <SelectTrigger className="h-10 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {contractStatusOptions.map((status) => (
+                                    <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex justify-end">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="gap-2"
+                              onClick={() => saveWorkflow(selectedBudgetCategory)}
+                              disabled={savingWorkflowId === selectedBudgetCategory.id}
+                            >
+                              {savingWorkflowId === selectedBudgetCategory.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Save className="h-4 w-4" />
+                              )}
+                              Save Workflow
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-border/70 bg-background p-4">
+                        <p className="text-sm font-medium text-foreground">Update spent total</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Keep the working budget honest by saving the real total committed to this line.
+                        </p>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                          <div className="space-y-2">
+                            <Label htmlFor={`spent-${selectedBudgetCategory.id}`}>Spent so far</Label>
+                            <Input
+                              id={`spent-${selectedBudgetCategory.id}`}
+                              type="number"
+                              value={spentDrafts[selectedBudgetCategory.id] ?? ''}
+                              onChange={(e) =>
+                                setSpentDrafts((prev) => ({ ...prev, [selectedBudgetCategory.id]: e.target.value }))
+                              }
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="gap-2"
+                            onClick={() => saveSpent(selectedBudgetCategory)}
+                            disabled={savingSpentId === selectedBudgetCategory.id}
+                          >
+                            {savingSpentId === selectedBudgetCategory.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
+                            Save Spent
+                          </Button>
+                        </div>
+                        {selectedBudgetCategory.budget_scope === 'wedding' ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="mt-4 w-full gap-2"
+                            onClick={() => openSpendRecorder(selectedBudgetCategory)}
+                          >
+                            <Receipt className="h-4 w-4" />
+                            Record Actual Spend
+                          </Button>
+                        ) : (
+                          <p className="mt-4 text-xs text-muted-foreground">
+                            Private lines stay manual. Update the total here as those couple-only costs become real.
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border border-border/70 bg-background p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">Recent payments on this line</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              The latest payment activity linked to {selectedBudgetCategory.name}.
+                            </p>
+                          </div>
+                          <Badge variant="outline">{selectedCategoryPayments.length}</Badge>
+                        </div>
+
+                        {selectedCategoryPayments.length > 0 ? (
+                          <div className="mt-4 space-y-3">
+                            {selectedCategoryPayments.map((payment) => (
+                              <div key={payment.id} className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="text-sm font-medium text-foreground">{payment.payee_name}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(payment.payment_date).toLocaleDateString()}
+                                      {payment.reference ? ` · ${payment.reference}` : ''}
+                                    </p>
+                                  </div>
+                                  <p className="text-sm font-semibold text-foreground">{formatCurrency(payment.amount)}</p>
+                                </div>
+                                {payment.notes && (
+                                  <p className="mt-2 text-xs text-muted-foreground">{payment.notes}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-4 rounded-xl border border-dashed border-border/80 bg-muted/10 p-5 text-center">
+                            <p className="text-sm font-medium text-foreground">No payments recorded for this line yet</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Use “Record Payment Made” when cash actually moves so the category history stays useful.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-
-                {category.budget_scope === 'wedding' ? (
-                  <Button type="button" variant="secondary" className="w-full gap-2" onClick={() => openSpendRecorder(category)}>
-                    <Receipt className="h-4 w-4" />
-                    Record Actual Spend
-                  </Button>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Personal lines stay manual. Update spent totals directly as you commit those private costs.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
-        {visibleCategories.length === 0 && (
-          <p className="col-span-full text-center text-muted-foreground py-12">
-            {activeBudgetScope === 'personal'
-              ? 'No personal budget categories yet. Add one to track private couple costs like dowry, honeymoon, or home setup.'
-              : 'No wedding budget categories yet. Add one to get started!'}
-          </p>
-        )}
-      </div>
+              ) : (
+                <div className="flex min-h-[420px] items-center justify-center p-8">
+                  <div className="max-w-md text-center">
+                    <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground" />
+                    <h2 className="mt-4 font-display text-2xl font-semibold text-foreground">
+                      {activeBudgetScope === 'personal' ? 'No private budget lines yet' : 'No wedding budget lines yet'}
+                    </h2>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {activeBudgetScope === 'personal'
+                        ? 'Add honeymoon, dowry, rings, or home setup costs so the couple can track them privately.'
+                        : 'Add the first wedding category so the workspace can start tracking real budget pressure.'}
+                    </p>
+                    <Button type="button" className="mt-5 gap-2" onClick={() => setOpen(true)}>
+                      <Plus className="h-4 w-4" />
+                      Add Category
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Dialog open={Boolean(recordingCategory)} onOpenChange={(nextOpen) => { if (!nextOpen) setRecordingCategory(null); }}>
         <DialogContent>

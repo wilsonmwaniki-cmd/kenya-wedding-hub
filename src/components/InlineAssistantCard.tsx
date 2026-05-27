@@ -40,7 +40,7 @@ export default function InlineAssistantCard({
   decision,
   canUseAssistant = false,
   emptyStateTitle = 'Ask for the next best move',
-  emptyStateBody = 'Use one of the suggested prompts below or open the full assistant for a deeper planning session.',
+  emptyStateBody = 'Use a suggested prompt or open the full assistant.',
   dismissible = false,
   onDismiss,
   onPromptClick,
@@ -126,7 +126,7 @@ export default function InlineAssistantCard({
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
-                Need a deeper conversation or write actions? Open the full assistant.
+                Need more help? Open the full assistant.
               </p>
               {assistantPanel ? (
                 <Button

@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download } from 'lucide-react';
+import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download, Search, ChevronRight, Sparkles, CircleDashed, PanelsTopLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
@@ -65,6 +65,7 @@ interface BudgetCategoryOption {
 
 type TaskViewMode = 'by_date' | 'by_category' | 'completed';
 type TaskPickerMode = 'suggested' | 'custom';
+type TaskScopeFilter = 'all' | 'urgent' | 'vendor' | 'private' | 'shared';
 
 function selectionLabel(status?: string | null) {
   switch (status) {
@@ -177,6 +178,9 @@ export default function Tasks() {
   const [taskPickerMode, setTaskPickerMode] = useState<TaskPickerMode>('suggested');
   const [sourceVendorId, setSourceVendorId] = useState<string>('none');
   const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('by_date');
+  const [taskScopeFilter, setTaskScopeFilter] = useState<TaskScopeFilter>('all');
+  const [taskSearch, setTaskSearch] = useState('');
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
 
@@ -428,6 +432,40 @@ export default function Tasks() {
     [pending],
   );
 
+  const searchTerm = taskSearch.trim().toLowerCase();
+
+  const taskMatchesWorkspaceFilters = (task: Task) => {
+    if (searchTerm) {
+      const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+      const searchBlob = [
+        task.title,
+        task.description,
+        task.category,
+        task.assigned_to,
+        linkedVendor?.name,
+        linkedVendor?.category,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      if (!searchBlob.includes(searchTerm)) return false;
+    }
+
+    switch (taskScopeFilter) {
+      case 'urgent':
+        return isUrgentTask(task);
+      case 'vendor':
+        return Boolean(task.source_vendor_id);
+      case 'private':
+        return task.visibility === 'private';
+      case 'shared':
+        return task.visibility !== 'private';
+      default:
+        return true;
+    }
+  };
+
   const tasksPrompts = useMemo(() => {
     const prompts: string[] = [];
 
@@ -502,17 +540,37 @@ export default function Tasks() {
     return null;
   }, [dueSoonVendorTasks, nextPendingTask, openVendorTaskCount, overduePending.length, privateTaskCount]);
 
+  const filteredPending = useMemo(
+    () => pending.filter(taskMatchesWorkspaceFilters).sort(sortTasksByDateAndPriority),
+    [pending, searchTerm, taskScopeFilter, vendorLookup],
+  );
+
+  const filteredDone = useMemo(
+    () => done.filter(taskMatchesWorkspaceFilters).sort(sortTasksByDateAndPriority),
+    [done, searchTerm, taskScopeFilter, vendorLookup],
+  );
+
+  const filteredUrgentPending = useMemo(
+    () => filteredPending.filter(isUrgentTask).sort(sortTasksByDateAndPriority),
+    [filteredPending],
+  );
+
+  const filteredScheduledPending = useMemo(
+    () => filteredPending.filter((task) => !isUrgentTask(task)).sort(sortTasksByDateAndPriority),
+    [filteredPending],
+  );
+
   const byDateGroups = useMemo(() => {
-    return scheduledPending.reduce<Record<string, Task[]>>((groups, task) => {
+    return filteredScheduledPending.reduce<Record<string, Task[]>>((groups, task) => {
       const key = task.due_date ? formatDateLabel(task.due_date) : 'Unscheduled';
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
       return groups;
     }, {});
-  }, [scheduledPending]);
+  }, [filteredScheduledPending]);
 
   const byCategoryGroups = useMemo(() => {
-    return pending
+    return filteredPending
       .slice()
       .sort(sortTasksByDateAndPriority)
       .reduce<Record<string, Task[]>>((groups, task) => {
@@ -522,7 +580,7 @@ export default function Tasks() {
         groups[key].push(task);
         return groups;
       }, {});
-  }, [pending, vendorLookup]);
+  }, [filteredPending, vendorLookup]);
 
   const sortedCategoryGroups = useMemo(
     () =>
@@ -538,14 +596,58 @@ export default function Tasks() {
   );
 
   const completedByCategory = useMemo(() => {
-    return done.reduce<Record<string, Task[]>>((groups, task) => {
+    return filteredDone.reduce<Record<string, Task[]>>((groups, task) => {
       const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
       const key = task.category || linkedVendor?.category || 'Uncategorized';
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
       return groups;
     }, {});
-  }, [done, vendorLookup]);
+  }, [filteredDone, vendorLookup]);
+
+  const taskGroups = useMemo(() => {
+    if (taskViewMode === 'by_date') {
+      const groups: Array<{ label: string; tasks: Task[]; tone?: 'urgent' | 'default' }> = [];
+      if (filteredUrgentPending.length > 0) {
+        groups.push({ label: 'Complete as soon as possible', tasks: filteredUrgentPending, tone: 'urgent' });
+      }
+      Object.entries(byDateGroups).forEach(([label, group]) => {
+        groups.push({ label, tasks: group, tone: 'default' });
+      });
+      return groups;
+    }
+
+    if (taskViewMode === 'by_category') {
+      return sortedCategoryGroups.map(([label, group]) => ({ label, tasks: group, tone: 'default' as const }));
+    }
+
+    return Object.entries(completedByCategory)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([label, group]) => ({ label, tasks: group, tone: 'default' as const }));
+  }, [byDateGroups, completedByCategory, filteredUrgentPending, sortedCategoryGroups, taskViewMode]);
+
+  const visibleTasks = useMemo(
+    () => taskGroups.flatMap((group) => group.tasks),
+    [taskGroups],
+  );
+
+  const selectedTask = useMemo(
+    () => visibleTasks.find((task) => task.id === selectedTaskId) ?? null,
+    [visibleTasks, selectedTaskId],
+  );
+
+  useEffect(() => {
+    if (visibleTasks.length === 0) {
+      if (selectedTaskId !== null) {
+        setSelectedTaskId(null);
+      }
+      return;
+    }
+
+    if (!selectedTaskId || !visibleTasks.some((task) => task.id === selectedTaskId)) {
+      setSelectedTaskId(visibleTasks[0].id);
+    }
+  }, [visibleTasks, selectedTaskId]);
 
   if (isPlanner && !selectedClient) return null;
 
@@ -577,131 +679,162 @@ export default function Tasks() {
     );
   };
 
-  const TaskCard = ({ t, isDone }: { t: Task; isDone: boolean }) => {
+  const TaskRow = ({ t, isDone }: { t: Task; isDone: boolean }) => {
     const linkedVendor = t.source_vendor_id ? vendorLookup[t.source_vendor_id] : null;
     const resolvedCategory = t.category || linkedVendor?.category || null;
-    const linkedBudget = resolvedCategory ? budgetLookup[normalizeCategory(resolvedCategory)] : null;
-    const outstandingAmount =
-      linkedVendor && linkedVendor.price != null ? Math.max(linkedVendor.price - linkedVendor.amount_paid, 0) : null;
+    const active = selectedTaskId === t.id;
+    const isUrgent = isUrgentTask(t);
 
     return (
-      <Card key={t.id} className={`shadow-card ${isDone ? 'opacity-60' : ''}`}>
-        <CardContent className="flex items-start gap-3 py-3">
-          <Checkbox checked={isDone} onCheckedChange={() => toggleTask(t.id, t.completed)} className="mt-1" />
+      <button
+        type="button"
+        onClick={() => setSelectedTaskId(t.id)}
+        className={cn(
+          'w-full rounded-2xl border p-4 text-left transition-all',
+          active
+            ? 'border-primary bg-primary/5 shadow-sm'
+            : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20',
+          isDone && 'opacity-70',
+        )}
+      >
+        <div className="flex items-start gap-3">
+          <Checkbox
+            checked={isDone}
+            onCheckedChange={() => toggleTask(t.id, t.completed)}
+            className="mt-1"
+            onClick={(event) => event.stopPropagation()}
+          />
           <div className="min-w-0 flex-1">
-            <p className={`truncate font-medium text-card-foreground ${isDone ? 'line-through text-muted-foreground' : ''}`}>{t.title}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              {linkedVendor && (
-                <Badge variant="outline" className="rounded-full text-[11px]">
-                  <BriefcaseBusiness className="mr-1 h-3 w-3" />
-                  {linkedVendor.name} · {selectionLabel(linkedVendor.selection_status)}
-                </Badge>
-              )}
-              {resolvedCategory && (
-                <Badge variant="secondary" className="rounded-full text-[11px]">
-                  {resolvedCategory}
-                </Badge>
-              )}
-              {linkedBudget && (
-                <Badge variant="outline" className="rounded-full text-[11px]">
-                  Budget KES {linkedBudget.spent.toLocaleString()} / {linkedBudget.allocated.toLocaleString()}
-                </Badge>
-              )}
-              {phaseLabel(t.phase) && (
-                <Badge variant="outline" className="rounded-full text-[11px]">
-                  {phaseLabel(t.phase)}
-                </Badge>
-              )}
-              <Badge variant={t.visibility === 'private' ? 'destructive' : 'outline'} className="rounded-full text-[11px]">
-                {t.visibility === 'private' ? 'Private' : 'Public'}
-              </Badge>
-              {t.priority_level != null && (
-                <Badge variant="outline" className="rounded-full text-[11px]">
-                  P{t.priority_level} · {priorityLabel(t.priority_level)}
-                </Badge>
-              )}
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-              {t.due_date && (
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Calendar className="h-3 w-3" /> {new Date(t.due_date).toLocaleDateString()}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className={cn('font-medium text-card-foreground', isDone && 'line-through text-muted-foreground')}>
+                  {t.title}
                 </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {resolvedCategory && (
+                    <Badge variant="secondary" className="rounded-full text-[11px]">
+                      {resolvedCategory}
+                    </Badge>
+                  )}
+                  <Badge variant={t.visibility === 'private' ? 'destructive' : 'outline'} className="rounded-full text-[11px]">
+                    {t.visibility === 'private' ? 'Private' : 'Shared'}
+                  </Badge>
+                  {t.priority_level != null && (
+                    <Badge variant="outline" className="rounded-full text-[11px]">
+                      P{t.priority_level} · {priorityLabel(t.priority_level)}
+                    </Badge>
+                  )}
+                  {isUrgent && !isDone && (
+                    <Badge className="rounded-full bg-destructive/10 text-destructive hover:bg-destructive/10">
+                      Urgent
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <ChevronRight className={cn('mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform', active && 'translate-x-0.5 text-primary')} />
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {t.due_date && (
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  {new Date(t.due_date).toLocaleDateString()}
+                </span>
               )}
               {t.assigned_to && (
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <UserCircle className="h-3 w-3" /> {t.assigned_to}
-                </p>
-              )}
-              {t.delegatable && t.recommended_role && (
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Link2 className="h-3 w-3" /> Delegate to {t.recommended_role}
-                </p>
+                <span className="flex items-center gap-1">
+                  <UserCircle className="h-3 w-3" />
+                  {t.assigned_to}
+                </span>
               )}
               {linkedVendor && (
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <BriefcaseBusiness className="h-3 w-3" /> {vendorPaymentStatusLabel(linkedVendor.payment_status)}
-                  {outstandingAmount != null ? ` · KES ${outstandingAmount.toLocaleString()} outstanding` : ''}
-                </p>
-              )}
-              {linkedBudget && (
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Link2 className="h-3 w-3" />
-                  {linkedBudget.budget_scope === 'personal' ? 'Personal budget' : 'Wedding budget'} · KES{' '}
-                  {(linkedBudget.allocated - linkedBudget.spent).toLocaleString()} remaining
-                </p>
+                <span className="flex items-center gap-1">
+                  <BriefcaseBusiness className="h-3 w-3" />
+                  {linkedVendor.name}
+                </span>
               )}
             </div>
-            {t.description && <p className="mt-2 text-sm text-muted-foreground">{t.description}</p>}
           </div>
-          {t.due_date && (
-            calendarDecision.allowed ? (
-              <a
-                href={buildGoogleCalendarUrl({
-                  title: t.title,
-                  date: t.due_date,
-                  description: [
-                    linkedVendor ? `Vendor: ${linkedVendor.name}` : null,
-                    t.category ? `Category: ${t.category}` : null,
-                    t.description,
-                    t.assigned_to ? `Assigned to: ${t.assigned_to}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join('\n'),
-                })}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 text-muted-foreground transition-colors hover:text-primary"
-                title="Add to Google Calendar"
-              >
-                <CalendarPlus className="h-4 w-4" />
-              </a>
-            ) : (
-              <button
-                type="button"
-                className="mt-1 text-muted-foreground transition-colors hover:text-primary"
-                title="Upgrade to unlock Google Calendar sync"
-                onClick={() => setUpgradeOpen(true)}
-              >
-                <CalendarPlus className="h-4 w-4" />
-              </button>
-            )
-          )}
-          <button onClick={() => deleteTask(t.id)} className="mt-1 text-muted-foreground transition-colors hover:text-destructive">
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </CardContent>
-      </Card>
+        </div>
+      </button>
     );
   };
 
   return (
     <div className="space-y-6">
+      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
+        <CardContent className="grid gap-5 p-6 lg:grid-cols-[1.35fr_0.95fr] lg:p-8">
+          <div className="space-y-5">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Task Workspace</p>
+              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Keep the wedding moving</h1>
+              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
+                Use this space to decide what happens next, what stays private, and what needs vendor follow-up before the week gets away from you.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Open tasks</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{pending.length}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Still active in the wedding queue</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Urgent now</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{urgentPending.length}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Critical or due in the next three days</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Completed</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{done.length}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Already moved out of the active queue</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Focus snapshot</p>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <p className="text-sm font-medium text-foreground">{nextPendingTask?.title ?? 'No pending task selected yet'}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {nextPendingTask?.due_date
+                    ? `Due ${new Date(nextPendingTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`
+                    : 'The next visible task will appear here once the queue starts filling up.'}
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Private queue</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">{privateTaskCount}</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Vendor linked</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">{openVendorTaskCount}</p>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                <p className="text-sm font-medium text-foreground">
+                  {overduePending.length > 0
+                    ? `${overduePending.length} overdue task${overduePending.length === 1 ? '' : 's'} need recovery`
+                    : dueSoonVendorTasks > 0
+                      ? `${dueSoonVendorTasks} vendor task${dueSoonVendorTasks === 1 ? '' : 's'} are due soon`
+                      : 'The queue is under control right now'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {overduePending.length > 0
+                    ? 'Start with the overdue queue, then move into vendor-linked work.'
+                    : 'Use the list filters below to focus on the work that matters most.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Tasks</h1>
-          <p className="text-muted-foreground">{pending.length} pending, {done.length} completed</p>
-        </div>
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Workspace Controls</p>
           <div className="flex w-full items-center rounded-full border border-border bg-background p-1 shadow-sm sm:w-auto">
             <Button
               type="button"
@@ -737,6 +870,8 @@ export default function Tasks() {
               Completed
             </Button>
           </div>
+        </div>
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
           <UpgradePromptDialog
             open={upgradeOpen}
             onOpenChange={setUpgradeOpen}
@@ -1039,54 +1174,254 @@ export default function Tasks() {
         />
       )}
 
-      <div className="space-y-6">
-        {taskViewMode === 'by_date' && (
-          <>
-            {urgentPending.length > 0 && (
-              <div className="space-y-3 border-t border-border pt-6">
-                <h2 className="text-2xl font-semibold text-destructive">Complete As Soon As Possible</h2>
-                {urgentPending.map((task) => <TaskCard key={task.id} t={task} isDone={false} />)}
+      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+        <Card className="border-primary/15 shadow-card">
+          <CardContent className="space-y-5 p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Task Queue</p>
+                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Browse the live checklist</h2>
+              </div>
+              <Badge variant="outline" className="rounded-full px-3 py-1">
+                {visibleTasks.length} visible
+              </Badge>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={taskSearch}
+                  onChange={(event) => setTaskSearch(event.target.value)}
+                  placeholder="Search tasks, categories, vendors, or assignees"
+                  className="pl-10"
+                />
+              </div>
+              <Select value={taskScopeFilter} onValueChange={(value) => setTaskScopeFilter(value as TaskScopeFilter)}>
+                <SelectTrigger className="w-full lg:w-[190px]">
+                  <SelectValue placeholder="Filter queue" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All visible work</SelectItem>
+                  <SelectItem value="urgent">Urgent only</SelectItem>
+                  <SelectItem value="vendor">Vendor linked</SelectItem>
+                  <SelectItem value="private">Private only</SelectItem>
+                  <SelectItem value="shared">Shared only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline" className="rounded-full px-3 py-1">Overdue {overduePending.length}</Badge>
+              <Badge variant="outline" className="rounded-full px-3 py-1">Urgent {urgentPending.length}</Badge>
+              <Badge variant="outline" className="rounded-full px-3 py-1">Vendor linked {openVendorTaskCount}</Badge>
+              <Badge variant="outline" className="rounded-full px-3 py-1">Private {privateTaskCount}</Badge>
+            </div>
+
+            {((taskViewMode === 'completed' && filteredDone.length === 0) ||
+              (taskViewMode !== 'completed' && filteredPending.length === 0)) ? (
+              <div className="rounded-3xl border border-dashed border-border/70 bg-muted/15 p-8 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
+                  <PanelsTopLeft className="h-5 w-5 text-primary" />
+                </div>
+                <p className="mt-4 text-lg font-semibold text-foreground">
+                  {taskViewMode === 'completed' ? 'No completed tasks yet' : 'No tasks match this view yet'}
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {taskViewMode === 'completed'
+                    ? 'Completed work will gather here once the checklist starts moving.'
+                    : 'Try another filter or add the first planning task to start the workspace.'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {taskGroups.map((group) => (
+                  <div key={group.label} className="space-y-3">
+                    <div className="flex items-center justify-between gap-3 border-t border-border pt-5 first:border-t-0 first:pt-0">
+                      <h3 className={cn('text-lg font-semibold', group.tone === 'urgent' ? 'text-destructive' : 'text-foreground')}>
+                        {group.label}
+                      </h3>
+                      <Badge variant="outline" className="rounded-full">{group.tasks.length}</Badge>
+                    </div>
+                    <div className="space-y-3">
+                      {group.tasks.map((task) => (
+                        <TaskRow key={task.id} t={task} isDone={task.completed} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-            {Object.entries(byDateGroups).map(([label, group]) => (
-              <div key={label} className="space-y-3 border-t border-border pt-6">
-                <h2 className="text-2xl font-semibold text-foreground">{label}</h2>
-                {group.map((task) => <TaskCard key={task.id} t={task} isDone={false} />)}
+          </CardContent>
+        </Card>
+
+        <Card className="border-primary/15 shadow-card">
+          <CardContent className="space-y-5 p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Selected Task</p>
+                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">
+                  {selectedTask?.title ?? 'Pick a task from the queue'}
+                </h2>
               </div>
-            ))}
-          </>
-        )}
+              {selectedTask?.completed ? (
+                <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                  Done
+                </Badge>
+              ) : selectedTask ? (
+                <Badge variant="outline" className="rounded-full">
+                  Active
+                </Badge>
+              ) : null}
+            </div>
 
-        {taskViewMode === 'by_category' && (
-          <>
-            {sortedCategoryGroups.map(([label, group]) => (
-                <div key={label} className="space-y-3 border-t border-border pt-6">
-                  <h2 className="text-2xl font-semibold text-foreground">{label}</h2>
-                  {group.map((task) => <TaskCard key={task.id} t={task} isDone={false} />)}
+            {selectedTask ? (() => {
+              const linkedVendor = selectedTask.source_vendor_id ? vendorLookup[selectedTask.source_vendor_id] : null;
+              const resolvedCategory = selectedTask.category || linkedVendor?.category || null;
+              const linkedBudget = resolvedCategory ? budgetLookup[normalizeCategory(resolvedCategory)] : null;
+              const outstandingAmount =
+                linkedVendor && linkedVendor.price != null ? Math.max(linkedVendor.price - linkedVendor.amount_paid, 0) : null;
+
+              return (
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {resolvedCategory && (
+                      <Badge variant="secondary" className="rounded-full">{resolvedCategory}</Badge>
+                    )}
+                    <Badge variant={selectedTask.visibility === 'private' ? 'destructive' : 'outline'} className="rounded-full">
+                      {selectedTask.visibility === 'private' ? 'Private' : 'Shared'}
+                    </Badge>
+                    {selectedTask.priority_level != null && (
+                      <Badge variant="outline" className="rounded-full">
+                        P{selectedTask.priority_level} · {priorityLabel(selectedTask.priority_level)}
+                      </Badge>
+                    )}
+                    {phaseLabel(selectedTask.phase) && (
+                      <Badge variant="outline" className="rounded-full">
+                        {phaseLabel(selectedTask.phase)}
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Due date</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {selectedTask.due_date
+                          ? new Date(selectedTask.due_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                          : 'No due date set'}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Assigned to</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">{selectedTask.assigned_to || 'Not assigned yet'}</p>
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Vendor link</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">{linkedVendor?.name || 'No linked vendor'}</p>
+                      {linkedVendor && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {vendorPaymentStatusLabel(linkedVendor.payment_status)}
+                          {outstandingAmount != null ? ` · KES ${outstandingAmount.toLocaleString()} outstanding` : ''}
+                        </p>
+                      )}
+                    </div>
+                    <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Budget link</p>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {linkedBudget
+                          ? `${linkedBudget.budget_scope === 'personal' ? 'Personal' : 'Wedding'} budget`
+                          : 'No linked budget category'}
+                      </p>
+                      {linkedBudget && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          KES {(linkedBudget.allocated - linkedBudget.spent).toLocaleString()} remaining
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/70 bg-background p-4">
+                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Description</p>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      {selectedTask.description || 'No extra notes yet. Use task descriptions to store logistics, handoff details, or contract reminders.'}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                    <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      Recommended next move
+                    </p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {selectedTask.completed
+                        ? 'This one is already complete. Move to the next item in the queue or review the completed history.'
+                        : selectedTask.source_vendor_id
+                          ? 'Open the vendor workspace if this task depends on quote, payment, or booking follow-up.'
+                          : selectedTask.visibility === 'private'
+                            ? 'Keep this inside the couple workflow unless you intentionally want to delegate it.'
+                            : 'Use this as a shared planning item and keep the owner, due date, and notes clear.'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="button" onClick={() => toggleTask(selectedTask.id, selectedTask.completed)}>
+                      {selectedTask.completed ? 'Mark as active' : 'Mark complete'}
+                    </Button>
+                    {selectedTask.due_date && (
+                      calendarDecision.allowed ? (
+                        <a
+                          href={buildGoogleCalendarUrl({
+                            title: selectedTask.title,
+                            date: selectedTask.due_date,
+                            description: [
+                              linkedVendor ? `Vendor: ${linkedVendor.name}` : null,
+                              selectedTask.category ? `Category: ${selectedTask.category}` : null,
+                              selectedTask.description,
+                              selectedTask.assigned_to ? `Assigned to: ${selectedTask.assigned_to}` : null,
+                            ].filter(Boolean).join('\n'),
+                          })}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button type="button" variant="outline" className="gap-2">
+                            <CalendarPlus className="h-4 w-4" />
+                            Add to Calendar
+                          </Button>
+                        </a>
+                      ) : (
+                        <Button type="button" variant="outline" className="gap-2" onClick={() => setUpgradeOpen(true)}>
+                          <CalendarPlus className="h-4 w-4" />
+                          Add to Calendar
+                        </Button>
+                      )
+                    )}
+                    {linkedVendor && (
+                      <Button type="button" variant="outline" className="gap-2" onClick={() => navigate('/vendors')}>
+                        <BriefcaseBusiness className="h-4 w-4" />
+                        Open vendor workspace
+                      </Button>
+                    )}
+                    <Button type="button" variant="ghost" className="gap-2 text-destructive hover:text-destructive" onClick={() => deleteTask(selectedTask.id)}>
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </Button>
+                  </div>
                 </div>
-              ))}
-          </>
-        )}
-
-        {taskViewMode === 'completed' && (
-          <>
-            {Object.entries(completedByCategory)
-              .sort(([left], [right]) => left.localeCompare(right))
-              .map(([label, group]) => (
-                <div key={label} className="space-y-3 border-t border-border pt-6">
-                  <h2 className="text-2xl font-semibold text-foreground">{label}</h2>
-                  {group.map((task) => <TaskCard key={task.id} t={task} isDone />)}
+              );
+            })() : (
+              <div className="rounded-3xl border border-dashed border-border/70 bg-muted/15 p-10 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
+                  <CircleDashed className="h-5 w-5 text-primary" />
                 </div>
-              ))}
-          </>
-        )}
-
-        {((taskViewMode === 'completed' && done.length === 0) ||
-          (taskViewMode !== 'completed' && pending.length === 0)) && (
-          <p className="py-12 text-center text-muted-foreground">
-            {taskViewMode === 'completed' ? 'No completed tasks yet.' : 'No tasks yet. Add your first planning to-do.'}
-          </p>
-        )}
+                <p className="mt-4 text-lg font-semibold text-foreground">Select a task to focus the workspace</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Pick any task from the queue to see its details, vendor link, budget context, and the next recommended move.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

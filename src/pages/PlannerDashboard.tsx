@@ -534,14 +534,33 @@ export default function PlannerDashboard() {
       </div>
 
       {clients.length === 0 && (
-        <div className="text-center py-16">
-          <Users className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
-          <p className="text-muted-foreground">
-            {isCommittee
-              ? 'No wedding workspace yet. Add your wedding to start assigning committee roles and managing vendors.'
-              : 'No clients yet. Add your first client to start managing their wedding!'}
-          </p>
-        </div>
+        <Card className="border-border/70 bg-muted/10 shadow-card">
+          <CardContent className="flex flex-col items-center px-6 py-14 text-center">
+            <Users className="mb-4 h-12 w-12 text-muted-foreground/40" />
+            <h3 className="font-display text-2xl text-foreground">
+              {isCommittee ? 'No wedding workspace yet' : plannerPreviewMode ? 'No test weddings yet' : 'No clients yet'}
+            </h3>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+              {isCommittee
+                ? 'Add your wedding first, then assign committee roles, vendors, and follow-ups from one shared workspace.'
+                : plannerPreviewMode
+                  ? 'Planner preview is working, but this admin account does not have any planner-linked weddings yet. Add a test wedding or link one by code to unlock the rest of the planner workspace.'
+                  : 'Add your first client to start managing their wedding workspace, budget, tasks, guests, and timeline.'}
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <Button onClick={() => setOpen(true)} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {addLabel}
+              </Button>
+              {!isCommittee && (
+                <Button variant="outline" onClick={() => setCodeDialogOpen(true)} className="gap-2">
+                  <LinkIcon className="h-4 w-4" />
+                  Link by Code
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

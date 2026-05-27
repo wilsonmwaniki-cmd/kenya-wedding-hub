@@ -10,10 +10,15 @@ export default function ProtectedRoute({
   children: React.ReactNode;
   allowedRoles?: AppRole[];
 }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, baseProfile, availableRoles, loading } = useAuth();
   const location = useLocation();
+  const hasAdminMembership =
+    baseProfile?.role === 'admin'
+    || availableRoles.includes('admin')
+    || user?.user_metadata?.role === 'admin';
 
   const inferredRole = (() => {
+    if (hasAdminMembership && allowedRoles?.includes('admin')) return 'admin' as AppRole;
     if (profile?.role) return profile.role;
     const requestedRole = user?.user_metadata?.role;
     if (requestedRole === 'committee') {
@@ -49,7 +54,12 @@ export default function ProtectedRoute({
   }
 
   if (allowedRoles?.length) {
-    if (!allowedRoles.includes(inferredRole)) {
+    const effectiveRoles = new Set<AppRole>(availableRoles.length ? availableRoles : [inferredRole]);
+    if (hasAdminMembership) {
+      effectiveRoles.add('admin');
+    }
+
+    if (!allowedRoles.some((role) => effectiveRoles.has(role) || role === inferredRole)) {
       return <Navigate to={getHomeRouteForRole(inferredRole, inferredPlannerType)} replace />;
     }
   }

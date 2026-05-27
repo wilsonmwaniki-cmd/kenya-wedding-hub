@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, Sparkles, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, WandSparkles, ArrowRightLeft, ArrowLeft, Download } from 'lucide-react';
@@ -44,6 +44,7 @@ import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
+import InfoTip from '@/components/InfoTip';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 
@@ -338,6 +339,7 @@ export default function Vendors() {
   const [vendorTaskSubmitting, setVendorTaskSubmitting] = useState(false);
   const [creatingVendorTaskBundleId, setCreatingVendorTaskBundleId] = useState<string | null>(null);
   const [vendorListView, setVendorListView] = useState<'by_category' | 'by_name'>('by_category');
+  const [vendorWorkspaceQuery, setVendorWorkspaceQuery] = useState('');
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [selectedVendorTab, setSelectedVendorTab] = useState<'details' | 'tasks' | 'payments'>('details');
@@ -1213,17 +1215,37 @@ export default function Vendors() {
     : 'couple.export_progress';
   const exportDecision = getEntitlementDecision(exportFeature, { profile, weddingEntitlements, couplePlanTier });
 
-  const vendorsByName = useMemo(
-    () => [...vendors].sort((left, right) => left.name.localeCompare(right.name)),
-    [vendors],
-  );
+  const vendorWorkspaceVendors = useMemo(() => {
+    const query = vendorWorkspaceQuery.trim().toLowerCase();
+    if (!query) return sortedVendors;
+
+    return sortedVendors.filter((vendor) => {
+      const vendorText = [
+        vendor.name,
+        vendor.category,
+        vendor.phone ?? '',
+        vendor.email ?? '',
+        vendorSelectionLabel((vendor.selection_status || 'shortlisted') as VendorSelectionStatus),
+        vendorPaymentStatusLabel((vendor.payment_status || 'unpaid') as VendorPaymentStatus),
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return vendorText.includes(query);
+    });
+  }, [sortedVendors, vendorWorkspaceQuery]);
 
   const vendorsGroupedByCategory = useMemo(() => {
-    return sortedVendors.reduce<Record<string, Vendor[]>>((summary, vendor) => {
+    return vendorWorkspaceVendors.reduce<Record<string, Vendor[]>>((summary, vendor) => {
       summary[vendor.category] = [...(summary[vendor.category] ?? []), vendor];
       return summary;
     }, {});
-  }, [sortedVendors]);
+  }, [vendorWorkspaceVendors]);
+
+  const filteredVendorsByName = useMemo(
+    () => [...vendorWorkspaceVendors].sort((left, right) => left.name.localeCompare(right.name)),
+    [vendorWorkspaceVendors],
+  );
 
   const selectedVendor = useMemo(
     () => vendors.find((vendor) => vendor.id === selectedVendorId) ?? null,
@@ -1278,6 +1300,21 @@ export default function Vendors() {
     const completed = selectedVendorTasks.filter((task) => task.completed);
     return { open, completed };
   }, [selectedVendorTasks]);
+
+  const selectedVendorMilestones = useMemo(() => {
+    if (!selectedVendor) return [];
+    return buildVendorMilestones(selectedVendor, selectedVendorTasks);
+  }, [selectedVendor, selectedVendorTasks]);
+
+  const selectedVendorNextMilestone = useMemo(
+    () => selectedVendorMilestones.find((milestone) => milestone.status !== 'complete') ?? null,
+    [selectedVendorMilestones],
+  );
+
+  const selectedVendorCompletedMilestones = useMemo(
+    () => selectedVendorMilestones.filter((milestone) => milestone.status === 'complete').length,
+    [selectedVendorMilestones],
+  );
 
   const selectedVendorPaymentSummary = useMemo(() => {
     if (!selectedVendor) {
@@ -1379,6 +1416,54 @@ export default function Vendors() {
     }
 
     return null;
+  }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, vendorTaskSummary.openTasks, vendors.length]);
+
+  const vendorPrimaryAction = useMemo(() => {
+    if (vendors.length === 0) {
+      return {
+        title: 'Build your first shortlist',
+        body: 'Start with the must-book categories first so your wedding team takes shape quickly.',
+        actionLabel: 'Add first vendor',
+        actionType: 'open_add_vendor' as const,
+      };
+    }
+
+    if (categoriesNeedingFinalChoice[0]) {
+      return {
+        title: `Close the ${categoriesNeedingFinalChoice[0].category} decision next`,
+        body: `${categoriesNeedingFinalChoice.length} vendor categor${categoriesNeedingFinalChoice.length === 1 ? 'y still needs a final pick' : 'ies still need final picks'}.`,
+        actionLabel: 'Review with AI',
+        actionType: 'assistant_prompt' as const,
+        prompt: `Help me close the ${categoriesNeedingFinalChoice[0].category} vendor decision next.`,
+      };
+    }
+
+    if (finalVendorPaymentsDueSoon[0]) {
+      return {
+        title: 'Stay ahead of vendor payment deadlines',
+        body: `${finalVendorPaymentsDueSoon.length} final vendor payment${finalVendorPaymentsDueSoon.length === 1 ? '' : 's'} falls due in the next two weeks.`,
+        actionLabel: 'Review with AI',
+        actionType: 'assistant_prompt' as const,
+        prompt: 'Review the upcoming vendor payment deadlines and tell me what needs action first.',
+      };
+    }
+
+    if (vendorTaskSummary.openTasks > 0) {
+      return {
+        title: 'Clear the vendor follow-up queue',
+        body: `${vendorTaskSummary.openTasks} open vendor follow-up${vendorTaskSummary.openTasks === 1 ? '' : 's'} are still active across your wedding workspace.`,
+        actionLabel: 'Summarize follow-ups',
+        actionType: 'assistant_prompt' as const,
+        prompt: 'Summarize the vendor follow-ups still open and tell me what to chase first.',
+      };
+    }
+
+    return {
+      title: 'Your vendor lineup is holding steady',
+      body: 'Use this workspace to keep final choices, payments, and vendor notes tidy as the wedding gets closer.',
+      actionLabel: null,
+      actionType: 'none' as const,
+    };
   }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, vendorTaskSummary.openTasks, vendors.length]);
 
   useEffect(() => {
@@ -1657,94 +1742,202 @@ export default function Vendors() {
       );
     };
 
-    const renderVendorRow = (vendor: Vendor) => (
-      <button
-        key={vendor.id}
-        type="button"
-        onClick={() => {
-          setSelectedVendorId(vendor.id);
-          setSelectedVendorTab('details');
-        }}
-        className="flex w-full flex-col gap-3 rounded-[1.5rem] border border-border/70 bg-background px-4 py-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-accent/20 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5 sm:rounded-[1.75rem]"
-      >
-        <div className="min-w-0">
-          <p className="truncate text-xl font-semibold text-foreground">{vendor.name}</p>
-          {vendorListView === 'by_category' ? (
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              {vendor.phone && <span>{vendor.phone}</span>}
-              {vendor.selection_status === 'final' && <Badge>Final choice</Badge>}
-              {vendor.payment_status !== 'unpaid' && (
-                <Badge variant={vendorPaymentStatusTone(vendor.payment_status)}>
-                  {vendorPaymentStatusLabel(vendor.payment_status)}
-                </Badge>
+    const renderVendorRow = (vendor: Vendor) => {
+      const vendorTasks = vendorTasksByVendorId[vendor.id] ?? [];
+      const openVendorTasks = vendorTasks.filter((task) => !task.completed).length;
+      const outstandingBalance = Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0);
+      const dueDateLabel = vendor.payment_due_date ? safeDateLabel(vendor.payment_due_date) : null;
+
+      return (
+        <button
+          key={vendor.id}
+          type="button"
+          onClick={() => {
+            setSelectedVendorId(vendor.id);
+            setSelectedVendorTab('details');
+          }}
+          className="flex w-full flex-col gap-4 rounded-[1.5rem] border border-border/70 bg-background px-4 py-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-accent/20 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5 sm:rounded-[1.75rem]"
+        >
+          <div className="min-w-0 space-y-3">
+            <div>
+              <p className="truncate text-xl font-semibold text-foreground">{vendor.name}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <Badge variant="outline">{vendor.category}</Badge>
+                {vendor.selection_status === 'final' && <Badge>Final choice</Badge>}
+                {vendor.selection_status === 'backup' && <Badge variant="secondary">Backup</Badge>}
+                {vendor.payment_status !== 'unpaid' && (
+                  <Badge variant={vendorPaymentStatusTone(vendor.payment_status)}>
+                    {vendorPaymentStatusLabel(vendor.payment_status)}
+                  </Badge>
+                )}
+                {vendor.phone && <span>{vendor.phone}</span>}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+              {openVendorTasks > 0 ? (
+                <span>{openVendorTasks} open follow-up{openVendorTasks === 1 ? '' : 's'}</span>
+              ) : (
+                <span>No open follow-ups</span>
               )}
+              {dueDateLabel && vendor.payment_status !== 'paid_full' && <span>Payment due {dueDateLabel}</span>}
+              {outstandingBalance > 0 && <span>{formatCurrency(outstandingBalance)} outstanding</span>}
             </div>
-          ) : null}
-        </div>
-        <div className="text-left sm:text-right">
-          {vendorListView === 'by_name' ? (
-            <p className="text-xl font-semibold text-foreground">{vendor.category}</p>
-          ) : (
-            <div className="text-sm text-muted-foreground">
-              <p>{formatCurrency(vendor.price)}</p>
-              <p className="mt-1">{selectedVendorId === vendor.id ? 'Open' : 'View details'}</p>
-            </div>
-          )}
-        </div>
-      </button>
-    );
+          </div>
+          <div className="text-left sm:min-w-[180px] sm:text-right">
+            <p className="text-xl font-semibold text-foreground">
+              {vendorListView === 'by_name' ? vendor.category : formatCurrency(vendor.price)}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {selectedVendorId === vendor.id
+                ? 'Open in workspace'
+                : openVendorTasks > 0
+                  ? 'Needs follow-up'
+                  : outstandingBalance > 0
+                    ? 'Payment still active'
+                    : 'View details'}
+            </p>
+          </div>
+        </button>
+      );
+    };
 
     return (
       <div className="space-y-8">
         {!selectedVendor ? (
           <>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h1 className="font-display text-4xl font-bold text-foreground">Vendors</h1>
-                <p className="mt-2 text-lg text-muted-foreground">{vendors.length} vendors tracked</p>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="grid w-full grid-cols-2 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
-                  <Button
-                    type="button"
-                    variant={vendorListView === 'by_category' ? 'default' : 'ghost'}
-                    className="rounded-full px-4 sm:px-6"
-                    onClick={() => setVendorListView('by_category')}
-                  >
-                    By Category
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={vendorListView === 'by_name' ? 'default' : 'ghost'}
-                    className="rounded-full px-4 sm:px-6"
-                    onClick={() => setVendorListView('by_name')}
-                  >
-                    By Name
-                  </Button>
-                </div>
-                <UpgradePromptDialog
-                  open={exportUpgradeOpen}
-                  onOpenChange={setExportUpgradeOpen}
-                  decision={exportDecision.allowed ? null : exportDecision}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => {
-                    if (!exportDecision.allowed) {
-                      setExportUpgradeOpen(true);
-                      return;
-                    }
-                    exportVendorData();
-                  }}
-                >
-                  <Download className="h-4 w-4" />
-                  Export Vendors
-                </Button>
-                {addVendorDialog}
-              </div>
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_360px]">
+              <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-amber-50/70 shadow-card">
+                <CardContent className="p-6 sm:p-8">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-primary">
+                      Vendor Workspace
+                    </Badge>
+                    <InfoTip content="Shortlist vendors, compare options, lock final choices, and stay on top of contracts, payments, and follow-up tasks." />
+                  </div>
+                  <h1 className="mt-4 font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+                    Build the wedding team with more confidence
+                  </h1>
+                  <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
+                    Vendor decisions, contracts, and follow-ups in one place.
+                  </p>
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Tracked</p>
+                      <p className="mt-2 text-3xl font-semibold text-foreground">{vendors.length}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">vendors in your wedding lineup</p>
+                    </div>
+                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Final Choices</p>
+                      <p className="mt-2 text-3xl font-semibold text-foreground">{finalVendorEntries.length}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">categories already locked in</p>
+                    </div>
+                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Due Soon</p>
+                      <p className="mt-2 text-3xl font-semibold text-foreground">{finalVendorPaymentsDueSoon.length}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">final vendor payments inside 14 days</p>
+                    </div>
+                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Open Follow-ups</p>
+                      <p className="mt-2 text-3xl font-semibold text-foreground">{vendorTaskSummary.openTasks}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">vendor tasks still waiting on action</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card">
+                <CardContent className="flex h-full flex-col justify-between gap-5 p-6">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Next Best Move</p>
+                      <InfoTip content="This suggestion changes based on shortlist gaps, final choices, payment deadlines, and open vendor follow-up tasks." />
+                    </div>
+                    <h2 className="mt-3 text-2xl font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
+                    <p className="mt-3 text-sm leading-6 text-muted-foreground">Best next move right now.</p>
+                  </div>
+                  <div className="space-y-3">
+                    {vendorPrimaryAction.actionLabel && (
+                      <Button
+                        type="button"
+                        className="w-full gap-2"
+                        onClick={() => {
+                          if (vendorPrimaryAction.actionType === 'open_add_vendor') {
+                            setOpen(true);
+                            return;
+                          }
+                          if (vendorPrimaryAction.actionType === 'assistant_prompt' && vendorPrimaryAction.prompt && assistantPanel) {
+                            assistantPanel.openAssistant(vendorPrimaryAction.prompt);
+                          }
+                        }}
+                      >
+                        {vendorPrimaryAction.actionType === 'assistant_prompt' ? <Sparkles className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                        {vendorPrimaryAction.actionLabel}
+                      </Button>
+                    )}
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                      {vendorWorkspaceVendors.length === vendors.length
+                        ? `${vendors.length} vendor${vendors.length === 1 ? '' : 's'} visible in the workspace queue.`
+                        : `${vendorWorkspaceVendors.length} of ${vendors.length} vendor${vendors.length === 1 ? '' : 's'} visible after filtering.`}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
+
+            <Card className="shadow-card">
+              <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="relative w-full lg:max-w-md">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={vendorWorkspaceQuery}
+                    onChange={(event) => setVendorWorkspaceQuery(event.target.value)}
+                    placeholder="Search vendors by name, category, contact, or status"
+                    className="pl-9"
+                  />
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="grid w-full grid-cols-2 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
+                    <Button
+                      type="button"
+                      variant={vendorListView === 'by_category' ? 'default' : 'ghost'}
+                      className="rounded-full px-4 sm:px-6"
+                      onClick={() => setVendorListView('by_category')}
+                    >
+                      By Category
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={vendorListView === 'by_name' ? 'default' : 'ghost'}
+                      className="rounded-full px-4 sm:px-6"
+                      onClick={() => setVendorListView('by_name')}
+                    >
+                      By Name
+                    </Button>
+                  </div>
+                  <UpgradePromptDialog
+                    open={exportUpgradeOpen}
+                    onOpenChange={setExportUpgradeOpen}
+                    decision={exportDecision.allowed ? null : exportDecision}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => {
+                      if (!exportDecision.allowed) {
+                        setExportUpgradeOpen(true);
+                        return;
+                      }
+                      exportVendorData();
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                    Export Vendors
+                  </Button>
+                  {addVendorDialog}
+                </div>
+              </CardContent>
+            </Card>
 
             {!vendorsNudgeDismissed && vendorsNudge && assistantPanel && (
               <Card className="border-primary/20 bg-primary/5 shadow-card">
@@ -1779,7 +1972,7 @@ export default function Vendors() {
             {!vendorsAssistant.dismissed && (
               <InlineAssistantCard
                 title="Which vendor decision needs attention?"
-                description="Get a quick read on shortlist gaps, final choices, vendor follow-ups, and payment deadlines."
+                description="A quick read on vendor decisions and follow-ups."
                 badgeLabel="AI Vendors"
                 prompts={vendorsPrompts}
                 response={vendorsAssistant.response}
@@ -1795,16 +1988,46 @@ export default function Vendors() {
               />
             )}
 
-            {vendorListView === 'by_name' ? (
+            {vendorWorkspaceVendors.length === 0 ? (
+              <Card className="border-dashed border-primary/25 bg-primary/5 shadow-card">
+                <CardContent className="flex flex-col items-start gap-4 p-6 sm:p-8">
+                  <div className="space-y-2">
+                    <h2 className="text-2xl font-semibold text-foreground">
+                      {vendors.length === 0 ? 'No vendors added yet' : 'No vendors match this search'}
+                    </h2>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      {vendors.length === 0
+                        ? 'Start building your shortlist so Zania can help you track decisions, payments, and vendor follow-ups.'
+                        : 'Try a different name, category, or status search to bring the right vendor back into view.'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    {vendors.length === 0 ? (
+                      <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
+                        <Plus className="h-4 w-4" />
+                        Add first vendor
+                      </Button>
+                    ) : (
+                      <Button type="button" variant="outline" onClick={() => setVendorWorkspaceQuery('')}>
+                        Clear search
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : vendorListView === 'by_name' ? (
               <div className="space-y-4">
-                {vendorsByName.map(renderVendorRow)}
+                {filteredVendorsByName.map(renderVendorRow)}
               </div>
             ) : (
               <div className="space-y-7">
                 {Object.entries(vendorsGroupedByCategory).map(([category, group]) => (
                   <section key={category} className="space-y-4">
                     <div className="border-t border-border/70 pt-6">
-                      <h2 className="text-3xl font-semibold text-foreground">{category}</h2>
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                        <h2 className="text-3xl font-semibold text-foreground">{category}</h2>
+                        <p className="text-sm text-muted-foreground">{group.length} vendor{group.length === 1 ? '' : 's'} in this category</p>
+                      </div>
                     </div>
                     <div className="space-y-4">
                       {group.map(renderVendorRow)}
@@ -1816,39 +2039,91 @@ export default function Vendors() {
           </>
         ) : (
           <>
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex items-center gap-4">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full"
-                  onClick={() => {
-                    setSelectedVendorId(null);
-                    setSelectedVendorTab('details');
-                  }}
-                >
-                  <ArrowLeft className="h-8 w-8" />
-                </Button>
-                <div>
-                  <h1 className="font-display text-4xl font-bold text-foreground">{selectedVendor.category}</h1>
-                  <p className="mt-2 text-xl font-medium text-foreground">{selectedVendor.name}</p>
+            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-background via-background to-primary/5 shadow-card">
+              <CardContent className="p-6 sm:p-8">
+                <div className="flex flex-col gap-6">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="flex items-start gap-4">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full"
+                        onClick={() => {
+                          setSelectedVendorId(null);
+                          setSelectedVendorTab('details');
+                        }}
+                      >
+                        <ArrowLeft className="h-8 w-8" />
+                      </Button>
+                      <div>
+                        <Badge variant="outline" className="rounded-full">{selectedVendor.category}</Badge>
+                        <h1 className="mt-3 font-display text-4xl font-bold tracking-tight text-foreground">
+                          {selectedVendor.name}
+                        </h1>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                          <Badge variant={vendorSelectionTone(selectedVendor.selection_status)}>
+                            {vendorSelectionLabel(selectedVendor.selection_status)}
+                          </Badge>
+                          <Badge variant={vendorPaymentStatusTone(selectedVendor.payment_status)}>
+                            {vendorPaymentStatusLabel(selectedVendor.payment_status)}
+                          </Badge>
+                          <Badge variant="outline">{contractStatusLabel(selectedVendor.contract_status)}</Badge>
+                          {selectedVendor.phone && <span>{selectedVendor.phone}</span>}
+                          {selectedVendor.email && <span>{selectedVendor.email}</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2 xl:w-[520px] xl:grid-cols-4">
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Quote</p>
+                        <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(selectedVendor.price)}</p>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Paid</p>
+                        <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(selectedVendorPaymentSummary.totalPaid)}</p>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Open Tasks</p>
+                        <p className="mt-2 text-2xl font-semibold text-foreground">{selectedVendorTaskCounts.open.length}</p>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
+                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Milestones</p>
+                        <p className="mt-2 text-2xl font-semibold text-foreground">
+                          {selectedVendorCompletedMilestones}/{selectedVendorMilestones.length || 4}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                    <div className="rounded-[1.4rem] border border-border/70 bg-background/80 p-4">
+                      <p className="text-sm font-semibold text-foreground">Next focus</p>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        {selectedVendorNextMilestone
+                          ? `${selectedVendorNextMilestone.label}${selectedVendorNextMilestone.nextOpenTask ? `, starting with "${selectedVendorNextMilestone.nextOpenTask.title}".` : '.'}`
+                          : selectedVendorPaymentSummary.balance > 0
+                            ? `${formatCurrency(selectedVendorPaymentSummary.balance)} is still outstanding on this vendor.`
+                          : 'This vendor looks tidy.'}
+                      </p>
+                    </div>
+
+                  <div className="grid w-full grid-cols-3 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
+                    {(['details', 'tasks', 'payments'] as const).map((tab) => (
+                      <Button
+                        key={tab}
+                        type="button"
+                        variant={selectedVendorTab === tab ? 'default' : 'ghost'}
+                        className="rounded-full px-3 capitalize sm:px-8"
+                        onClick={() => setSelectedVendorTab(tab)}
+                      >
+                        {tab}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <div className="grid w-full grid-cols-3 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
-                {(['details', 'tasks', 'payments'] as const).map((tab) => (
-                  <Button
-                    key={tab}
-                    type="button"
-                    variant={selectedVendorTab === tab ? 'default' : 'ghost'}
-                    className="rounded-full px-3 capitalize sm:px-8"
-                    onClick={() => setSelectedVendorTab(tab)}
-                  >
-                    {tab}
-                  </Button>
-                ))}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
             {selectedVendorTab === 'details' && (
               <div className="space-y-8">

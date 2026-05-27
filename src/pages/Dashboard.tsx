@@ -10,6 +10,7 @@ import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
 import MyConnections from '@/components/MyConnections';
+import InfoTip from '@/components/InfoTip';
 import { useToast } from '@/hooks/use-toast';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
@@ -542,23 +543,202 @@ export default function Dashboard() {
     return null;
   }, [nearLimitCategories, overspentWeddingCategories, paymentsDueSoon.length, pendingTasks.length]);
 
+  const budgetUsagePercentage = stats.totalBudget > 0
+    ? Math.min(Math.round((stats.totalSpent / stats.totalBudget) * 100), 999)
+    : 0;
+  const taskCompletionPercentage = stats.totalTasks > 0
+    ? Math.round((stats.completedTasks / stats.totalTasks) * 100)
+    : 0;
+  const guestConfirmationPercentage = stats.totalGuests > 0
+    ? Math.round((stats.confirmedGuests / stats.totalGuests) * 100)
+    : 0;
+
+  const homeSetupChecklist = [
+    {
+      label: 'Wedding profile',
+      detail: weddingDate && weddingLocation ? 'Date and location are in place.' : 'Add the date and location so the workspace feels complete.',
+      complete: Boolean(weddingDate && weddingLocation),
+    },
+    {
+      label: 'Budget started',
+      detail: stats.totalBudget > 0 ? `KES ${stats.totalBudget.toLocaleString()} planned so far.` : 'Set your first budget categories and working totals.',
+      complete: stats.totalBudget > 0,
+    },
+    {
+      label: 'Guest list started',
+      detail: stats.totalGuests > 0 ? `${stats.totalGuests} guest${stats.totalGuests === 1 ? '' : 's'} already tracked.` : 'Add your first guests to unlock RSVPs and seating.',
+      complete: stats.totalGuests > 0,
+    },
+    {
+      label: 'Checklist active',
+      detail: stats.totalTasks > 0 ? `${pendingTasks.length} task${pendingTasks.length === 1 ? '' : 's'} still open.` : 'Add your first tasks so the plan has momentum.',
+      complete: stats.totalTasks > 0,
+    },
+    {
+      label: 'Timeline started',
+      detail: upcomingEvents.length > 0 ? `${upcomingEvents.length} timeline moment${upcomingEvents.length === 1 ? '' : 's'} already visible.` : 'Build the first timeline events for the wedding day.',
+      complete: upcomingEvents.length > 0,
+    },
+    {
+      label: 'Vendor decisions moving',
+      detail: finalVendorUrgencies.length > 0 ? `${finalVendorUrgencies.length} final vendor${finalVendorUrgencies.length === 1 ? '' : 's'} already confirmed.` : 'Choose final vendors and track payments here.',
+      complete: finalVendorUrgencies.length > 0,
+    },
+  ];
+
+  const completedHomeSetupCount = homeSetupChecklist.filter((item) => item.complete).length;
+  const homeSetupPercentage = Math.round((completedHomeSetupCount / homeSetupChecklist.length) * 100);
+
+  const homePrimaryAction = (() => {
+    if (!isPlanner && (!weddingDate || !weddingLocation)) {
+      return {
+        href: '/settings',
+        label: 'Complete wedding profile',
+        description: 'Add your date and location so the workspace becomes more useful.',
+      };
+    }
+
+    if (stats.totalTasks === 0) {
+      return {
+        href: '/tasks',
+        label: 'Create first tasks',
+        description: 'Start the checklist so the rest of the plan has something concrete to organize around.',
+      };
+    }
+
+    if (stats.totalBudget === 0) {
+      return {
+        href: '/budget',
+        label: 'Start the budget',
+        description: 'Set your first categories and amounts before vendor costs start spreading out.',
+      };
+    }
+
+    if (stats.totalGuests === 0) {
+      return {
+        href: '/guests',
+        label: 'Build the guest list',
+        description: 'Add the first guests so RSVPs, tables, and invites have somewhere to begin.',
+      };
+    }
+
+    if (upcomingEvents.length === 0) {
+      return {
+        href: '/timeline',
+        label: 'Create the timeline',
+        description: 'Map the wedding day so everyone knows what happens next.',
+      };
+    }
+
+    if (finalVendorUrgencies.length === 0) {
+      return {
+        href: '/vendors',
+        label: 'Choose final vendors',
+        description: 'Move from browsing to confirmed bookings and payment tracking.',
+      };
+    }
+
+    return {
+      href: '/tasks',
+      label: 'Review this week',
+      description: 'Open the live checklist and move the highest-impact items forward.',
+    };
+  })();
+
+  const homeActionCards = [
+    {
+      title: topPendingTasks[0]?.title ?? 'Build your first checklist',
+      body: topPendingTasks[0]?.due_date
+        ? `Due ${new Date(topPendingTasks[0].due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}. Keep planning moving by clearing the next visible task.`
+        : 'Start with the next planning task so the workspace has an obvious rhythm.',
+      href: '/tasks',
+      cta: stats.totalTasks > 0 ? 'Open tasks' : 'Create first task',
+      icon: CheckSquare,
+    },
+    {
+      title: vendorDecisionsPending[0]
+        ? `Close the ${vendorDecisionsPending[0].category} decision`
+        : paymentsDueSoon[0]?.name ?? 'Review vendor commitments',
+      body: vendorDecisionsPending[0]
+        ? `${vendorDecisionsPending[0].candidates} active option${vendorDecisionsPending[0].candidates === 1 ? '' : 's'} still need a final choice.`
+        : paymentsDueSoon[0]
+          ? `A payment checkpoint is coming up soon for ${paymentsDueSoon[0].name}.`
+          : 'Keep bookings, costs, and follow-up tasks tied to the same wedding workspace.',
+      href: '/vendors',
+      cta: vendorDecisionsPending[0] ? 'Review vendors' : 'Open vendor hub',
+      icon: Store,
+    },
+    {
+      title: upcomingEvents[0]?.title ?? (stats.totalBudget > 0 ? 'Check the funding gap' : 'Start your wedding timeline'),
+      body: upcomingEvents[0]
+        ? `${upcomingEvents[0].timeline_title} keeps the next moments visible for the whole team.`
+        : stats.totalBudget > 0
+          ? `Contributions are covering ${Math.round(contributionCoveragePercentage)}% of the current budget.`
+          : 'Create the day-of sequence so the plan has a real shape.',
+      href: upcomingEvents[0] ? '/timeline' : (stats.totalBudget > 0 ? '/contributions' : '/timeline'),
+      cta: upcomingEvents[0] ? 'Open timeline' : (stats.totalBudget > 0 ? 'Open contributions' : 'Create timeline'),
+      icon: upcomingEvents[0] ? Clock : HandCoins,
+    },
+  ];
+
+  const homePulseCards = [
+    {
+      label: 'Countdown',
+      value: daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : `${daysUntil} days`,
+      detail: weddingDate ? 'Until the wedding day arrives.' : 'Set a wedding date to unlock the live countdown.',
+      href: !isPlanner && !weddingDate ? '/settings' : '/timeline',
+      icon: Clock,
+    },
+    {
+      label: 'Budget health',
+      value: stats.totalBudget > 0 ? `${budgetUsagePercentage}% used` : 'Not started',
+      detail: stats.totalBudget > 0
+        ? `KES ${(stats.totalBudget - stats.totalSpent).toLocaleString()} still available.`
+        : 'Create budget categories and totals.',
+      href: '/budget',
+      icon: Wallet,
+    },
+    {
+      label: 'Task progress',
+      value: stats.totalTasks > 0 ? `${taskCompletionPercentage}% done` : 'No tasks yet',
+      detail: stats.totalTasks > 0
+        ? `${pendingTasks.length} task${pendingTasks.length === 1 ? '' : 's'} still open.`
+        : 'Build the first checklist items.',
+      href: '/tasks',
+      icon: CheckSquare,
+    },
+    {
+      label: 'Guest response',
+      value: stats.totalGuests > 0 ? `${guestConfirmationPercentage}% confirmed` : 'No guests yet',
+      detail: stats.totalGuests > 0
+        ? `${stats.confirmedGuests} confirmed of ${stats.totalGuests}.`
+        : 'Start the guest list to unlock invites and seating.',
+      href: '/guests',
+      icon: Users,
+    },
+  ];
+
   if (isPlanner && !selectedClient) return null;
 
   return (
     <div className="space-y-6">
       <PlannerBrandingBanner />
       <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
-        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.4fr_0.9fr] lg:p-8">
-          <div className="space-y-4">
+        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.35fr_0.95fr] lg:p-8">
+          <div className="space-y-5">
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">This Wedding</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Wedding Home</p>
+                <InfoTip content="This overview keeps your next actions, guests, budget, vendors, and timeline in one place so you can see what needs attention fastest." />
+              </div>
               <h1 className="mt-2 font-display text-3xl font-bold text-foreground sm:text-4xl">
                 {weddingTitle}
               </h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Open one wedding and everything stays together: budget, timeline, vendors, guests, and final portfolio.
+                Your planning command center.
               </p>
             </div>
+
             <div className="flex flex-wrap gap-2">
               {weddingMeta.length > 0 ? weddingMeta.map((item) => (
                 <Badge key={item} variant="outline" className="rounded-full px-3 py-1 text-xs">
@@ -566,13 +746,38 @@ export default function Dashboard() {
                 </Badge>
               )) : (
                 <Badge variant="outline" className="rounded-full px-3 py-1 text-xs">
-                  Add date, location, and guests to complete this wedding snapshot
+                  Add the wedding basics to complete this snapshot
                 </Badge>
               )}
             </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Countdown</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : `${daysUntil} days`}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Funding gap</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  KES {contributionGap.toLocaleString()}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {homePrimaryAction.label}
+                </p>
+              </div>
+            </div>
+
             <div className="flex flex-wrap gap-3">
               <Button asChild>
-                <Link to="/budget">Continue Planning</Link>
+                <Link to={homePrimaryAction.href}>{homePrimaryAction.label}</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/tasks">Open task workspace</Link>
               </Button>
               {weddingDate && (
                 <a
@@ -592,188 +797,99 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-background/80 p-5 backdrop-blur-sm">
-            <p className="text-xs font-medium uppercase tracking-[0.25em] text-muted-foreground">At A Glance</p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+
+          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm text-muted-foreground">Countdown</p>
-                <p className="mt-1 text-2xl font-semibold text-foreground">
-                  {daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : `${daysUntil} days`}
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Workspace setup</p>
+                  <InfoTip content="These are the core wedding details and planning foundations that make the rest of the workspace more useful." />
+                </div>
+                <p className="mt-2 text-3xl font-semibold text-foreground">{homeSetupPercentage}%</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {completedHomeSetupCount} of {homeSetupChecklist.length} foundations complete.
                 </p>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Budget progress</p>
-                <p className="mt-1 text-2xl font-semibold text-foreground">
-                  {stats.totalBudget > 0 ? `${Math.round((stats.totalSpent / stats.totalBudget) * 100)}%` : '0%'}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Tasks done</p>
-                <p className="mt-1 text-2xl font-semibold text-foreground">
-                  {stats.completedTasks}/{stats.totalTasks}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Location</p>
-                <p className="mt-1 flex items-center gap-2 text-base font-medium text-foreground">
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2 text-right">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">Location</p>
+                <p className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
                   <MapPin className="h-4 w-4 text-primary" />
                   {weddingLocation || 'Add location'}
                 </p>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <Card className="border-primary/20 shadow-card">
-        <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.15fr_0.85fr] lg:p-6">
-          <div className="space-y-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Start Here</p>
-              <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Your next tasks</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                See the first few actions right away, then open the full task list when you want to plan in more detail.
-              </p>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted/40">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${homeSetupPercentage}%` }}
+              />
             </div>
 
-            {topPendingTasks.length > 0 ? (
-              <div className="space-y-3">
-                {topPendingTasks.map((task) => (
-                  <div key={task.id} className="rounded-2xl border border-border/70 bg-background/70 p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-medium text-foreground">{task.title}</p>
-                          <Badge variant="outline" className="rounded-full text-[11px]">
-                            {task.visibility === 'private' ? 'Private' : 'Shared'}
-                          </Badge>
-                          {task.phase && (
-                            <Badge variant="outline" className="rounded-full text-[11px]">
-                              {task.phase.replace(/_/g, ' ')}
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {task.due_date
-                            ? `Due ${new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                            : 'No due date set yet'}
-                        </p>
-                      </div>
+            <div className="mt-5 space-y-3">
+              {homeSetupChecklist.slice(0, 4).map((item) => (
+                <div key={item.label} className="rounded-2xl border border-border/60 bg-muted/10 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{item.label}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
                     </div>
+                    <Badge
+                      variant={item.complete ? 'default' : 'outline'}
+                      className="shrink-0 rounded-full"
+                    >
+                      {item.complete ? 'Done' : 'Next'}
+                    </Badge>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/15 p-5">
-                <p className="text-sm font-medium text-foreground">No tasks yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Start with your first wedding checklist items so the rest of the workspace has something concrete to organize around.
-                </p>
-              </div>
-            )}
-          </div>
+                </div>
+              ))}
+            </div>
 
-          <div className="space-y-4 rounded-2xl border border-border/70 bg-background/80 p-5">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Task snapshot</p>
-              <p className="mt-2 text-3xl font-semibold text-foreground">{pendingTasks.length}</p>
-              <p className="mt-1 text-sm text-muted-foreground">Open tasks still need attention</p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Private next</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{nextPrivateTask?.title ?? 'No private task pending'}</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Shared next</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{nextPublicTask?.title ?? 'No shared task pending'}</p>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Button asChild className="justify-start gap-2">
-                <Link to="/tasks">
-                  <CheckSquare className="h-4 w-4" />
-                  Open task workspace
-                </Link>
-              </Button>
-              <Button asChild variant="outline" className="justify-start gap-2">
-                <Link to="/contributions">
-                  <HandCoins className="h-4 w-4" />
-                  Open contributions
-                </Link>
-              </Button>
-              <Button asChild variant="outline" className="justify-start gap-2">
-                <Link to="/budget">
-                  <Wallet className="h-4 w-4" />
-                  Continue into budget
-                </Link>
-              </Button>
+            <div className="mt-4 rounded-2xl border border-border/60 bg-primary/5 p-4">
+              <p className="text-sm font-medium text-foreground">{homePrimaryAction.label}</p>
+              <p className="mt-1 text-sm text-muted-foreground">Best next move right now.</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="border-primary/15 shadow-card">
-        <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.05fr_0.95fr] lg:p-6">
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Wedding Fund</p>
-              <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Contributions at a glance</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Keep pledges, cash received, and in-kind support tied to the wedding budget so the committee always knows the real gap.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Raised</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">KES {contributionSummary.totalSupport.toLocaleString()}</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Pledged</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">KES {contributionSummary.pledgedCash.toLocaleString()}</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">In-kind</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">KES {contributionSummary.inKindValue.toLocaleString()}</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Pending pledges</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{contributionSummary.pendingCount}</p>
-              </div>
-            </div>
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Next Best Moves</p>
+          <div className="mt-2 flex items-center gap-2">
+            <h2 className="font-display text-2xl font-semibold text-foreground">Keep the wedding moving</h2>
+            <InfoTip content="These suggested actions update as your workspace changes, so the list reflects what looks most useful right now." />
           </div>
-          <div className="rounded-2xl border border-border/70 bg-background/80 p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Budget coverage</p>
-                <p className="mt-2 text-3xl font-semibold text-foreground">{Math.round(contributionCoveragePercentage)}%</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {stats.totalBudget > 0
-                    ? `KES ${contributionGap.toLocaleString()} still uncovered`
-                    : 'Set your wedding budget to see the live funding gap.'}
-                </p>
-              </div>
-              <Badge variant="outline" className="rounded-full px-3 py-1">
-                {contributionSummary.contributorCount} supporter{contributionSummary.contributorCount === 1 ? '' : 's'}
-              </Badge>
-            </div>
-            <div className="mt-4 flex flex-col gap-2">
-              <Button asChild className="justify-start gap-2">
-                <Link to="/contributions">
-                  <HandCoins className="h-4 w-4" />
-                  Open contributions tracker
-                </Link>
-              </Button>
-              <Button asChild variant="outline" className="justify-start gap-2">
-                <Link to="/budget">
-                  <Wallet className="h-4 w-4" />
-                  Compare against budget
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {homeActionCards.map((action, index) => (
+            <motion.div
+              key={action.title}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+            >
+              <Card className="h-full border-primary/15 shadow-card">
+                <CardContent className="flex h-full flex-col gap-4 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
+                      <action.icon className="h-5 w-5 text-primary" />
+                    </div>
+                    <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-lg font-semibold text-foreground">{action.title}</p>
+                    <p className="text-sm text-muted-foreground">{action.body}</p>
+                  </div>
+                  <Button asChild variant="outline" className="mt-auto justify-start">
+                    <Link to={action.href}>{action.cta}</Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      </div>
 
       {!dashboardNudgeDismissed && dashboardNudge && assistantPanel && (
         <Card className="border-primary/20 bg-primary/5 shadow-card">
@@ -808,7 +924,7 @@ export default function Dashboard() {
       {!dashboardAssistant.dismissed && (
         <InlineAssistantCard
           title="This week’s planning focus"
-          description="Get one clear recommendation based on the current wedding workspace."
+          description="One clear recommendation from your current workspace."
           badgeLabel="AI Focus"
           decision={dashboardAssistant.decision}
           canUseAssistant={dashboardAssistant.canUseAssistant}
@@ -823,6 +939,44 @@ export default function Dashboard() {
           emptyStateBody="Ask for a weekly focus, budget watch, or vendor decision summary without leaving the dashboard."
         />
       )}
+
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Wedding Pulse</p>
+          <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">One quick read of the whole plan</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Get the clearest progress signals before you dive into any one workspace.
+          </p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {homePulseCards.map((card, index) => (
+            <motion.div
+              key={card.label}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.04 }}
+            >
+              <Link to={card.href} className="block h-full">
+                <Card className="h-full border-border/70 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-warm">
+                  <CardContent className="space-y-4 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
+                        <card.icon className="h-5 w-5 text-primary" />
+                      </div>
+                      <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.label}</p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">{card.value}</p>
+                      <p className="mt-2 text-sm text-muted-foreground">{card.detail}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            </motion.div>
+          ))}
+        </div>
+      </div>
 
       {/* Linked planner info for couples */}
       {linkedPlanner && !isPlanner && (
@@ -852,8 +1006,9 @@ export default function Dashboard() {
 
       <div className="space-y-3">
         <div>
-          <h2 className="font-display text-2xl font-semibold text-foreground">Everything For This Wedding</h2>
-          <p className="text-sm text-muted-foreground">Jump straight into the part of the wedding you need to work on.</p>
+          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Workspaces</p>
+          <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Open the part of the wedding you need</h2>
+          <p className="text-sm text-muted-foreground">Each area keeps the relevant decisions, actions, and records together.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {moduleCards.map((module, i) => (
@@ -883,7 +1038,7 @@ export default function Dashboard() {
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <CardTitle className="font-display text-2xl">Final Vendor Hub</CardTitle>
+                <CardTitle className="font-display text-2xl">Vendor Watch</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Track booked vendors, what is still owed, and the next action tied to each final decision.
                 </p>
@@ -971,50 +1126,54 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-primary/20 bg-primary/5">
+        <Card className="border-primary/20 bg-primary/5 shadow-card">
           <CardHeader className="pb-3">
-            <CardTitle className="font-display text-xl">Next Vendor Decisions</CardTitle>
+            <CardTitle className="font-display text-xl">Timeline And Support</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Payments due in 14 days</p>
-              <p className="mt-2 text-3xl font-semibold text-foreground">{paymentsDueSoon.length}</p>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Timeline status</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">
+                {upcomingEvents.length > 0 ? upcomingEvents.length : '0'}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {paymentsDueSoon.length > 0
-                  ? paymentsDueSoon[0].name
-                  : 'No urgent vendor payments right now'}
+                {upcomingEvents[0]
+                  ? `${upcomingEvents[0].title} is the next visible moment.`
+                  : 'No live wedding-day timeline events yet.'}
               </p>
             </div>
             <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
-              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next action</p>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Contributions</p>
               <p className="mt-2 text-base font-medium text-foreground">
-                {nextVendorAction?.nextTask?.title ?? 'No pending vendor action'}
+                {contributionSummary.totalSupport > 0
+                  ? `KES ${contributionSummary.totalSupport.toLocaleString()} raised so far`
+                  : 'No support has been logged yet'}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {nextVendorAction?.name
-                  ? `Linked to ${nextVendorAction.name}`
-                  : 'Your booked vendors are caught up'}
+                {contributionSummary.pendingCount > 0
+                  ? `${contributionSummary.pendingCount} pledge${contributionSummary.pendingCount === 1 ? '' : 's'} still pending.`
+                  : 'Cash and in-kind help will appear here against the wedding budget.'}
               </p>
             </div>
             <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
               <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Move this wedding forward</p>
               <div className="mt-3 flex flex-col gap-2">
                 <Button asChild className="justify-start gap-2">
+                  <Link to="/timeline">
+                    <Clock className="h-4 w-4" />
+                    Open timeline
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="justify-start gap-2">
+                  <Link to="/contributions">
+                    <HandCoins className="h-4 w-4" />
+                    Review contributions
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="justify-start gap-2">
                   <Link to="/vendors">
                     <BriefcaseBusiness className="h-4 w-4" />
-                    Review final vendors
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="justify-start gap-2">
-                  <Link to="/budget">
-                    <Wallet className="h-4 w-4" />
-                    Update budget commitments
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="justify-start gap-2">
-                  <Link to="/tasks">
-                    <CheckSquare className="h-4 w-4" />
-                    Clear vendor actions
+                    Review vendor hub
                   </Link>
                 </Button>
               </div>
@@ -1076,9 +1235,9 @@ export default function Dashboard() {
           <CardContent className="flex h-full items-start gap-4 py-5">
             <Heart className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
             <div>
-              <p className="font-medium text-card-foreground">Wedding Brain</p>
+              <p className="font-medium text-card-foreground">Wedding Rhythm</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Keep every decision attached to this wedding. When budget, guests, vendors, and timeline live in one place, planners stop jumping between WhatsApp, docs, and spreadsheets.
+                The strongest version of this product keeps every decision attached to the wedding itself. When the money, people, vendors, and schedule stay connected, planning feels lighter and follow-up gets faster.
               </p>
             </div>
           </CardContent>

@@ -11,10 +11,12 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import InfoTip from '@/components/InfoTip';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, Trash2, Edit2, Copy, Link2, Users, ArrowLeft,
-  Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle, Printer
+  Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle, Printer, Sparkles
 } from 'lucide-react';
 
 const VENDOR_ROLES = [
@@ -85,6 +87,7 @@ export default function Timeline() {
   const { user } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
+  const assistantPanel = useAssistantPanel();
 
   const [timelines, setTimelines] = useState<Timeline[]>([]);
   const [selectedTimeline, setSelectedTimeline] = useState<Timeline | null>(null);
@@ -402,6 +405,11 @@ export default function Timeline() {
 
   const templates = timelines.filter(t => t.is_template);
   const instances = timelines.filter(t => !t.is_template);
+  const timelineHeroAction = instances.length === 0
+    ? 'Build the first timeline'
+    : instances.length === 1
+      ? 'Refine the current wedding flow'
+      : 'Keep every timeline version in sync';
 
   const formatTime = (t: string) => {
     const [h, m] = t.split(':');
@@ -479,9 +487,25 @@ export default function Timeline() {
                 <Clock className="h-10 w-10 text-muted-foreground/40 mb-3" />
                 <p className="text-muted-foreground font-medium">No events yet</p>
                 <p className="text-sm text-muted-foreground/70 mt-1">Add your first event to start building the timeline</p>
-                <Button size="sm" className="mt-4 gap-1.5" onClick={openNewEvent}>
-                  <Plus className="h-4 w-4" /> Add First Event
-                </Button>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <Button size="sm" className="gap-1.5" onClick={openNewEvent}>
+                    <Plus className="h-4 w-4" /> Add First Event
+                  </Button>
+                  {assistantPanel && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() =>
+                        assistantPanel.openAssistant(
+                          `Help me build a practical wedding-day timeline for "${selectedTimeline.title}" with prep, ceremony, photos, reception, and wrap-up.`,
+                        )
+                      }
+                    >
+                      <Sparkles className="h-4 w-4" /> Create with AI
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ) : (
@@ -734,15 +758,102 @@ export default function Timeline() {
   // List view
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Wedding Timeline</h1>
-          <p className="text-muted-foreground mt-1">Build, share, and keep everyone synced in real time</p>
-        </div>
-        <Button className="gap-1.5" onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}>
-          <Plus className="h-4 w-4" /> New Timeline
-        </Button>
-      </div>
+      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
+        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.25fr_0.95fr] lg:p-8">
+          <div className="space-y-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Timeline Workspace</p>
+                <InfoTip content="Build the wedding-day flow, keep timings clear, and share either the full schedule or role-specific views with the right people." />
+              </div>
+              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Plan the wedding day clearly</h1>
+              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
+                A clear wedding-day flow everyone can follow.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Live timelines</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{instances.length}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {instances.length === 0 ? 'No wedding schedule built yet' : 'Working versions ready to open'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Templates</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{templates.length}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {templates.length === 0 ? 'No reusable wedding flow yet' : 'Reusable starting points available'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
+                <p className="mt-2 text-sm font-medium text-foreground">{timelineHeroAction}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Start the schedule</p>
+              <InfoTip content="Start blank, use a saved template, or ask the assistant for a first draft. You can refine timings later." />
+            </div>
+            <div className="mt-4 space-y-3">
+              <Button
+                className="w-full justify-start gap-2"
+                onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}
+              >
+                <Plus className="h-4 w-4" />
+                Create manually
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2"
+                onClick={() => {
+                  if (templates.length > 0) {
+                    setNewIsTemplate(false);
+                    setFromTemplateId(templates[0].id);
+                    setCreateOpen(true);
+                    return;
+                  }
+                  setNewIsTemplate(true);
+                  setFromTemplateId(null);
+                  setCreateOpen(true);
+                }}
+              >
+                <FileText className="h-4 w-4" />
+                {templates.length > 0 ? 'Start from template' : 'Create your first template'}
+              </Button>
+              {assistantPanel && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2"
+                  onClick={() =>
+                    assistantPanel.openAssistant(
+                      'Help me build a full wedding-day timeline with getting ready, ceremony, photos, reception, and closing flow.',
+                    )
+                  }
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Plan with AI
+                </Button>
+              )}
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                <p className="text-sm font-medium text-foreground">
+                  {templates.length > 0 ? 'Templates make repeat planning faster' : 'A clean first draft is enough to get moving'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {templates.length > 0
+                    ? 'Copy a reusable flow, then adjust the timings.'
+                    : 'Start simple, then refine later.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="timelines">
         <TabsList className="h-auto w-full flex-wrap justify-start">
@@ -752,23 +863,79 @@ export default function Timeline() {
 
         <TabsContent value="timelines" className="mt-4">
           {instances.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <Calendar className="h-10 w-10 text-muted-foreground/40 mb-3" />
-                <p className="text-muted-foreground font-medium">No timelines yet</p>
-                <p className="text-sm text-muted-foreground/70 mt-1">Create one from scratch or from a template</p>
-                <div className="flex gap-2 mt-4">
-                  <Button size="sm" className="gap-1.5" onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}>
-                    <Plus className="h-4 w-4" /> Create New
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Card className="border-dashed shadow-card">
+                <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
+                  <div>
+                    <Calendar className="mb-3 h-10 w-10 text-primary/60" />
+                    <p className="text-lg font-semibold text-foreground">Start from scratch</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Build the day step by step.
+                    </p>
+                  </div>
+                  <Button className="gap-1.5" onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}>
+                    <Plus className="h-4 w-4" /> Create Blank Timeline
                   </Button>
-                  {templates.length > 0 && (
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setNewIsTemplate(false); setFromTemplateId(templates[0].id); setCreateOpen(true); }}>
-                      <FileText className="h-4 w-4" /> From Template
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+
+              <Card className="border-dashed shadow-card">
+                <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
+                  <div>
+                    <FileText className="mb-3 h-10 w-10 text-primary/60" />
+                    <p className="text-lg font-semibold text-foreground">
+                      {templates.length > 0 ? 'Use a template' : 'Create a reusable template'}
+                    </p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {templates.length > 0
+                        ? 'Start from a saved flow, then adjust the timings.'
+                        : 'Save a structure now so future setups start faster.'}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => {
+                      if (templates.length > 0) {
+                        setNewIsTemplate(false);
+                        setFromTemplateId(templates[0].id);
+                        setCreateOpen(true);
+                        return;
+                      }
+                      setNewIsTemplate(true);
+                      setFromTemplateId(null);
+                      setCreateOpen(true);
+                    }}
+                  >
+                    <FileText className="h-4 w-4" />
+                    {templates.length > 0 ? 'Start from Template' : 'Create Template'}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card className="border-dashed shadow-card">
+                <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
+                  <div>
+                    <Sparkles className="mb-3 h-10 w-10 text-primary/60" />
+                    <p className="text-lg font-semibold text-foreground">Plan with AI</p>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Get a practical first draft.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() =>
+                      assistantPanel?.openAssistant(
+                        'Build me a full wedding-day timeline with getting ready, ceremony, couple photos, reception, speeches, dinner, and closing.',
+                      )
+                    }
+                  >
+                    <Sparkles className="h-4 w-4" /> Create with AI
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {instances.map((t, i) => (
@@ -809,7 +976,7 @@ export default function Timeline() {
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <FileText className="h-10 w-10 text-muted-foreground/40 mb-3" />
                 <p className="text-muted-foreground font-medium">No templates yet</p>
-                <p className="text-sm text-muted-foreground/70 mt-1">Create a reusable template to quickly spin up timelines</p>
+                <p className="text-sm text-muted-foreground/70 mt-1">Create a reusable timeline structure.</p>
                 <Button size="sm" className="mt-4 gap-1.5" onClick={() => { setNewIsTemplate(true); setFromTemplateId(null); setCreateOpen(true); }}>
                   <Plus className="h-4 w-4" /> Create Template
                 </Button>
