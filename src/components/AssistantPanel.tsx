@@ -7,6 +7,7 @@ import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
+import type { AiAssistantMessage } from '@/lib/aiAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
 import type { PlannerType } from '@/lib/roles';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
@@ -165,7 +166,8 @@ export default function AssistantPanel({
   const [customPrompt, setCustomPrompt] = useState('');
   const [promptIndex, setPromptIndex] = useState(0);
   const [animatedPrompt, setAnimatedPrompt] = useState('');
-  const [lastSubmittedPrompt, setLastSubmittedPrompt] = useState('');
+  const [activeRequestPrompt, setActiveRequestPrompt] = useState('');
+  const [conversation, setConversation] = useState<AiAssistantMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const assistantPanel = useAssistantPanel();
@@ -178,6 +180,7 @@ export default function AssistantPanel({
     page: surface.page,
     surface: 'assistant_panel',
     contextSource: surface.contextSource,
+    initialMessages: conversation,
   });
   const starterPrompt = surface.prompts[0] ?? '';
   const activePrompt = surface.prompts[promptIndex % Math.max(surface.prompts.length, 1)] ?? starterPrompt;
@@ -187,7 +190,8 @@ export default function AssistantPanel({
   useEffect(() => {
     assistant.clearResponse();
     setCustomPrompt('');
-    setLastSubmittedPrompt('');
+    setActiveRequestPrompt('');
+    setConversation([]);
     setPromptIndex(0);
   }, [location.pathname, starterPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -275,19 +279,27 @@ export default function AssistantPanel({
   useEffect(() => {
     if (!assistantPanel?.open) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [assistantPanel?.open, assistant.response, assistant.loading, assistant.error, lastSubmittedPrompt]);
+  }, [assistantPanel?.open, activeRequestPrompt, assistant.error, assistant.loading, conversation]);
 
   if (!assistantPanel || !feature || location.pathname === '/ai-chat') return null;
 
   const runAssistantPrompt = async (promptValue: string, surfaceName = 'assistant_panel_custom') => {
     const prompt = promptValue.trim();
     if (!prompt) return;
-    setLastSubmittedPrompt(prompt);
+    setActiveRequestPrompt(prompt);
     setCustomPrompt('');
-    await assistant.runPrompt(prompt, {
+    const result = await assistant.runPrompt(prompt, {
       contextSource: surface.contextSource,
       surface: surfaceName,
     });
+    if (result) {
+      setConversation((current) => [
+        ...current,
+        { role: 'user', content: prompt },
+        { role: 'assistant', content: result },
+      ]);
+      setActiveRequestPrompt('');
+    }
   };
 
   const submitCustomPrompt = async () => {
@@ -368,7 +380,7 @@ export default function AssistantPanel({
               role="dialog"
               aria-modal="true"
               aria-label="Ask Zania assistant"
-              className="pointer-events-auto relative flex h-[min(700px,calc(100dvh-0.75rem))] w-full max-w-[460px] flex-col overflow-hidden rounded-[1.65rem] border border-white/[0.18] bg-[radial-gradient(circle_at_78%_16%,rgba(255,255,255,0.36),transparent_32%),radial-gradient(circle_at_20%_118%,rgba(238,202,160,0.34),transparent_40%),linear-gradient(138deg,rgba(75,70,61,0.82),rgba(191,164,130,0.64)_48%,rgba(73,85,64,0.80))] text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_24px_70px_rgba(43,36,29,0.26)] backdrop-blur-[24px] sm:h-[min(620px,calc(100dvh-3rem))] sm:max-w-[500px] sm:rounded-[1.75rem]"
+              className="pointer-events-auto relative flex h-[min(700px,calc(100dvh-0.75rem))] w-full max-w-[460px] flex-col overflow-hidden rounded-[1.65rem] border border-white/[0.18] bg-[radial-gradient(circle_at_78%_16%,rgba(255,255,255,0.28),transparent_32%),radial-gradient(circle_at_20%_118%,rgba(238,202,160,0.24),transparent_40%),linear-gradient(138deg,rgba(63,58,51,0.94),rgba(170,145,112,0.84)_48%,rgba(70,82,61,0.92))] text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_24px_70px_rgba(43,36,29,0.26)] backdrop-blur-[24px] sm:h-[min(620px,calc(100dvh-3rem))] sm:max-w-[500px] sm:rounded-[1.75rem]"
               initial={{ opacity: 0, y: 34, scale: 0.94, filter: 'blur(10px)' }}
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 24, scale: 0.95, filter: 'blur(8px)' }}
@@ -420,18 +432,39 @@ export default function AssistantPanel({
                       <motion.div
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="max-w-[92%] rounded-[1.4rem] border border-white/[0.18] bg-white/[0.12] px-4 py-3.5 text-sm leading-6 text-[#fff6e8]/86 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]"
+                        className="max-w-[92%] rounded-[1.4rem] border border-white/35 bg-[#fff8ef]/82 px-4 py-3.5 text-sm font-medium leading-6 text-[#2b2118] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
                       >
                         Hi, I'm your planning assistant. What would you like help with?
                       </motion.div>
 
-                      {lastSubmittedPrompt ? (
+                      {conversation.map((message, index) => (
+                        <motion.div
+                          key={`${message.role}-${index}-${message.content.slice(0, 24)}`}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={
+                            message.role === 'user'
+                              ? 'ml-auto max-w-[86%] rounded-[1.25rem] border border-[rgba(255,255,255,0.16)] bg-[linear-gradient(135deg,rgba(91,67,55,0.92),rgba(137,87,62,0.88))] px-4 py-3 text-sm font-medium leading-6 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]'
+                              : 'max-w-[94%] rounded-[1.25rem] border border-white/40 bg-[#fff8ef]/88 px-4 py-3 text-[#241f1a] shadow-[inset_0_1px_0_rgba(255,255,255,0.20)]'
+                          }
+                        >
+                          {message.role === 'assistant' ? (
+                            <div className="prose prose-sm max-w-none text-[#241f1a] prose-p:my-2 prose-ul:my-2 prose-li:my-1">
+                              <ReactMarkdown>{message.content}</ReactMarkdown>
+                            </div>
+                          ) : (
+                            message.content
+                          )}
+                        </motion.div>
+                      ))}
+
+                      {activeRequestPrompt ? (
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="ml-auto max-w-[86%] rounded-[1.25rem] border border-[rgba(255,255,255,0.16)] bg-[linear-gradient(135deg,rgba(91,67,55,0.88),rgba(137,87,62,0.82))] px-4 py-3 text-sm leading-6 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]"
+                          className="ml-auto max-w-[86%] rounded-[1.25rem] border border-[rgba(255,255,255,0.16)] bg-[linear-gradient(135deg,rgba(91,67,55,0.92),rgba(137,87,62,0.88))] px-4 py-3 text-sm font-medium leading-6 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]"
                         >
-                          {lastSubmittedPrompt}
+                          {activeRequestPrompt}
                         </motion.div>
                       ) : null}
 
@@ -442,9 +475,9 @@ export default function AssistantPanel({
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -8 }}
-                            className="flex max-w-[88%] items-center gap-3 rounded-[1.25rem] border border-white/[0.18] bg-white/[0.12] px-4 py-3 text-sm text-[#fff6e8]/82"
+                            className="flex max-w-[88%] items-center gap-3 rounded-[1.25rem] border border-white/35 bg-[#fff8ef]/82 px-4 py-3 text-sm font-medium text-[#2b2118]"
                           >
-                            <Loader2 className="h-4 w-4 animate-spin text-[#fff6e8]" />
+                            <Loader2 className="h-4 w-4 animate-spin text-[#8a583f]" />
                             Thinking through your workspace...
                           </motion.div>
                         ) : assistant.error ? (
@@ -453,22 +486,10 @@ export default function AssistantPanel({
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -8 }}
-                            className="max-w-[88%] rounded-[1.25rem] border border-red-100/40 bg-red-950/26 px-4 py-3"
+                            className="max-w-[88%] rounded-[1.25rem] border border-red-200/60 bg-[#fff0ec]/92 px-4 py-3"
                           >
-                            <p className="text-sm font-semibold text-[#fff6e8]">Could not load AI guidance</p>
-                            <p className="mt-1 text-sm leading-6 text-[#fff6e8]/78">{assistant.error}</p>
-                          </motion.div>
-                        ) : assistant.response ? (
-                          <motion.div
-                            key="response"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -8 }}
-                            className="max-w-[94%] rounded-[1.25rem] border border-white/[0.18] bg-[#fff6e8]/88 px-4 py-3 text-[#241f1a] shadow-[inset_0_1px_0_rgba(255,255,255,0.20)]"
-                          >
-                            <div className="prose prose-sm max-w-none text-[#241f1a] prose-p:my-2 prose-ul:my-2 prose-li:my-1">
-                              <ReactMarkdown>{assistant.response}</ReactMarkdown>
-                            </div>
+                            <p className="text-sm font-semibold text-[#7a261b]">Could not load AI guidance</p>
+                            <p className="mt-1 text-sm leading-6 text-[#5c4338]">{assistant.error}</p>
                           </motion.div>
                         ) : null}
                       </AnimatePresence>
@@ -485,7 +506,7 @@ export default function AssistantPanel({
                           key={prompt}
                           type="button"
                           onClick={() => void runAssistantPrompt(prompt, 'assistant_panel_suggestion')}
-                          className="min-w-[13rem] rounded-[1rem] border border-white/[0.28] bg-white/[0.09] px-3 py-2 text-left text-[0.72rem] leading-5 text-[#fff6e8]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:bg-white/[0.15] sm:min-w-0 sm:flex-1"
+                          className="min-w-[13rem] rounded-[1rem] border border-white/35 bg-[#fff8ef]/78 px-3 py-2 text-left text-[0.72rem] font-medium leading-5 text-[#3a2a1d] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:bg-[#fff8ef]/92 sm:min-w-0 sm:flex-1"
                         >
                           {prompt}
                         </button>
@@ -495,9 +516,9 @@ export default function AssistantPanel({
                 ) : null}
 
                 <footer className="relative border-t border-white/[0.14] px-4 pb-4 pt-3 sm:px-5">
-                  <div className="mb-3 rounded-[1.35rem] border border-white/[0.28] bg-white/[0.08] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
+                  <div className="mb-3 rounded-[1.35rem] border border-white/35 bg-[#fff8ef]/78 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
                     <div className="flex min-h-[3.5rem] items-center gap-3">
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/[0.10] text-[#fff6e8]/80">
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[rgba(123,84,58,0.12)] text-[#7b543a]">
                         <Bot className="h-4 w-4" />
                       </div>
                       <Textarea
@@ -511,7 +532,7 @@ export default function AssistantPanel({
                           }
                         }}
                         placeholder={inputPlaceholder}
-                        className="min-h-10 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-[0.92rem] font-medium leading-6 text-[#fff6e8] placeholder:text-[#fff6e8]/72 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        className="min-h-10 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-[0.92rem] font-medium leading-6 text-[#2f2117] placeholder:text-[#7f6a5c] focus-visible:ring-0 focus-visible:ring-offset-0"
                         disabled={assistant.decision ? !assistant.canUseAssistant : false}
                       />
                       <Button
@@ -519,7 +540,7 @@ export default function AssistantPanel({
                         size="icon"
                         onClick={submitCustomPrompt}
                         disabled={assistantBusy || (!customPrompt.trim() && !activePrompt.trim()) || (assistant.decision ? !assistant.canUseAssistant : false)}
-                        className="h-10 w-10 shrink-0 rounded-full bg-[#fff6e8]/18 text-[#fff6e8] shadow-none backdrop-blur hover:bg-[#fff6e8]/26 disabled:opacity-50"
+                        className="h-10 w-10 shrink-0 rounded-full border border-[#bd7a56] bg-[#b76743] text-[#fff8ef] shadow-none backdrop-blur hover:bg-[#9f5739] disabled:opacity-50"
                         aria-label="Ask Zania"
                       >
                         {assistant.loading ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Send className="h-[18px] w-[18px]" />}
