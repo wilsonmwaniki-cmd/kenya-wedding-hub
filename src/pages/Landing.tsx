@@ -28,11 +28,22 @@ const heroHighlights = [
   { icon: Briefcase, title: 'Diaspora-ready', desc: 'Plan from abroad while staying grounded in Kenya wedding logistics.' },
 ];
 
+const heroStats = [
+  { value: 'Kenya', label: 'Grounded in local wedding logistics' },
+  { value: 'Diaspora', label: 'Built for planning from abroad' },
+  { value: 'One place', label: 'Budget, vendors, guests, and timeline' },
+];
+
 function LandingWordmark({ light = false }: { light?: boolean }) {
   return (
     <div className="inline-flex flex-col gap-3">
-      <div className={`font-editorial text-[2.2rem] font-light uppercase tracking-[0.18em] ${light ? 'text-[#f6eee6]' : 'text-[#201814]'}`}>
-        Zania
+      <div
+        aria-label="Zania"
+        className={`font-editorial text-[2.35rem] font-light uppercase leading-none tracking-[0.22em] ${light ? 'text-[#f6eee6]' : 'text-[#201814]'}`}
+      >
+        <span>Z</span>
+        <span className="text-[#d4bb7d]">A</span>
+        <span>NIA</span>
       </div>
       <div className={`h-[2px] w-20 ${light ? 'bg-[#c9a96e]' : 'bg-[#c2724f]'}`} />
     </div>
@@ -542,18 +553,24 @@ export default function Landing() {
         </div>
       </nav>
 
-      <section className="mx-auto max-w-7xl px-4 pt-6 sm:px-6 sm:pt-8 lg:px-8 lg:pt-10">
-        <div className="overflow-hidden rounded-[24px] border border-[#3f2c24] shadow-[0_40px_110px_rgba(35,24,20,0.24)] sm:rounded-[34px]">
+      <section className="px-0 pt-4 sm:pt-6 lg:pt-8">
+        <div className="overflow-hidden border-y border-[#3f2c24] shadow-[0_40px_110px_rgba(35,24,20,0.24)]">
           <div className="relative min-h-[640px] bg-[#1c1612] sm:min-h-[760px]">
             <div className="absolute inset-x-0 top-0 z-[1] h-3 bg-[linear-gradient(90deg,#6e4432_0%,#2d211c_20%,#2d211c_80%,#c9a96e_100%)]" />
             <img src={heroImage} alt="Kenyan wedding floral arrangement" className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(22,17,14,0.9)_0%,rgba(28,22,18,0.84)_32%,rgba(28,22,18,0.55)_55%,rgba(28,22,18,0.68)_100%)]" />
-            <div className="relative grid min-h-[640px] gap-6 px-4 py-5 sm:min-h-[760px] sm:px-6 sm:py-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-10 lg:px-14 lg:py-14">
+            <div className="relative mx-auto grid min-h-[640px] w-full max-w-[1700px] gap-8 px-5 py-6 sm:min-h-[760px] sm:px-8 sm:py-8 lg:grid-cols-[1.12fr_0.88fr] lg:gap-12 lg:px-16 lg:py-14 xl:px-24 2xl:px-32">
               <div className="flex flex-col justify-center text-primary-foreground">
+                <motion.div
+                  initial={{ opacity: 0, scaleX: 0 }}
+                  animate={{ opacity: 1, scaleX: 1 }}
+                  transition={{ duration: 0.55, delay: 0.05 }}
+                  className="mb-10 hidden h-[2px] w-16 origin-left bg-[#d4bb7d] lg:block"
+                />
                 <motion.div
                   initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
+                  transition={{ duration: 0.5, delay: 0.12 }}
                   className="mb-12 hidden lg:block"
                 >
                   <LandingWordmark light />
@@ -561,7 +578,7 @@ export default function Landing() {
                 <motion.p
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
                   className="text-xs uppercase tracking-[0.35em] text-[#ce8d68]"
                 >
                   Plan weddings in Kenya and the diaspora
@@ -569,8 +586,8 @@ export default function Landing() {
                 <motion.h1
                   initial={{ opacity: 0, y: 18 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.1 }}
-                  className="mt-5 max-w-4xl font-editorial text-[3rem] font-medium leading-[0.9] tracking-[-0.015em] text-[#f6eee6] sm:mt-6 sm:text-6xl xl:text-[5.35rem]"
+                  transition={{ duration: 0.65, delay: 0.32 }}
+                  className="mt-5 max-w-[7ch] font-editorial text-[3.15rem] font-medium leading-[0.88] tracking-[-0.02em] text-[#f6eee6] sm:mt-6 sm:text-[4.8rem] lg:text-[5.6rem] xl:text-[6.6rem]"
                 >
                   Your wedding,
                   <br />
@@ -582,8 +599,8 @@ export default function Landing() {
                 <motion.p
                   initial={{ opacity: 0, y: 18 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.2 }}
-                  className="mt-5 max-w-xl text-lg leading-relaxed text-[#f6eee6]/74 sm:mt-7 sm:text-xl"
+                  transition={{ duration: 0.6, delay: 0.44 }}
+                  className="mt-5 max-w-2xl text-lg leading-relaxed text-[#f6eee6]/74 sm:mt-7 sm:text-xl"
                 >
                   Built for couples planning in Kenya and across the diaspora, Zania brings budgeting, vendors, guests, timelines, and shared decisions into one refined planning workspace.
                 </motion.p>
@@ -591,7 +608,7 @@ export default function Landing() {
                 <motion.div
                   initial={{ opacity: 0, y: 18 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.26 }}
+                  transition={{ duration: 0.6, delay: 0.56 }}
                   className="mt-8 grid max-w-3xl gap-3 sm:grid-cols-2"
                 >
                   {heroHighlights.map(({ icon: Icon, title, desc }) => (
@@ -615,7 +632,7 @@ export default function Landing() {
                 <motion.div
                   initial={{ opacity: 0, y: 18 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.3 }}
+                  transition={{ duration: 0.6, delay: 0.68 }}
                   className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap sm:gap-4"
                 >
                   <Link to="/vendors-directory">
@@ -634,10 +651,24 @@ export default function Landing() {
                     </Button>
                   </a>
                 </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.8 }}
+                  className="mt-8 grid max-w-4xl gap-4 border-t border-[#ead7c4]/12 pt-6 sm:grid-cols-3"
+                >
+                  {heroStats.map((stat) => (
+                    <div key={stat.label} className="space-y-1">
+                      <p className="font-editorial text-[1.7rem] leading-none text-[#f6eee6]">{stat.value}</p>
+                      <p className="text-xs uppercase tracking-[0.18em] text-[#f6eee6]/54">{stat.label}</p>
+                    </div>
+                  ))}
+                </motion.div>
               </div>
 
               <div id="cost-estimator" className="flex items-center lg:justify-end">
-                <div className="w-full max-w-[610px] space-y-5 lg:rounded-[28px] lg:border lg:border-[#ead7c4]/10 lg:bg-[linear-gradient(180deg,rgba(28,22,18,0.5),rgba(28,22,18,0.74))] lg:p-5 lg:shadow-[0_24px_70px_rgba(12,8,7,0.24)] lg:backdrop-blur-sm">
+                <div className="w-full max-w-[660px] space-y-5 lg:rounded-[30px] lg:border lg:border-[#ead7c4]/10 lg:bg-[linear-gradient(180deg,rgba(28,22,18,0.5),rgba(28,22,18,0.74))] lg:p-6 lg:shadow-[0_24px_70px_rgba(12,8,7,0.24)] lg:backdrop-blur-sm">
                   <PublicBudgetEstimator compact />
                   <QuickSignupChooser />
                 </div>
@@ -647,7 +678,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-18 lg:px-8">
+      <section className="mx-auto max-w-[1500px] px-6 py-14 sm:px-8 sm:py-18 lg:px-12">
         <div className="text-center">
           <p className="text-sm uppercase tracking-[0.22em] text-primary">Choose your starting point</p>
           <h2 className="mt-5 font-display text-4xl font-semibold leading-tight sm:text-5xl">
