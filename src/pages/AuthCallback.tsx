@@ -14,7 +14,12 @@ import {
   persistPendingProfessionalSetup,
   readPendingProfessionalSetup,
 } from '@/lib/professionalSetupState';
-import { completePendingWeddingSetup, getPendingWeddingSetup, isPendingWeddingSetupReadyForCompletion } from '@/lib/weddingWorkspace';
+import {
+  completePendingWeddingSetup,
+  getPendingWeddingSetup,
+  isPendingWeddingSetupReadyForCompletion,
+  reconcilePendingWeddingSetupForExistingWorkspace,
+} from '@/lib/weddingWorkspace';
 
 function getAuthTargetFromMetadata(
   userMetadata: Record<string, unknown> | null | undefined,
@@ -408,6 +413,18 @@ export default function AuthCallback() {
         const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
 
         if (user && pendingWeddingSetup) {
+          const reconciled = await withTimeout(
+            reconcilePendingWeddingSetupForExistingWorkspace(user),
+            4000,
+            { handled: false, route: '' },
+            'Auth callback existing wedding reconciliation',
+          );
+          if (!active) return;
+          if (reconciled.handled) {
+            navigate(reconciled.route, { replace: true });
+            return;
+          }
+
           if (!isPendingWeddingSetupReadyForCompletion(pendingWeddingSetup)) {
             navigate('/wedding-setup', { replace: true });
             return;

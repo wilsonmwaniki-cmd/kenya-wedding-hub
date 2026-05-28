@@ -25,6 +25,7 @@ import {
   clearPendingWeddingSetup,
   getPendingWeddingSetup,
   persistPendingWeddingSetup,
+  reconcilePendingWeddingSetupForExistingWorkspace,
   type PendingWeddingSetup,
   type WeddingSignupIntent,
 } from '@/lib/weddingWorkspace';
@@ -221,6 +222,15 @@ export default function Auth() {
         }
 
         if (pendingSetup) {
+          const reconciled = await reconcilePendingWeddingSetupForExistingWorkspace(user);
+          if (!active) return;
+
+          if (reconciled.handled) {
+            setRedirecting(true);
+            navigate(reconciled.route, { replace: true });
+            return;
+          }
+
           if (!active) return;
           navigate('/wedding-setup', { replace: true });
           return;
