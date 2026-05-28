@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole } from '@/lib/roles';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
 import { saveEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
+import heroImage from '@/assets/hero-wedding.jpg';
 
 const features = [
   { icon: Wallet, title: 'Budget Tracking', desc: 'Keep your wedding finances organized with category-level tracking.' },
@@ -20,17 +21,10 @@ const features = [
   { icon: MessageSquare, title: 'AI Assistant', desc: 'Get instant help with Kenyan wedding planning tips and advice.' },
 ];
 
-const heroHighlights = [
-  { icon: Store, title: 'Trusted vendors', desc: 'Discover venues, caterers, photographers, florists, and more across Kenya.' },
-  { icon: Calculator, title: 'Real budget signals', desc: 'Estimate costs using live wedding pricing patterns from Kenya.' },
-  { icon: Users, title: 'Shared planning', desc: 'Keep partners, planners, and committees aligned in one workspace.' },
-  { icon: Briefcase, title: 'Diaspora-ready', desc: 'Plan from abroad while staying grounded in Kenya wedding logistics.' },
-];
-
 const heroStats = [
-  { value: 'Kenya', label: 'Grounded in local wedding logistics' },
-  { value: 'Diaspora', label: 'Built for planning from abroad' },
-  { value: 'One place', label: 'Budget, vendors, guests, and timeline' },
+  { index: '01', title: 'Curated vendors', desc: 'Venues, florals, photography, and more across Kenya.' },
+  { index: '02', title: 'Live budget signals', desc: 'Estimator intelligence grounded in real pricing data.' },
+  { index: '03', title: 'Diaspora-ready', desc: 'Plan from anywhere while staying anchored at home.' },
 ];
 
 function LandingWordmark({ light = false }: { light?: boolean }) {
@@ -534,151 +528,126 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f9f3ec_0%,#f6f1e8_18%,#fbf8f4_38%,#ffffff_100%)] text-foreground">
-      <nav className="sticky top-0 z-20 border-b border-[#eadfce] bg-[rgba(249,243,236,0.95)] backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
-          <LandingWordmark />
-          <Link to="/auth" className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 md:hidden">
-            Sign In
-          </Link>
-          <div className="hidden items-center gap-8 md:flex">
-            <Link to="/vendors-directory" className="text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#7a5c48] transition-colors hover:text-[#c2724f]">Vendors</Link>
-            <Link to="/planners" className="text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#7a5c48] transition-colors hover:text-[#c2724f]">Planners</Link>
-            <Link to="/pricing" className="text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#7a5c48] transition-colors hover:text-[#c2724f]">Pricing</Link>
-            <a href="#cost-estimator" className="text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#7a5c48] transition-colors hover:text-[#c2724f]">Cost Estimator</a>
-            <Link to="/auth" className="inline-flex h-10 items-center rounded-sm bg-[#d4bb7d] px-6 text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#201814] transition-colors hover:bg-[#c2724f] hover:text-[#fffaf4]">
+      <section className="relative overflow-hidden bg-[#120d0b] text-[#f6eee6]">
+        <div className="absolute inset-0">
+          <img
+            src={heroImage}
+            alt="Zania wedding planning hero"
+            className="h-full w-full object-cover object-center"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(13,9,7,0.82)_0%,rgba(24,16,12,0.64)_34%,rgba(24,15,11,0.58)_58%,rgba(13,9,7,0.78)_100%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_22%,rgba(210,152,95,0.18),transparent_25%),radial-gradient(circle_at_86%_18%,rgba(212,187,125,0.14),transparent_20%),linear-gradient(180deg,rgba(19,13,10,0.16)_0%,rgba(19,13,10,0.42)_100%)]" />
+        </div>
+
+        <nav className="relative z-20">
+          <div className="mx-auto flex max-w-[1680px] items-center justify-between gap-3 px-6 py-7 sm:px-8 lg:px-12 xl:px-16">
+            <LandingWordmark light />
+            <Link to="/auth" className="inline-flex h-11 items-center rounded-sm border border-[#e4cf9e]/40 bg-[#d4bb7d]/95 px-5 text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#201814] transition-colors hover:bg-[#c2724f] hover:text-[#fffaf4] md:hidden">
               Sign In
             </Link>
-          </div>
-        </div>
-      </nav>
-
-      <section className="px-0 pt-4 sm:pt-6 lg:pt-8">
-        <div className="overflow-hidden border-y border-[#3f2c24] shadow-[0_40px_110px_rgba(35,24,20,0.24)]">
-          <div className="relative min-h-[640px] bg-[#1c1612] sm:min-h-[760px]">
-            <div className="absolute inset-x-0 top-0 z-[1] h-3 bg-[linear-gradient(90deg,#6e4432_0%,#2d211c_20%,#2d211c_80%,#c9a96e_100%)]" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_22%,rgba(194,114,79,0.42),transparent_24%),radial-gradient(circle_at_82%_18%,rgba(212,187,125,0.2),transparent_22%),radial-gradient(circle_at_70%_68%,rgba(168,92,60,0.22),transparent_26%),linear-gradient(128deg,#201612_0%,#2b1d18_38%,#1b1411_72%,#120d0b_100%)]" />
-            <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(22,17,14,0.18)_0%,rgba(22,17,14,0)_42%,rgba(212,187,125,0.08)_100%)]" />
-            <div className="absolute inset-y-0 left-[42%] hidden w-px bg-[linear-gradient(180deg,transparent,rgba(212,187,125,0.16),transparent)] lg:block" />
-            <div className="relative mx-auto grid min-h-[640px] w-full max-w-[1700px] gap-8 px-5 py-6 sm:min-h-[760px] sm:px-8 sm:py-8 lg:grid-cols-[1.12fr_0.88fr] lg:gap-12 lg:px-16 lg:py-14 xl:px-24 2xl:px-32">
-              <div className="flex flex-col justify-center text-primary-foreground">
-                <motion.div
-                  initial={{ opacity: 0, scaleX: 0 }}
-                  animate={{ opacity: 1, scaleX: 1 }}
-                  transition={{ duration: 0.55, delay: 0.05 }}
-                  className="mb-10 hidden h-[2px] w-16 origin-left bg-[#d4bb7d] lg:block"
-                />
-                <motion.div
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.12 }}
-                  className="mb-12 hidden lg:block"
-                >
-                  <LandingWordmark light />
-                </motion.div>
-                <motion.p
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.2 }}
-                  className="text-xs uppercase tracking-[0.35em] text-[#ce8d68]"
-                >
-                  Plan weddings in Kenya and the diaspora
-                </motion.p>
-                <motion.h1
-                  initial={{ opacity: 0, y: 18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.65, delay: 0.32 }}
-                  className="mt-5 max-w-[7ch] font-editorial text-[3.15rem] font-medium leading-[0.88] tracking-[-0.02em] text-[#f6eee6] sm:mt-6 sm:text-[4.8rem] lg:text-[5.6rem] xl:text-[6.6rem]"
-                >
-                  Your wedding,
-                  <br />
-                  <span className="text-[#f6eee6]">planned </span>
-                  <span className="italic font-normal text-[#d4bb7d]">your</span>
-                  <br />
-                  <span className="font-normal text-[#f6eee6]">way.</span>
-                </motion.h1>
-                <motion.p
-                  initial={{ opacity: 0, y: 18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.44 }}
-                  className="mt-5 max-w-2xl text-lg leading-relaxed text-[#f6eee6]/74 sm:mt-7 sm:text-xl"
-                >
-                  Built for couples planning in Kenya and across the diaspora, Zania brings budgeting, vendors, guests, timelines, and shared decisions into one refined planning workspace.
-                </motion.p>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.56 }}
-                  className="mt-8 grid max-w-3xl gap-3 sm:grid-cols-2"
-                >
-                  {heroHighlights.map(({ icon: Icon, title, desc }) => (
-                    <div
-                      key={title}
-                      className="rounded-[22px] border border-[#ead7c4]/14 bg-[rgba(255,255,255,0.06)] px-4 py-4 backdrop-blur-sm"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="rounded-xl bg-[#d4bb7d]/12 p-2.5">
-                          <Icon className="h-4 w-4 text-[#e8cf9f]" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-[#fff8f1]">{title}</p>
-                          <p className="mt-1 text-sm leading-6 text-[#f6eee6]/68">{desc}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.68 }}
-                  className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap sm:gap-4"
-                >
-                  <Link to="/vendors-directory">
-                    <Button variant="outline" className="h-12 w-full rounded-sm border-[#e3cfb7]/28 bg-[rgba(255,255,255,0.05)] px-6 text-[0.72rem] font-medium uppercase tracking-[0.2em] text-[#fff8f1] backdrop-blur hover:bg-[rgba(255,255,255,0.12)] hover:text-white sm:min-w-[200px] sm:w-auto">
-                      Vendor Directory
-                    </Button>
-                  </Link>
-                  <Link to="/planners">
-                    <Button variant="outline" className="h-12 w-full rounded-sm border-[#e3cfb7]/28 bg-[rgba(255,255,255,0.05)] px-6 text-[0.72rem] font-medium uppercase tracking-[0.2em] text-[#fff8f1] backdrop-blur hover:bg-[rgba(255,255,255,0.12)] hover:text-white sm:min-w-[200px] sm:w-auto">
-                      Find a Planner
-                    </Button>
-                  </Link>
-                  <a href="#cost-estimator">
-                    <Button variant="outline" className="h-12 w-full rounded-sm border-[#e3cfb7]/28 bg-[rgba(255,255,255,0.05)] px-6 text-[0.72rem] font-medium uppercase tracking-[0.2em] text-[#fff8f1] backdrop-blur hover:bg-[rgba(255,255,255,0.12)] hover:text-white sm:min-w-[200px] sm:w-auto">
-                      Cost Estimator
-                    </Button>
-                  </a>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.8 }}
-                  className="mt-8 grid max-w-4xl gap-4 border-t border-[#ead7c4]/12 pt-6 sm:grid-cols-3"
-                >
-                  {heroStats.map((stat) => (
-                    <div key={stat.label} className="space-y-1">
-                      <p className="font-editorial text-[1.7rem] leading-none text-[#f6eee6]">{stat.value}</p>
-                      <p className="text-xs uppercase tracking-[0.18em] text-[#f6eee6]/54">{stat.label}</p>
-                    </div>
-                  ))}
-                </motion.div>
-              </div>
-
-              <div id="cost-estimator" className="flex items-center lg:justify-end">
-                <div className="w-full max-w-[660px] space-y-5 lg:rounded-[30px] lg:border lg:border-[#ead7c4]/10 lg:bg-[linear-gradient(180deg,rgba(28,22,18,0.5),rgba(28,22,18,0.74))] lg:p-6 lg:shadow-[0_24px_70px_rgba(12,8,7,0.24)] lg:backdrop-blur-sm">
-                  <PublicBudgetEstimator compact />
-                  <QuickSignupChooser />
-                </div>
-              </div>
+            <div className="hidden items-center gap-8 md:flex">
+              <Link to="/vendors-directory" className="text-[0.72rem] font-medium uppercase tracking-[0.24em] text-[#f6eee6]/72 transition-colors hover:text-[#e9d4a9]">Vendors</Link>
+              <Link to="/planners" className="text-[0.72rem] font-medium uppercase tracking-[0.24em] text-[#f6eee6]/72 transition-colors hover:text-[#e9d4a9]">Planners</Link>
+              <Link to="/pricing" className="text-[0.72rem] font-medium uppercase tracking-[0.24em] text-[#f6eee6]/72 transition-colors hover:text-[#e9d4a9]">Pricing</Link>
+              <a href="#cost-estimator" className="text-[0.72rem] font-medium uppercase tracking-[0.24em] text-[#f6eee6]/72 transition-colors hover:text-[#e9d4a9]">Estimator</a>
+              <Link to="/auth" className="inline-flex h-11 items-center rounded-sm border border-[#f1dfb6]/28 bg-transparent px-6 text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#f6eee6] transition-colors hover:border-[#d4bb7d] hover:bg-[#d4bb7d] hover:text-[#1d1511]">
+                Sign In
+              </Link>
             </div>
           </div>
+        </nav>
+
+        <div className="relative z-10 mx-auto grid min-h-[860px] max-w-[1680px] gap-10 px-6 pb-14 pt-12 sm:px-8 lg:grid-cols-[1.18fr_0.82fr] lg:px-12 lg:pb-16 lg:pt-10 xl:px-16">
+          <div className="flex flex-col justify-between">
+            <div className="max-w-[780px] pt-10 lg:pt-16">
+              <motion.div
+                initial={{ opacity: 0, scaleX: 0 }}
+                animate={{ opacity: 1, scaleX: 1 }}
+                transition={{ duration: 0.55, delay: 0.06 }}
+                className="mb-8 h-[2px] w-14 origin-left bg-[#d4bb7d]"
+              />
+              <motion.p
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.16 }}
+                className="text-[0.72rem] uppercase tracking-[0.36em] text-[#d69d7a]"
+              >
+                Kenya • Diaspora • Refined planning atelier
+              </motion.p>
+              <motion.h1
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.28 }}
+                className="mt-7 max-w-[7.2ch] font-editorial text-[3.7rem] font-medium leading-[0.86] tracking-[-0.03em] text-[#fbf4ec] sm:text-[5.2rem] lg:text-[6.3rem] xl:text-[7.4rem]"
+              >
+                Your wedding,
+                <br />
+                <span className="italic font-normal text-[#d4bb7d]">quietly</span>
+                <br />
+                extraordinary.
+              </motion.h1>
+              <motion.p
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.44 }}
+                className="mt-8 max-w-2xl text-lg leading-[1.9] text-[#f6eee6]/74 sm:text-[1.17rem]"
+              >
+                A considered planning workspace for couples in Kenya and across the diaspora, bringing budgets, vendors, guests, and timelines into one warm, beautifully organized place.
+              </motion.p>
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.58 }}
+                className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center"
+              >
+                <Link to="/auth">
+                  <Button className="h-12 rounded-sm bg-[#d4bb7d] px-8 text-[0.72rem] font-medium uppercase tracking-[0.28em] text-[#1f1712] hover:bg-[#c6a660]">
+                    Begin planning
+                  </Button>
+                </Link>
+                <Link to="/vendors-directory" className="inline-flex items-center gap-3 text-[0.8rem] font-medium uppercase tracking-[0.26em] text-[#f6eee6]/82 transition-colors hover:text-[#e9d4a9]">
+                  Explore vendors
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </motion.div>
+            </div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.74 }}
+              className="mt-12 grid gap-5 border-t border-[#f3e4ce]/12 pt-8 sm:grid-cols-3"
+            >
+              {heroStats.map((stat) => (
+                <div key={stat.title} className="space-y-3">
+                  <p className="font-editorial text-[1.35rem] leading-none text-[#f5dfbb]">
+                    <span className="mr-2 text-[1rem] italic text-[#d4bb7d]/9">{stat.index}</span>
+                    {stat.title}
+                  </p>
+                  <p className="max-w-xs text-sm leading-7 text-[#f6eee6]/58">{stat.desc}</p>
+                </div>
+              ))}
+            </motion.div>
+          </div>
+
+          <motion.div
+            id="cost-estimator"
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.7, delay: 0.62 }}
+            className="flex items-end lg:justify-end"
+          >
+            <div className="w-full max-w-[600px] rounded-[30px] border border-[#ecd9c7]/12 bg-[linear-gradient(180deg,rgba(32,23,19,0.9),rgba(28,20,17,0.96))] p-4 shadow-[0_28px_85px_rgba(8,5,4,0.38)] backdrop-blur-md sm:p-5 lg:mb-8">
+              <PublicBudgetEstimator compact />
+            </div>
+          </motion.div>
         </div>
       </section>
 
       <section className="mx-auto max-w-[1500px] px-6 py-14 sm:px-8 sm:py-18 lg:px-12">
+        <div className="mb-10">
+          <QuickSignupChooser />
+        </div>
         <div className="text-center">
           <p className="text-sm uppercase tracking-[0.22em] text-primary">Choose your starting point</p>
           <h2 className="mt-5 font-display text-4xl font-semibold leading-tight sm:text-5xl">
