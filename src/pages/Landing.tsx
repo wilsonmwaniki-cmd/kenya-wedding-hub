@@ -21,6 +21,13 @@ const features = [
   { icon: MessageSquare, title: 'AI Assistant', desc: 'Get instant help with Kenyan wedding planning tips and advice.' },
 ];
 
+const heroHighlights = [
+  { icon: Store, title: 'Trusted vendors', desc: 'Discover venues, caterers, photographers, florists, and more across Kenya.' },
+  { icon: Calculator, title: 'Real budget signals', desc: 'Estimate costs using live wedding pricing patterns from Kenya.' },
+  { icon: Users, title: 'Shared planning', desc: 'Keep partners, planners, and committees aligned in one workspace.' },
+  { icon: Briefcase, title: 'Diaspora-ready', desc: 'Plan from abroad while staying grounded in Kenya wedding logistics.' },
+];
+
 function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'N/A';
   return `KES ${Number(value).toLocaleString()}`;
@@ -330,9 +337,9 @@ function QuickSignupChooser() {
       <div className="rounded-[28px] border border-border/60 bg-card/95 p-5 shadow-warm backdrop-blur-sm">
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Start here</p>
-          <h3 className="font-display text-2xl font-semibold text-card-foreground">Choose how you want to enter Zania</h3>
+          <h3 className="font-display text-2xl font-semibold text-card-foreground">Start planning in Kenya or from abroad</h3>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Pick the path that matches you and we’ll take you to the right sign up or sign in screen.
+            Choose the path that matches you and we’ll open the right workspace.
           </p>
         </div>
 
@@ -345,7 +352,7 @@ function QuickSignupChooser() {
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-foreground">For couples</p>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Start your wedding, add your spouse, and we’ll set up the shared workspace for both of you.
+                  Create your shared wedding workspace, invite your partner, and keep planning together.
                 </p>
               </div>
             </div>
@@ -540,19 +547,17 @@ export default function Landing() {
                   transition={{ duration: 0.5 }}
                   className="text-sm uppercase tracking-[0.35em] text-primary-foreground/80"
                 >
-                  Wedding Planning for Kenya
+                  Plan weddings in Kenya and the diaspora
                 </motion.p>
                 <motion.h1
                   initial={{ opacity: 0, y: 18 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: 0.1 }}
-                  className="mt-5 max-w-3xl font-display text-[2.45rem] font-semibold leading-[0.95] sm:mt-6 sm:text-6xl xl:text-[5.4rem]"
+                  className="mt-5 max-w-4xl font-display text-[2.7rem] font-semibold leading-[0.95] sm:mt-6 sm:text-6xl xl:text-[5rem]"
                 >
-                  Find trusted vendors.
+                  Plan your wedding in Kenya,
                   <br />
-                  <span className="italic font-normal">Know your budget.</span>
-                  <br />
-                  <span className="font-normal">Plan with confidence.</span>
+                  <span className="italic font-normal">whether you're home or abroad.</span>
                 </motion.h1>
                 <motion.p
                   initial={{ opacity: 0, y: 18 }}
@@ -560,8 +565,32 @@ export default function Landing() {
                   transition={{ duration: 0.6, delay: 0.2 }}
                   className="mt-5 max-w-2xl text-lg leading-relaxed text-primary-foreground/86 sm:mt-6 sm:text-xl"
                 >
-                  Zania helps couples, planners, and committees discover vendors, find planners, and estimate costs in one wedding planning platform built for Kenya.
+                  Zania helps couples, planners, and committees compare trusted vendors, estimate realistic budgets, and coordinate every decision in one shared wedding workspace built for Kenya.
                 </motion.p>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.26 }}
+                  className="mt-7 grid max-w-3xl gap-3 sm:grid-cols-2"
+                >
+                  {heroHighlights.map(({ icon: Icon, title, desc }) => (
+                    <div
+                      key={title}
+                      className="rounded-2xl border border-white/18 bg-white/10 px-4 py-4 backdrop-blur-sm"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="rounded-xl bg-white/12 p-2.5">
+                          <Icon className="h-4 w-4 text-white" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-white">{title}</p>
+                          <p className="mt-1 text-sm leading-6 text-white/78">{desc}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </motion.div>
 
                 <motion.div
                   initial={{ opacity: 0, y: 18 }}
@@ -588,7 +617,7 @@ export default function Landing() {
               </div>
 
               <div id="cost-estimator" className="flex items-center lg:justify-end">
-                <div className="w-full max-w-[540px] space-y-4">
+                <div className="w-full max-w-[600px] space-y-5">
                   <PublicBudgetEstimator compact />
                   <QuickSignupChooser />
                 </div>
