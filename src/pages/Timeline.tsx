@@ -39,14 +39,14 @@ const getVendorRole = (role: string | null) =>
   VENDOR_ROLES.find(r => r.value === role) || null;
 
 const EVENT_CATEGORIES = [
-  { value: 'prep', label: 'Prep', color: 'bg-blue-100 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
-  { value: 'ceremony', label: 'Ceremony', color: 'bg-amber-100 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
-  { value: 'reception', label: 'Reception', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
-  { value: 'transport', label: 'Transport', color: 'bg-purple-100 text-purple-700 border-purple-200', dot: 'bg-purple-500' },
-  { value: 'photo', label: 'Photo/Video', color: 'bg-pink-100 text-pink-700 border-pink-200', dot: 'bg-pink-500' },
-  { value: 'food', label: 'Food & Drinks', color: 'bg-orange-100 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
-  { value: 'entertainment', label: 'Entertainment', color: 'bg-indigo-100 text-indigo-700 border-indigo-200', dot: 'bg-indigo-500' },
-  { value: 'other', label: 'Other', color: 'bg-gray-100 text-gray-700 border-gray-200', dot: 'bg-gray-500' },
+  { value: 'prep', label: 'Prep', color: 'bg-primary/10 text-primary border-primary/20', dot: 'bg-primary' },
+  { value: 'ceremony', label: 'Ceremony', color: 'bg-accent/20 text-foreground border-accent/40', dot: 'bg-accent' },
+  { value: 'reception', label: 'Reception', color: 'bg-primary/15 text-foreground border-primary/25', dot: 'bg-primary/80' },
+  { value: 'transport', label: 'Transport', color: 'bg-muted text-muted-foreground border-border', dot: 'bg-muted-foreground/70' },
+  { value: 'photo', label: 'Photo/Video', color: 'bg-primary/8 text-primary border-primary/15', dot: 'bg-primary/70' },
+  { value: 'food', label: 'Food & Drinks', color: 'bg-accent/15 text-foreground border-accent/30', dot: 'bg-accent/80' },
+  { value: 'entertainment', label: 'Entertainment', color: 'bg-primary/12 text-primary border-primary/20', dot: 'bg-primary/75' },
+  { value: 'other', label: 'Other', color: 'bg-muted text-muted-foreground border-border', dot: 'bg-muted-foreground/70' },
 ] as const;
 
 const getCategoryMeta = (cat: string | null) =>
@@ -638,7 +638,7 @@ export default function Timeline() {
                   <Button size="icon" variant="outline" onClick={() => copyToClipboard(`${baseUrl}/timeline/share/${selectedTimeline.share_token}`)}>
                     <Copy className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="outline" className="shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50" asChild>
+                  <Button size="icon" variant="outline" className="shrink-0 text-primary hover:text-primary hover:bg-primary/10" asChild>
                     <a href={`https://wa.me/?text=${encodeURIComponent(`Here's the wedding timeline for "${selectedTimeline.title}":\n${baseUrl}/timeline/share/${selectedTimeline.share_token}`)}`} target="_blank" rel="noopener noreferrer">
                       <MessageCircle className="h-4 w-4" />
                     </a>
@@ -703,7 +703,7 @@ export default function Timeline() {
                             <Button size="icon" variant="outline" className="shrink-0 h-8 w-8" onClick={() => copyToClipboard(link)}>
                               <Copy className="h-3.5 w-3.5" />
                             </Button>
-                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50" asChild>
+                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8 text-primary hover:text-primary hover:bg-primary/10" asChild>
                               <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer">
                                 <MessageCircle className="h-3.5 w-3.5" />
                               </a>

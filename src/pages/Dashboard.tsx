@@ -91,14 +91,14 @@ interface ContributionDigestRow extends ContributionSummaryRow {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  prep: 'bg-blue-100 text-blue-700 border-blue-200',
-  ceremony: 'bg-amber-100 text-amber-700 border-amber-200',
-  reception: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  transport: 'bg-purple-100 text-purple-700 border-purple-200',
-  photo: 'bg-pink-100 text-pink-700 border-pink-200',
-  food: 'bg-orange-100 text-orange-700 border-orange-200',
-  entertainment: 'bg-indigo-100 text-indigo-700 border-indigo-200',
-  other: 'bg-gray-100 text-gray-700 border-gray-200',
+  prep: 'bg-primary/10 text-primary border-primary/20',
+  ceremony: 'bg-accent/20 text-foreground border-accent/40',
+  reception: 'bg-primary/15 text-foreground border-primary/25',
+  transport: 'bg-muted text-muted-foreground border-border',
+  photo: 'bg-primary/8 text-primary border-primary/15',
+  food: 'bg-accent/15 text-foreground border-accent/30',
+  entertainment: 'bg-primary/12 text-primary border-primary/20',
+  other: 'bg-muted text-muted-foreground border-border',
 };
 const CATEGORY_LABELS: Record<string, string> = {
   prep: 'Prep', ceremony: 'Ceremony', reception: 'Reception', transport: 'Transport',
@@ -721,50 +721,50 @@ export default function Dashboard() {
   if (isPlanner && !selectedClient) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PlannerBrandingBanner />
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
+      <Card className="overflow-hidden rounded-[34px] border-[#efcfbb] bg-[radial-gradient(circle_at_top_left,rgba(227,144,100,0.15),transparent_26%),radial-gradient(circle_at_top_right,rgba(212,187,125,0.15),transparent_24%),linear-gradient(180deg,rgba(255,252,247,0.98),rgba(250,244,236,0.96))] shadow-[0_26px_70px_rgba(28,22,18,0.07)]">
         <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.35fr_0.95fr] lg:p-8">
           <div className="space-y-5">
             <div>
               <div className="flex items-center gap-2">
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Wedding Home</p>
+                <p className="text-xs font-medium uppercase tracking-[0.3em] text-primary">Wedding Home</p>
                 <InfoTip content="This overview keeps your next actions, guests, budget, vendors, and timeline in one place so you can see what needs attention fastest." />
               </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground sm:text-4xl">
+              <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.95] text-foreground sm:text-5xl">
                 {weddingTitle}
               </h1>
-              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
+              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-lg">
                 Your planning command center.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
               {weddingMeta.length > 0 ? weddingMeta.map((item) => (
-                <Badge key={item} variant="outline" className="rounded-full px-3 py-1 text-xs">
+                <Badge key={item} variant="outline" className="rounded-full border-[#ead8c8] bg-white/72 px-3 py-1 text-xs shadow-sm">
                   {item}
                 </Badge>
               )) : (
-                <Badge variant="outline" className="rounded-full px-3 py-1 text-xs">
+                <Badge variant="outline" className="rounded-full border-[#ead8c8] bg-white/72 px-3 py-1 text-xs shadow-sm">
                   Add the wedding basics to complete this snapshot
                 </Badge>
               )}
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-[24px] border border-[#ebdccb] bg-white/72 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Countdown</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
                   {daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : `${daysUntil} days`}
                 </p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-[24px] border border-[#ebdccb] bg-white/72 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Funding gap</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
                   KES {contributionGap.toLocaleString()}
                 </p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-[24px] border border-[#ebdccb] bg-white/72 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
                 <p className="mt-2 text-sm font-medium text-foreground">
                   {homePrimaryAction.label}
@@ -798,7 +798,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
+          <div className="rounded-3xl border border-[#ead9c6] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(249,242,234,0.86))] p-5 shadow-[0_18px_40px_rgba(28,22,18,0.05)] backdrop-blur-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -810,7 +810,7 @@ export default function Dashboard() {
                   {completedHomeSetupCount} of {homeSetupChecklist.length} foundations complete.
                 </p>
               </div>
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2 text-right">
+              <div className="rounded-2xl border border-primary/20 bg-[linear-gradient(180deg,rgba(255,250,245,0.96),rgba(252,243,235,0.88))] px-3 py-2 text-right shadow-sm">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">Location</p>
                 <p className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
                   <MapPin className="h-4 w-4 text-primary" />
@@ -819,16 +819,16 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted/40">
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#f0e4d9]">
               <div
-                className="h-full rounded-full bg-primary transition-all"
+                className="h-full rounded-full bg-primary shadow-[0_8px_20px_rgba(216,106,63,0.28)] transition-all"
                 style={{ width: `${homeSetupPercentage}%` }}
               />
             </div>
 
             <div className="mt-5 space-y-3">
               {homeSetupChecklist.slice(0, 4).map((item) => (
-                <div key={item.label} className="rounded-2xl border border-border/60 bg-muted/10 p-3">
+                <div key={item.label} className="rounded-2xl border border-[#ebdccb] bg-white/72 p-3 shadow-[0_8px_20px_rgba(28,22,18,0.03)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-medium text-foreground">{item.label}</p>
@@ -845,7 +845,7 @@ export default function Dashboard() {
               ))}
             </div>
 
-            <div className="mt-4 rounded-2xl border border-border/60 bg-primary/5 p-4">
+            <div className="mt-4 rounded-2xl border border-primary/15 bg-[linear-gradient(180deg,rgba(255,249,242,0.98),rgba(250,239,228,0.9))] p-4">
               <p className="text-sm font-medium text-foreground">{homePrimaryAction.label}</p>
               <p className="mt-1 text-sm text-muted-foreground">Best next move right now.</p>
             </div>
@@ -855,9 +855,9 @@ export default function Dashboard() {
 
       <div className="space-y-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Next Best Moves</p>
+          <p className="text-xs font-medium uppercase tracking-[0.28em] text-primary">Next Best Moves</p>
           <div className="mt-2 flex items-center gap-2">
-            <h2 className="font-display text-2xl font-semibold text-foreground">Keep the wedding moving</h2>
+            <h2 className="font-display text-4xl font-semibold leading-none text-foreground">Keep the wedding moving</h2>
             <InfoTip content="These suggested actions update as your workspace changes, so the list reflects what looks most useful right now." />
           </div>
         </div>
@@ -869,7 +869,7 @@ export default function Dashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
             >
-              <Card className="h-full border-primary/15 shadow-card">
+              <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.88))] shadow-[0_18px_40px_rgba(28,22,18,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(28,22,18,0.07)]">
                 <CardContent className="flex h-full flex-col gap-4 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
@@ -942,8 +942,8 @@ export default function Dashboard() {
 
       <div className="space-y-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Wedding Pulse</p>
-          <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">One quick read of the whole plan</h2>
+          <p className="text-xs font-medium uppercase tracking-[0.28em] text-primary">Wedding Pulse</p>
+          <h2 className="mt-2 font-display text-3xl font-semibold leading-none text-foreground">One quick read of the whole plan</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Get the clearest progress signals before you dive into any one workspace.
           </p>
@@ -957,7 +957,7 @@ export default function Dashboard() {
               transition={{ delay: index * 0.04 }}
             >
               <Link to={card.href} className="block h-full">
-                <Card className="h-full border-border/70 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-warm">
+                <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(249,242,235,0.84))] shadow-[0_18px_40px_rgba(28,22,18,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(28,22,18,0.07)]">
                   <CardContent className="space-y-4 p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">

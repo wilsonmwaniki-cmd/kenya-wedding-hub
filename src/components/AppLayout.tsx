@@ -6,13 +6,14 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Heart, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown
+  MessageSquare, Settings, LogOut, Menu, X, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getHomeRouteForRole, isProfessionalSetupPending, type PlannerType } from '@/lib/roles';
 import AssistantPanel from '@/components/AssistantPanel';
 import { AssistantPanelProvider } from '@/contexts/AssistantPanelContext';
+import BrandWordmark from '@/components/BrandWordmark';
 
 type NavItem = {
   path: string;
@@ -193,7 +194,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <AssistantPanelProvider>
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-[radial-gradient(circle_at_top,rgba(227,144,100,0.12),transparent_22%),linear-gradient(180deg,#fbf7f1_0%,#f7f1e8_42%,#f6efe6_100%)]">
       {/* Mobile overlay */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -219,18 +220,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(233,154,108,0.24),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.1),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.08),transparent_22%,rgba(255,255,255,0.03)_46%,rgba(0,0,0,0.12))]" />
         <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-white/10" />
         <div className="relative flex h-full flex-col bg-[linear-gradient(180deg,rgba(0,0,0,0.08),rgba(255,255,255,0.02))]">
-          <div className="flex items-center gap-2 border-b border-white/12 bg-white/[0.08] px-6 py-5">
-            <Heart className="h-6 w-6 text-sidebar-primary" fill="currentColor" />
-            <span className="font-display text-lg font-semibold tracking-[0.01em] text-white">Zania</span>
-            <button onClick={() => setSidebarOpen(false)} className="ml-auto text-white/85 hover:text-white lg:hidden">
-              <X className="h-5 w-5" />
-            </button>
+          <div className="border-b border-white/12 bg-white/[0.08] px-6 py-5">
+            <div className="flex items-center gap-2">
+              <BrandWordmark light size="sm" />
+              <button onClick={() => setSidebarOpen(false)} className="ml-auto text-white/85 hover:text-white lg:hidden">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-3 h-px w-16 bg-[#d4bb7d]/80" />
+            <p className="mt-3 text-[11px] uppercase tracking-[0.34em] text-white/50">
+              Kenya & diaspora planning
+            </p>
           </div>
 
           {profile && (
             <div className="border-b border-white/12 bg-white/[0.06] px-4 py-4 sm:px-6">
               <p className="text-sm font-semibold text-white">{profile.full_name || 'Welcome!'}</p>
-              <p className="text-xs font-medium text-white/74 capitalize">
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#d9c4a2]/80">
                 {professionalSetupPending ? 'Professional Account' : `${profile.role} Account`}
                 {isSuperAdmin && rolePreview !== 'admin' ? ` · previewing as ${rolePreview}` : ''}
               </p>
@@ -390,15 +396,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 flex flex-col min-h-screen">
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur-sm lg:hidden">
+      <main className="flex min-h-screen flex-1 flex-col bg-[radial-gradient(circle_at_top,rgba(227,144,100,0.08),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,237,0.96))]">
+        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-[#eadbca] bg-background/90 px-4 py-3 shadow-[0_10px_30px_rgba(28,22,18,0.04)] backdrop-blur-sm lg:hidden">
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
-          <div className="flex items-center gap-2">
-            <Heart className="h-5 w-5 text-primary" fill="currentColor" />
-            <span className="font-display text-base font-semibold">Zania</span>
-          </div>
+          <BrandWordmark size="sm" />
           {isPlanner && selectedClient && (
             <Badge variant="outline" className="ml-auto text-xs truncate max-w-[120px]">
               {selectedClient.client_name}
@@ -407,7 +410,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
         <div className="flex-1 p-4 sm:p-6 lg:p-8">
           {isSuperAdmin && (
-            <div className="mb-6 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4">
+            <div className="mb-6 rounded-[26px] border border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(227,144,100,0.16),transparent_28%),linear-gradient(180deg,rgba(255,251,247,0.95),rgba(250,244,236,0.92))] px-4 py-4 shadow-[0_18px_42px_rgba(28,22,18,0.06)]">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
@@ -436,7 +439,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           )}
-          {children}
+          <div className="mx-auto w-full max-w-[1680px]">
+            {children}
+          </div>
           <AssistantPanel role={profile?.role} plannerType={profile?.planner_type as PlannerType | null | undefined} />
         </div>
       </main>

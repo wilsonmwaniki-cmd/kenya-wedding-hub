@@ -1265,7 +1265,7 @@ export default function Tasks() {
                 </h2>
               </div>
               {selectedTask?.completed ? (
-                <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                <Badge className="rounded-full border border-primary/20 bg-primary/10 text-primary hover:bg-primary/10">
                   Done
                 </Badge>
               ) : selectedTask ? (

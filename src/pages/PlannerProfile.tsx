@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Heart, Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, CheckCircle2, Clock, Sparkles, MapPin } from 'lucide-react';
+import { Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, CheckCircle2, Clock, Sparkles, MapPin } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
+import BrandWordmark from '@/components/BrandWordmark';
 
 interface PlannerData {
   id: string;
@@ -138,8 +139,7 @@ export default function PlannerProfile() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-2">
-          <Heart className="h-5 w-5 text-primary" fill="currentColor" />
-          <span className="font-display text-base font-semibold text-foreground">Zania</span>
+          <BrandWordmark size="sm" className="shrink-0" />
           <Link to="/" className="ml-auto text-sm text-muted-foreground hover:text-foreground transition-colors">
             Home
           </Link>

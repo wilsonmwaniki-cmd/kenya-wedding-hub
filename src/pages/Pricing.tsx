@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, Heart, Loader2, Sparkles } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,6 +27,7 @@ import {
   type PricingCheckoutCadence,
 } from '@/lib/pricingPlans';
 import { startStripeCheckout, withCheckoutSessionId } from '@/lib/billing';
+import BrandWordmark from '@/components/BrandWordmark';
 
 const roleLabels = {
   couple: 'Couple',
@@ -806,9 +807,8 @@ export default function Pricing() {
     <div className="min-h-screen bg-[linear-gradient(180deg,#fcf8f3_0%,#fffdfa_24%,#ffffff_100%)] text-foreground">
       <nav className="sticky top-0 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <Link to="/" className="flex items-center gap-3">
-            <Heart className="h-5 w-5 text-primary" fill="currentColor" />
-            <span className="font-display text-2xl font-semibold text-foreground">Zania</span>
+          <Link to="/" className="inline-flex items-center">
+            <BrandWordmark size="md" />
           </Link>
           <div className="hidden items-center gap-8 md:flex">
             <Link to="/vendors-directory" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Vendors</Link>

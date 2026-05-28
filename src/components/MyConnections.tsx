@@ -528,7 +528,7 @@ export default function MyConnections() {
 
   return (
     <div className="space-y-4">
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-amber-50/60 shadow-card">
+      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
         <CardContent className="space-y-6 p-6 sm:p-8">
           <div className="space-y-3">
             <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-primary">

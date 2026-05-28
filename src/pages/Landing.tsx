@@ -5,7 +5,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserRoundPlus, LogIn } from 'lucide-react';
+import {
+  CheckCircle,
+  ArrowRight,
+  Loader2,
+  Calculator,
+  Sparkles,
+  UserRoundPlus,
+  LogIn,
+  Users,
+  Briefcase,
+  Store,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -13,35 +24,13 @@ import { getHomeRouteForRole } from '@/lib/roles';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
 import { saveEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 import heroImage from '@/assets/hero-wedding.jpg';
-
-const features = [
-  { icon: Wallet, title: 'Budget Tracking', desc: 'Keep your wedding finances organized with category-level tracking.' },
-  { icon: CheckCircle, title: 'Task Timeline', desc: 'Never miss a deadline with your personalized wedding checklist.' },
-  { icon: Users, title: 'Guest Management', desc: 'Track RSVPs, meal preferences, and seating assignments.' },
-  { icon: MessageSquare, title: 'AI Assistant', desc: 'Get instant help with Kenyan wedding planning tips and advice.' },
-];
+import BrandWordmark from '@/components/BrandWordmark';
 
 const heroStats = [
   { index: '01', title: 'Curated vendors', desc: 'Venues, florals, photography, and more across Kenya.' },
   { index: '02', title: 'Live budget signals', desc: 'Estimator intelligence grounded in real pricing data.' },
   { index: '03', title: 'Diaspora-ready', desc: 'Plan from anywhere while staying anchored at home.' },
 ];
-
-function LandingWordmark({ light = false }: { light?: boolean }) {
-  return (
-    <div className="inline-flex flex-col gap-3">
-      <div
-        aria-label="Zania"
-        className={`font-editorial text-[2.35rem] font-light uppercase leading-none tracking-[0.22em] ${light ? 'text-[#f6eee6]' : 'text-[#201814]'}`}
-      >
-        <span>Z</span>
-        <span className="text-[#d4bb7d]">A</span>
-        <span>NIA</span>
-      </div>
-      <div className={`h-[2px] w-20 ${light ? 'bg-[#c9a96e]' : 'bg-[#c2724f]'}`} />
-    </div>
-  );
-}
 
 function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'N/A';
@@ -541,7 +530,7 @@ export default function Landing() {
 
         <nav className="relative z-20">
           <div className="mx-auto flex max-w-[1680px] items-center justify-between gap-3 px-6 py-7 sm:px-8 lg:px-12 xl:px-16">
-            <LandingWordmark light />
+            <BrandWordmark light size="lg" />
             <Link to="/auth" className="inline-flex h-11 items-center rounded-sm border border-[#e4cf9e]/40 bg-[#d4bb7d]/95 px-5 text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#201814] transition-colors hover:bg-[#c2724f] hover:text-[#fffaf4] md:hidden">
               Sign In
             </Link>
@@ -645,99 +634,14 @@ export default function Landing() {
       </section>
 
       <section className="mx-auto max-w-[1500px] px-6 py-14 sm:px-8 sm:py-18 lg:px-12">
-        <div className="mb-10">
+        <div>
           <QuickSignupChooser />
-        </div>
-        <div className="text-center">
-          <p className="text-sm uppercase tracking-[0.22em] text-primary">Choose your starting point</p>
-          <h2 className="mt-5 font-display text-4xl font-semibold leading-tight sm:text-5xl">
-            Start with the part that matters <span className="italic font-normal">most</span>
-          </h2>
-          <p className="mx-auto mt-4 max-w-3xl text-lg text-muted-foreground">
-            Compare vendors, find the right planner, or turn your estimate into a workable wedding plan.
-          </p>
-        </div>
-
-        <div className="mt-12 grid gap-6 lg:mt-14 lg:gap-8 lg:grid-cols-3">
-          <Link to="/vendors-directory" className="group">
-            <Card className="h-full rounded-[28px] border-border/60 bg-card/95 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
-              <CardContent className="space-y-5 p-8">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
-                  <Store className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="font-display text-2xl font-semibold">Vendor Directory</h3>
-                  <p className="mt-3 text-base leading-8 text-muted-foreground">
-                    Browse vetted venues, caterers, photographers, florists, DJs, and more across Kenya.
-                  </p>
-                </div>
-                <div className="pt-4 text-sm font-medium uppercase tracking-[0.14em] text-primary">
-                  Browse vendors →
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link to="/planners" className="group">
-            <Card className="h-full rounded-[28px] border-border/60 bg-card/95 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
-              <CardContent className="space-y-5 p-8">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
-                  <Briefcase className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="font-display text-2xl font-semibold">Find a Planner</h3>
-                  <p className="mt-3 text-base leading-8 text-muted-foreground">
-                    Get matched with experienced wedding planners and coordinators who know your region and style.
-                  </p>
-                </div>
-                <div className="pt-4 text-sm font-medium uppercase tracking-[0.14em] text-primary">
-                  Explore planners →
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <a href="#cost-estimator" className="group">
-            <Card className="h-full rounded-[28px] border-border/60 bg-card/95 shadow-card transition-transform duration-200 group-hover:-translate-y-1">
-              <CardContent className="space-y-5 p-8">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-                  <Calculator className="h-6 w-6" />
-                </div>
-                <div>
-                  <h3 className="font-display text-2xl font-semibold">Cost Estimator</h3>
-                  <p className="mt-3 text-base leading-8 text-muted-foreground">
-                    Get realistic budget breakdowns tailored to your guest count, location, and wedding style.
-                  </p>
-                </div>
-                <div className="pt-4 text-sm font-medium uppercase tracking-[0.14em] text-primary">
-                  Estimate costs →
-                </div>
-              </CardContent>
-            </Card>
-          </a>
-        </div>
-
-        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:mt-16 lg:gap-6 lg:grid-cols-4">
-          {features.map((f, i) => (
-            <motion.div
-              key={f.title}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.08 }}
-              className="rounded-2xl border border-border/60 bg-card/90 p-6 shadow-sm"
-            >
-              <f.icon className="h-8 w-8 text-primary" />
-              <h3 className="mt-5 font-display text-xl font-semibold">{f.title}</h3>
-              <p className="mt-2 text-sm leading-7 text-muted-foreground">{f.desc}</p>
-            </motion.div>
-          ))}
         </div>
       </section>
 
       <footer className="bg-[#1c1612] px-6 py-8 text-[#f6eee6]">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-sm sm:flex-row lg:px-2">
-          <LandingWordmark light />
+          <BrandWordmark light size="md" />
           <div className="flex flex-col items-center gap-2 text-center text-[#f6eee6]/72 sm:items-end sm:text-right">
             <div className="flex items-center gap-4 text-xs uppercase tracking-[0.18em]">
               <Link to="/pricing" className="transition-opacity hover:opacity-100">

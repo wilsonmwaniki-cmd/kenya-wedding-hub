@@ -1583,8 +1583,8 @@ export default function Budget() {
               <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(invoiceTotal)}</p>
             </div>
             <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-emerald-600">Total payments made</p>
-              <p className="mt-2 text-2xl font-semibold text-emerald-600">{formatCurrency(currentScopePaymentTotal)}</p>
+              <p className="text-xs uppercase tracking-wide text-primary">Total payments made</p>
+              <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(currentScopePaymentTotal)}</p>
             </div>
             <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
               <p className="text-xs uppercase tracking-wide text-primary">Total balance</p>

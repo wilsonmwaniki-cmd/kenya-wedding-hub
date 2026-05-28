@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Briefcase, Copy, Eye, EyeOff, Heart, Loader2, RefreshCw, Users } from 'lucide-react';
+import { Briefcase, Copy, Eye, EyeOff, Loader2, RefreshCw, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import {
   type PendingWeddingSetup,
   type WeddingSignupIntent,
 } from '@/lib/weddingWorkspace';
+import BrandWordmark from '@/components/BrandWordmark';
 
 type AuthEntryState = {
   mode?: 'signup' | 'signin';
@@ -514,9 +515,8 @@ export default function Auth() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-warm p-4">
       <Card className="w-full max-w-2xl shadow-warm border-border/50">
         <CardHeader className="space-y-3 text-center">
-          <div className="mx-auto flex items-center gap-2">
-            <Heart className="h-7 w-7 text-primary" fill="currentColor" />
-            <span className="font-display text-2xl font-bold text-foreground">Zania</span>
+          <div className="mx-auto">
+            <BrandWordmark size="md" />
           </div>
           <CardTitle className="font-display text-xl">
             {isForgot

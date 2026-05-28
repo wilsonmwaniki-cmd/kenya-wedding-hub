@@ -461,8 +461,8 @@ export default function VendorDashboard() {
 
   const statusColor = (status: string | null) => {
     switch (status) {
-      case 'booked': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400';
-      case 'contacted': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
+      case 'booked': return 'bg-primary/10 text-primary border border-primary/20';
+      case 'contacted': return 'bg-accent/20 text-foreground border border-accent/35';
       case 'rejected': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
       default: return 'bg-muted text-muted-foreground';
     }
@@ -742,8 +742,8 @@ export default function VendorDashboard() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-foreground">{r.requester_name}</span>
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          r.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
-                          r.status === 'accepted' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                          r.status === 'pending' ? 'bg-accent/20 text-foreground border border-accent/35' :
+                          r.status === 'accepted' ? 'bg-primary/10 text-primary border border-primary/20' :
                           'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                         }`}>
                           {r.status}
@@ -923,8 +923,8 @@ export default function VendorDashboard() {
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payments</p>
                               <div className="mt-2 space-y-1 text-sm text-foreground">
                                 <p>KES {(b.price ?? 0).toLocaleString()} quoted</p>
-                                <p className="text-emerald-600">KES {(paymentSummary.totalPaid || 0).toLocaleString()} paid</p>
-                                <p className="text-amber-700">KES {outstandingBalance.toLocaleString()} balance</p>
+                                <p className="text-primary">KES {(paymentSummary.totalPaid || 0).toLocaleString()} paid</p>
+                                <p className="text-accent-foreground">KES {outstandingBalance.toLocaleString()} balance</p>
                               </div>
                             </div>
                           </div>
@@ -1060,7 +1060,7 @@ export default function VendorDashboard() {
                         </div>
                         <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Outstanding balance</p>
-                          <p className="mt-2 text-sm font-medium text-amber-700">
+                          <p className="mt-2 text-sm font-medium text-accent-foreground">
                             KES {Math.max((selectedBooking.price ?? 0) - ((paymentSummaryByBookingId[selectedBooking.id]?.totalPaid || 0)), 0).toLocaleString()}
                           </p>
                         </div>

@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Heart, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import BrandWordmark from '@/components/BrandWordmark';
 
 export default function ResetPassword() {
   const [password, setPassword] = useState('');
@@ -139,10 +140,7 @@ export default function ResetPassword() {
       <div className="flex min-h-screen items-center justify-center bg-gradient-warm p-4">
         <Card className="w-full max-w-md shadow-warm border-border/50">
           <CardHeader className="text-center space-y-3">
-            <div className="mx-auto flex items-center gap-2">
-              <Heart className="h-7 w-7 text-primary" fill="currentColor" />
-              <span className="font-display text-2xl font-bold text-foreground">Zania</span>
-            </div>
+            <BrandWordmark size="md" />
             <CardTitle className="font-display text-xl">Reset Password</CardTitle>
             <CardDescription>Loading your recovery session...</CardDescription>
           </CardHeader>
@@ -159,10 +157,7 @@ export default function ResetPassword() {
       <div className="flex min-h-screen items-center justify-center bg-gradient-warm p-4">
         <Card className="w-full max-w-md shadow-warm border-border/50">
           <CardHeader className="text-center space-y-3">
-            <div className="mx-auto flex items-center gap-2">
-              <Heart className="h-7 w-7 text-primary" fill="currentColor" />
-              <span className="font-display text-2xl font-bold text-foreground">Zania</span>
-            </div>
+            <BrandWordmark size="md" />
             <CardTitle className="font-display text-xl">Reset Link Invalid</CardTitle>
             <CardDescription>
               This reset link is invalid or expired. Please request a new password reset email.
@@ -185,10 +180,7 @@ export default function ResetPassword() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-warm p-4">
       <Card className="w-full max-w-md shadow-warm border-border/50">
         <CardHeader className="text-center space-y-3">
-          <div className="mx-auto flex items-center gap-2">
-            <Heart className="h-7 w-7 text-primary" fill="currentColor" />
-            <span className="font-display text-2xl font-bold text-foreground">Zania</span>
-          </div>
+          <BrandWordmark size="md" />
           <CardTitle className="font-display text-xl">Set New Password</CardTitle>
           <CardDescription>Enter your new password below</CardDescription>
         </CardHeader>
