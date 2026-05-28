@@ -307,10 +307,10 @@ export default function AssistantPanel({
             transition={{ type: 'spring', stiffness: 220, damping: 24 }}
             whileHover={{ y: -4, scale: 1.01 }}
             whileTap={{ scale: 0.98 }}
-            className={`fixed bottom-4 right-4 z-30 w-[calc(100vw-2rem)] max-w-[390px] overflow-hidden rounded-[1.55rem] border border-white/[0.18] bg-[radial-gradient(circle_at_82%_18%,rgba(255,255,255,0.34),transparent_34%),radial-gradient(circle_at_18%_115%,rgba(238,202,160,0.32),transparent_42%),linear-gradient(135deg,rgba(80,75,64,0.78),rgba(185,155,119,0.60)_50%,rgba(76,87,65,0.78))] p-3.5 text-left text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_18px_46px_rgba(49,41,33,0.22)] backdrop-blur-[24px] sm:max-w-[440px] sm:rounded-[1.75rem] sm:p-4 lg:bottom-4 lg:right-4 ${
+            className={`fixed bottom-4 right-4 z-30 w-[calc(100vw-2rem)] max-w-[390px] overflow-hidden rounded-[1.55rem] border border-white/[0.18] bg-[radial-gradient(circle_at_82%_18%,rgba(255,255,255,0.34),transparent_34%),radial-gradient(circle_at_18%_115%,rgba(238,202,160,0.32),transparent_42%),linear-gradient(135deg,rgba(80,75,64,0.78),rgba(185,155,119,0.60)_50%,rgba(76,87,65,0.78))] p-3.5 text-left text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_18px_46px_rgba(49,41,33,0.22)] backdrop-blur-[24px] sm:max-w-[420px] sm:rounded-[1.65rem] sm:p-3.5 lg:bottom-4 lg:right-4 ${
               compactDesktopLauncher
-                ? 'lg:w-[186px] lg:max-w-[186px] lg:rounded-[1.05rem] lg:px-2.5 lg:py-2'
-                : 'lg:w-[272px] lg:max-w-[272px] lg:rounded-[1.35rem] lg:p-2.5'
+                ? 'lg:w-[172px] lg:max-w-[172px] lg:rounded-[1rem] lg:px-2.25 lg:py-1.75'
+                : 'lg:w-[232px] lg:max-w-[232px] lg:rounded-[1.2rem] lg:p-2'
             }`}
             aria-label="Open Ask Zania assistant"
             aria-expanded={assistantPanel.open}
@@ -318,13 +318,13 @@ export default function AssistantPanel({
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(118deg,transparent,rgba(255,255,255,0.20)_42%,transparent_66%)] opacity-75" />
             <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/[0.18]" />
             <div className={`relative flex items-center justify-between gap-3 ${
-              compactDesktopLauncher ? 'mb-2.5 sm:mb-3 lg:mb-0' : 'mb-2.5 sm:mb-3 lg:mb-1.5'
+              compactDesktopLauncher ? 'mb-2.5 sm:mb-3 lg:mb-0' : 'mb-2.5 sm:mb-3 lg:mb-1'
             }`}>
               <div className="flex items-baseline gap-x-3">
                 <span className={`shrink-0 font-display leading-none text-[#fff6e8] drop-shadow-sm ${
                   compactDesktopLauncher
-                    ? 'text-[1.45rem] sm:text-[1.65rem] lg:text-[0.94rem]'
-                    : 'text-[1.45rem] sm:text-[1.65rem] lg:text-[1.08rem]'
+                    ? 'text-[1.45rem] sm:text-[1.65rem] lg:text-[0.9rem]'
+                    : 'text-[1.45rem] sm:text-[1.65rem] lg:text-[0.96rem]'
                 }`}>
                   Ask Zania
                 </span>
@@ -333,22 +333,22 @@ export default function AssistantPanel({
                 </span>
               </div>
               <span className={`inline-flex items-center gap-2 font-medium text-[#fff6e8]/72 ${
-                compactDesktopLauncher ? 'text-[0.72rem] lg:text-[0.56rem]' : 'text-[0.72rem] lg:text-[0.62rem]'
+                compactDesktopLauncher ? 'text-[0.72rem] lg:text-[0.54rem]' : 'text-[0.72rem] lg:text-[0.58rem]'
               }`}>
                 <span className="h-2 w-2 rounded-full bg-[#d9f7cb]" />
                 Ready
               </span>
             </div>
-            <div className={`relative flex min-h-[3.7rem] items-center gap-3 rounded-[1.25rem] border border-white/45 bg-white/[0.08] px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:min-h-[4.2rem] sm:rounded-[1.45rem] sm:px-4 ${
-              compactDesktopLauncher ? 'lg:hidden' : 'lg:min-h-[2.85rem] lg:gap-2 lg:rounded-[1.1rem] lg:px-2.5 lg:py-1.5'
+            <div className={`relative flex min-h-[3.7rem] items-center gap-3 rounded-[1.25rem] border border-white/45 bg-white/[0.08] px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:min-h-[4rem] sm:rounded-[1.35rem] sm:px-4 ${
+              compactDesktopLauncher ? 'lg:hidden' : 'lg:min-h-[2.45rem] lg:gap-1.5 lg:rounded-[0.95rem] lg:px-2 lg:py-1.25'
             }`}>
-              <Bot className="h-[17px] w-[17px] shrink-0 text-[#fff6e8]/78 sm:h-[18px] sm:w-[18px] lg:h-[13px] lg:w-[13px]" />
-              <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium leading-none text-[#fff6e8]/90 sm:text-[1.08rem] lg:text-[0.8rem]">
+              <Bot className="h-[17px] w-[17px] shrink-0 text-[#fff6e8]/78 sm:h-[18px] sm:w-[18px] lg:h-[12px] lg:w-[12px]" />
+              <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium leading-none text-[#fff6e8]/90 sm:text-[1.03rem] lg:text-[0.72rem]">
                 {inputPlaceholder}
                 <span className="ml-0.5 animate-pulse">|</span>
               </span>
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff6e8]/16 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] sm:h-11 sm:w-11 lg:h-8 lg:w-8">
-                <Send className="h-[18px] w-[18px] lg:h-[13px] lg:w-[13px]" />
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff6e8]/16 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] sm:h-10 sm:w-10 lg:h-7 lg:w-7">
+                <Send className="h-[18px] w-[18px] lg:h-[12px] lg:w-[12px]" />
               </span>
             </div>
           </motion.button>
@@ -368,7 +368,7 @@ export default function AssistantPanel({
               role="dialog"
               aria-modal="true"
               aria-label="Ask Zania assistant"
-              className="pointer-events-auto relative flex h-[min(760px,calc(100dvh-0.75rem))] w-full max-w-[520px] flex-col overflow-hidden rounded-[1.75rem] border border-white/[0.18] bg-[radial-gradient(circle_at_78%_16%,rgba(255,255,255,0.36),transparent_32%),radial-gradient(circle_at_20%_118%,rgba(238,202,160,0.34),transparent_40%),linear-gradient(138deg,rgba(75,70,61,0.82),rgba(191,164,130,0.64)_48%,rgba(73,85,64,0.80))] text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_24px_70px_rgba(43,36,29,0.26)] backdrop-blur-[24px] sm:h-[min(680px,calc(100dvh-3rem))] sm:rounded-[1.85rem]"
+              className="pointer-events-auto relative flex h-[min(700px,calc(100dvh-0.75rem))] w-full max-w-[460px] flex-col overflow-hidden rounded-[1.65rem] border border-white/[0.18] bg-[radial-gradient(circle_at_78%_16%,rgba(255,255,255,0.36),transparent_32%),radial-gradient(circle_at_20%_118%,rgba(238,202,160,0.34),transparent_40%),linear-gradient(138deg,rgba(75,70,61,0.82),rgba(191,164,130,0.64)_48%,rgba(73,85,64,0.80))] text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_24px_70px_rgba(43,36,29,0.26)] backdrop-blur-[24px] sm:h-[min(620px,calc(100dvh-3rem))] sm:max-w-[500px] sm:rounded-[1.75rem]"
               initial={{ opacity: 0, y: 34, scale: 0.94, filter: 'blur(10px)' }}
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 24, scale: 0.95, filter: 'blur(8px)' }}
@@ -382,18 +382,18 @@ export default function AssistantPanel({
                 <span className="h-1.5 w-12 rounded-full bg-white/28" />
               </div>
 
-              <header className="relative border-b border-white/[0.14] px-4 pb-3.5 pt-4 sm:px-5 sm:pt-5">
+              <header className="relative border-b border-white/[0.14] px-4 pb-3 pt-4 sm:px-5 sm:pt-[1.125rem]">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex items-baseline gap-x-3">
-                      <h2 className="shrink-0 font-display text-[1.8rem] leading-none text-[#fff6e8] drop-shadow-sm sm:text-[2rem]">
+                      <h2 className="shrink-0 font-display text-[1.65rem] leading-none text-[#fff6e8] drop-shadow-sm sm:text-[1.8rem]">
                         Ask Zania
                       </h2>
                       <span className="min-w-0 truncate text-[0.58rem] font-semibold uppercase tracking-[0.30em] text-[#fff6e8]/68 sm:text-[0.64rem]">
                         Planning assistant
                       </span>
                     </div>
-                    <div className="mt-2 flex items-center gap-2 text-sm text-[#fff6e8]/72">
+                      <div className="mt-1.5 flex items-center gap-2 text-[0.85rem] text-[#fff6e8]/72">
                       <span className="h-2 w-2 rounded-full bg-[#d9f7cb]" />
                       Ready to help
                     </div>
@@ -485,7 +485,7 @@ export default function AssistantPanel({
                           key={prompt}
                           type="button"
                           onClick={() => void runAssistantPrompt(prompt, 'assistant_panel_suggestion')}
-                          className="min-w-[15rem] rounded-[1.1rem] border border-white/[0.28] bg-white/[0.09] px-3.5 py-2 text-left text-xs leading-5 text-[#fff6e8]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:bg-white/[0.15] sm:min-w-0 sm:flex-1"
+                          className="min-w-[13rem] rounded-[1rem] border border-white/[0.28] bg-white/[0.09] px-3 py-2 text-left text-[0.72rem] leading-5 text-[#fff6e8]/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:bg-white/[0.15] sm:min-w-0 sm:flex-1"
                         >
                           {prompt}
                         </button>
@@ -495,10 +495,10 @@ export default function AssistantPanel({
                 ) : null}
 
                 <footer className="relative border-t border-white/[0.14] px-4 pb-4 pt-3 sm:px-5">
-                  <div className="mb-3 rounded-[1.45rem] border border-white/[0.28] bg-white/[0.08] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
+                  <div className="mb-3 rounded-[1.35rem] border border-white/[0.28] bg-white/[0.08] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
                     <div className="flex min-h-[3.5rem] items-center gap-3">
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/[0.10] text-[#fff6e8]/80">
-                        <Bot className="h-[18px] w-[18px]" />
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/[0.10] text-[#fff6e8]/80">
+                        <Bot className="h-4 w-4" />
                       </div>
                       <Textarea
                         ref={inputRef}
@@ -511,7 +511,7 @@ export default function AssistantPanel({
                           }
                         }}
                         placeholder={inputPlaceholder}
-                        className="min-h-10 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-[0.98rem] font-medium leading-6 text-[#fff6e8] placeholder:text-[#fff6e8]/72 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        className="min-h-10 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-[0.92rem] font-medium leading-6 text-[#fff6e8] placeholder:text-[#fff6e8]/72 focus-visible:ring-0 focus-visible:ring-offset-0"
                         disabled={assistant.decision ? !assistant.canUseAssistant : false}
                       />
                       <Button
@@ -519,7 +519,7 @@ export default function AssistantPanel({
                         size="icon"
                         onClick={submitCustomPrompt}
                         disabled={assistantBusy || (!customPrompt.trim() && !activePrompt.trim()) || (assistant.decision ? !assistant.canUseAssistant : false)}
-                        className="h-11 w-11 shrink-0 rounded-full bg-[#fff6e8]/18 text-[#fff6e8] shadow-none backdrop-blur hover:bg-[#fff6e8]/26 disabled:opacity-50"
+                        className="h-10 w-10 shrink-0 rounded-full bg-[#fff6e8]/18 text-[#fff6e8] shadow-none backdrop-blur hover:bg-[#fff6e8]/26 disabled:opacity-50"
                         aria-label="Ask Zania"
                       >
                         {assistant.loading ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Send className="h-[18px] w-[18px]" />}
