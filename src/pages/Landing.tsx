@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Heart, CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserRoundPlus, LogIn } from 'lucide-react';
+import { CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefcase, Store, Calculator, Sparkles, UserRoundPlus, LogIn } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +27,17 @@ const heroHighlights = [
   { icon: Users, title: 'Shared planning', desc: 'Keep partners, planners, and committees aligned in one workspace.' },
   { icon: Briefcase, title: 'Diaspora-ready', desc: 'Plan from abroad while staying grounded in Kenya wedding logistics.' },
 ];
+
+function LandingWordmark({ light = false }: { light?: boolean }) {
+  return (
+    <div className="inline-flex flex-col gap-3">
+      <div className={`font-editorial text-[2.2rem] font-light uppercase tracking-[0.18em] ${light ? 'text-[#f6eee6]' : 'text-[#201814]'}`}>
+        Zania
+      </div>
+      <div className={`h-[2px] w-20 ${light ? 'bg-[#c9a96e]' : 'bg-[#c2724f]'}`} />
+    </div>
+  );
+}
 
 function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'N/A';
@@ -116,20 +127,20 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-        <Card className="border-white/30 bg-[rgba(43,28,24,0.62)] shadow-[0_28px_80px_rgba(57,38,31,0.24)] backdrop-blur-md">
+        <Card className="border-white/18 bg-[linear-gradient(180deg,rgba(30,22,19,0.92),rgba(42,30,25,0.88))] shadow-[0_28px_80px_rgba(20,12,10,0.3)] backdrop-blur-md">
         <CardContent className="space-y-4 p-5 sm:space-y-5 sm:p-7">
           <div className="flex items-start gap-3">
-            <div className="rounded-xl bg-white/12 p-2.5">
-              <Calculator className="h-5 w-5 text-white" />
+            <div className="rounded-xl bg-[#c9a96e]/15 p-2.5">
+              <Calculator className="h-5 w-5 text-[#ead4aa]" />
             </div>
             <div>
-              <h3 className="font-display text-[1.55rem] font-semibold leading-none text-white sm:text-[1.9rem]">Quick Cost Estimate</h3>
-              <p className="mt-2 text-sm font-medium text-white">Free, instant, and no sign-up required</p>
+              <h3 className="font-editorial text-[1.7rem] font-medium leading-none text-[#f7efe7] sm:text-[2.2rem]">Quick Cost Estimate</h3>
+              <p className="mt-2 text-xs font-medium uppercase tracking-[0.24em] text-[#dcb188]">Free, instant, and no sign-up required</p>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-white/90">Number of guests</Label>
+            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]/88">Number of guests</Label>
             <Select value={guestCount} onValueChange={setGuestCount}>
               <SelectTrigger className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12">
                 <SelectValue />
@@ -145,7 +156,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="hero-county" className="text-xs font-semibold uppercase tracking-[0.16em] text-white/90">County</Label>
+            <Label htmlFor="hero-county" className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]/88">County</Label>
             <Input
               id="hero-county"
               value={county}
@@ -156,7 +167,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-white/90">Wedding style</Label>
+            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]/88">Wedding style</Label>
             <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
               <SelectTrigger className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -168,32 +179,32 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
             </Select>
           </div>
 
-          <Button onClick={() => void loadEstimate()} className="h-11 w-full gap-2 sm:h-12" disabled={loadingEstimate}>
+          <Button onClick={() => void loadEstimate()} className="h-11 w-full gap-2 border border-[#ce7d57] bg-[#c2724f] text-[#fff8f1] hover:bg-[#a85c3c] sm:h-12" disabled={loadingEstimate}>
             {loadingEstimate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             Get Estimate
           </Button>
 
-          <div className="rounded-2xl border border-white/20 bg-black/30 p-4">
-            <p className="text-sm font-medium text-white">Estimated total budget</p>
-            <p className="mt-1 font-display text-3xl font-bold text-white">{formatCurrency(totals.suggested)}</p>
-            <p className="mt-2 text-xs font-medium text-white/90">
+          <div className="rounded-2xl border border-[#ead7c4]/14 bg-[rgba(15,10,8,0.28)] p-4">
+            <p className="text-sm font-medium text-[#f7efe7]">Estimated total budget</p>
+            <p className="mt-1 font-editorial text-3xl font-semibold text-[#fff8f1]">{formatCurrency(totals.suggested)}</p>
+            <p className="mt-2 text-xs font-medium text-[#f7efe7]/78">
               Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/20 bg-white/10 p-4">
-            <p className="text-sm font-medium text-white">What your estimate includes</p>
-            <div className="mt-3 grid gap-2 text-xs text-white/85 sm:grid-cols-2">
+          <div className="rounded-2xl border border-[#ead7c4]/14 bg-[rgba(255,255,255,0.05)] p-4">
+            <p className="text-sm font-medium text-[#f7efe7]">What your estimate includes</p>
+            <div className="mt-3 grid gap-2 text-xs text-[#f7efe7]/85 sm:grid-cols-2">
               {estimateRows.slice(0, 4).map((row) => (
-                <div key={row.category} className="rounded-xl border border-white/20 bg-black/20 px-3 py-2">
-                  <p className="font-medium text-white">{row.category}</p>
-                  <p className="font-medium text-white/90">{formatCurrency(row.suggested_amount)}</p>
+                <div key={row.category} className="rounded-xl border border-[#ead7c4]/12 bg-[rgba(13,10,8,0.24)] px-3 py-2">
+                  <p className="font-medium text-[#fff8f1]">{row.category}</p>
+                  <p className="font-medium text-[#f4dfc8]">{formatCurrency(row.suggested_amount)}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <Button variant="outline" className="h-11 w-full gap-2" onClick={handleTurnIntoPlan} disabled={startingPlan}>
+          <Button variant="outline" className="h-11 w-full gap-2 border-[#ead7c4]/24 bg-[#f6efe8] text-[#241814] hover:bg-[#eadfcf]" onClick={handleTurnIntoPlan} disabled={startingPlan}>
             {startingPlan ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             <span>Turn This Into a Plan</span>
             {!startingPlan && <ArrowRight className="h-4 w-4" />}
@@ -334,24 +345,24 @@ function QuickSignupChooser() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: 0.4 }}
     >
-      <div className="rounded-[28px] border border-border/60 bg-card/95 p-5 shadow-warm backdrop-blur-sm">
+      <div className="rounded-[30px] border border-[#ead7c4]/32 bg-[linear-gradient(180deg,#f8f2ea,#f1e5d7)] p-5 shadow-[0_28px_60px_rgba(42,25,20,0.16)] backdrop-blur-sm">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Start here</p>
-          <h3 className="font-display text-2xl font-semibold text-card-foreground">Start planning in Kenya or from abroad</h3>
-          <p className="text-sm leading-relaxed text-muted-foreground">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#c2724f]">Start here</p>
+          <h3 className="font-editorial text-[2rem] font-medium leading-none text-[#201814]">Start planning in Kenya or from abroad</h3>
+          <p className="text-sm leading-relaxed text-[#6f5747]">
             Choose the path that matches you and we’ll open the right workspace.
           </p>
         </div>
 
         <div className="mt-4 grid gap-4">
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+          <div className="rounded-[24px] border border-[#d9b79d] bg-[rgba(255,255,255,0.45)] p-4 shadow-[0_12px_28px_rgba(194,114,79,0.1)]">
             <div className="flex items-start gap-3">
-              <div className="rounded-xl bg-primary/10 p-2">
-                <Users className="h-4 w-4 text-primary" />
+              <div className="rounded-xl bg-[#c2724f]/10 p-2">
+                <Users className="h-4 w-4 text-[#a85c3c]" />
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-semibold text-foreground">For couples</p>
-                <p className="text-xs leading-relaxed text-muted-foreground">
+                <p className="text-sm font-semibold text-[#201814]">For couples</p>
+                <p className="text-xs leading-relaxed text-[#6f5747]">
                   Create your shared wedding workspace, invite your partner, and keep planning together.
                 </p>
               </div>
@@ -378,7 +389,7 @@ function QuickSignupChooser() {
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <Button
                 variant="outline"
-                className="gap-2"
+                className="gap-2 border-[#d6b698] bg-[#fffaf4] text-[#241814] hover:bg-[#f3e5d7]"
                 onClick={() =>
                   navigate('/auth', {
                     state: {
@@ -394,7 +405,7 @@ function QuickSignupChooser() {
               <Button
                 type="button"
                 variant="ghost"
-                className="justify-start px-0 text-primary hover:bg-transparent hover:text-primary/80"
+                className="justify-start px-0 text-[#a85c3c] hover:bg-transparent hover:text-[#8f4f34]"
                 onClick={() =>
                   navigate('/auth', {
                     state: {
@@ -409,19 +420,19 @@ function QuickSignupChooser() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-background px-4 py-4">
+          <div className="rounded-[24px] border border-[#dfd3c5] bg-[#fffdf9] px-4 py-4">
             <div className="flex items-center gap-2">
-              <Briefcase className="h-4 w-4 text-primary" />
-              <p className="text-sm font-medium text-foreground">For wedding professionals</p>
+              <Briefcase className="h-4 w-4 text-[#a85c3c]" />
+              <p className="text-sm font-medium text-[#201814]">For wedding professionals</p>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-[#6f5747]">
               Open a planner or vendor workspace without mixing it into a couple account.
             </p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <Button
                 type="button"
                 variant="outline"
-                className="gap-2"
+                className="gap-2 border-[#d6b698] bg-[#fffaf4] text-[#241814] hover:bg-[#f3e5d7]"
                 onClick={() =>
                   navigate('/auth', {
                     state: {
@@ -438,7 +449,7 @@ function QuickSignupChooser() {
               <Button
                 type="button"
                 variant="outline"
-                className="gap-2"
+                className="gap-2 border-[#d6b698] bg-[#fffaf4] text-[#241814] hover:bg-[#f3e5d7]"
                 onClick={() =>
                   navigate('/auth', {
                     state: {
@@ -457,7 +468,7 @@ function QuickSignupChooser() {
               <Button
                 type="button"
                 variant="secondary"
-                className="gap-2"
+                className="gap-2 bg-[#f1e5d7] text-[#3a2720] hover:bg-[#ead8c4]"
                 onClick={() =>
                   navigate('/auth', {
                     state: {
@@ -474,7 +485,7 @@ function QuickSignupChooser() {
               <Button
                 type="button"
                 variant="secondary"
-                className="gap-2"
+                className="gap-2 bg-[#f1e5d7] text-[#3a2720] hover:bg-[#ead8c4]"
                 onClick={() =>
                   navigate('/auth', {
                     state: {
@@ -512,22 +523,19 @@ export default function Landing() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#fcf8f3_0%,#fffdfa_24%,#ffffff_100%)] text-foreground">
-      <nav className="sticky top-0 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f9f3ec_0%,#f6f1e8_18%,#fbf8f4_38%,#ffffff_100%)] text-foreground">
+      <nav className="sticky top-0 z-20 border-b border-[#eadfce] bg-[rgba(249,243,236,0.95)] backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <Heart className="h-5 w-5 text-primary" fill="currentColor" />
-            <span className="font-display text-2xl font-semibold text-foreground">Zania</span>
-          </div>
+          <LandingWordmark />
           <Link to="/auth" className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 md:hidden">
             Sign In
           </Link>
           <div className="hidden items-center gap-8 md:flex">
-            <Link to="/vendors-directory" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Vendors</Link>
-            <Link to="/planners" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Planners</Link>
-            <Link to="/pricing" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Pricing</Link>
-            <a href="#cost-estimator" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Cost Estimator</a>
-            <Link to="/auth" className="inline-flex h-10 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
+            <Link to="/vendors-directory" className="text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#7a5c48] transition-colors hover:text-[#c2724f]">Vendors</Link>
+            <Link to="/planners" className="text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#7a5c48] transition-colors hover:text-[#c2724f]">Planners</Link>
+            <Link to="/pricing" className="text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#7a5c48] transition-colors hover:text-[#c2724f]">Pricing</Link>
+            <a href="#cost-estimator" className="text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#7a5c48] transition-colors hover:text-[#c2724f]">Cost Estimator</a>
+            <Link to="/auth" className="inline-flex h-10 items-center rounded-sm bg-[#d4bb7d] px-6 text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#201814] transition-colors hover:bg-[#c2724f] hover:text-[#fffaf4]">
               Sign In
             </Link>
           </div>
@@ -535,17 +543,26 @@ export default function Landing() {
       </nav>
 
       <section className="mx-auto max-w-7xl px-4 pt-6 sm:px-6 sm:pt-8 lg:px-8 lg:pt-10">
-        <div className="overflow-hidden rounded-[24px] border border-border/40 shadow-[0_30px_80px_rgba(62,39,35,0.18)] sm:rounded-[34px]">
-          <div className="relative min-h-[640px] sm:min-h-[760px]">
+        <div className="overflow-hidden rounded-[24px] border border-[#3f2c24] shadow-[0_40px_110px_rgba(35,24,20,0.24)] sm:rounded-[34px]">
+          <div className="relative min-h-[640px] bg-[#1c1612] sm:min-h-[760px]">
+            <div className="absolute inset-x-0 top-0 z-[1] h-3 bg-[linear-gradient(90deg,#6e4432_0%,#2d211c_20%,#2d211c_80%,#c9a96e_100%)]" />
             <img src={heroImage} alt="Kenyan wedding floral arrangement" className="absolute inset-0 h-full w-full object-cover" />
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(42,28,24,0.74)_0%,rgba(42,28,24,0.52)_38%,rgba(42,28,24,0.3)_100%)]" />
-            <div className="relative grid min-h-[640px] gap-6 px-4 py-5 sm:min-h-[760px] sm:px-6 sm:py-8 lg:grid-cols-[1.02fr_0.98fr] lg:gap-10 lg:px-16 lg:py-12">
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(22,17,14,0.9)_0%,rgba(28,22,18,0.84)_32%,rgba(28,22,18,0.55)_55%,rgba(28,22,18,0.68)_100%)]" />
+            <div className="relative grid min-h-[640px] gap-6 px-4 py-5 sm:min-h-[760px] sm:px-6 sm:py-8 lg:grid-cols-[1.08fr_0.92fr] lg:gap-10 lg:px-14 lg:py-14">
               <div className="flex flex-col justify-center text-primary-foreground">
+                <motion.div
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                  className="mb-12 hidden lg:block"
+                >
+                  <LandingWordmark light />
+                </motion.div>
                 <motion.p
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5 }}
-                  className="text-sm uppercase tracking-[0.35em] text-primary-foreground/80"
+                  className="text-xs uppercase tracking-[0.35em] text-[#ce8d68]"
                 >
                   Plan weddings in Kenya and the diaspora
                 </motion.p>
@@ -553,39 +570,42 @@ export default function Landing() {
                   initial={{ opacity: 0, y: 18 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: 0.1 }}
-                  className="mt-5 max-w-4xl font-display text-[2.7rem] font-semibold leading-[0.95] sm:mt-6 sm:text-6xl xl:text-[5rem]"
+                  className="mt-5 max-w-4xl font-editorial text-[3rem] font-medium leading-[0.9] tracking-[-0.015em] text-[#f6eee6] sm:mt-6 sm:text-6xl xl:text-[5.35rem]"
                 >
-                  Plan your wedding in Kenya,
+                  Your wedding,
                   <br />
-                  <span className="italic font-normal">whether you're home or abroad.</span>
+                  <span className="text-[#f6eee6]">planned </span>
+                  <span className="italic font-normal text-[#d4bb7d]">your</span>
+                  <br />
+                  <span className="font-normal text-[#f6eee6]">way.</span>
                 </motion.h1>
                 <motion.p
                   initial={{ opacity: 0, y: 18 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: 0.2 }}
-                  className="mt-5 max-w-2xl text-lg leading-relaxed text-primary-foreground/86 sm:mt-6 sm:text-xl"
+                  className="mt-5 max-w-xl text-lg leading-relaxed text-[#f6eee6]/74 sm:mt-7 sm:text-xl"
                 >
-                  Zania helps couples, planners, and committees compare trusted vendors, estimate realistic budgets, and coordinate every decision in one shared wedding workspace built for Kenya.
+                  Built for couples planning in Kenya and across the diaspora, Zania brings budgeting, vendors, guests, timelines, and shared decisions into one refined planning workspace.
                 </motion.p>
 
                 <motion.div
                   initial={{ opacity: 0, y: 18 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: 0.26 }}
-                  className="mt-7 grid max-w-3xl gap-3 sm:grid-cols-2"
+                  className="mt-8 grid max-w-3xl gap-3 sm:grid-cols-2"
                 >
                   {heroHighlights.map(({ icon: Icon, title, desc }) => (
                     <div
                       key={title}
-                      className="rounded-2xl border border-white/18 bg-white/10 px-4 py-4 backdrop-blur-sm"
+                      className="rounded-[22px] border border-[#ead7c4]/14 bg-[rgba(255,255,255,0.06)] px-4 py-4 backdrop-blur-sm"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="rounded-xl bg-white/12 p-2.5">
-                          <Icon className="h-4 w-4 text-white" />
+                        <div className="rounded-xl bg-[#d4bb7d]/12 p-2.5">
+                          <Icon className="h-4 w-4 text-[#e8cf9f]" />
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-white">{title}</p>
-                          <p className="mt-1 text-sm leading-6 text-white/78">{desc}</p>
+                          <p className="text-sm font-semibold text-[#fff8f1]">{title}</p>
+                          <p className="mt-1 text-sm leading-6 text-[#f6eee6]/68">{desc}</p>
                         </div>
                       </div>
                     </div>
@@ -599,17 +619,17 @@ export default function Landing() {
                   className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap sm:gap-4"
                 >
                   <Link to="/vendors-directory">
-                    <Button variant="outline" className="h-12 w-full border-white/40 bg-white/8 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white sm:min-w-[200px] sm:w-auto">
+                    <Button variant="outline" className="h-12 w-full rounded-sm border-[#e3cfb7]/28 bg-[rgba(255,255,255,0.05)] px-6 text-[0.72rem] font-medium uppercase tracking-[0.2em] text-[#fff8f1] backdrop-blur hover:bg-[rgba(255,255,255,0.12)] hover:text-white sm:min-w-[200px] sm:w-auto">
                       Vendor Directory
                     </Button>
                   </Link>
                   <Link to="/planners">
-                    <Button variant="outline" className="h-12 w-full border-white/40 bg-white/8 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white sm:min-w-[200px] sm:w-auto">
+                    <Button variant="outline" className="h-12 w-full rounded-sm border-[#e3cfb7]/28 bg-[rgba(255,255,255,0.05)] px-6 text-[0.72rem] font-medium uppercase tracking-[0.2em] text-[#fff8f1] backdrop-blur hover:bg-[rgba(255,255,255,0.12)] hover:text-white sm:min-w-[200px] sm:w-auto">
                       Find a Planner
                     </Button>
                   </Link>
                   <a href="#cost-estimator">
-                    <Button variant="outline" className="h-12 w-full border-white/40 bg-white/8 px-6 text-base text-white backdrop-blur hover:bg-white/18 hover:text-white sm:min-w-[200px] sm:w-auto">
+                    <Button variant="outline" className="h-12 w-full rounded-sm border-[#e3cfb7]/28 bg-[rgba(255,255,255,0.05)] px-6 text-[0.72rem] font-medium uppercase tracking-[0.2em] text-[#fff8f1] backdrop-blur hover:bg-[rgba(255,255,255,0.12)] hover:text-white sm:min-w-[200px] sm:w-auto">
                       Cost Estimator
                     </Button>
                   </a>
@@ -617,7 +637,7 @@ export default function Landing() {
               </div>
 
               <div id="cost-estimator" className="flex items-center lg:justify-end">
-                <div className="w-full max-w-[600px] space-y-5">
+                <div className="w-full max-w-[610px] space-y-5 lg:rounded-[28px] lg:border lg:border-[#ead7c4]/10 lg:bg-[linear-gradient(180deg,rgba(28,22,18,0.5),rgba(28,22,18,0.74))] lg:p-5 lg:shadow-[0_24px_70px_rgba(12,8,7,0.24)] lg:backdrop-blur-sm">
                   <PublicBudgetEstimator compact />
                   <QuickSignupChooser />
                 </div>
@@ -715,11 +735,11 @@ export default function Landing() {
         </div>
       </section>
 
-      <footer className="bg-primary px-6 py-8 text-primary-foreground">
+      <footer className="bg-[#1c1612] px-6 py-8 text-[#f6eee6]">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-sm sm:flex-row lg:px-2">
-          <div className="font-display text-2xl font-semibold">Zania</div>
-          <div className="flex flex-col items-center gap-2 text-center text-primary-foreground/80 sm:items-end sm:text-right">
-            <div className="flex items-center gap-4 text-xs uppercase tracking-[0.14em]">
+          <LandingWordmark light />
+          <div className="flex flex-col items-center gap-2 text-center text-[#f6eee6]/72 sm:items-end sm:text-right">
+            <div className="flex items-center gap-4 text-xs uppercase tracking-[0.18em]">
               <Link to="/pricing" className="transition-opacity hover:opacity-100">
                 Pricing
               </Link>
@@ -727,7 +747,7 @@ export default function Landing() {
                 Sign In
               </Link>
             </div>
-            © {new Date().getFullYear()} Zania. Wedding planning for Kenya.
+            © {new Date().getFullYear()} Zania. Wedding planning for Kenya and the diaspora.
           </div>
         </div>
       </footer>
