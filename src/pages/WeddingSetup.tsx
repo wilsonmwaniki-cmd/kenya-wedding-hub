@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import BrandWordmark from '@/components/BrandWordmark';
 import {
   clearPendingWeddingSetup,
   completePendingWeddingSetup,
@@ -379,11 +380,8 @@ export default function WeddingSetup() {
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="rounded-[2rem] border border-border/60 bg-[linear-gradient(180deg,rgba(75,52,43,0.96),rgba(91,64,52,0.94))] p-5 text-[#fff7ed] shadow-[0_22px_60px_rgba(40,22,16,0.24)]">
           <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#f17a35]/22 text-[#ffd7bf]">
-              <Heart className="h-5 w-5" fill="currentColor" />
-            </span>
             <div>
-              <p className="font-display text-2xl font-semibold">Zania</p>
+              <BrandWordmark light size="md" />
               <p className="text-sm text-[#f8dcc8]/72">Wedding setup</p>
             </div>
           </div>

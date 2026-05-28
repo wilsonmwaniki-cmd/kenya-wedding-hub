@@ -1878,7 +1878,7 @@ export default function Vendors() {
         {!selectedVendor ? (
           <>
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_360px]">
-              <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-amber-50/70 shadow-card">
+              <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
                 <CardContent className="p-6 sm:p-8">
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-primary">
@@ -2366,7 +2366,7 @@ export default function Vendors() {
                         value={notesDrafts[selectedVendor.id] ?? ''}
                         onChange={(event) => setNotesDrafts((prev) => ({ ...prev, [selectedVendor.id]: event.target.value }))}
                         placeholder="Add notes about this vendor, your impressions, or follow-up items..."
-                        className="min-h-40 bg-amber-50/70 text-base"
+                        className="min-h-40 bg-accent/10 text-base"
                       />
                       <div className="flex justify-end">
                         <Button
@@ -2498,8 +2498,8 @@ export default function Vendors() {
                     <CardContent className="flex flex-col gap-4 py-6 lg:flex-row lg:items-center lg:justify-between">
                       <div className="space-y-2">
                         <p className="text-2xl text-foreground"><span className="font-semibold">Total Invoice:</span> {formatCurrency(selectedVendorPaymentSummary.invoiceTotal)}</p>
-                        <p className="text-2xl font-semibold text-green-600">Total Paid: {formatCurrency(selectedVendorPaymentSummary.totalPaid)}</p>
-                        <p className="text-2xl font-semibold text-orange-600">Balance: {formatCurrency(selectedVendorPaymentSummary.balance)}</p>
+                        <p className="text-2xl font-semibold text-primary">Total Paid: {formatCurrency(selectedVendorPaymentSummary.totalPaid)}</p>
+                        <p className="text-2xl font-semibold text-accent-foreground">Balance: {formatCurrency(selectedVendorPaymentSummary.balance)}</p>
                       </div>
                       <Dialog open={recordVendorPaymentOpen} onOpenChange={setRecordVendorPaymentOpen}>
                         <DialogTrigger asChild>

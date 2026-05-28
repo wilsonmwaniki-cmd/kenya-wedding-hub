@@ -8,12 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Heart, Search, Loader2, Store, ArrowLeft, CheckCircle2, MapPin, Star } from 'lucide-react';
+import { Search, Loader2, Store, ArrowLeft, CheckCircle2, MapPin, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
 import VendorInterestButton from '@/components/VendorInterestButton';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { vendorHasFullAccess } from '@/lib/vendorAccess';
 import { formatBudgetBand, getBudgetFit, getLocationMatch, getTownsForCounty, kenyaCounties } from '@/lib/kenyaLocations';
+import BrandWordmark from '@/components/BrandWordmark';
 
 const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -206,8 +207,7 @@ export default function VendorDirectory() {
     <div className="min-h-screen bg-background">
       <nav className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-6 lg:px-12">
         <Link to="/" className="flex items-center gap-2">
-          <Heart className="h-6 w-6 text-primary" fill="currentColor" />
-          <span className="font-display text-xl font-bold text-foreground">Zania</span>
+          <BrandWordmark size="sm" className="shrink-0" />
         </Link>
         <div className="flex items-center gap-3">
           <Link to="/">
@@ -468,10 +468,10 @@ export default function VendorDirectory() {
       </section>
 
       <footer className="border-t border-border px-4 py-8 text-center text-sm text-muted-foreground sm:px-6">
-        <div className="flex items-center justify-center gap-2">
-          <Heart className="h-4 w-4 text-primary" fill="currentColor" />
-          <span>Zania © {new Date().getFullYear()}</span>
+        <div className="flex items-center justify-center">
+          <BrandWordmark size="sm" showUnderline={false} className="origin-center scale-[0.9]" />
         </div>
+        <p className="mt-2">Zania © {new Date().getFullYear()}</p>
       </footer>
     </div>
   );

@@ -15,7 +15,7 @@
     --popover: 30 20% 99%;
     --popover-foreground: 20 25% 12%;
 
-    --primary: 15 65% 52%;
+    --primary: 19 50% 54%;
     --primary-foreground: 30 25% 97%;
 
     --secondary: 35 45% 90%;
@@ -24,7 +24,7 @@
     --muted: 30 15% 93%;
     --muted-foreground: 20 10% 45%;
 
-    --accent: 38 75% 55%;
+    --accent: 42 48% 66%;
     --accent-foreground: 20 25% 12%;
 
     --destructive: 0 72% 51%;
@@ -38,19 +38,19 @@
 
     --sidebar-background: 20 20% 14%;
     --sidebar-foreground: 30 15% 90%;
-    --sidebar-primary: 15 65% 52%;
+    --sidebar-primary: 19 50% 54%;
     --sidebar-primary-foreground: 30 25% 97%;
     --sidebar-accent: 20 18% 20%;
     --sidebar-accent-foreground: 30 15% 90%;
     --sidebar-border: 20 15% 22%;
-    --sidebar-ring: 38 75% 55%;
+    --sidebar-ring: 42 48% 66%;
 
     --success: 145 60% 40%;
     --success-foreground: 0 0% 98%;
     --warning: 38 92% 50%;
     --warning-foreground: 20 25% 12%;
 
-    --font-display: 'Playfair Display', serif;
+    --font-display: 'Cormorant Garamond', serif;
     --font-body: 'DM Sans', sans-serif;
   }
 
@@ -64,7 +64,7 @@
     --popover: 20 18% 12%;
     --popover-foreground: 30 15% 92%;
 
-    --primary: 15 65% 52%;
+    --primary: 19 50% 54%;
     --primary-foreground: 30 25% 97%;
 
     --secondary: 20 15% 18%;
@@ -73,7 +73,7 @@
     --muted: 20 12% 16%;
     --muted-foreground: 30 10% 55%;
 
-    --accent: 38 75% 55%;
+    --accent: 42 48% 66%;
     --accent-foreground: 20 25% 12%;
 
     --destructive: 0 62% 30%;
@@ -85,12 +85,12 @@
 
     --sidebar-background: 20 20% 6%;
     --sidebar-foreground: 30 15% 90%;
-    --sidebar-primary: 15 65% 52%;
+    --sidebar-primary: 19 50% 54%;
     --sidebar-primary-foreground: 30 25% 97%;
     --sidebar-accent: 20 18% 12%;
     --sidebar-accent-foreground: 30 15% 90%;
     --sidebar-border: 20 15% 14%;
-    --sidebar-ring: 38 75% 55%;
+    --sidebar-ring: 42 48% 66%;
 
     --success: 145 60% 40%;
     --success-foreground: 0 0% 98%;

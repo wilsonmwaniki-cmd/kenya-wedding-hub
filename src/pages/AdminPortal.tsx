@@ -1180,9 +1180,9 @@ export default function AdminPortal() {
                 </CardContent>
               </Card>
 
-              <Card className="border-amber-300 bg-amber-50">
+              <Card className="border-accent/40 bg-accent/15">
                 <CardContent className="py-4">
-                  <p className="flex items-center gap-2 text-sm text-amber-900">
+                  <p className="flex items-center gap-2 text-sm text-foreground">
                     <AlertTriangle className="h-4 w-4" />
                     Admin backfills should be used to strengthen empty categories, not to override healthy live market signals.
                   </p>
@@ -1579,9 +1579,9 @@ export default function AdminPortal() {
           </Card>
 
           {vendors.length > 0 && vendors.some((item) => !item.is_approved) && (
-            <Card className="border-amber-300 bg-amber-50">
+            <Card className="border-accent/40 bg-accent/15">
               <CardContent className="py-4">
-                <p className="flex items-center gap-2 text-sm text-amber-900">
+                <p className="flex items-center gap-2 text-sm text-foreground">
                   <AlertTriangle className="h-4 w-4" />
                   Pending listings are hidden from the public directory until approved.
                 </p>
@@ -2144,9 +2144,9 @@ export default function AdminPortal() {
           </Card>
 
           {reputationMetrics?.flagged_reviews ? (
-            <Card className="border-amber-300 bg-amber-50">
+            <Card className="border-accent/40 bg-accent/15">
               <CardContent className="py-4">
-                <p className="flex items-center gap-2 text-sm text-amber-900">
+                <p className="flex items-center gap-2 text-sm text-foreground">
                   <AlertTriangle className="h-4 w-4" />
                   Flagged scorecards should be reviewed for visibility. Keep credible warnings in the planner network; limit sensitive or unverifiable notes to admin-only.
                 </p>

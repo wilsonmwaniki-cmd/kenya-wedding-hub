@@ -495,7 +495,7 @@ export default function Guests() {
   return (
     <div className="space-y-6">
       {(!guestRsvpDecision.allowed || guestUpgradeState) && (isFocusedGuestUpgrade || guestUpgradeState) && (
-        <Card className={`border ${guestUpgradeState === 'success' ? 'border-emerald-200 bg-emerald-50/70' : guestUpgradeState === 'cancelled' ? 'border-amber-200 bg-amber-50/70' : 'border-primary/20 bg-primary/5'}`}>
+        <Card className={`border ${guestUpgradeState === 'success' ? 'border-primary/25 bg-primary/10' : guestUpgradeState === 'cancelled' ? 'border-accent/35 bg-accent/15' : 'border-primary/20 bg-primary/5'}`}>
           <CardContent className="px-6 py-5">
             <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Guest add-on</p>
             <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">
