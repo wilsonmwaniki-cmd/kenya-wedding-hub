@@ -27,6 +27,7 @@ import {
   clearPendingWeddingSetup,
   completePendingWeddingSetup,
   getPendingWeddingSetup,
+  reconcilePendingWeddingSetupForExistingWorkspace,
   getSuggestedReferenceCurrencyForPlanningCountry,
   getSuggestedTimezoneForPlanningCountry,
   getTimezoneOptions,
@@ -115,6 +116,7 @@ export default function WeddingSetup() {
   const [referenceCurrency, setReferenceCurrency] = useState<WeddingReferenceCurrency | ''>('');
   const [ownerTimezone, setOwnerTimezone] = useState('Africa/Nairobi');
   const [submitting, setSubmitting] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
   const [completion, setCompletion] = useState<CompletionState | null>(null);
 
   useEffect(() => {
@@ -209,7 +211,32 @@ export default function WeddingSetup() {
     weddingTown,
   ]);
 
-  if (loading) {
+  useEffect(() => {
+    if (!user || !pendingSetup || completion) return;
+
+    let active = true;
+    setReconciling(true);
+
+    void reconcilePendingWeddingSetupForExistingWorkspace(user)
+      .then((result) => {
+        if (!active || !result.handled) return;
+        navigate(result.route, { replace: true });
+      })
+      .catch((error) => {
+        console.error('Failed to reconcile pending wedding setup', error);
+      })
+      .finally(() => {
+        if (active) {
+          setReconciling(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [completion, navigate, pendingSetup, user]);
+
+  if (loading || reconciling) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

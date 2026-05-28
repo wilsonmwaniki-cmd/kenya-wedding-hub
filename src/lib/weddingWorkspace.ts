@@ -437,7 +437,7 @@ function resolveLegacyRoleForWeddingRole(weddingRole: string | null | undefined)
   }
 }
 
-async function markWeddingSetupComplete(
+export async function markWeddingSetupComplete(
   user: User,
   overrides?: Partial<PendingWeddingSetupMetadata>,
 ) {
@@ -480,6 +480,32 @@ async function ensureNoDuplicateOwnedWedding(userId: string): Promise<string | n
 
   if (error) throw error;
   return data?.[0]?.wedding_id ?? null;
+}
+
+export async function reconcilePendingWeddingSetupForExistingWorkspace(user: User): Promise<{
+  handled: boolean;
+  route: string;
+}> {
+  const pendingSetup = getPendingWeddingSetup(user.user_metadata, user.email ?? null);
+  if (!pendingSetup) {
+    return { handled: false, route: '' };
+  }
+
+  const ownership = await getMyWeddingOwnershipSummaryFromTables(user.id, user.email ?? null);
+  if (!ownership?.weddingId) {
+    return { handled: false, route: '' };
+  }
+
+  await markWeddingSetupComplete(user, {
+    role: 'couple',
+    planner_type: null,
+  });
+  clearPendingWeddingSetup();
+
+  return {
+    handled: true,
+    route: '/dashboard',
+  };
 }
 
 export async function completePendingWeddingSetup(user: User): Promise<{
