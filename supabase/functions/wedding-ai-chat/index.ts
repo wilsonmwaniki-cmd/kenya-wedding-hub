@@ -344,6 +344,10 @@ function isActiveStatus(status?: string | null, expiresAt?: string | null) {
   return new Date(expiresAt).getTime() > Date.now();
 }
 
+function hasActiveBetaTrial(profile?: Record<string, any> | null) {
+  return isActiveStatus(profile?.beta_trial_status, profile?.beta_trial_expires_at);
+}
+
 function normalizeTime(value: string) {
   const trimmed = value.trim();
   if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) return trimmed;
@@ -1044,10 +1048,10 @@ serve(async (req) => {
       role === "admin"
         ? true
         : role === "vendor"
-          ? isActiveStatus(vendorListing?.subscription_status, vendorListing?.subscription_expires_at)
+          ? isActiveStatus(vendorListing?.subscription_status, vendorListing?.subscription_expires_at) || hasActiveBetaTrial(profile)
           : role === "planner"
-            ? isActiveStatus(profile?.planner_subscription_status, profile?.planner_subscription_expires_at)
-            : isActiveStatus(profile?.planning_pass_status, profile?.planning_pass_expires_at);
+            ? isActiveStatus(profile?.planner_subscription_status, profile?.planner_subscription_expires_at) || hasActiveBetaTrial(profile)
+            : isActiveStatus(profile?.planning_pass_status, profile?.planning_pass_expires_at) || hasActiveBetaTrial(profile);
 
     if (!hasPremiumAccess) {
       return new Response(JSON.stringify({
