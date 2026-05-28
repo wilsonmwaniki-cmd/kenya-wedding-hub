@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning, Sparkles } from "lucide-react";
+import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning, Sparkles, Calculator } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 interface AdminDashboardMetrics {
   total_users: number;
@@ -152,7 +153,26 @@ interface AdminAiPlanConfigRow {
   updated_at: string;
 }
 
+interface AdminEstimatorSeedRow {
+  id: string;
+  created_at: string;
+  vendor_name_snapshot: string;
+  category: string;
+  amount: number;
+  price_type: "quote" | "booked" | "final_paid";
+  location_county: string | null;
+  guest_count: number | null;
+  wedding_style: string | null;
+  notes: string | null;
+}
+
+type EstimatorPriceType = "quote" | "booked" | "final_paid";
+type EstimatorWeddingStyle = "intimate" | "classic" | "garden" | "luxury";
+
 const roleOptions: AppRole[] = ["couple", "planner", "vendor", "admin"];
+const estimatorCategories = ["Venue", "Catering", "Photography", "Videography", "Flowers", "Music/DJ", "Décor", "Transport", "MC", "Cake", "Other"] as const;
+const estimatorPriceTypes: EstimatorPriceType[] = ["quote", "booked", "final_paid"];
+const estimatorWeddingStyles: EstimatorWeddingStyle[] = ["intimate", "classic", "garden", "luxury"];
 
 function countLabel(value?: number) {
   return Number(value ?? 0).toLocaleString();
@@ -174,6 +194,19 @@ export default function AdminPortal() {
   const [aiUsageMetrics, setAiUsageMetrics] = useState<AdminAiUsageMetrics | null>(null);
   const [aiUsageRows, setAiUsageRows] = useState<AdminAiUsageRow[]>([]);
   const [aiPlanConfigs, setAiPlanConfigs] = useState<AdminAiPlanConfigRow[]>([]);
+  const [estimatorSeeds, setEstimatorSeeds] = useState<AdminEstimatorSeedRow[]>([]);
+  const [savingEstimatorSeed, setSavingEstimatorSeed] = useState(false);
+  const [loadingEstimatorSeeds, setLoadingEstimatorSeeds] = useState(false);
+  const [estimatorSeedForm, setEstimatorSeedForm] = useState({
+    vendorName: "Beta market backfill",
+    category: "Venue",
+    amount: "",
+    priceType: "quote" as EstimatorPriceType,
+    county: "Nairobi",
+    guestCount: "",
+    weddingStyle: "classic" as EstimatorWeddingStyle,
+    notes: "",
+  });
   const [roleDrafts, setRoleDrafts] = useState<Record<string, AppRole>>({});
   const [subscriptionDrafts, setSubscriptionDrafts] = useState<Record<string, AdminVendorRow["subscription_status"]>>({});
   const [subscriptionExpiryDrafts, setSubscriptionExpiryDrafts] = useState<Record<string, string>>({});
@@ -394,6 +427,23 @@ export default function AdminPortal() {
     });
   };
 
+  const loadEstimatorSeeds = async () => {
+    setLoadingEstimatorSeeds(true);
+    try {
+      const { data, error } = await supabase
+        .from("vendor_price_observations")
+        .select("id, created_at, vendor_name_snapshot, category, amount, price_type, location_county, guest_count, wedding_style, notes")
+        .eq("source", "admin_backfill")
+        .order("created_at", { ascending: false })
+        .limit(12);
+
+      if (error) throw error;
+      setEstimatorSeeds((data ?? []) as unknown as AdminEstimatorSeedRow[]);
+    } finally {
+      setLoadingEstimatorSeeds(false);
+    }
+  };
+
   const loadAll = async (showFullLoader = false) => {
     if (showFullLoader) setLoading(true);
     else setRefreshing(true);
@@ -409,6 +459,7 @@ export default function AdminPortal() {
         loadAiUsageMetrics(),
         loadAiUsageRows(),
         loadAiPlanConfigs(),
+        loadEstimatorSeeds(),
       ]);
     } catch (error: any) {
       toast({
@@ -738,6 +789,73 @@ export default function AdminPortal() {
     }
   };
 
+  const handleEstimatorSeedSave = async () => {
+    const normalizedAmount = Number(estimatorSeedForm.amount);
+    const normalizedGuestCount = estimatorSeedForm.guestCount.trim() ? Number(estimatorSeedForm.guestCount) : null;
+
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+      toast({
+        title: "Invalid amount",
+        description: "Enter a price observation amount greater than zero.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (normalizedGuestCount !== null && (!Number.isFinite(normalizedGuestCount) || normalizedGuestCount <= 0)) {
+      toast({
+        title: "Invalid guest count",
+        description: "Guest count must be empty or greater than zero.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingEstimatorSeed(true);
+    try {
+      const { error } = await supabase.rpc("record_vendor_price_observation", {
+        observation_amount: normalizedAmount,
+        observation_category: estimatorSeedForm.category,
+        vendor_name: estimatorSeedForm.vendorName.trim() || "Beta market backfill",
+        vendor_listing: null,
+        client: null,
+        price_type_input: estimatorSeedForm.priceType,
+        source_input: "admin_backfill",
+        venue_input: null,
+        county_input: estimatorSeedForm.county.trim() || null,
+        guest_count_input: normalizedGuestCount,
+        wedding_style_input: estimatorSeedForm.weddingStyle,
+        event_date_input: null,
+        notes_input: estimatorSeedForm.notes.trim() || null,
+        is_anonymized_input: true,
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Estimator seed saved",
+        description: `${estimatorSeedForm.category} now has a new ${estimatorSeedForm.priceType} signal for market learning.`,
+      });
+
+      setEstimatorSeedForm((current) => ({
+        ...current,
+        amount: "",
+        guestCount: "",
+        notes: "",
+      }));
+
+      await loadEstimatorSeeds();
+    } catch (error: any) {
+      toast({
+        title: "Seed save failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingEstimatorSeed(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -819,6 +937,7 @@ export default function AdminPortal() {
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="h-auto w-full flex-wrap justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="estimator">Estimator Seeding</TabsTrigger>
           <TabsTrigger value="users">Users & Roles</TabsTrigger>
           <TabsTrigger value="couples">Wedding Plans</TabsTrigger>
           <TabsTrigger value="planners">Planner Moderation</TabsTrigger>
@@ -891,6 +1010,186 @@ export default function AdminPortal() {
               </p>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="estimator" className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Seed Market Intelligence</CardTitle>
+                <CardDescription>
+                  Add admin-only benchmark signals for weak categories or counties during beta. These entries flow into the same learning engine the public estimator already uses.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Signal label</label>
+                    <Input
+                      value={estimatorSeedForm.vendorName}
+                      onChange={(e) => setEstimatorSeedForm((prev) => ({ ...prev, vendorName: e.target.value }))}
+                      placeholder="e.g. Nairobi venue benchmark"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Category</label>
+                    <Select
+                      value={estimatorSeedForm.category}
+                      onValueChange={(value) => setEstimatorSeedForm((prev) => ({ ...prev, category: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {estimatorCategories.map((category) => (
+                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Amount (KES)</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={estimatorSeedForm.amount}
+                      onChange={(e) => setEstimatorSeedForm((prev) => ({ ...prev, amount: e.target.value }))}
+                      placeholder="e.g. 275000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Signal strength</label>
+                    <Select
+                      value={estimatorSeedForm.priceType}
+                      onValueChange={(value) => setEstimatorSeedForm((prev) => ({ ...prev, priceType: value as EstimatorPriceType }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {estimatorPriceTypes.map((priceType) => (
+                          <SelectItem key={priceType} value={priceType}>
+                            {priceType === "quote" ? "Quote" : priceType === "booked" ? "Booked / invoice" : "Final paid"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">County</label>
+                    <Input
+                      value={estimatorSeedForm.county}
+                      onChange={(e) => setEstimatorSeedForm((prev) => ({ ...prev, county: e.target.value }))}
+                      placeholder="e.g. Nairobi"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Guest count band</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={estimatorSeedForm.guestCount}
+                      onChange={(e) => setEstimatorSeedForm((prev) => ({ ...prev, guestCount: e.target.value }))}
+                      placeholder="e.g. 150"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Wedding style</label>
+                    <Select
+                      value={estimatorSeedForm.weddingStyle}
+                      onValueChange={(value) => setEstimatorSeedForm((prev) => ({ ...prev, weddingStyle: value as EstimatorWeddingStyle }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {estimatorWeddingStyles.map((style) => (
+                          <SelectItem key={style} value={style}>
+                            {style.charAt(0).toUpperCase() + style.slice(1)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-sm font-medium">Notes</label>
+                    <Textarea
+                      value={estimatorSeedForm.notes}
+                      onChange={(e) => setEstimatorSeedForm((prev) => ({ ...prev, notes: e.target.value }))}
+                      placeholder="Optional source notes, event context, or why this benchmark matters."
+                      rows={4}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Use this for beta backfills and benchmark correction only. Real vendor quotes, invoices, and receipts should remain the primary source of truth over time.
+                  </p>
+                  <Button onClick={handleEstimatorSeedSave} disabled={savingEstimatorSeed}>
+                    {savingEstimatorSeed ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
+                    Save estimator seed
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Recent Beta Backfills</CardTitle>
+                  <CardDescription>
+                    The latest admin-sourced benchmark signals feeding the estimator.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {loadingEstimatorSeeds ? (
+                    <div className="flex min-h-24 items-center justify-center">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    </div>
+                  ) : estimatorSeeds.length === 0 ? (
+                    <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                      No admin backfills yet. Add a few category/county anchors here to improve public estimates while vendor data is still sparse.
+                    </div>
+                  ) : (
+                    estimatorSeeds.map((seed) => (
+                      <div key={seed.id} className="rounded-2xl border p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{seed.category}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {seed.vendor_name_snapshot} • {new Date(seed.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <Badge variant="outline">{seed.price_type.replace("_", " ")}</Badge>
+                        </div>
+                        <p className="mt-3 text-xl font-semibold">KES {Number(seed.amount).toLocaleString()}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          {seed.location_county ? <span>{seed.location_county}</span> : null}
+                          {seed.guest_count ? <span>{seed.guest_count} guests</span> : null}
+                          {seed.wedding_style ? <span>{seed.wedding_style}</span> : null}
+                        </div>
+                        {seed.notes ? (
+                          <p className="mt-3 text-sm text-muted-foreground">{seed.notes}</p>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-amber-300 bg-amber-50">
+                <CardContent className="py-4">
+                  <p className="flex items-center gap-2 text-sm text-amber-900">
+                    <AlertTriangle className="h-4 w-4" />
+                    Admin backfills should be used to strengthen empty categories, not to override healthy live market signals.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="users" className="space-y-4">
