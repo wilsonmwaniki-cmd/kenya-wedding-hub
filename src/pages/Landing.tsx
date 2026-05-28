@@ -9,7 +9,6 @@ import { CheckCircle, Wallet, Users, MessageSquare, ArrowRight, Loader2, Briefca
 import { motion } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import heroImage from '@/assets/hero-wedding.jpg';
 import { getHomeRouteForRole } from '@/lib/roles';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
 import { saveEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
@@ -557,8 +556,9 @@ export default function Landing() {
         <div className="overflow-hidden border-y border-[#3f2c24] shadow-[0_40px_110px_rgba(35,24,20,0.24)]">
           <div className="relative min-h-[640px] bg-[#1c1612] sm:min-h-[760px]">
             <div className="absolute inset-x-0 top-0 z-[1] h-3 bg-[linear-gradient(90deg,#6e4432_0%,#2d211c_20%,#2d211c_80%,#c9a96e_100%)]" />
-            <img src={heroImage} alt="Kenyan wedding floral arrangement" className="absolute inset-0 h-full w-full object-cover" />
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(22,17,14,0.9)_0%,rgba(28,22,18,0.84)_32%,rgba(28,22,18,0.55)_55%,rgba(28,22,18,0.68)_100%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_22%,rgba(194,114,79,0.42),transparent_24%),radial-gradient(circle_at_82%_18%,rgba(212,187,125,0.2),transparent_22%),radial-gradient(circle_at_70%_68%,rgba(168,92,60,0.22),transparent_26%),linear-gradient(128deg,#201612_0%,#2b1d18_38%,#1b1411_72%,#120d0b_100%)]" />
+            <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(22,17,14,0.18)_0%,rgba(22,17,14,0)_42%,rgba(212,187,125,0.08)_100%)]" />
+            <div className="absolute inset-y-0 left-[42%] hidden w-px bg-[linear-gradient(180deg,transparent,rgba(212,187,125,0.16),transparent)] lg:block" />
             <div className="relative mx-auto grid min-h-[640px] w-full max-w-[1700px] gap-8 px-5 py-6 sm:min-h-[760px] sm:px-8 sm:py-8 lg:grid-cols-[1.12fr_0.88fr] lg:gap-12 lg:px-16 lg:py-14 xl:px-24 2xl:px-32">
               <div className="flex flex-col justify-center text-primary-foreground">
                 <motion.div
