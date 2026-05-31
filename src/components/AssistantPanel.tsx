@@ -319,7 +319,7 @@ export default function AssistantPanel({
             transition={{ type: 'spring', stiffness: 220, damping: 24 }}
             whileHover={{ y: -4, scale: 1.01 }}
             whileTap={{ scale: 0.98 }}
-            className={`fixed bottom-4 right-4 z-30 w-[calc(100vw-2rem)] max-w-[390px] overflow-hidden rounded-[1.55rem] border border-white/[0.18] bg-[radial-gradient(circle_at_82%_18%,rgba(255,255,255,0.34),transparent_34%),radial-gradient(circle_at_18%_115%,rgba(238,202,160,0.32),transparent_42%),linear-gradient(135deg,rgba(80,75,64,0.78),rgba(185,155,119,0.60)_50%,rgba(76,87,65,0.78))] p-3.5 text-left text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_18px_46px_rgba(49,41,33,0.22)] backdrop-blur-[24px] sm:max-w-[420px] sm:rounded-[1.65rem] sm:p-3.5 lg:bottom-4 lg:right-4 ${
+            className={`fixed right-3 z-30 w-auto max-w-[190px] overflow-hidden rounded-[1.15rem] border border-white/[0.18] bg-[radial-gradient(circle_at_82%_18%,rgba(255,255,255,0.34),transparent_34%),radial-gradient(circle_at_18%_115%,rgba(238,202,160,0.32),transparent_42%),linear-gradient(135deg,rgba(80,75,64,0.78),rgba(185,155,119,0.60)_50%,rgba(76,87,65,0.78))] px-3 py-2.5 text-left text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_18px_46px_rgba(49,41,33,0.22)] backdrop-blur-[24px] bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:bottom-4 sm:right-4 sm:w-[calc(100vw-2rem)] sm:max-w-[420px] sm:rounded-[1.65rem] sm:p-3.5 lg:bottom-4 lg:right-4 ${
               compactDesktopLauncher
                 ? 'lg:w-[172px] lg:max-w-[172px] lg:rounded-[1rem] lg:px-2.25 lg:py-1.75'
                 : 'lg:w-[232px] lg:max-w-[232px] lg:rounded-[1.2rem] lg:p-2'
@@ -340,18 +340,18 @@ export default function AssistantPanel({
                 }`}>
                   Ask Zania
                 </span>
-                <span className="min-w-0 truncate text-[0.55rem] font-semibold uppercase tracking-[0.26em] text-[#fff6e8]/68 sm:text-[0.6rem] sm:tracking-[0.30em] lg:hidden">
+                <span className="hidden min-w-0 truncate text-[0.55rem] font-semibold uppercase tracking-[0.26em] text-[#fff6e8]/68 sm:block sm:text-[0.6rem] sm:tracking-[0.30em] lg:hidden">
                   Planning assistant
                 </span>
               </div>
-              <span className={`inline-flex items-center gap-2 font-medium text-[#fff6e8]/72 ${
-                compactDesktopLauncher ? 'text-[0.72rem] lg:text-[0.54rem]' : 'text-[0.72rem] lg:text-[0.58rem]'
+              <span className={`inline-flex items-center gap-2 font-medium text-[#fff6e8]/82 ${
+                compactDesktopLauncher ? 'text-[0.68rem] sm:text-[0.72rem] lg:text-[0.54rem]' : 'text-[0.68rem] sm:text-[0.72rem] lg:text-[0.58rem]'
               }`}>
                 <span className="h-2 w-2 rounded-full bg-[#d9f7cb]" />
-                Ready
+                <span className="sm:inline">Ready</span>
               </span>
             </div>
-            <div className={`relative flex min-h-[3.7rem] items-center gap-3 rounded-[1.25rem] border border-white/45 bg-white/[0.08] px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:min-h-[4rem] sm:rounded-[1.35rem] sm:px-4 ${
+            <div className={`relative hidden min-h-[3.7rem] items-center gap-3 rounded-[1.25rem] border border-white/45 bg-white/[0.08] px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:flex sm:min-h-[4rem] sm:rounded-[1.35rem] sm:px-4 ${
               compactDesktopLauncher ? 'lg:hidden' : 'lg:min-h-[2.45rem] lg:gap-1.5 lg:rounded-[0.95rem] lg:px-2 lg:py-1.25'
             }`}>
               <Bot className="h-[17px] w-[17px] shrink-0 text-[#fff6e8]/78 sm:h-[18px] sm:w-[18px] lg:h-[12px] lg:w-[12px]" />
@@ -362,6 +362,10 @@ export default function AssistantPanel({
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff6e8]/16 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] sm:h-10 sm:w-10 lg:h-7 lg:w-7">
                 <Send className="h-[18px] w-[18px] lg:h-[12px] lg:w-[12px]" />
               </span>
+            </div>
+            <div className="relative flex items-center gap-2 text-[0.8rem] font-medium text-[#fff6e8]/90 sm:hidden">
+              <Bot className="h-[15px] w-[15px] shrink-0 text-[#fff6e8]/74" />
+              <span className="truncate">Open assistant</span>
             </div>
           </motion.button>
         ) : null}
