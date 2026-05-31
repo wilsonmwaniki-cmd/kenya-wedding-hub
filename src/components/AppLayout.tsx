@@ -98,6 +98,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [expandedNavItems, setExpandedNavItems] = useState<Record<string, boolean>>({});
   const location = useLocation();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname, location.search, location.hash]);
   const { user, signOut, profile, baseProfile, isSuperAdmin, rolePreview, setRolePreview } = useAuth();
   const { isPlanner, selectedClient, selectClient } = usePlanner();
   const { vendorRequestCount, plannerRequestCount } = useNotifications();
@@ -202,7 +206,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-foreground/20 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-40 bg-foreground/18 lg:hidden"
             onClick={() => setSidebarOpen(false)}
           />
         )}
