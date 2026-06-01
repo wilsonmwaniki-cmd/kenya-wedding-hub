@@ -8,6 +8,7 @@ const corsHeaders = {
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const TIMELINE_REMINDER_SECRET = Deno.env.get("TIMELINE_REMINDER_SECRET");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -15,6 +16,32 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get("Authorization");
+    const bearerToken = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : null;
+    const cronSecret = req.headers.get("x-cron-secret");
+
+    if (!TIMELINE_REMINDER_SECRET) {
+      return new Response(
+        JSON.stringify({ error: "TIMELINE_REMINDER_SECRET is not configured" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (
+      bearerToken !== TIMELINE_REMINDER_SECRET &&
+      cronSecret !== TIMELINE_REMINDER_SECRET
+    ) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Get all timelines happening today

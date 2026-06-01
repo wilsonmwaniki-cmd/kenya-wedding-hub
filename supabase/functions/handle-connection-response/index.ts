@@ -1,16 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { verifyConnectionResponseToken } from "../_shared/connectionTokens.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
-
-function hmacHex(key: string, data: string): Promise<string> {
-  const enc = new TextEncoder();
-  return crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-    .then(k => crypto.subtle.sign('HMAC', k, enc.encode(data)))
-    .then(sig => [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join(''));
-}
 
 function htmlPage(title: string, message: string, success: boolean) {
   return new Response(`
@@ -39,9 +33,10 @@ Deno.serve(async (req) => {
   const requestId = url.searchParams.get('id');
   const action = url.searchParams.get('action');
   const token = url.searchParams.get('token');
+  const expParam = url.searchParams.get('exp');
   const requestType = url.searchParams.get('type') || 'vendor'; // 'vendor' or 'planner'
 
-  if (!requestId || !action || !token) {
+  if (!requestId || !action || !token || !expParam) {
     return htmlPage('Invalid Link', 'This link is missing required parameters.', false);
   }
 
@@ -49,13 +44,23 @@ Deno.serve(async (req) => {
     return htmlPage('Invalid Action', 'The action must be either accept or decline.', false);
   }
 
-  // Verify HMAC token
-  const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const expectedToken = await hmacHex(secret, `${requestId}:${action}`);
-  if (token !== expectedToken) {
+  if (requestType !== 'planner' && requestType !== 'vendor') {
+    return htmlPage('Invalid Link', 'This link is invalid.', false);
+  }
+
+  const exp = Number(expParam);
+  const isValidToken = await verifyConnectionResponseToken({
+    requestId,
+    action,
+    requestType,
+    exp,
+    token,
+  });
+  if (!isValidToken) {
     return htmlPage('Invalid Link', 'This link has expired or is invalid.', false);
   }
 
+  const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     secret,
