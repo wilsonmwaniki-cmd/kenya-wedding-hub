@@ -1,20 +1,55 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createConnectionResponseToken } from "../_shared/connectionTokens.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-function hmacHex(key: string, data: string): Promise<string> {
-  const enc = new TextEncoder();
-  return crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-    .then(k => crypto.subtle.sign('HMAC', k, enc.encode(data)))
-    .then(sig => [...new Uint8Array(sig)].map(b => b.toString(16).padStart(2, '0')).join(''));
-}
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+const SUPABASE_ANON_KEY =
+  Deno.env.get('SUPABASE_ANON_KEY') ??
+  Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ??
+  '';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return new Response(
+      JSON.stringify({ error: 'Supabase auth configuration is missing' }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
+  }
+
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: {
+      headers: {
+        Authorization: authHeader,
+      },
+    },
+  });
+
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
@@ -41,13 +76,24 @@ serve(async (req) => {
     // Generate signed action links
     let actionButtons = '';
     if (requestId) {
-      const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const baseUrl = Deno.env.get('SUPABASE_URL')!;
-      const acceptToken = await hmacHex(secret, `${requestId}:accept`);
-      const declineToken = await hmacHex(secret, `${requestId}:decline`);
+      const requestType = isPlanner ? 'planner' : 'vendor';
+      const exp = Date.now() + (7 * 24 * 60 * 60 * 1000);
+      const acceptToken = await createConnectionResponseToken({
+        requestId,
+        action: 'accept',
+        requestType,
+        exp,
+      });
+      const declineToken = await createConnectionResponseToken({
+        requestId,
+        action: 'decline',
+        requestType,
+        exp,
+      });
 
-      const acceptUrl = `${baseUrl}/functions/v1/handle-connection-response?id=${requestId}&action=accept&token=${acceptToken}&type=${type}`;
-      const declineUrl = `${baseUrl}/functions/v1/handle-connection-response?id=${requestId}&action=decline&token=${declineToken}&type=${type}`;
+      const acceptUrl = `${baseUrl}/functions/v1/handle-connection-response?id=${requestId}&action=accept&token=${acceptToken}&type=${requestType}&exp=${exp}`;
+      const declineUrl = `${baseUrl}/functions/v1/handle-connection-response?id=${requestId}&action=decline&token=${declineToken}&type=${requestType}&exp=${exp}`;
 
       actionButtons = `
         <div style="margin: 28px 0; text-align: center;">
@@ -58,6 +104,9 @@ serve(async (req) => {
             ✗ Decline
           </a>
         </div>
+        <p style="margin: 12px 0 0; color: #999; font-size: 12px; text-align: center;">
+          These response links expire in 7 days.
+        </p>
       `;
     }
 
