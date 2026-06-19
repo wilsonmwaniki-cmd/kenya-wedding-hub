@@ -8,13 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Clock, CheckCircle2, XCircle, Store, Users, X, Loader2, Copy, Link2, HeartHandshake } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, Store, Users, X, Loader2, Copy, Link2, HeartHandshake } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import InfoTip from '@/components/InfoTip';
-import { sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
+import { getWeddingInviteDeliveryFailureMessage, sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
 import {
   approvePlannerCodeLinkRequest,
   ensureMyCollaborationCode,
@@ -463,7 +463,10 @@ export default function MyConnections() {
           await sendWeddingInviteEmail(inviteRow.invite_id);
           deliveryDescription = 'The partner invite email has been sent and they can also use the wedding code.';
         } catch (inviteError: any) {
-          deliveryDescription = 'The invite was created, but the email could not be delivered. You can resend it from here.';
+          deliveryDescription = getWeddingInviteDeliveryFailureMessage(
+            inviteError,
+            'The invite was created, but the email could not be delivered right now.',
+          );
           console.error('Partner invite email delivery failed:', inviteError);
         }
       }
@@ -504,7 +507,10 @@ export default function MyConnections() {
           await sendWeddingInviteEmail(inviteRow.invite_id);
           description = 'Committee invite email sent successfully.';
         } catch (inviteError: any) {
-          description = 'Committee seat reserved, but the email delivery failed. You can resend later once email is configured.';
+          description = getWeddingInviteDeliveryFailureMessage(
+            inviteError,
+            'Committee seat reserved, but the email could not be delivered right now.',
+          );
           console.error('Committee invite email delivery failed:', inviteError);
         }
       }
@@ -802,10 +808,7 @@ export default function MyConnections() {
 
       <Card className="shadow-card">
         <CardHeader>
-          <CardTitle className="font-display text-base flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            My Connections
-          </CardTitle>
+          <CardTitle className="font-display text-base">My Connections</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {connections.length === 0 ? (
