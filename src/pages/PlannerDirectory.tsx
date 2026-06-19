@@ -8,13 +8,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, ArrowRight, Loader2, UserCircle, ArrowLeft, MapPin } from 'lucide-react';
+import { Search, ArrowRight, UserCircle, ArrowLeft, MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatBudgetBand, getBudgetFit, getLocationMatch, getTownsForCounty, kenyaCounties } from '@/lib/kenyaLocations';
 import BrandWordmark from '@/components/BrandWordmark';
+import { DirectoryResultsSkeleton } from '@/components/AppLoadingSkeletons';
+import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
 
 interface PlannerItem {
   id: string;
+  user_id: string;
   full_name: string | null;
   company_name: string | null;
   avatar_url: string | null;
@@ -29,6 +32,13 @@ interface PlannerItem {
   travel_scope: string | null;
   minimum_budget_kes: number | null;
   maximum_budget_kes: number | null;
+  founding_planner_contributor: boolean;
+}
+
+interface PlannerNetworkSignalSummary {
+  total: number;
+  trusted: number;
+  workedWith: number;
 }
 
 export default function PlannerDirectory() {
@@ -39,17 +49,53 @@ export default function PlannerDirectory() {
   const [locationCounty, setLocationCounty] = useState('all');
   const [locationTown, setLocationTown] = useState('all');
   const [weddingBudgetTotal, setWeddingBudgetTotal] = useState<number | null>(null);
+  const [networkSignalsByPlannerId, setNetworkSignalsByPlannerId] = useState<Record<string, PlannerNetworkSignalSummary>>({});
+  const professionalNetworkEnabled = isProfessionalNetworkEnabled();
 
   useEffect(() => {
     const load = async () => {
       const { data } = await supabase
         .from('public_planner_profiles')
-        .select('id, full_name, company_name, avatar_url, bio, specialties, company_email, company_phone, company_website, primary_county, primary_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes');
+        .select('id, user_id, full_name, company_name, avatar_url, bio, specialties, company_email, company_phone, company_website, primary_county, primary_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes, founding_planner_contributor');
       setPlanners((data as PlannerItem[]) || []);
       setLoading(false);
     };
     load();
   }, []);
+
+  useEffect(() => {
+    if (!professionalNetworkEnabled) {
+      setNetworkSignalsByPlannerId({});
+      return;
+    }
+
+    const loadNetworkSignals = async () => {
+      const { data } = await (supabase as any)
+        .from('professional_network_relationships')
+        .select('target_user_id, relationship_type')
+        .eq('active', true)
+        .eq('is_public', true)
+        .not('target_user_id', 'is', null);
+
+      const grouped = ((data as Array<{ target_user_id: string; relationship_type: string }> | null) ?? [])
+        .reduce((summary, signal) => {
+          const current = summary[signal.target_user_id] ?? { total: 0, trusted: 0, workedWith: 0 };
+          current.total += 1;
+          if (signal.relationship_type === 'trusted_collaborator' || signal.relationship_type === 'recommended') {
+            current.trusted += 1;
+          }
+          if (signal.relationship_type === 'worked_with') {
+            current.workedWith += 1;
+          }
+          summary[signal.target_user_id] = current;
+          return summary;
+        }, {} as Record<string, PlannerNetworkSignalSummary>);
+
+      setNetworkSignalsByPlannerId(grouped);
+    };
+
+    void loadNetworkSignals();
+  }, [professionalNetworkEnabled]);
 
   useEffect(() => {
     const isCouple = profile?.role === 'couple';
@@ -123,7 +169,7 @@ export default function PlannerDirectory() {
               <ArrowLeft className="h-4 w-4" /> Home
             </Button>
           </Link>
-          <Link to="/auth">
+          <Link to="/sign-in">
             <Button size="sm">Sign In</Button>
           </Link>
         </div>
@@ -195,9 +241,7 @@ export default function PlannerDirectory() {
       {/* Grid */}
       <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-12">
         {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
+          <DirectoryResultsSkeleton />
         ) : filtered.length === 0 ? (
           <p className="py-20 text-center text-muted-foreground">
             {search || locationCounty !== 'all' || locationTown !== 'all'
@@ -220,6 +264,7 @@ export default function PlannerDirectory() {
                 const matchReasons = [...locationMatch.reasons];
                 if (budgetFit.label) matchReasons.push(budgetFit.label);
                 const uniqueReasons = [...new Set(matchReasons)];
+                const networkSignals = networkSignalsByPlannerId[p.user_id];
 
                 return (
               <motion.div
@@ -245,11 +290,26 @@ export default function PlannerDirectory() {
                       <h3 className="mt-4 font-display text-lg font-semibold text-card-foreground">
                         {p.company_name || p.full_name || 'Wedding Planner'}
                       </h3>
+                      {p.founding_planner_contributor && (
+                        <Badge className="mt-2 border-0 bg-[#ead8a8] text-[#4c3528]">
+                          Founding Planner Contributor
+                        </Badge>
+                      )}
                       {p.company_name && p.full_name && (
                         <p className="text-sm text-muted-foreground">{p.full_name}</p>
                       )}
                       {p.bio && (
                         <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{p.bio}</p>
+                      )}
+                      {networkSignals && (
+                        <div className="mt-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-left">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Industry credibility</p>
+                          <p className="mt-1 text-xs text-foreground">
+                            {networkSignals.total} public signal{networkSignals.total === 1 ? '' : 's'}
+                            {networkSignals.trusted > 0 ? ` · ${networkSignals.trusted} trust mark${networkSignals.trusted === 1 ? '' : 's'}` : ''}
+                            {networkSignals.workedWith > 0 ? ` · ${networkSignals.workedWith} worked-with signal${networkSignals.workedWith === 1 ? '' : 's'}` : ''}
+                          </p>
+                        </div>
                       )}
                       {(p.primary_town || p.primary_county) && (
                         <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
