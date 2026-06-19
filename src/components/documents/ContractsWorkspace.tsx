@@ -502,88 +502,90 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
       </section>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[88vh] w-[min(92vw,56rem)] max-w-[56rem] flex-col overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-5">
             <DialogTitle>Create contract</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 md:grid-cols-2">
-            {role === 'planner' ? (
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="grid gap-4 md:grid-cols-2">
+              {role === 'planner' ? (
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Planner client</Label>
+                  <Select value={createDraft.clientId} onValueChange={(value) => setCreateDraft((current) => ({ ...current, clientId: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Choose client" /></SelectTrigger>
+                    <SelectContent>
+                      {plannerClients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>{client.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Vendor listing</Label>
+                    <Select value={createDraft.vendorListingId} onValueChange={(value) => setCreateDraft((current) => ({ ...current, vendorListingId: value }))}>
+                      <SelectTrigger><SelectValue placeholder="Choose listing" /></SelectTrigger>
+                      <SelectContent>
+                        {vendorListings.map((listing) => (
+                          <SelectItem key={listing.id} value={listing.id}>{listing.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Linked booking</Label>
+                    <Select value={createDraft.vendorId || '__none__'} onValueChange={(value) => setCreateDraft((current) => ({ ...current, vendorId: value === '__none__' ? '' : value }))}>
+                      <SelectTrigger><SelectValue placeholder="Choose booking" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">No linked booking</SelectItem>
+                        {vendorBookings.map((booking) => (
+                          <SelectItem key={booking.id} value={booking.id}>{booking.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
               <div className="space-y-2 md:col-span-2">
-                <Label>Planner client</Label>
-                <Select value={createDraft.clientId} onValueChange={(value) => setCreateDraft((current) => ({ ...current, clientId: value }))}>
-                  <SelectTrigger><SelectValue placeholder="Choose client" /></SelectTrigger>
-                  <SelectContent>
-                    {plannerClients.map((client) => (
-                      <SelectItem key={client.id} value={client.id}>{client.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Contract title</Label>
+                <Input value={createDraft.title} onChange={(event) => setCreateDraft((current) => ({ ...current, title: event.target.value }))} placeholder={role === 'planner' ? 'e.g. Planning agreement for Mary & Daniel' : 'e.g. Photography agreement for Mary & Daniel'} />
               </div>
-            ) : (
-              <>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Vendor listing</Label>
-                  <Select value={createDraft.vendorListingId} onValueChange={(value) => setCreateDraft((current) => ({ ...current, vendorListingId: value }))}>
-                    <SelectTrigger><SelectValue placeholder="Choose listing" /></SelectTrigger>
-                    <SelectContent>
-                      {vendorListings.map((listing) => (
-                        <SelectItem key={listing.id} value={listing.id}>{listing.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Linked booking</Label>
-                  <Select value={createDraft.vendorId || '__none__'} onValueChange={(value) => setCreateDraft((current) => ({ ...current, vendorId: value === '__none__' ? '' : value }))}>
-                    <SelectTrigger><SelectValue placeholder="Choose booking" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">No linked booking</SelectItem>
-                      {vendorBookings.map((booking) => (
-                        <SelectItem key={booking.id} value={booking.id}>{booking.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
-            <div className="space-y-2 md:col-span-2">
-              <Label>Contract title</Label>
-              <Input value={createDraft.title} onChange={(event) => setCreateDraft((current) => ({ ...current, title: event.target.value }))} placeholder={role === 'planner' ? 'e.g. Planning agreement for Mary & Daniel' : 'e.g. Photography agreement for Mary & Daniel'} />
-            </div>
-            <div className="space-y-2">
-              <Label>Recipient name</Label>
-              <Input value={createDraft.recipientName} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientName: event.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Event date</Label>
-              <Input type="date" value={createDraft.eventDate} onChange={(event) => setCreateDraft((current) => ({ ...current, eventDate: event.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Recipient email</Label>
-              <Input value={createDraft.recipientEmail} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientEmail: event.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Recipient phone</Label>
-              <Input value={createDraft.recipientPhone} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientPhone: event.target.value }))} />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Wedding / project label</Label>
-              <Input value={createDraft.weddingName} onChange={(event) => setCreateDraft((current) => ({ ...current, weddingName: event.target.value }))} />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Summary</Label>
-              <Textarea rows={3} value={createDraft.summary} onChange={(event) => setCreateDraft((current) => ({ ...current, summary: event.target.value }))} placeholder="A quick summary of what this agreement covers." />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Terms</Label>
-              <Textarea rows={6} value={createDraft.terms} onChange={(event) => setCreateDraft((current) => ({ ...current, terms: event.target.value }))} placeholder="Main agreement terms." />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Internal notes</Label>
-              <Textarea rows={3} value={createDraft.notes} onChange={(event) => setCreateDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Private reminders about this agreement." />
+              <div className="space-y-2">
+                <Label>Recipient name</Label>
+                <Input value={createDraft.recipientName} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientName: event.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Event date</Label>
+                <Input type="date" value={createDraft.eventDate} onChange={(event) => setCreateDraft((current) => ({ ...current, eventDate: event.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Recipient email</Label>
+                <Input value={createDraft.recipientEmail} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientEmail: event.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Recipient phone</Label>
+                <Input value={createDraft.recipientPhone} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientPhone: event.target.value }))} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Wedding / project label</Label>
+                <Input value={createDraft.weddingName} onChange={(event) => setCreateDraft((current) => ({ ...current, weddingName: event.target.value }))} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Summary</Label>
+                <Textarea rows={3} value={createDraft.summary} onChange={(event) => setCreateDraft((current) => ({ ...current, summary: event.target.value }))} placeholder="A quick summary of what this agreement covers." />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Terms</Label>
+                <Textarea rows={6} value={createDraft.terms} onChange={(event) => setCreateDraft((current) => ({ ...current, terms: event.target.value }))} placeholder="Main agreement terms." />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Internal notes</Label>
+                <Textarea rows={3} value={createDraft.notes} onChange={(event) => setCreateDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Private reminders about this agreement." />
+              </div>
             </div>
           </div>
-          <div className="flex justify-end">
+          <div className="flex shrink-0 justify-end border-t border-border/70 bg-background px-6 py-4">
             <Button className="gap-2" onClick={handleCreate} disabled={creating}>
               <FilePlus2 className="h-4 w-4" />
               {creating ? 'Creating...' : 'Create contract'}

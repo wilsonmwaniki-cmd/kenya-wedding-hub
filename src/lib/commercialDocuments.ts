@@ -169,6 +169,16 @@ export type SharedCommercialDocument = {
   }>;
 };
 
+export type CommercialDocumentShareState = {
+  id: string;
+  documentId: string;
+  shareToken: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
+};
+
 export type CreateCommercialDocumentInput = {
   role: CommercialDocumentRole;
   documentType: CommercialDocumentType;
@@ -761,6 +771,77 @@ export async function ensureCommercialDocumentShareToken(documentId: string) {
 
   if (error) throw error;
   return String(data);
+}
+
+export async function getCommercialDocumentShareState(documentId: string) {
+  const { data, error } = await (supabase as any)
+    .from('commercial_document_shares')
+    .select('id, document_id, share_token, expires_at, revoked_at, last_accessed_at, access_count')
+    .eq('document_id', documentId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    id: String(data.id),
+    documentId: String(data.document_id),
+    shareToken: String(data.share_token),
+    expiresAt: typeof data.expires_at === 'string' ? data.expires_at : null,
+    revokedAt: typeof data.revoked_at === 'string' ? data.revoked_at : null,
+    lastAccessedAt: typeof data.last_accessed_at === 'string' ? data.last_accessed_at : null,
+    accessCount: Number(data.access_count ?? 0),
+  } satisfies CommercialDocumentShareState;
+}
+
+export async function refreshCommercialDocumentShareToken(documentId: string) {
+  const { data, error } = await (supabase as any)
+    .from('commercial_document_shares')
+    .update({
+      share_token: crypto.randomUUID(),
+      revoked_at: null,
+      expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      last_accessed_at: null,
+      access_count: 0,
+    })
+    .eq('document_id', documentId)
+    .select('id, document_id, share_token, expires_at, revoked_at, last_accessed_at, access_count')
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: String(data.id),
+    documentId: String(data.document_id),
+    shareToken: String(data.share_token),
+    expiresAt: typeof data.expires_at === 'string' ? data.expires_at : null,
+    revokedAt: typeof data.revoked_at === 'string' ? data.revoked_at : null,
+    lastAccessedAt: typeof data.last_accessed_at === 'string' ? data.last_accessed_at : null,
+    accessCount: Number(data.access_count ?? 0),
+  } satisfies CommercialDocumentShareState;
+}
+
+export async function revokeCommercialDocumentShareToken(documentId: string) {
+  const { data, error } = await (supabase as any)
+    .from('commercial_document_shares')
+    .update({
+      revoked_at: new Date().toISOString(),
+    })
+    .eq('document_id', documentId)
+    .select('id, document_id, share_token, expires_at, revoked_at, last_accessed_at, access_count')
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: String(data.id),
+    documentId: String(data.document_id),
+    shareToken: String(data.share_token),
+    expiresAt: typeof data.expires_at === 'string' ? data.expires_at : null,
+    revokedAt: typeof data.revoked_at === 'string' ? data.revoked_at : null,
+    lastAccessedAt: typeof data.last_accessed_at === 'string' ? data.last_accessed_at : null,
+    accessCount: Number(data.access_count ?? 0),
+  } satisfies CommercialDocumentShareState;
 }
 
 export async function getSharedCommercialDocument(shareToken: string) {
