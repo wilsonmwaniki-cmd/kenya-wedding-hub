@@ -26,6 +26,7 @@ const GiftRegistry = lazy(() => import("./pages/GiftRegistry"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const VendorDirectory = lazy(() => import("./pages/VendorDirectory"));
 const VendorClaim = lazy(() => import("./pages/VendorClaim"));
+const VendorProfile = lazy(() => import("./pages/VendorProfile"));
 const VendorSettings = lazy(() => import("./pages/VendorSettings"));
 const VendorDashboard = lazy(() => import("./pages/VendorDashboard"));
 const VendorDocuments = lazy(() => import("./pages/VendorDocuments"));
@@ -95,6 +96,8 @@ const App = () => (
                   <Route path="/pricing" element={<Pricing />} />
                   <Route path="/planners" element={<PlannerDirectory />} />
                   <Route path="/vendors-directory" element={<VendorDirectory />} />
+                  <Route path="/vendors-directory/collections/:slug" element={<VendorDirectory />} />
+                  <Route path="/vendor/:id" element={<VendorProfile />} />
                   <Route path="/vendor-claim" element={<VendorClaim />} />
                   <Route path="/planner/:id" element={<PlannerProfile />} />
                   <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
