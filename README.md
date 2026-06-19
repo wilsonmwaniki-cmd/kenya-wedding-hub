@@ -1,88 +1,76 @@
-# Welcome to your Lovable project
+# Zania Wedding Hub
 
-## Project info
+Wedding planning workspace for couples, planners, committees, vendors, and admins. The app combines wedding setup, budget tracking, tasks, guests, vendors, timelines, documents, portfolio sharing, subscriptions, and an AI planning assistant.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Stack
 
-## How can I edit this code?
+- Vite + React + TypeScript
+- Tailwind + shadcn/ui
+- Supabase Auth, Postgres, RPCs, and Edge Functions
+- Stripe for paid plans and add-ons
+- Resend for invite and reminder email delivery
 
-There are several ways of editing your application.
+## Local setup
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+1. Install dependencies:
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+npm install
+```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+2. Copy [.env.example](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/.env.example) to `.env`.
 
-# Step 3: Install the necessary dependencies.
-npm i
+3. Set the required client env vars:
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+
+4. Start the app:
+
+```sh
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+5. Run the current test suite:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```sh
+npm test
+```
 
-**Use GitHub Codespaces**
+## Launch-critical backend pieces
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+The frontend depends on Supabase schema and edge functions from this repo.
 
-## What technologies are used for this project?
+Core function groups:
 
-This project is built with:
+- Billing: `create-stripe-checkout`, `sync-couple-checkout`, `sync-professional-checkout`
+- Messaging: `send-wedding-invite`, `send-guest-invite`, `send-connection-notification`, `send-timeline-reminders`
+- AI: `wedding-ai-chat`
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Required server-side secrets live in Supabase, not the frontend `.env`:
 
-## How can I deploy this project?
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `STRIPE_SECRET_KEY`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL` such as `Zania Weddings <invites@zaniaweddings.com>`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL` (optional override)
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Production launch
 
-## Production Launch
-
-This repository can be launched in two different ways:
-
-- Prototype mode: keep using the current Lovable project and its existing backend.
-- Production mode: create a new Supabase project you control, run this repo's migrations into it, then create a new Lovable project connected to that Supabase project from day one.
-
-For a real launch where you control the database, auth, backups, and billing, use production mode.
-
-See:
+Use the controlled-production path rather than the locked prototype backend.
 
 - [Production cutover guide](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/docs/PRODUCTION_CUTOVER.md)
+- [CI/CD and preview workflow](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/docs/CI_CD_AND_PREVIEW_WORKFLOW.md)
+- [Preview feature workflow](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/docs/preview-feature-workflow.md)
+- [Pricing configuration](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/docs/PRICING_CONFIGURATION.md)
 - [Admin bootstrap SQL](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/supabase/sql/bootstrap_admin.sql)
 - [Supabase setup script](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/scripts/supabase_prod_setup.sh)
 
-## Can I connect a custom domain to my Lovable project?
+Recommended launch order:
 
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+1. Provision the Supabase project you control.
+2. Push migrations and deploy the edge functions in this repo.
+3. Configure Stripe, Resend, and AI secrets.
+4. Bootstrap the first admin user.
+5. Verify auth, dashboard CRUD, billing activation, invite sending, and AI chat before onboarding real users.
