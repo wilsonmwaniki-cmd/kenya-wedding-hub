@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState, useRef, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,7 +16,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import {
   Plus, Trash2, Users, Upload, Download, Mail, Send, Loader2, Eye, EyeOff,
-  Link2, Copy, UserCheck, BarChart3, Search,
+  Link2, Copy, UserCheck, BarChart3, Search, RotateCw, ShieldOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
@@ -26,6 +27,9 @@ import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
 import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
+import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
+import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 
 const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
 
@@ -40,9 +44,14 @@ interface Guest {
   table_number: number | null;
   group_name: string | null;
   category: string | null;
+  wedding_id: string | null;
   checked_in: boolean;
   checked_in_at: string | null;
   rsvp_token: string;
+  rsvp_token_expires_at?: string | null;
+  rsvp_token_revoked_at?: string | null;
+  rsvp_last_viewed_at?: string | null;
+  rsvp_last_responded_at?: string | null;
 }
 
 const GUEST_GROUPS = ["Bride's Guests", "Groom's Guests", "Bride's Parents' Guests", "Groom's Parents' Guests"];
@@ -122,15 +131,28 @@ function downloadCsvFile(filename: string, rows: string[][]) {
   URL.revokeObjectURL(url);
 }
 
+function isTokenActive(expiresAt?: string | null, revokedAt?: string | null) {
+  if (revokedAt) return false;
+  if (!expiresAt) return true;
+  return new Date(expiresAt).getTime() > Date.now();
+}
+
+async function loadGuestsWorkspace(dataOrFilter: string): Promise<Guest[]> {
+  const { data, error } = await supabase.from('guests').select('*').or(dataOrFilter).order('name');
+  if (error) throw error;
+  return (data ?? []) as unknown as Guest[];
+}
+
 export default function Guests() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
-  const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const { weddingId, entitlements, couplePlanTier, loading: entitlementsLoading, refresh } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
-  const [guests, setGuests] = useState<Guest[]>([]);
   const [open, setOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeGuest, setComposeGuest] = useState<Guest | null>(null);
@@ -164,23 +186,36 @@ export default function Guests() {
   const [upgradePromptOpen, setUpgradePromptOpen] = useState(false);
   const [guestAddonCheckoutLoading, setGuestAddonCheckoutLoading] = useState(false);
   const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
+  const [savingGuest, setSavingGuest] = useState(false);
+  const [guestFormErrors, setGuestFormErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
+  const [guestSubmitError, setGuestSubmitError] = useState<string | null>(null);
+  const [selectedGuestDraft, setSelectedGuestDraft] = useState<Guest | null>(null);
+
+  const guestsQueryKey = ['guests', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+  const guestsQuery = useQuery({
+    queryKey: guestsQueryKey,
+    queryFn: () => loadGuestsWorkspace(dataOrFilter!),
+    enabled: Boolean(dataOrFilter),
+    staleTime: 30_000,
+  });
+  const guests = guestsQuery.data ?? [];
 
   useEffect(() => {
-    if (isPlanner && !selectedClient) navigate('/clients');
-  }, [isPlanner, selectedClient, navigate]);
-
-  const load = async () => {
-    if (!dataOrFilter) return;
-    const { data } = await supabase.from('guests').select('*').or(dataOrFilter).order('name');
-    if (data) setGuests(data as unknown as Guest[]);
-  };
-
-  useEffect(() => { load(); }, [user, selectedClient, dataOrFilter]);
+    if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
+  }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
 
   // File handling
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+    if (plannerNeedsApproval) {
+      toast({
+        title: 'Use individual guest requests for linked weddings',
+        description: 'Bulk CSV imports stay with the couple side so each planner guest addition can be reviewed cleanly.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setUploading(true);
     try {
       const text = await file.text();
@@ -200,13 +235,21 @@ export default function Guests() {
           category: String(row['Category'] || row['category'] || 'general').toLowerCase().trim(),
         };
         if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+        if (isPlanner && selectedClient?.wedding_id) {
+          insert.wedding_id = selectedClient.wedding_id;
+        } else if (!isPlanner && weddingId) {
+          insert.wedding_id = weddingId;
+        }
         return insert;
       }).filter(g => g.name);
 
       if (guestRows.length === 0) { toast({ title: 'No valid rows', variant: 'destructive' }); return; }
       const { error } = await supabase.from('guests').insert(guestRows);
       if (error) toast({ title: 'Upload error', description: error.message, variant: 'destructive' });
-      else { toast({ title: 'Success', description: `${guestRows.length} guests uploaded!` }); load(); }
+      else {
+        toast({ title: 'Success', description: `${guestRows.length} guests uploaded!` });
+        await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+      }
     } catch (err: any) {
       toast({ title: 'File error', description: err.message, variant: 'destructive' });
     } finally {
@@ -225,10 +268,22 @@ export default function Guests() {
   const addGuest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    const nextErrors: { name?: string; email?: string; phone?: string } = {};
     if (!name.trim()) {
-      toast({ title: 'Add a guest name', description: 'Enter the guest name before saving.', variant: 'destructive' });
+      nextErrors.name = 'Enter the guest name before saving.';
+    }
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      nextErrors.email = 'Enter a valid email address.';
+    }
+    if (phone.trim() && phone.trim().length < 7) {
+      nextErrors.phone = 'Enter a valid phone number.';
+    }
+    setGuestFormErrors(nextErrors);
+    setGuestSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) {
       return;
     }
+    setSavingGuest(true);
     const insert: any = {
       user_id: user.id, name: name.trim(), email: email || null, phone: phone || null,
       rsvp_status: rsvp, group_name: groupName || null, category,
@@ -236,30 +291,145 @@ export default function Guests() {
       plus_one: plusOne === 'yes',
     };
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+    if (isPlanner && selectedClient?.wedding_id) {
+      insert.wedding_id = selectedClient.wedding_id;
+    } else if (!isPlanner && weddingId) {
+      insert.wedding_id = weddingId;
+    }
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'guests',
+          changeType: 'create',
+          proposedPayload: {
+            name: insert.name,
+            email: insert.email,
+            phone: insert.phone,
+            rsvp_status: insert.rsvp_status,
+            group_name: insert.group_name,
+            category: insert.category,
+            meal_preference: insert.meal_preference,
+            plus_one: insert.plus_one,
+            wedding_id: selectedClient.wedding_id ?? null,
+          },
+        });
+        setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general'); setMealPreference(''); setPlusOne('no');
+        setOpen(false);
+        toast({
+          title: 'Guest request sent to the couple',
+          description: 'This guest will stay pending until the couple approves the change.',
+        });
+      } catch (error: any) {
+        setGuestSubmitError(error?.message || 'Could not submit guest request right now.');
+        toast({ title: 'Could not submit guest request', description: error?.message, variant: 'destructive' });
+      } finally {
+        setSavingGuest(false);
+      }
+      return;
+    }
     const { error } = await supabase.from('guests').insert(insert);
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
+    if (error) { setGuestSubmitError(error.message || 'Could not save this guest right now.'); setSavingGuest(false); toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
     setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general'); setMealPreference(''); setPlusOne('no');
-    setOpen(false); load();
+    setOpen(false);
+    await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+    setSavingGuest(false);
   };
 
   const updateRsvp = async (id: string, status: string) => {
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      const guest = guests.find((row) => row.id === id);
+      if (!guest) return;
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'guests',
+          changeType: 'update',
+          targetId: id,
+          currentPayload: { rsvp_status: guest.rsvp_status },
+          proposedPayload: { rsvp_status: status },
+        });
+        toast({
+          title: 'RSVP update sent for approval',
+          description: `${guest.name}'s status will update after the couple approves it.`,
+        });
+        await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+      } catch (error: any) {
+        toast({ title: 'Could not submit RSVP change', description: error?.message, variant: 'destructive' });
+      }
+      return;
+    }
     await supabase.from('guests').update({ rsvp_status: status }).eq('id', id);
-    load();
+    await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
   };
 
   const deleteGuest = async (id: string) => {
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      const guest = guests.find((row) => row.id === id);
+      if (!guest) return;
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'guests',
+          changeType: 'delete',
+          targetId: id,
+          currentPayload: guest as unknown as Record<string, unknown>,
+          proposedPayload: {
+            name: guest.name,
+            email: guest.email,
+          },
+        });
+        toast({
+          title: 'Guest removal sent for approval',
+          description: `${guest.name} will only be removed if the couple approves it.`,
+        });
+      } catch (error: any) {
+        toast({ title: 'Could not submit removal request', description: error?.message, variant: 'destructive' });
+      }
+      return;
+    }
     await supabase.from('guests').delete().eq('id', id);
-    load();
+    await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
   };
 
   const saveGuestDetails = async (guest: Guest, updates: Partial<Guest>) => {
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      setSavingGuestId(guest.id);
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'guests',
+          changeType: 'update',
+          targetId: guest.id,
+          currentPayload: guest as unknown as Record<string, unknown>,
+          proposedPayload: updates as Record<string, unknown>,
+        });
+        toast({
+          title: 'Guest change sent for approval',
+          description: `${guest.name}'s updates are waiting on the couple.`,
+        });
+        await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+      } catch (error: any) {
+        toast({ title: 'Could not submit guest change', description: error?.message, variant: 'destructive' });
+      }
+      setSavingGuestId(null);
+      return;
+    }
     setSavingGuestId(guest.id);
     const { error } = await supabase.from('guests').update(updates).eq('id', guest.id);
     if (error) {
       toast({ title: 'Could not update guest', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: 'Guest updated', description: `${guest.name} is now up to date.` });
-      await load();
+      await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
     }
     setSavingGuestId(null);
   };
@@ -378,9 +548,71 @@ export default function Guests() {
 
   const copyRsvpLink = (guest: Guest) => {
     if (!requireGuestRsvpManagement()) return;
+    if (!isTokenActive(guest.rsvp_token_expires_at, guest.rsvp_token_revoked_at)) {
+      toast({
+        title: 'RSVP link is inactive',
+        description: 'Refresh the guest link before sharing it again.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const url = `${window.location.origin}/rsvp/${guest.rsvp_token}`;
     navigator.clipboard.writeText(url);
     toast({ title: 'RSVP link copied!', description: `Share this link with ${guest.name} via WhatsApp or SMS.` });
+  };
+
+  const refreshGuestRsvpLink = async (guest: Guest) => {
+    if (!requireGuestRsvpManagement()) return;
+    setSavingGuestId(guest.id);
+    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+    const nextToken = crypto.randomUUID();
+    const { error } = await supabase
+      .from('guests')
+      .update({
+        rsvp_token: nextToken,
+        rsvp_token_revoked_at: null,
+        rsvp_token_expires_at: expiresAt,
+        rsvp_last_viewed_at: null,
+        rsvp_last_responded_at: null,
+      } as never)
+      .eq('id', guest.id);
+
+    setSavingGuestId(null);
+
+    if (error) {
+      toast({ title: 'Could not refresh RSVP link', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+    toast({
+      title: 'RSVP link refreshed',
+      description: `A new guest link is ready for ${guest.name}.`,
+    });
+  };
+
+  const revokeGuestRsvpLink = async (guest: Guest) => {
+    if (!requireGuestRsvpManagement()) return;
+    setSavingGuestId(guest.id);
+    const { error } = await supabase
+      .from('guests')
+      .update({
+        rsvp_token_revoked_at: new Date().toISOString(),
+      } as never)
+      .eq('id', guest.id);
+
+    setSavingGuestId(null);
+
+    if (error) {
+      toast({ title: 'Could not revoke RSVP link', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+    toast({
+      title: 'RSVP link revoked',
+      description: `${guest.name}'s current public RSVP link is now inactive.`,
+    });
   };
 
   const coupleName = profile?.full_name && profile?.partner_name
@@ -397,13 +629,10 @@ export default function Guests() {
   const sendInviteToGuest = async (guest: Guest) => {
     const { data, error } = await supabase.functions.invoke('send-guest-invite', {
       body: {
-        guestName: guest.name, guestEmail: guest.email,
-        coupleName: coupleName || undefined,
-        weddingDate: profile?.wedding_date, weddingLocation: profile?.wedding_location,
+        guestId: guest.id,
         subject: composeSubject.trim() || undefined,
         contentText: contentText.trim() || undefined,
         contentHtml: composeMode === 'html' && contentHtml.trim() ? contentHtml : undefined,
-        rsvpLink: `${window.location.origin}/rsvp/${guest.rsvp_token}`,
       },
     });
     if (error) throw error;
@@ -453,6 +682,16 @@ export default function Guests() {
     () => visibleGuests.find((guest) => guest.id === selectedGuestId) ?? null,
     [selectedGuestId, visibleGuests],
   );
+  const guestEditor = selectedGuestDraft && selectedGuestDraft.id === selectedGuest?.id
+    ? selectedGuestDraft
+    : selectedGuest;
+  const selectedGuestRsvpActive = selectedGuest
+    ? isTokenActive(selectedGuest.rsvp_token_expires_at, selectedGuest.rsvp_token_revoked_at)
+    : false;
+
+  useEffect(() => {
+    setSelectedGuestDraft(selectedGuest ? { ...selectedGuest } : null);
+  }, [selectedGuest]);
 
   useEffect(() => {
     if (visibleGuests.length === 0) {
@@ -465,20 +704,18 @@ export default function Guests() {
     }
   }, [selectedGuestId, visibleGuests]);
 
-  if (isPlanner && !selectedClient) return null;
+  if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
+  if (guestsQuery.isLoading) return <WorkspacePageSkeleton compact />;
   if (checkInMode) {
     return (
       <Suspense
-        fallback={
-          <div className="flex min-h-[60vh] items-center justify-center">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Opening check-in...
-            </div>
-          </div>
-        }
+        fallback={<WorkspacePageSkeleton compact />}
       >
-        <GuestCheckIn guests={guests as any} onClose={() => setCheckInMode(false)} onUpdate={load} />
+        <GuestCheckIn
+          guests={guests as any}
+          onClose={() => setCheckInMode(false)}
+          onUpdate={() => queryClient.invalidateQueries({ queryKey: guestsQueryKey })}
+        />
       </Suspense>
     );
   }
@@ -571,13 +808,13 @@ export default function Guests() {
               <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
                 <Download className="h-4 w-4" /> CSV Template
               </Button>
-              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="gap-2">
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading || plannerNeedsApproval} className="gap-2">
                 <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload CSV'}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} className="gap-2">
+              <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} className="gap-2" disabled={plannerNeedsApproval}>
                 <UserCheck className="h-4 w-4" /> Check-In
               </Button>
-              {pendingWithEmail.length > 0 && (
+              {!plannerNeedsApproval && pendingWithEmail.length > 0 && (
                 <Button variant="outline" size="sm" onClick={() => openCompose()} className="gap-2">
                   <Send className="h-4 w-4" /> Invite All ({pendingWithEmail.length})
                 </Button>
@@ -593,6 +830,8 @@ export default function Guests() {
               <p className="mt-1 text-sm text-muted-foreground">
                 {guests.length === 0
                   ? 'A first pass is enough to get started.'
+                  : plannerNeedsApproval
+                    ? 'Planner guest edits stay pending until the couple approves them.'
                   : pendingWithEmail.length > 0
                     ? 'You can send invites now.'
                     : 'Focus on missing contact details and RSVP accuracy.'}
@@ -603,23 +842,27 @@ export default function Guests() {
               <Dialog open={open} onOpenChange={setOpen}>
                 <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
                   <Plus className="h-4 w-4" />
-                  Add Guest
+                  {plannerNeedsApproval ? 'Request Guest' : 'Add Guest'}
                 </Button>
                 <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-                  <DialogHeader><DialogTitle className="font-display">Add Guest</DialogTitle></DialogHeader>
+                  <DialogHeader><DialogTitle className="font-display">{plannerNeedsApproval ? 'Request guest addition' : 'Add Guest'}</DialogTitle></DialogHeader>
                   <form onSubmit={addGuest} className="space-y-4">
+                    <FormSubmitError message={guestSubmitError} />
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-2 sm:col-span-2">
                         <Label>Name</Label>
-                        <Input value={name} onChange={e => setName(e.target.value)} placeholder="Guest name" required />
+                        <Input value={name} onChange={e => { setName(e.target.value); setGuestFormErrors((current) => ({ ...current, name: undefined })); setGuestSubmitError(null); }} placeholder="Guest name" required aria-invalid={!!guestFormErrors.name} />
+                        <FormFieldError message={guestFormErrors.name} />
                       </div>
                       <div className="space-y-2">
                         <Label>Email</Label>
-                        <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="guest@example.com" />
+                        <Input type="email" value={email} onChange={e => { setEmail(e.target.value); setGuestFormErrors((current) => ({ ...current, email: undefined })); setGuestSubmitError(null); }} placeholder="guest@example.com" aria-invalid={!!guestFormErrors.email} />
+                        <FormFieldError message={guestFormErrors.email} />
                       </div>
                       <div className="space-y-2">
                         <Label>Phone</Label>
-                        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+254..." />
+                        <Input value={phone} onChange={e => { setPhone(e.target.value); setGuestFormErrors((current) => ({ ...current, phone: undefined })); setGuestSubmitError(null); }} placeholder="+254..." aria-invalid={!!guestFormErrors.phone} />
+                        <FormFieldError message={guestFormErrors.phone} />
                       </div>
                       <div className="space-y-2">
                         <Label>Group</Label>
@@ -665,7 +908,9 @@ export default function Guests() {
                         <Input value={mealPreference} onChange={e => setMealPreference(e.target.value)} placeholder="Optional meal or dietary note" />
                       </div>
                     </div>
-                    <Button type="submit" className="w-full">Add Guest</Button>
+                    <Button type="submit" className="w-full" disabled={savingGuest}>
+                      {savingGuest ? 'Saving...' : plannerNeedsApproval ? 'Send for approval' : 'Add Guest'}
+                    </Button>
                   </form>
                 </DialogContent>
               </Dialog>
@@ -790,7 +1035,7 @@ export default function Guests() {
                 </div>
 
                 <div className="bg-background">
-                  {selectedGuest ? (
+                  {guestEditor && selectedGuest ? (
                     <div className="space-y-6 p-5 lg:p-6">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="space-y-3">
@@ -806,7 +1051,7 @@ export default function Guests() {
                             )}
                           </div>
                           <div>
-                            <h2 className="font-display text-2xl font-semibold text-foreground">{selectedGuest.name}</h2>
+                            <h2 className="font-display text-2xl font-semibold text-foreground">{guestEditor.name}</h2>
                             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
                               Everything for this guest, in one place.
                             </p>
@@ -820,22 +1065,22 @@ export default function Guests() {
                           onClick={() => deleteGuest(selectedGuest.id)}
                         >
                           <Trash2 className="h-4 w-4" />
-                          Delete guest
+                          {plannerNeedsApproval ? 'Request removal' : 'Delete guest'}
                         </Button>
                       </div>
 
                       <div className="grid gap-3 md:grid-cols-3">
                         <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
                           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Contact</p>
-                          <p className="mt-2 text-sm font-medium text-foreground">{selectedGuest.email || selectedGuest.phone || 'Missing'}</p>
+                          <p className="mt-2 text-sm font-medium text-foreground">{guestEditor.email || guestEditor.phone || 'Missing'}</p>
                         </div>
                         <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
                           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Plus One</p>
-                          <p className="mt-2 text-sm font-medium text-foreground">{selectedGuest.plus_one ? 'Allowed' : 'Not listed'}</p>
+                          <p className="mt-2 text-sm font-medium text-foreground">{guestEditor.plus_one ? 'Allowed' : 'Not listed'}</p>
                         </div>
                         <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
                           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Meal</p>
-                          <p className="mt-2 text-sm font-medium text-foreground">{selectedGuest.meal_preference || 'Not set'}</p>
+                          <p className="mt-2 text-sm font-medium text-foreground">{guestEditor.meal_preference || 'Not set'}</p>
                         </div>
                       </div>
 
@@ -843,36 +1088,38 @@ export default function Guests() {
                         <div className="space-y-4">
                           <div className="rounded-2xl border border-border/70 bg-background p-4">
                             <p className="text-sm font-medium text-foreground">Guest details</p>
-                            <p className="mt-1 text-sm text-muted-foreground">Update and save core details.</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {plannerNeedsApproval ? 'Planner edits here go to the couple for approval before they become live.' : 'Update and save core details.'}
+                            </p>
 
                             <div className="mt-4 grid gap-3 sm:grid-cols-2">
                               <div className="space-y-2 sm:col-span-2">
                                 <Label>Name</Label>
                                 <Input
-                                  value={selectedGuest.name}
-                                  onChange={(e) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, name: e.target.value } : guest))}
+                                  value={guestEditor.name}
+                                  onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, name: e.target.value } : current)}
                                 />
                               </div>
                               <div className="space-y-2">
                                 <Label>Email</Label>
                                 <Input
                                   type="email"
-                                  value={selectedGuest.email || ''}
-                                  onChange={(e) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, email: e.target.value || null } : guest))}
+                                  value={guestEditor.email || ''}
+                                  onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, email: e.target.value || null } : current)}
                                 />
                               </div>
                               <div className="space-y-2">
                                 <Label>Phone</Label>
                                 <Input
-                                  value={selectedGuest.phone || ''}
-                                  onChange={(e) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, phone: e.target.value || null } : guest))}
+                                  value={guestEditor.phone || ''}
+                                  onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, phone: e.target.value || null } : current)}
                                 />
                               </div>
                               <div className="space-y-2">
                                 <Label>Group</Label>
                                 <Select
-                                  value={selectedGuest.group_name || '__none__'}
-                                  onValueChange={(value) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, group_name: value === '__none__' ? null : value } : guest))}
+                                  value={guestEditor.group_name || '__none__'}
+                                  onValueChange={(value) => setSelectedGuestDraft((current) => current ? { ...current, group_name: value === '__none__' ? null : value } : current)}
                                 >
                                   <SelectTrigger><SelectValue /></SelectTrigger>
                                   <SelectContent>
@@ -884,8 +1131,8 @@ export default function Guests() {
                               <div className="space-y-2">
                                 <Label>Category</Label>
                                 <Select
-                                  value={selectedGuest.category || 'general'}
-                                  onValueChange={(value) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, category: value } : guest))}
+                                  value={guestEditor.category || 'general'}
+                                  onValueChange={(value) => setSelectedGuestDraft((current) => current ? { ...current, category: value } : current)}
                                 >
                                   <SelectTrigger><SelectValue /></SelectTrigger>
                                   <SelectContent>
@@ -896,15 +1143,15 @@ export default function Guests() {
                               <div className="space-y-2">
                                 <Label>Meal Preference</Label>
                                 <Input
-                                  value={selectedGuest.meal_preference || ''}
-                                  onChange={(e) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, meal_preference: e.target.value || null } : guest))}
+                                  value={guestEditor.meal_preference || ''}
+                                  onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, meal_preference: e.target.value || null } : current)}
                                 />
                               </div>
                               <div className="space-y-2">
                                 <Label>Plus One</Label>
                                 <Select
-                                  value={selectedGuest.plus_one ? 'yes' : 'no'}
-                                  onValueChange={(value) => setGuests((prev) => prev.map((guest) => guest.id === selectedGuest.id ? { ...guest, plus_one: value === 'yes' } : guest))}
+                                  value={guestEditor.plus_one ? 'yes' : 'no'}
+                                  onValueChange={(value) => setSelectedGuestDraft((current) => current ? { ...current, plus_one: value === 'yes' } : current)}
                                 >
                                   <SelectTrigger><SelectValue /></SelectTrigger>
                                   <SelectContent>
@@ -921,19 +1168,19 @@ export default function Guests() {
                                 className="gap-2"
                                 onClick={() =>
                                   saveGuestDetails(selectedGuest, {
-                                    name: selectedGuest.name,
-                                    email: selectedGuest.email,
-                                    phone: selectedGuest.phone,
-                                    group_name: selectedGuest.group_name,
-                                    category: selectedGuest.category,
-                                    meal_preference: selectedGuest.meal_preference,
-                                    plus_one: selectedGuest.plus_one,
+                                    name: guestEditor.name,
+                                    email: guestEditor.email,
+                                    phone: guestEditor.phone,
+                                    group_name: guestEditor.group_name,
+                                    category: guestEditor.category,
+                                    meal_preference: guestEditor.meal_preference,
+                                    plus_one: guestEditor.plus_one,
                                   } as Partial<Guest>)
                                 }
                                 disabled={savingGuestId === selectedGuest.id}
                               >
                                 {savingGuestId === selectedGuest.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                                Save Guest
+                                {plannerNeedsApproval ? 'Send change for approval' : 'Save Guest'}
                               </Button>
                             </div>
                           </div>
@@ -941,8 +1188,10 @@ export default function Guests() {
 
                         <div className="space-y-4">
                           <div className="rounded-2xl border border-border/70 bg-background p-4">
-                            <p className="text-sm font-medium text-foreground">RSVP and invite actions</p>
-                            <p className="mt-1 text-sm text-muted-foreground">Update status, then send or copy the invite.</p>
+                            <p className="text-sm font-medium text-foreground">{plannerNeedsApproval ? 'Planner visibility' : 'RSVP and invite actions'}</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {plannerNeedsApproval ? 'RSVP links, invite sending, and public guest access controls stay on the couple side.' : 'Update status, then send or copy the invite.'}
+                            </p>
 
                             <div className="mt-4 space-y-3">
                               <div className="space-y-2">
@@ -960,21 +1209,75 @@ export default function Guests() {
                                 </Select>
                               </div>
 
-                              <div className="grid gap-2 sm:grid-cols-2">
-                                <Button variant="outline" className="gap-2" onClick={() => copyRsvpLink(selectedGuest)}>
-                                  <Copy className="h-4 w-4" />
-                                  Copy RSVP Link
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  className="gap-2"
-                                  onClick={() => openCompose(selectedGuest)}
-                                  disabled={!selectedGuest.email}
-                                >
-                                  <Mail className="h-4 w-4" />
-                                  Send Invite
-                                </Button>
-                              </div>
+                              {plannerNeedsApproval ? (
+                                <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3 text-sm text-muted-foreground">
+                                  Couples keep RSVP links, invite sending, link refresh, revoke controls, and check-in access. You can still request guest detail updates above.
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge variant={selectedGuestRsvpActive ? 'default' : 'secondary'}>
+                                        {selectedGuestRsvpActive ? 'Link active' : 'Link inactive'}
+                                      </Badge>
+                                      {selectedGuest.rsvp_token_expires_at && (
+                                        <span className="text-xs text-muted-foreground">
+                                          Expires {new Date(selectedGuest.rsvp_token_expires_at).toLocaleDateString()}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                                      <p>
+                                        {selectedGuest.rsvp_last_viewed_at
+                                          ? `Last opened ${new Date(selectedGuest.rsvp_last_viewed_at).toLocaleString()}`
+                                          : 'No public opens recorded yet.'}
+                                      </p>
+                                      <p>
+                                        {selectedGuest.rsvp_last_responded_at
+                                          ? `Last RSVP update ${new Date(selectedGuest.rsvp_last_responded_at).toLocaleString()}`
+                                          : 'No RSVP response recorded from this link yet.'}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    <Button variant="outline" className="gap-2" onClick={() => copyRsvpLink(selectedGuest)} disabled={!selectedGuestRsvpActive}>
+                                      <Copy className="h-4 w-4" />
+                                      Copy RSVP Link
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      className="gap-2"
+                                      onClick={() => openCompose(selectedGuest)}
+                                      disabled={!selectedGuest.email || !selectedGuestRsvpActive}
+                                    >
+                                      <Mail className="h-4 w-4" />
+                                      Send Invite
+                                    </Button>
+                                  </div>
+
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    <Button
+                                      variant="outline"
+                                      className="gap-2"
+                                      onClick={() => void refreshGuestRsvpLink(selectedGuest)}
+                                      disabled={savingGuestId === selectedGuest.id}
+                                    >
+                                      {savingGuestId === selectedGuest.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+                                      Refresh Link
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      className="gap-2 text-destructive hover:text-destructive"
+                                      onClick={() => void revokeGuestRsvpLink(selectedGuest)}
+                                      disabled={savingGuestId === selectedGuest.id || !selectedGuestRsvpActive}
+                                    >
+                                      <ShieldOff className="h-4 w-4" />
+                                      Revoke Link
+                                    </Button>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </div>
 
