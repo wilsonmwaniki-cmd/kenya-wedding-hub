@@ -8,12 +8,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import BrandWordmark from '@/components/BrandWordmark';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
+
+const PASSWORD_RECOVERY_SESSION_KEY = 'zania:password-recovery-active';
+
+function setRecoverySessionFlag(active: boolean) {
+  if (typeof window === 'undefined') return;
+  if (active) {
+    window.sessionStorage.setItem(PASSWORD_RECOVERY_SESSION_KEY, 'true');
+  } else {
+    window.sessionStorage.removeItem(PASSWORD_RECOVERY_SESSION_KEY);
+  }
+}
+
+function hasRecoverySessionFlag() {
+  if (typeof window === 'undefined') return false;
+  return window.sessionStorage.getItem(PASSWORD_RECOVERY_SESSION_KEY) === 'true';
+}
 
 export default function ResetPassword() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<'loading' | 'ready' | 'invalid'>('loading');
+  const [formErrors, setFormErrors] = useState<{ password?: string; confirmPassword?: string }>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -33,20 +53,28 @@ export default function ResetPassword() {
       const refreshToken = hashParams.get('refresh_token');
       const errorInQuery = searchParams.get('error') || searchParams.get('error_description');
       const errorInHash = hashParams.get('error') || hashParams.get('error_description');
+      const hasRecoverySignal =
+        typeInQuery === 'recovery'
+        || typeInHash === 'recovery'
+        || Boolean(code)
+        || Boolean(tokenHash)
+        || (Boolean(accessToken) && Boolean(refreshToken));
 
       // If backend already told us this link is invalid/expired, don't spin forever.
       if (errorInQuery || errorInHash) {
+        setRecoverySessionFlag(false);
         if (!cancelled) setStatus('invalid');
         return;
       }
 
-      // Fallback 1: If tokens are present in hash, set session explicitly.
-      if (accessToken && refreshToken) {
+      // Fallback 1: If recovery tokens are present in hash, set session explicitly.
+      if (accessToken && refreshToken && (typeInQuery === 'recovery' || typeInHash === 'recovery')) {
         const { error } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
         });
         if (!error) {
+          setRecoverySessionFlag(true);
           if (!cancelled) setStatus('ready');
           return;
         }
@@ -56,9 +84,11 @@ export default function ResetPassword() {
       if (code && (typeInQuery === 'recovery' || typeInHash === 'recovery')) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
+          setRecoverySessionFlag(false);
           if (!cancelled) setStatus('invalid');
           return;
         }
+        setRecoverySessionFlag(true);
       }
 
       // Fallback 3: token_hash-based recovery flow.
@@ -68,13 +98,16 @@ export default function ResetPassword() {
           type: 'recovery',
         });
         if (error) {
+          setRecoverySessionFlag(false);
           if (!cancelled) setStatus('invalid');
           return;
         }
+        setRecoverySessionFlag(true);
       }
 
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+      if (session && (hasRecoverySignal || hasRecoverySessionFlag())) {
+        setRecoverySessionFlag(true);
         if (!cancelled) setStatus('ready');
         return;
       }
@@ -85,22 +118,30 @@ export default function ResetPassword() {
       }
 
       // No recovery signal + no session => invalid or stale entry to this page.
+      setRecoverySessionFlag(false);
       if (!cancelled) setStatus('invalid');
     };
 
     initializeRecovery();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecoverySessionFlag(true);
+        setStatus('ready');
+        return;
+      }
+
+      if (event === 'SIGNED_IN' && session && hasRecoverySessionFlag()) {
         setStatus('ready');
       }
     });
 
     const timeout = setTimeout(async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+      if (session && hasRecoverySessionFlag()) {
         setStatus('ready');
       } else {
+        setRecoverySessionFlag(false);
         setStatus('invalid');
       }
     }, 5000);
@@ -114,21 +155,32 @@ export default function ResetPassword() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      toast({ title: 'Passwords do not match', variant: 'destructive' });
-      return;
+    const nextErrors: { password?: string; confirmPassword?: string } = {};
+    if (!password.trim()) {
+      nextErrors.password = 'Enter a new password.';
+    } else if (password.length < 6) {
+      nextErrors.password = 'Minimum 6 characters.';
     }
-    if (password.length < 6) {
-      toast({ title: 'Password too short', description: 'Minimum 6 characters.', variant: 'destructive' });
+    if (!confirmPassword.trim()) {
+      nextErrors.confirmPassword = 'Confirm your new password.';
+    } else if (password !== confirmPassword) {
+      nextErrors.confirmPassword = 'Passwords do not match.';
+    }
+    setFormErrors(nextErrors);
+    setSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) {
       return;
     }
     setSubmitting(true);
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
+      setRecoverySessionFlag(false);
+      await supabase.auth.signOut({ scope: 'local' });
       toast({ title: 'Password updated!', description: 'You can now sign in with your new password.' });
-      navigate('/auth');
+      navigate('/sign-in');
     } catch (err: any) {
+      setSubmitError(err.message || 'Could not update your password right now.');
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
@@ -136,20 +188,7 @@ export default function ResetPassword() {
   };
 
   if (status === 'loading') {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-warm p-4">
-        <Card className="w-full max-w-md shadow-warm border-border/50">
-          <CardHeader className="text-center space-y-3">
-            <BrandWordmark size="md" />
-            <CardTitle className="font-display text-xl">Reset Password</CardTitle>
-            <CardDescription>Loading your recovery session...</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <PublicPageSkeleton />;
   }
 
   if (status === 'invalid') {
@@ -167,7 +206,7 @@ export default function ResetPassword() {
             <Button className="w-full" onClick={() => navigate('/')}>
               Request New Reset Link
             </Button>
-            <Button variant="outline" className="w-full" onClick={() => navigate('/auth')}>
+            <Button variant="outline" className="w-full" onClick={() => navigate('/sign-in')}>
               Back to Sign In
             </Button>
           </CardContent>
@@ -186,13 +225,16 @@ export default function ResetPassword() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <FormSubmitError message={submitError} />
             <div className="space-y-2">
               <Label htmlFor="password">New Password</Label>
-              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
+              <Input id="password" type="password" value={password} onChange={e => { setPassword(e.target.value); setFormErrors((current) => ({ ...current, password: undefined })); setSubmitError(null); }} placeholder="••••••••" required minLength={6} aria-invalid={!!formErrors.password} />
+              <FormFieldError message={formErrors.password} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirm">Confirm Password</Label>
-              <Input id="confirm" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
+              <Input id="confirm" type="password" value={confirmPassword} onChange={e => { setConfirmPassword(e.target.value); setFormErrors((current) => ({ ...current, confirmPassword: undefined })); setSubmitError(null); }} placeholder="••••••••" required minLength={6} aria-invalid={!!formErrors.confirmPassword} />
+              <FormFieldError message={formErrors.confirmPassword} />
             </div>
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
