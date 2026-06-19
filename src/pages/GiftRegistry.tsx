@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ExternalLink, Gift, Loader2, ShoppingBag, Trash2 } from 'lucide-react';
+import { WorkspacePageSkeleton, ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +16,7 @@ import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
 import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 
 type RegistryItem = {
   id: string;
@@ -92,6 +94,8 @@ export default function GiftRegistry() {
   const [savingItem, setSavingItem] = useState(false);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [form, setForm] = useState<RegistryFormState>(emptyForm);
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof RegistryFormState, string>>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const decision = getEntitlementDecision('couple.gift_registry', {
     profile,
@@ -276,6 +280,7 @@ export default function GiftRegistry() {
 
   const handleCreateItem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setSubmitError(null);
 
     if (!weddingId) {
       toast({
@@ -287,25 +292,19 @@ export default function GiftRegistry() {
     }
 
     const title = form.title.trim();
-    if (!title) {
-      toast({
-        title: 'Add a gift name',
-        description: 'Each registry item needs a clear title.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     const estimatedPrice = form.estimatedPriceKes.trim()
       ? Number(form.estimatedPriceKes)
       : null;
 
+    const nextErrors: Partial<Record<keyof RegistryFormState, string>> = {};
+    if (!title) {
+      nextErrors.title = 'Each registry item needs a clear title.';
+    }
     if (estimatedPrice != null && Number.isNaN(estimatedPrice)) {
-      toast({
-        title: 'Use a valid price',
-        description: 'Estimated price should be a number in Kenya shillings.',
-        variant: 'destructive',
-      });
+      nextErrors.estimatedPriceKes = 'Estimated price should be a number in Kenya shillings.';
+    }
+    setFormErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
       return;
     }
 
@@ -326,6 +325,7 @@ export default function GiftRegistry() {
       .single();
 
     if (error) {
+      setSubmitError(error.message || 'There was a problem saving this gift.');
       toast({
         title: 'Could not add registry item',
         description: error.message || 'There was a problem saving this gift.',
@@ -405,8 +405,11 @@ export default function GiftRegistry() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      <div className="space-y-6">
+        <WorkspacePageSkeleton compact />
+        <div className="rounded-3xl border border-border/70 bg-card/70 p-6 shadow-card">
+          <ListRowsSkeleton rows={3} />
+        </div>
       </div>
     );
   }
@@ -509,16 +512,23 @@ export default function GiftRegistry() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleCreateItem} className="space-y-4">
+                <FormSubmitError message={submitError} />
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="registry-title">Gift name</Label>
                     <Input
                       id="registry-title"
                       value={form.title}
-                      onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                      onChange={(event) => {
+                        setForm((current) => ({ ...current, title: event.target.value }));
+                        setFormErrors((current) => ({ ...current, title: undefined }));
+                        setSubmitError(null);
+                      }}
                       placeholder="e.g. Dinner set"
                       required
+                      aria-invalid={!!formErrors.title}
                     />
+                    <FormFieldError message={formErrors.title} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="registry-category">Category</Label>
@@ -537,9 +547,15 @@ export default function GiftRegistry() {
                       min="0"
                       step="1"
                       value={form.estimatedPriceKes}
-                      onChange={(event) => setForm((current) => ({ ...current, estimatedPriceKes: event.target.value }))}
+                      onChange={(event) => {
+                        setForm((current) => ({ ...current, estimatedPriceKes: event.target.value }));
+                        setFormErrors((current) => ({ ...current, estimatedPriceKes: undefined }));
+                        setSubmitError(null);
+                      }}
                       placeholder="e.g. 12000"
+                      aria-invalid={!!formErrors.estimatedPriceKes}
                     />
+                    <FormFieldError message={formErrors.estimatedPriceKes} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="registry-link">Purchase link</Label>
