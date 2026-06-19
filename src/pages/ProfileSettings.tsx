@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyhole, AlertTriangle, UserCog, Phone, BriefcaseBusiness, Store, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyhole, AlertTriangle, UserCog, Phone, BriefcaseBusiness, Store, CheckCircle2 } from 'lucide-react';
 import AvatarUpload from '@/components/AvatarUpload';
 import { committeeResponsibilityOptions } from '@/lib/committeeRoles';
 import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
@@ -24,6 +24,7 @@ import {
   getMyWeddingOwnershipSummary,
   getMyWeddingOwnershipSummaryFromTables,
   getPendingWeddingSetup,
+  getWeddingInviteDeliveryFailureMessage,
   getSuggestedReferenceCurrencyForPlanningCountry,
   getSuggestedTimezoneForPlanningCountry,
   getTimezoneOptions,
@@ -42,6 +43,9 @@ import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocation
 import { getHomeRouteForRole, isProfessionalSetupPending } from '@/lib/roles';
 import { clearPendingProfessionalSetup } from '@/lib/professionalSetupState';
 import { hasActiveBetaTrial } from '@/lib/betaTrial';
+import { readPendingVendorClaim } from '@/lib/vendorClaimState';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { normalizeHumanName } from '@/lib/names';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 
@@ -49,15 +53,21 @@ interface OwnedWeddingWorkspace extends MyWeddingOwnershipSummary {}
 
 const committeePermissionOptions = ['chair', 'member', 'viewer'] as const;
 export default function ProfileSettings() {
-  const { user, profile, updateProfile } = useAuth();
+  const { user, profile, updateProfile, signOut } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const [saving, setSaving] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [newSpecialty, setNewSpecialty] = useState('');
   const [requestingVerification, setRequestingVerification] = useState(false);
   const [committeeMembers, setCommitteeMembers] = useState<CommitteeMember[]>([]);
   const [committeeLoading, setCommitteeLoading] = useState(false);
   const [savingCommitteeMember, setSavingCommitteeMember] = useState(false);
+  const [committeeFormErrors, setCommitteeFormErrors] = useState<Record<string, string>>({});
+  const [committeeSubmitError, setCommitteeSubmitError] = useState<string | null>(null);
   const [deletingCommitteeMemberId, setDeletingCommitteeMemberId] = useState<string | null>(null);
   const [committeeMemberForm, setCommitteeMemberForm] = useState({
     full_name: '',
@@ -77,6 +87,8 @@ export default function ProfileSettings() {
   const [setupWeddingOwnerRole, setSetupWeddingOwnerRole] = useState<WeddingOwnerRole | null>(null);
   const [professionalSetupRole, setProfessionalSetupRole] = useState<'planner' | 'vendor' | null>(null);
   const [completingProfessionalSetup, setCompletingProfessionalSetup] = useState(false);
+  const [privacyAction, setPrivacyAction] = useState<'marketing' | 'directory' | 'delete' | null>(null);
+  const [deletePrivacyConfirm, setDeletePrivacyConfirm] = useState('');
 
   const isPlanner = profile?.role === 'planner';
   const isVendor = profile?.role === 'vendor';
@@ -86,6 +98,9 @@ export default function ProfileSettings() {
   const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata, profile?.role, user?.email ?? null);
   const isCouple = profile?.role === 'couple' && !professionalSetupPending;
   const isProfessionalWorkspace = professionalSetupPending || isPlanner || isVendor || isCommittee;
+  const canOptOutOfDirectory = isProfessionalPlanner || isVendor;
+  const setupMode = searchParams.get('setup');
+  const plannerProfileSetupMode = setupMode === 'planner-profile';
   const pendingWeddingSetup = user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null;
   const metadataPartnerEmail =
     typeof user?.user_metadata?.partner_email === 'string' ? user.user_metadata.partner_email : null;
@@ -104,6 +119,25 @@ export default function ProfileSettings() {
   const metadataOwnerTimezone =
     typeof user?.user_metadata?.owner_timezone === 'string' ? user.user_metadata.owner_timezone : '';
   const timezoneOptions = getTimezoneOptions();
+  const pendingVendorClaim = readPendingVendorClaim();
+
+  useEffect(() => {
+    if (!professionalSetupPending || !pendingVendorClaim) return;
+    setProfessionalSetupRole((current) => current ?? 'vendor');
+  }, [pendingVendorClaim, professionalSetupPending]);
+
+  useEffect(() => {
+    if (!professionalSetupPending) return;
+
+    const metadataRole =
+      user?.user_metadata?.role === 'planner' || user?.user_metadata?.role === 'vendor'
+        ? user.user_metadata.role
+        : null;
+    const fallbackRole = metadataRole ?? (profile?.role === 'planner' || profile?.role === 'vendor' ? profile.role : null);
+
+    if (!fallbackRole) return;
+    setProfessionalSetupRole((current) => current ?? fallbackRole);
+  }, [professionalSetupPending, profile?.role, user?.user_metadata?.role]);
 
   const buildSuggestedWeddingName = (name: string) => {
     const firstName = name.trim().split(/\s+/)[0];
@@ -144,6 +178,16 @@ export default function ProfileSettings() {
     minimum_budget_kes: '',
     maximum_budget_kes: '',
   });
+
+  const ownershipPartnerEmail = useMemo(
+    () => ownedWedding?.partnerEmail ?? pendingWeddingSetup?.partnerEmail ?? metadataPartnerEmail ?? '',
+    [metadataPartnerEmail, ownedWedding?.partnerEmail, pendingWeddingSetup?.partnerEmail],
+  );
+
+  const resolvedPartnerEmail = useMemo(
+    () => partnerEmailInput || ownershipPartnerEmail,
+    [ownershipPartnerEmail, partnerEmailInput],
+  );
 
   const buildFallbackOwnershipSummary = (): OwnedWeddingWorkspace | null => {
     const fallbackPartnerEmail = pendingWeddingSetup?.partnerEmail ?? metadataPartnerEmail ?? null;
@@ -338,8 +382,14 @@ export default function ProfileSettings() {
         return;
       }
 
+      const resolvedOwnershipPartnerEmail =
+        summary.partnerEmail
+        ?? pendingWeddingSetup?.partnerEmail
+        ?? metadataPartnerEmail
+        ?? '';
+
       setOwnedWedding(summary);
-      setPartnerEmailInput(summary.partnerEmail ?? '');
+      setPartnerEmailInput(resolvedOwnershipPartnerEmail);
       const planningSettings = summary.weddingId ? await loadWeddingPlanningSettings(summary.weddingId) : null;
       setForm((prev) => ({
         ...prev,
@@ -375,6 +425,37 @@ export default function ProfileSettings() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const nextErrors: Record<string, string> = {};
+    const minimumBudget = form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null;
+    const maximumBudget = form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null;
+
+    if (isProfessionalPlanner) {
+      if (!form.full_name.trim()) nextErrors.full_name = 'Add your full name before saving your planner profile.';
+      if (!form.company_name.trim()) nextErrors.company_name = 'Add your business name before saving your planner profile.';
+      if (!form.company_email.trim()) nextErrors.company_email = 'Add your business email before saving your planner profile.';
+      else if (!/\S+@\S+\.\S+/.test(form.company_email.trim())) nextErrors.company_email = 'Enter a valid business email.';
+      if (!form.company_phone.trim()) nextErrors.company_phone = 'Add your business phone before saving your planner profile.';
+      if (!form.bio.trim()) nextErrors.bio = 'Add a short bio so couples can understand your experience.';
+      if (form.specialties.length === 0) nextErrors.specialties = 'Add at least one specialty before saving your planner profile.';
+      if (!form.primary_county.trim()) nextErrors.primary_county = 'Choose your primary county before saving your planner profile.';
+      if (form.service_areas.length === 0) nextErrors.service_areas = 'Add at least one service area before saving your planner profile.';
+      if (minimumBudget === null || Number.isNaN(minimumBudget)) nextErrors.minimum_budget_kes = 'Add your minimum budget before saving your planner profile.';
+      if (maximumBudget === null || Number.isNaN(maximumBudget)) nextErrors.maximum_budget_kes = 'Add your maximum budget before saving your planner profile.';
+      else if (minimumBudget !== null && !Number.isNaN(minimumBudget) && maximumBudget < minimumBudget) {
+        nextErrors.maximum_budget_kes = 'Maximum budget must be greater than or equal to minimum budget.';
+      }
+    }
+
+    if (isCouple && form.planning_mode === 'diaspora') {
+      if (!form.planning_country.trim()) nextErrors.planning_country = 'Add the country you are planning from before saving diaspora mode.';
+      if (!form.reference_currency) nextErrors.reference_currency = 'Choose a reference currency before saving diaspora mode.';
+      if (!form.owner_timezone.trim()) nextErrors.owner_timezone = 'Add your timezone before saving diaspora mode.';
+    }
+
+    setFormErrors(nextErrors);
+    setSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSaving(true);
     try {
       const updates: Record<string, any> = { full_name: form.full_name };
@@ -389,28 +470,14 @@ export default function ProfileSettings() {
         updates.primary_town = form.primary_town || null;
         updates.service_areas = form.service_areas;
         updates.travel_scope = form.travel_scope;
-        updates.minimum_budget_kes = form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null;
-        updates.maximum_budget_kes = form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null;
+        updates.minimum_budget_kes = minimumBudget;
+        updates.maximum_budget_kes = maximumBudget;
       } else if (isCommittee) {
         updates.committee_name = form.committee_name;
         updates.wedding_county = form.wedding_county || null;
         updates.wedding_town = form.wedding_town || null;
         updates.wedding_location = buildKenyaLocationLabel(form.wedding_county, form.wedding_town);
       } else if (isCouple) {
-        if (form.planning_mode === 'diaspora') {
-          if (!form.planning_country.trim()) {
-            throw new Error('Add the country you are planning from before saving diaspora mode.');
-          }
-
-          if (!form.reference_currency) {
-            throw new Error('Choose a reference currency before saving diaspora mode.');
-          }
-
-          if (!form.owner_timezone.trim()) {
-            throw new Error('Add your timezone before saving diaspora mode.');
-          }
-        }
-
         if (ownedWedding?.weddingId) {
           const { error: weddingError } = await supabase
             .from('weddings')
@@ -439,7 +506,14 @@ export default function ProfileSettings() {
         await loadOwnedWeddingWorkspace();
       }
       toast({ title: 'Profile updated!' });
+
+      if (isProfessionalPlanner && plannerProfileSetupMode) {
+        searchParams.delete('setup');
+        setSearchParams(searchParams, { replace: true });
+        navigate('/clients', { replace: true });
+      }
     } catch (err: any) {
+      setSubmitError(err.message || 'We could not save your settings right now.');
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSaving(false);
@@ -516,6 +590,11 @@ export default function ProfileSettings() {
         return;
       }
 
+      if (pendingVendorClaim) {
+        window.location.assign('/vendor-claim');
+        return;
+      }
+
       window.location.assign(getHomeRouteForRole(professionalSetupRole, plannerType));
     } catch (error: any) {
       toast({
@@ -562,6 +641,17 @@ export default function ProfileSettings() {
   const addCommitteeMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.user_id) return;
+    const nextErrors: Record<string, string> = {};
+    if (!committeeMemberForm.full_name.trim()) nextErrors.full_name = 'Enter the committee member name.';
+    if (!committeeMemberForm.phone.trim()) nextErrors.phone = 'Enter the committee member phone number.';
+    else if (!/^[\d+\s()-]{7,}$/.test(committeeMemberForm.phone.trim())) nextErrors.phone = 'Enter a valid phone number.';
+    if (committeeMemberForm.email.trim() && !/\S+@\S+\.\S+/.test(committeeMemberForm.email.trim())) {
+      nextErrors.email = 'Enter a valid email address or leave it blank.';
+    }
+    setCommitteeFormErrors(nextErrors);
+    setCommitteeSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSavingCommitteeMember(true);
     try {
       const { error } = await supabase.from('wedding_committee_members').insert({
@@ -583,6 +673,7 @@ export default function ProfileSettings() {
       await loadCommitteeMembers();
       toast({ title: 'Committee member added' });
     } catch (err: any) {
+      setCommitteeSubmitError(err.message || 'We could not add this committee member right now.');
       toast({ title: 'Failed to add committee member', description: err.message, variant: 'destructive' });
     } finally {
       setSavingCommitteeMember(false);
@@ -690,7 +781,10 @@ export default function ProfileSettings() {
           await sendWeddingInviteEmail(inviteRow.invite_id);
           description = 'The partner invite email has been sent and they can also use the wedding code.';
         } catch (inviteError: any) {
-          description = 'The partner invite was created, but the email could not be delivered. You can resend it from here.';
+          description = getWeddingInviteDeliveryFailureMessage(
+            inviteError,
+            'The partner invite was created, but the email could not be delivered right now.',
+          );
           console.error('Partner invite email delivery failed from settings:', inviteError);
         }
       }
@@ -708,6 +802,102 @@ export default function ProfileSettings() {
       });
     } finally {
       setPartnerInviteSubmitting(false);
+    }
+  };
+
+  const handleMarketingOptOutUpdate = async (nextOptOut: boolean) => {
+    setPrivacyAction('marketing');
+
+    try {
+      const { error } = await (supabase as any).rpc('set_self_marketing_opt_out', {
+        new_opt_out: nextOptOut,
+      });
+      if (error) throw error;
+
+      await updateProfile({
+        marketing_opt_out: nextOptOut,
+        marketing_opt_out_at: nextOptOut ? new Date().toISOString() : null,
+      });
+
+      toast({
+        title: nextOptOut ? 'Emails unsubscribed' : 'Emails resumed',
+        description: nextOptOut
+          ? 'You will no longer receive Zania marketing emails.'
+          : 'Zania email updates have been turned back on.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not update email preference',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPrivacyAction(null);
+    }
+  };
+
+  const handleDirectoryOptOutUpdate = async (nextOptOut: boolean) => {
+    setPrivacyAction('directory');
+
+    try {
+      const { error } = await (supabase as any).rpc('set_self_directory_opt_out', {
+        new_opt_out: nextOptOut,
+      });
+      if (error) throw error;
+
+      await updateProfile({
+        directory_opt_out: nextOptOut,
+        directory_opt_out_at: nextOptOut ? new Date().toISOString() : null,
+      });
+
+      toast({
+        title: nextOptOut ? 'Public profile hidden' : 'Public profile restored',
+        description: nextOptOut
+          ? 'Your planner or vendor profile is now hidden from the public directory.'
+          : 'Your planner or vendor profile can appear publicly again.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not update directory visibility',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPrivacyAction(null);
+    }
+  };
+
+  const handleDeleteProfileData = async () => {
+    if (deletePrivacyConfirm.trim().toUpperCase() !== 'DELETE') {
+      toast({
+        title: 'Confirmation required',
+        description: 'Type DELETE before removing your Zania profile information.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPrivacyAction('delete');
+
+    try {
+      const { error } = await (supabase as any).rpc('delete_my_zania_profile_data');
+      if (error) throw error;
+
+      toast({
+        title: 'Your information has been removed',
+        description: 'Your Zania profile-facing information was deleted and your account has been opted out.',
+      });
+
+      await signOut();
+      navigate('/sign-in', { replace: true });
+    } catch (error: any) {
+      toast({
+        title: 'Could not remove your information',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPrivacyAction(null);
     }
   };
 
@@ -734,8 +924,7 @@ export default function ProfileSettings() {
         <Card className="overflow-hidden border-primary/20 bg-[linear-gradient(180deg,rgba(241,115,64,0.08),rgba(255,255,255,0.96)_48%)] shadow-card">
           <CardHeader className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className="gap-1.5 border border-primary/20 bg-background/80 text-foreground">
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
+              <Badge variant="secondary" className="border border-primary/20 bg-background/80 text-foreground">
                 Professional onboarding
               </Badge>
               <Badge variant="outline" className="border-primary/25 bg-background/65 text-muted-foreground">
@@ -1157,6 +1346,7 @@ export default function ProfileSettings() {
       )}
 
       <form onSubmit={handleSave} className="space-y-6">
+        <FormSubmitError message={submitError} />
         {/* Personal Details */}
         <Card className="shadow-card">
           <CardHeader>
@@ -1171,8 +1361,16 @@ export default function ProfileSettings() {
               </div>
             )}
             <div className="space-y-2">
-              <Label>Full Name</Label>
-              <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />
+              <Label>Full Name{isProfessionalPlanner ? ' *' : ''}</Label>
+              <Input value={form.full_name} onChange={e => {
+                setForm(f => ({ ...f, full_name: e.target.value }));
+                setFormErrors((current) => ({ ...current, full_name: '' }));
+                setSubmitError(null);
+              }} onBlur={() => {
+                if (!form.full_name.trim()) return;
+                setForm((current) => ({ ...current, full_name: normalizeHumanName(current.full_name) }));
+              }} required={isProfessionalPlanner} />
+              <FormFieldError message={formErrors.full_name} />
             </div>
             <div className="space-y-2">
               <Label>Sign-in Email</Label>
@@ -1194,20 +1392,35 @@ export default function ProfileSettings() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Company Name</Label>
-                  <Input value={form.company_name} onChange={e => setForm(f => ({ ...f, company_name: e.target.value }))} placeholder="e.g. Dream Weddings Kenya" />
+                  <Label>Company Name *</Label>
+                  <Input value={form.company_name} onChange={e => {
+                    setForm(f => ({ ...f, company_name: e.target.value }));
+                    setFormErrors((current) => ({ ...current, company_name: '' }));
+                    setSubmitError(null);
+                  }} placeholder="e.g. Dream Weddings Kenya" required />
+                  <FormFieldError message={formErrors.company_name} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Business Email</Label>
-                  <Input type="email" value={form.company_email} onChange={e => setForm(f => ({ ...f, company_email: e.target.value }))} placeholder="info@yourcompany.com" />
+                  <Label>Business Email *</Label>
+                  <Input type="email" value={form.company_email} onChange={e => {
+                    setForm(f => ({ ...f, company_email: e.target.value }));
+                    setFormErrors((current) => ({ ...current, company_email: '' }));
+                    setSubmitError(null);
+                  }} placeholder="info@yourcompany.com" required />
+                  <FormFieldError message={formErrors.company_email} />
                   <p className="text-xs text-muted-foreground">
                     This is the public business email couples will see. Your sign-in email is shown above.
                   </p>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label>Business Phone</Label>
-                    <Input value={form.company_phone} onChange={e => setForm(f => ({ ...f, company_phone: e.target.value }))} placeholder="+254 7XX XXX XXX" />
+                    <Label>Business Phone *</Label>
+                    <Input value={form.company_phone} onChange={e => {
+                      setForm(f => ({ ...f, company_phone: e.target.value }));
+                      setFormErrors((current) => ({ ...current, company_phone: '' }));
+                      setSubmitError(null);
+                    }} placeholder="+254 7XX XXX XXX" required />
+                    <FormFieldError message={formErrors.company_phone} />
                   </div>
                   <div className="space-y-2">
                     <Label>Website</Label>
@@ -1217,11 +1430,16 @@ export default function ProfileSettings() {
                 <KenyaLocationFields
                   county={form.primary_county}
                   town={form.primary_town}
-                  onCountyChange={(value) => setForm((f) => ({ ...f, primary_county: value }))}
+                  onCountyChange={(value) => {
+                    setForm((f) => ({ ...f, primary_county: value }));
+                    setFormErrors((current) => ({ ...current, primary_county: '' }));
+                    setSubmitError(null);
+                  }}
                   onTownChange={(value) => setForm((f) => ({ ...f, primary_town: value }))}
-                  countyLabel="Primary county"
+                  countyLabel="Primary county *"
                   townLabel="Primary town / area"
                 />
+                <FormFieldError message={formErrors.primary_county} />
               </CardContent>
             </Card>
 
@@ -1233,16 +1451,22 @@ export default function ProfileSettings() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Bio</Label>
+                  <Label>Bio *</Label>
                   <Textarea
                     value={form.bio}
-                    onChange={e => setForm(f => ({ ...f, bio: e.target.value }))}
+                    onChange={e => {
+                      setForm(f => ({ ...f, bio: e.target.value }));
+                      setFormErrors((current) => ({ ...current, bio: '' }));
+                      setSubmitError(null);
+                    }}
                     placeholder="Share your experience, approach, and what makes your service special..."
                     rows={4}
+                    required
                   />
+                  <FormFieldError message={formErrors.bio} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Specialties</Label>
+                  <Label>Specialties *</Label>
                   <div className="flex gap-2">
                     <Input
                       value={newSpecialty}
@@ -1266,10 +1490,11 @@ export default function ProfileSettings() {
                       ))}
                     </div>
                   )}
+                  <FormFieldError message={formErrors.specialties} />
                 </div>
                 <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-4">
                   <div className="space-y-1">
-                    <Label>Service Areas</Label>
+                    <Label>Service Areas *</Label>
                     <p className="text-xs text-muted-foreground">Choose counties where you are willing to take weddings.</p>
                   </div>
                   <div className="flex gap-2">
@@ -1301,9 +1526,10 @@ export default function ProfileSettings() {
                       ))}
                     </div>
                   )}
+                  <FormFieldError message={formErrors.service_areas} />
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="space-y-2">
-                      <Label>Travel Scope</Label>
+                      <Label>Travel Scope *</Label>
                       <select
                         value={form.travel_scope}
                         onChange={(e) => setForm((prev) => ({ ...prev, travel_scope: e.target.value }))}
@@ -1315,24 +1541,36 @@ export default function ProfileSettings() {
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Minimum Budget (KES)</Label>
+                      <Label>Minimum Budget (KES) *</Label>
                       <Input
                         type="number"
                         min="0"
                         value={form.minimum_budget_kes}
-                        onChange={(e) => setForm((prev) => ({ ...prev, minimum_budget_kes: e.target.value }))}
+                        onChange={(e) => {
+                          setForm((prev) => ({ ...prev, minimum_budget_kes: e.target.value }));
+                          setFormErrors((current) => ({ ...current, minimum_budget_kes: '' }));
+                          setSubmitError(null);
+                        }}
                         placeholder="e.g. 150000"
+                        required
                       />
+                      <FormFieldError message={formErrors.minimum_budget_kes} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Maximum Budget (KES)</Label>
+                      <Label>Maximum Budget (KES) *</Label>
                       <Input
                         type="number"
                         min="0"
                         value={form.maximum_budget_kes}
-                        onChange={(e) => setForm((prev) => ({ ...prev, maximum_budget_kes: e.target.value }))}
+                        onChange={(e) => {
+                          setForm((prev) => ({ ...prev, maximum_budget_kes: e.target.value }));
+                          setFormErrors((current) => ({ ...current, maximum_budget_kes: '' }));
+                          setSubmitError(null);
+                        }}
                         placeholder="e.g. 800000"
+                        required
                       />
+                      <FormFieldError message={formErrors.maximum_budget_kes} />
                     </div>
                   </div>
                   {formatBudgetBand(
@@ -1389,32 +1627,57 @@ export default function ProfileSettings() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <form onSubmit={addCommitteeMember} className="grid gap-3 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <FormSubmitError message={committeeSubmitError} />
+                  </div>
                   <div className="space-y-2">
                     <Label>Full Name</Label>
                     <Input
                       value={committeeMemberForm.full_name}
-                      onChange={(e) => setCommitteeMemberForm((prev) => ({ ...prev, full_name: e.target.value }))}
+                      onChange={(e) => {
+                        setCommitteeMemberForm((prev) => ({ ...prev, full_name: e.target.value }));
+                        setCommitteeFormErrors((current) => ({ ...current, full_name: '' }));
+                        setCommitteeSubmitError(null);
+                      }}
+                      onBlur={() => {
+                        if (!committeeMemberForm.full_name.trim()) return;
+                        setCommitteeMemberForm((current) => ({
+                          ...current,
+                          full_name: normalizeHumanName(current.full_name),
+                        }));
+                      }}
                       placeholder="Committee member name"
                       required
                     />
+                    <FormFieldError message={committeeFormErrors.full_name} />
                   </div>
                   <div className="space-y-2">
                     <Label>Phone Number</Label>
                     <Input
                       value={committeeMemberForm.phone}
-                      onChange={(e) => setCommitteeMemberForm((prev) => ({ ...prev, phone: e.target.value }))}
+                      onChange={(e) => {
+                        setCommitteeMemberForm((prev) => ({ ...prev, phone: e.target.value }));
+                        setCommitteeFormErrors((current) => ({ ...current, phone: '' }));
+                        setCommitteeSubmitError(null);
+                      }}
                       placeholder="+254..."
                       required
                     />
+                    <FormFieldError message={committeeFormErrors.phone} />
                   </div>
                   <div className="space-y-2">
                     <Label>Email (optional)</Label>
                     <Input
                       type="email"
                       value={committeeMemberForm.email}
-                      onChange={(e) => setCommitteeMemberForm((prev) => ({ ...prev, email: e.target.value }))}
+                      onChange={(e) => {
+                        setCommitteeMemberForm((prev) => ({ ...prev, email: e.target.value }));
+                        setCommitteeFormErrors((current) => ({ ...current, email: '' }));
+                        setCommitteeSubmitError(null);
+                      }}
                       placeholder="member@example.com"
                     />
+                    <FormFieldError message={committeeFormErrors.email} />
                   </div>
                   <div className="space-y-2">
                     <Label>Responsibility</Label>
@@ -1492,13 +1755,16 @@ export default function ProfileSettings() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Partner's Name</Label>
-                <Input value={form.partner_name} onChange={e => setForm(f => ({ ...f, partner_name: e.target.value }))} placeholder="Partner's name" />
+                <Input value={form.partner_name} onChange={e => setForm(f => ({ ...f, partner_name: e.target.value }))} onBlur={() => {
+                  if (!form.partner_name.trim()) return;
+                  setForm((current) => ({ ...current, partner_name: normalizeHumanName(current.partner_name) }));
+                }} placeholder="Partner's name" />
               </div>
               <div className="space-y-2">
                 <Label>Spouse Email</Label>
-                <Input value={partnerEmailInput || ownedWedding?.partnerEmail || pendingWeddingSetup?.partnerEmail || metadataPartnerEmail || ''} readOnly />
+                <Input value={resolvedPartnerEmail} readOnly />
                 <p className="text-xs text-muted-foreground">
-                  This comes from your wedding ownership record and partner invite.
+                  This is the same partner email used in Wedding Ownership above.
                 </p>
               </div>
               <div className="space-y-2">
@@ -1539,7 +1805,11 @@ export default function ProfileSettings() {
                       <Label>Planning country</Label>
                       <Select
                         value={form.planning_country}
-                        onValueChange={(value) => setForm((current) => ({ ...current, planning_country: value }))}
+                        onValueChange={(value) => {
+                          setForm((current) => ({ ...current, planning_country: value }));
+                          setFormErrors((current) => ({ ...current, planning_country: '' }));
+                          setSubmitError(null);
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Choose country" />
@@ -1552,12 +1822,17 @@ export default function ProfileSettings() {
                           ))}
                         </SelectContent>
                       </Select>
+                      <FormFieldError message={formErrors.planning_country} />
                     </div>
                     <div className="space-y-2">
                       <Label>Reference currency</Label>
                       <Select
                         value={form.reference_currency}
-                        onValueChange={(value) => setForm((current) => ({ ...current, reference_currency: value as WeddingReferenceCurrency }))}
+                        onValueChange={(value) => {
+                          setForm((current) => ({ ...current, reference_currency: value as WeddingReferenceCurrency }));
+                          setFormErrors((current) => ({ ...current, reference_currency: '' }));
+                          setSubmitError(null);
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Choose currency" />
@@ -1570,12 +1845,17 @@ export default function ProfileSettings() {
                           ))}
                         </SelectContent>
                       </Select>
+                      <FormFieldError message={formErrors.reference_currency} />
                     </div>
                     <div className="space-y-2">
                       <Label>Timezone</Label>
                       <Select
                         value={form.owner_timezone}
-                        onValueChange={(value) => setForm((current) => ({ ...current, owner_timezone: value }))}
+                        onValueChange={(value) => {
+                          setForm((current) => ({ ...current, owner_timezone: value }));
+                          setFormErrors((current) => ({ ...current, owner_timezone: '' }));
+                          setSubmitError(null);
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Choose timezone" />
@@ -1588,6 +1868,7 @@ export default function ProfileSettings() {
                           ))}
                         </SelectContent>
                       </Select>
+                      <FormFieldError message={formErrors.owner_timezone} />
                     </div>
                   </div>
                 )}
@@ -1611,6 +1892,109 @@ export default function ProfileSettings() {
           </Button>
         </div>
       </form>
+
+      <Card className="shadow-card border-border/70">
+        <CardHeader>
+          <CardTitle className="font-display flex items-center gap-2">
+            <LockKeyhole className="h-5 w-5 text-primary" />
+            Privacy & Communications
+          </CardTitle>
+          <CardDescription>
+            Control how Zania contacts you, whether your public business profile is visible, and whether your own profile-facing information stays on the platform.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="rounded-xl border border-border/70 bg-muted/15 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-1">
+                <p className="font-medium text-foreground">Email unsubscribe</p>
+                <p className="text-sm text-muted-foreground">
+                  Stop receiving Zania marketing and update emails. This does not remove your account.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant={profile?.marketing_opt_out ? 'outline' : 'default'}
+                disabled={privacyAction === 'marketing'}
+                onClick={() => void handleMarketingOptOutUpdate(!(profile?.marketing_opt_out ?? false))}
+                className="w-full md:w-auto"
+              >
+                {privacyAction === 'marketing' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {profile?.marketing_opt_out ? 'Resume Zania emails' : 'Unsubscribe from emails'}
+              </Button>
+            </div>
+            {profile?.marketing_opt_out_at ? (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Last updated on {new Date(profile.marketing_opt_out_at).toLocaleDateString()}.
+              </p>
+            ) : null}
+          </div>
+
+          {canOptOutOfDirectory ? (
+            <div className="rounded-xl border border-border/70 bg-muted/15 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">Public directory visibility</p>
+                  <p className="text-sm text-muted-foreground">
+                    Hide only your own planner or vendor profile from public Zania directory pages.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={profile?.directory_opt_out ? 'outline' : 'default'}
+                  disabled={privacyAction === 'directory'}
+                  onClick={() => void handleDirectoryOptOutUpdate(!(profile?.directory_opt_out ?? false))}
+                  className="w-full md:w-auto"
+                >
+                  {privacyAction === 'directory' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {profile?.directory_opt_out ? 'Show public profile again' : 'Hide public profile'}
+                </Button>
+              </div>
+              {profile?.directory_opt_out_at ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Public visibility changed on {new Date(profile.directory_opt_out_at).toLocaleDateString()}.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">Delete my own Zania information</p>
+                  <p className="text-sm text-muted-foreground">
+                    This removes your own profile-facing information from Zania, opts you out of emails, and hides any public listing tied to your account.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    It does not delete shared wedding or client workspace records that affect other people, and it does not remove minimal security or billing history we must retain.
+                  </p>
+                </div>
+                <div className="max-w-xs space-y-2">
+                  <Label htmlFor="privacy-delete-confirm">Type DELETE to confirm</Label>
+                  <Input
+                    id="privacy-delete-confirm"
+                    value={deletePrivacyConfirm}
+                    onChange={(e) => setDeletePrivacyConfirm(e.target.value)}
+                    placeholder="DELETE"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={privacyAction === 'delete'}
+                  onClick={() => void handleDeleteProfileData()}
+                  className="w-full sm:w-auto"
+                >
+                  {privacyAction === 'delete' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Delete my Zania information
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
