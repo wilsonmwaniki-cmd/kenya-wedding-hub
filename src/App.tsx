@@ -88,6 +88,7 @@ const App = () => (
                   <Route path="/" element={<Landing />} />
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/sign-in" element={<Auth />} />
+                  <Route path="/admin/login" element={<Auth />} />
                   <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
                   <Route path="/wedding-setup" element={<ProtectedRoute allowedRoles={['couple']}><WeddingSetup /></ProtectedRoute>} />

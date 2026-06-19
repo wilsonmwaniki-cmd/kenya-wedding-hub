@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Briefcase, Copy, Eye, EyeOff, Loader2, RefreshCw, Users } from 'lucide-react';
+import { Briefcase, Copy, Eye, EyeOff, Loader2, RefreshCw, ShieldCheck, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, isProfessionalSetupPending, type SignupRole } from '@/lib/roles';
@@ -19,8 +19,8 @@ import {
 } from '@/lib/oauthSignupState';
 import {
   clearPendingProfessionalSetup,
-  persistPendingProfessionalSetup,
 } from '@/lib/professionalSetupState';
+import { persistPendingVendorClaim, readPendingVendorClaim } from '@/lib/vendorClaimState';
 import {
   clearPendingWeddingSetup,
   getPendingWeddingSetup,
@@ -29,16 +29,36 @@ import {
   type PendingWeddingSetup,
   type WeddingSignupIntent,
 } from '@/lib/weddingWorkspace';
+import { copyTextWithFallback, createSecurePassword, validatePasswordRequirements } from '@/lib/passwords';
 import BrandWordmark from '@/components/BrandWordmark';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import AppleAuthButton from '@/components/AppleAuthButton';
+import { normalizeHumanName, normalizeHumanNameInput } from '@/lib/names';
+import { isAppleAuthEnabled } from '@/lib/featureFlags';
+import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 
 type AuthEntryState = {
   mode?: 'signup' | 'signin';
   role?: SignupRole;
   signupPath?: WeddingSignupIntent;
   professionalRole?: ProfessionalSignupRole;
+  from?: string;
 } | null;
 type ProfessionalSignupRole = 'planner' | 'vendor';
-type AuthAudience = 'couple' | 'professional';
+type AuthAudience = 'couple' | 'professional' | 'admin';
+type SignupMethod = 'email' | 'google' | 'apple';
+type SignupWizardStep = 'method' | 'account' | 'role' | 'success';
+type SignupSuccessState = {
+  title: string;
+  description: string;
+  accent: string;
+};
+type OAuthProvider = 'google' | 'apple';
+
+type SignupResultState = {
+  requiresEmailConfirmation: boolean;
+  confirmationEmailResent: boolean;
+};
 
 function mapEntryRoleToSignupPath(role?: SignupRole): {
   signupPath: WeddingSignupIntent;
@@ -61,6 +81,18 @@ function mapEntryRoleToSignupPath(role?: SignupRole): {
 
 function normalizeJoinCode(value: string) {
   return value.trim().toUpperCase();
+}
+
+function buildSignupSuccessDescription(
+  signupResult: SignupResultState,
+  confirmedMessage: string,
+  instantAccessMessage: string,
+) {
+  if (signupResult.confirmationEmailResent) {
+    return 'This email already had a pending signup, so we sent a fresh confirmation link. Check your inbox and spam, then come back to continue.';
+  }
+
+  return signupResult.requiresEmailConfirmation ? confirmedMessage : instantAccessMessage;
 }
 
 function getFallbackRouteFromUserMetadata(
@@ -89,41 +121,128 @@ function getFallbackRouteFromUserMetadata(
   return getHomeRouteForRole('couple', null);
 }
 
+function SignupTermsNotice({
+  acceptedTerms,
+  onAcceptedTermsChange,
+  error,
+}: {
+  acceptedTerms: boolean;
+  onAcceptedTermsChange: (checked: boolean) => void;
+  error?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id="signup-terms"
+          checked={acceptedTerms}
+          onCheckedChange={(checked) => onAcceptedTermsChange(Boolean(checked))}
+          className="mt-0.5"
+        />
+        <div className="space-y-1">
+          <Label htmlFor="signup-terms" className="text-sm font-medium leading-6">
+            I agree to the{' '}
+            <Link to="/terms" target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">
+              Zania Terms of Service
+            </Link>
+            {" "}and{" "}
+            <Link to="/privacy" target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">
+              Privacy Policy
+            </Link>
+            .
+          </Label>
+          <p className="text-xs leading-5 text-muted-foreground">
+            Please review both documents before creating your Zania account.
+          </p>
+          <FormFieldError message={error} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Auth() {
   const location = useLocation();
   const entryState = location.state as AuthEntryState;
-  const [isSignUp, setIsSignUp] = useState(false);
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const requestedPath = typeof (location.state as { from?: string } | null)?.from === 'string'
+    ? (location.state as { from?: string }).from
+    : null;
+  const adminEntry = location.pathname === '/admin/login' || requestedPath === '/admin';
+  const vendorClaimEntry = searchParams.get('flow') === 'vendor_claim';
+  const requestedMode = searchParams.get('mode');
+  const requestedFlow = searchParams.get('flow');
+  const requestedAudience = searchParams.get('audience');
+  const requestedRole = searchParams.get('role');
+  const hasExplicitUrlAuthState = (
+    location.pathname === '/sign-in'
+    || searchParams.has('mode')
+    || searchParams.has('flow')
+    || searchParams.has('audience')
+    || searchParams.has('role')
+    || searchParams.has('code')
+    || searchParams.has('email')
+  );
+  const defaultToSignup = !adminEntry && requestedMode !== 'signin' && location.pathname !== '/sign-in';
+
+  const [isSignUp, setIsSignUp] = useState(defaultToSignup);
   const [isForgot, setIsForgot] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [signupMethod, setSignupMethod] = useState<SignupMethod | null>(defaultToSignup ? null : 'email');
   const [selectedAudience, setSelectedAudience] = useState<AuthAudience | null>(null);
   const [signupPath, setSignupPath] = useState<WeddingSignupIntent | null>(null);
+  const [professionalSignupRole, setProfessionalSignupRole] = useState<ProfessionalSignupRole | null>(null);
+  const [signupStep, setSignupStep] = useState<SignupWizardStep>(defaultToSignup ? 'method' : 'account');
+  const [signupSuccess, setSignupSuccess] = useState<SignupSuccessState | null>(null);
   const [weddingCode, setWeddingCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const [oauthSubmittingProvider, setOauthSubmittingProvider] = useState<OAuthProvider | null>(null);
   const [redirecting, setRedirecting] = useState(false);
   const [postSignupMessage, setPostSignupMessage] = useState<string | null>(null);
-  const { signIn, signUp, signInWithGoogle, user, profile, loading } = useAuth();
+  const [forgotErrors, setForgotErrors] = useState<{ email?: string }>({});
+  const [forgotSubmitError, setForgotSubmitError] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<{
+    fullName?: string;
+    email?: string;
+    password?: string;
+    weddingCode?: string;
+    acceptedTerms?: string;
+  }>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const { signIn, signUp, signInWithGoogle, signInWithApple, user, profile, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const appleAuthEnabled = isAppleAuthEnabled();
 
   const hasHomepageCarryover = Boolean(entryState?.role);
-  const activePendingSetup = useMemo(
-    () => (user ? getPendingWeddingSetup(user.user_metadata, user.email ?? null) : null),
-    [user],
-  );
   const audience: AuthAudience | null = selectedAudience;
+  const isGeneralSignIn = !isSignUp && !adminEntry;
+  const oauthSubmitting = oauthSubmittingProvider !== null;
   const showJoinDetails = isSignUp && selectedAudience === 'couple' && signupPath === 'join_wedding';
-  const showProfessionalDetails = selectedAudience === 'professional' && signupPath === 'professional';
-  const showGoogleAuth = !isForgot;
-  const hasProfessionalSelection = true;
-  const hasChosenAudiencePath = !!audience && (!isSignUp || !!signupPath);
+  const hasProfessionalSelection = !isSignUp || signupStep !== 'role'
+    ? true
+    : (
+      (selectedAudience === 'couple' && !!signupPath)
+      || (selectedAudience === 'professional' && !!professionalSignupRole)
+    );
+  const hasChosenAudiencePath = isGeneralSignIn ? true : !!audience && (!isSignUp || !!signupPath);
   const hasChosenPath = hasChosenAudiencePath && hasProfessionalSelection;
-  const showTopGoogleAuth = showGoogleAuth && hasChosenPath && (!isSignUp || audience === 'professional');
-  const showCoupleSignupGoogleAuth = showGoogleAuth && isSignUp && audience === 'couple' && !!signupPath;
+  const isSignupMethodStep = isSignUp && signupStep === 'method';
+  const isSignupAccountStep = isSignUp && signupStep === 'account';
+  const isSignupRoleStep = isSignUp && signupStep === 'role';
+  const isSignupSuccessStep = isSignUp && signupStep === 'success' && !!signupSuccess;
+  const hasLockedSignupTrack = isSignUp && (
+    (requestedFlow === 'join_wedding')
+    || (requestedAudience === 'professional' && (requestedRole === 'planner' || requestedRole === 'vendor'))
+  );
+  const showGenericModeChooser = false;
+  const showGenericAudienceChooser = false;
+  const signupProgressStep = isSignupSuccessStep ? 4 : isSignupRoleStep ? 3 : isSignupAccountStep ? 2 : 1;
   const authErrorMessage = useMemo(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('auth_error') !== 'missing_role') return null;
@@ -135,6 +254,8 @@ export default function Auth() {
   }, [location.search]);
 
   useEffect(() => {
+    if (hasExplicitUrlAuthState || location.pathname === '/sign-in') return;
+
     const state = location.state as AuthEntryState;
     if (!state) return;
 
@@ -142,11 +263,24 @@ export default function Auth() {
       setIsSignUp(state.mode === 'signup');
       setIsForgot(false);
       setPostSignupMessage(null);
+      setSignupSuccess(null);
+      setSignupMethod(state.mode === 'signup' ? null : 'email');
+      setSignupStep(state.mode === 'signup' ? 'method' : 'account');
+      if (state.mode === 'signin' && !adminEntry) {
+        setSelectedAudience(null);
+        setSignupPath(null);
+        setProfessionalSignupRole(null);
+      }
     }
 
     if (state.signupPath) {
       setSelectedAudience(state.signupPath === 'professional' ? 'professional' : 'couple');
       setSignupPath(state.signupPath);
+      if (state.professionalRole) {
+        setProfessionalSignupRole(state.professionalRole);
+      }
+      setSignupMethod(state.mode === 'signup' ? 'email' : 'email');
+      setSignupStep(state.mode === 'signup' ? 'role' : 'account');
       return;
     }
 
@@ -154,8 +288,23 @@ export default function Auth() {
       const mapped = mapEntryRoleToSignupPath(state.role);
       setSelectedAudience(mapped.signupPath === 'professional' ? 'professional' : 'couple');
       setSignupPath(mapped.signupPath);
+      setProfessionalSignupRole(mapped.signupPath === 'professional' ? mapped.professionalRole : null);
+      setSignupMethod(state.mode === 'signup' ? 'email' : 'email');
+      setSignupStep(state.mode === 'signup' ? 'role' : 'account');
     }
-  }, [location.state]);
+  }, [hasExplicitUrlAuthState, location.pathname, location.state, adminEntry]);
+
+  useEffect(() => {
+    if (!adminEntry) return;
+    setIsSignUp(false);
+    setIsForgot(false);
+    setPostSignupMessage(null);
+    setSignupSuccess(null);
+    setSelectedAudience('admin');
+    setSignupPath(null);
+    setSignupMethod('email');
+    setSignupStep('account');
+  }, [adminEntry]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -165,6 +314,51 @@ export default function Auth() {
     const mode = params.get('mode');
     const audienceParam = params.get('audience');
     const roleParam = params.get('role');
+    const isExplicitSignInRoute = location.pathname === '/sign-in' || mode === 'signin';
+    const isExplicitSignupRoute = mode === 'signup';
+
+    if (adminEntry) {
+      setIsSignUp(false);
+      setIsForgot(false);
+      setPostSignupMessage(null);
+      setSignupSuccess(null);
+      setSelectedAudience('admin');
+      setSignupPath(null);
+      setProfessionalSignupRole(null);
+      setSignupMethod('email');
+      setSignupStep('account');
+      return;
+    }
+
+    if (isExplicitSignInRoute) {
+      setIsSignUp(false);
+      setIsForgot(false);
+      setPostSignupMessage(null);
+      setSignupSuccess(null);
+      setSelectedAudience(null);
+      setSignupPath(null);
+      setProfessionalSignupRole(null);
+      setSignupMethod('email');
+      setSignupStep('account');
+
+      if (invitedEmail) {
+        setEmail(invitedEmail.trim().toLowerCase());
+      }
+
+      return;
+    }
+
+    if (isExplicitSignupRoute && !flow && !audienceParam) {
+      setIsSignUp(true);
+      setIsForgot(false);
+      setPostSignupMessage(null);
+      setSignupSuccess(null);
+      setSelectedAudience(null);
+      setSignupPath(null);
+      setProfessionalSignupRole(null);
+      setSignupMethod(null);
+      setSignupStep('method');
+    }
 
     if (flow === 'join_wedding') {
       setSelectedAudience('couple');
@@ -172,6 +366,20 @@ export default function Auth() {
       setIsSignUp(true);
       setIsForgot(false);
       setPostSignupMessage(null);
+      setSignupSuccess(null);
+      setSignupMethod('email');
+      setSignupStep('account');
+    }
+
+    if (flow === 'vendor_claim') {
+      setSelectedAudience('professional');
+      setSignupPath('professional');
+      setProfessionalSignupRole('vendor');
+      setIsForgot(false);
+      setPostSignupMessage(null);
+      setSignupSuccess(null);
+      setSignupMethod(mode === 'signup' ? 'email' : 'email');
+      setSignupStep('account');
     }
 
     if (code) {
@@ -185,14 +393,35 @@ export default function Auth() {
     if (mode === 'signup' || mode === 'signin') {
       setIsSignUp(mode === 'signup');
       setIsForgot(false);
+      setSignupSuccess(null);
+      if (mode === 'signin') {
+        setSelectedAudience(adminEntry ? 'admin' : null);
+        setSignupPath(null);
+        setProfessionalSignupRole(null);
+        setSignupMethod('email');
+        setSignupStep('account');
+      } else if (!flow && !audienceParam) {
+        setSignupMethod(null);
+        setSignupStep('method');
+      }
     }
 
     if (audienceParam === 'couple' || audienceParam === 'professional') {
       setSelectedAudience(audienceParam);
       setSignupPath(audienceParam === 'couple' ? (flow === 'join_wedding' ? 'join_wedding' : 'create_wedding') : 'professional');
+      if (mode === 'signup') {
+        setSignupMethod('email');
+        setSignupStep((flow === 'join_wedding' || (audienceParam === 'professional' && (roleParam === 'planner' || roleParam === 'vendor')))
+          ? 'account'
+          : 'role');
+      }
     }
 
-  }, [location.search]);
+    if (roleParam === 'planner' || roleParam === 'vendor') {
+      setProfessionalSignupRole(roleParam);
+    }
+
+  }, [location.pathname, location.search, adminEntry]);
 
   useEffect(() => {
     if (signupPath === 'professional') return;
@@ -216,7 +445,7 @@ export default function Auth() {
         if (isProfessionalSetupPending(user.user_metadata, profile?.role, user.email ?? null)) {
           if (active) {
             setRedirecting(true);
-            navigate('/settings', { replace: true });
+            navigate(readPendingVendorClaim() ? '/settings?claim_vendor=1' : '/settings', { replace: true });
           }
           return;
         }
@@ -239,6 +468,14 @@ export default function Auth() {
         if (!profile?.role) {
           if (active) {
             navigate(getFallbackRouteFromUserMetadata(user.user_metadata, user.email ?? null), { replace: true });
+          }
+          return;
+        }
+
+        if (readPendingVendorClaim()) {
+          if (active) {
+            setRedirecting(true);
+            navigate('/vendor-claim', { replace: true });
           }
           return;
         }
@@ -284,10 +521,7 @@ export default function Auth() {
   }, [loading, navigate, profile?.planner_type, profile?.role, redirecting, toast, user]);
 
   const createGeneratedPassword = () => {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
-    const randomValues = new Uint32Array(16);
-    window.crypto.getRandomValues(randomValues);
-    const nextPassword = Array.from(randomValues, (value) => alphabet[value % alphabet.length]).join('');
+    const nextPassword = createSecurePassword();
 
     setPassword(nextPassword);
     setGeneratedPassword(nextPassword);
@@ -301,27 +535,109 @@ export default function Auth() {
   const copyGeneratedPassword = async () => {
     if (!password) return;
 
-    try {
-      await navigator.clipboard.writeText(password);
+    const copied = await copyTextWithFallback(password);
+
+    if (copied) {
       toast({
         title: 'Password copied',
         description: 'Paste it somewhere safe if you want to keep a copy.',
       });
-    } catch {
-      toast({
-        title: 'Could not copy password',
-        description: 'You can still reveal it and copy it manually.',
-        variant: 'destructive',
-      });
+      return;
     }
+
+    toast({
+      title: 'Could not copy password',
+      description: 'You can still reveal it and copy it manually.',
+      variant: 'destructive',
+    });
+  };
+
+  const normalizeFullNameField = () => {
+    if (!fullName.trim()) return;
+    setFullName(normalizeHumanName(fullName));
+  };
+
+  const resetSignupWizard = () => {
+    setSignupMethod(null);
+    setSignupStep('method');
+    setSignupSuccess(null);
+    setSelectedAudience(null);
+    setSignupPath(null);
+    setProfessionalSignupRole(null);
+    setFullName('');
+    setEmail('');
+    setPassword('');
+    setGeneratedPassword(null);
+    setShowPassword(false);
+    setAcceptedTerms(false);
+    setFormErrors({});
+    setSubmitError(null);
+    setWeddingCode('');
+    clearPendingOAuthSignupState();
+  };
+
+  const chooseSignupMethod = (method: SignupMethod) => {
+    setSignupMethod(method);
+    setSubmitError(null);
+    setFormErrors({});
+    setSignupSuccess(null);
+    setSignupStep(method === 'email' ? 'account' : 'role');
+  };
+
+  const chooseSignupRole = (role: 'couple' | 'planner' | 'vendor') => {
+    setSubmitError(null);
+    setSignupSuccess(null);
+
+    if (role === 'couple') {
+      setSelectedAudience('couple');
+      setSignupPath((current) => current === 'join_wedding' ? 'join_wedding' : 'create_wedding');
+      setProfessionalSignupRole(null);
+      return;
+    }
+
+    setSelectedAudience('professional');
+    setSignupPath('professional');
+    setProfessionalSignupRole(role);
+  };
+
+  const continueToRoleStep = () => {
+    const nextErrors: {
+      fullName?: string;
+      email?: string;
+      password?: string;
+      acceptedTerms?: string;
+    } = {};
+
+    if (!fullName.trim()) {
+      nextErrors.fullName = 'Enter your full name.';
+    }
+
+    if (!email.trim()) {
+      nextErrors.email = 'Enter your email address.';
+    } else if (!/\S+@\S+\.\S+/.test(email.trim())) {
+      nextErrors.email = 'Enter a valid email address.';
+    }
+
+    if (!password) {
+      nextErrors.password = 'Enter your password.';
+    } else {
+      const passwordValidationError = validatePasswordRequirements(password);
+      if (passwordValidationError) nextErrors.password = passwordValidationError;
+    }
+
+    if (!acceptedTerms) {
+      nextErrors.acceptedTerms = 'Please accept the Terms of Service and Privacy Policy to continue.';
+    }
+
+    setFormErrors((current) => ({ ...current, ...nextErrors }));
+    setSubmitError(null);
+
+    if (Object.keys(nextErrors).length > 0) return;
+    setSignupStep('role');
   };
 
   if (loading || redirecting) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <PublicPageSkeleton />;
   }
 
   const persistWeddingIntentIfNeeded = () => {
@@ -344,12 +660,19 @@ export default function Auth() {
     persistPendingWeddingSetup(payload);
   };
 
-  const validateGoogleAuthIntent = () => {
+  const validateOAuthIntent = () => {
+    if (!isSignUp) {
+      if (adminEntry) return;
+      return;
+    }
+
     if (!audience) {
       throw new Error(`Choose whether you are continuing as a couple or wedding professional first.`);
     }
 
-    if (!isSignUp) return;
+    if (!signupMethod || signupMethod === 'email') {
+      throw new Error('Choose Google or Apple first before continuing with a social signup.');
+    }
 
     if (!selectedAudience || !signupPath) {
       throw new Error('Choose how you are signing up before continuing.');
@@ -358,19 +681,38 @@ export default function Auth() {
     if (signupPath === 'join_wedding' && !normalizeJoinCode(weddingCode)) {
       throw new Error('Enter the wedding code from the invitation before continuing with Google.');
     }
+
+    if (signupPath === 'professional' && !professionalSignupRole) {
+      throw new Error('Choose whether this professional account is for a planner or a vendor first.');
+    }
+
+    if (!acceptedTerms) {
+      throw new Error('Please accept the Terms of Service and Privacy Policy before continuing.');
+    }
   };
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    const nextErrors: { email?: string } = {};
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) nextErrors.email = 'Enter the email tied to this account.';
+    else if (!/\S+@\S+\.\S+/.test(trimmedEmail)) nextErrors.email = 'Enter a valid email address.';
+
+    setForgotErrors(nextErrors);
+    setForgotSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSubmitting(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: `${window.location.origin}/reset-password?type=recovery`,
       });
       if (error) throw error;
       toast({ title: 'Reset link sent!', description: 'Check your email for the password reset link.' });
       setIsForgot(false);
+      setForgotErrors({});
     } catch (err: any) {
+      setForgotSubmitError(err.message || 'We could not send the reset link right now.');
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
@@ -379,9 +721,51 @@ export default function Auth() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const nextErrors: {
+      fullName?: string;
+      email?: string;
+      password?: string;
+      weddingCode?: string;
+      acceptedTerms?: string;
+    } = {};
+
+    if (isSignUp && !fullName.trim()) {
+      nextErrors.fullName = 'Enter your full name.';
+    }
+
+    if (!email.trim()) {
+      nextErrors.email = 'Enter your email address.';
+    } else if (!/\S+@\S+\.\S+/.test(email.trim())) {
+      nextErrors.email = 'Enter a valid email address.';
+    }
+
+    if (!password) {
+      nextErrors.password = 'Enter your password.';
+    } else if (isSignUp) {
+      const passwordValidationError = validatePasswordRequirements(password);
+      if (passwordValidationError) nextErrors.password = passwordValidationError;
+    }
+
+    if (isSignUp && signupPath === 'join_wedding' && !normalizeJoinCode(weddingCode)) {
+      nextErrors.weddingCode = 'Enter the wedding code from your invitation email.';
+    }
+
+    if (isSignUp && !acceptedTerms) {
+      nextErrors.acceptedTerms = 'Please accept the Terms of Service and Privacy Policy to continue.';
+    }
+
+    setFormErrors(nextErrors);
+    setSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSubmitting(true);
 
     try {
+      const pendingVendorClaim = readPendingVendorClaim();
+      if (vendorClaimEntry && pendingVendorClaim?.token) {
+        persistPendingVendorClaim(pendingVendorClaim.token, email || pendingVendorClaim.email);
+      }
+
       if (isSignUp) {
         if (!selectedAudience || !signupPath) {
           throw new Error('Choose whether you are signing up as a couple or a wedding professional first.');
@@ -389,95 +773,99 @@ export default function Auth() {
 
         if (signupPath === 'create_wedding') {
           persistWeddingIntentIfNeeded();
-          await signUp(email, password, fullName, 'couple', {
+          const signupResult = await signUp(email, password, fullName, 'couple', {
             signupIntent: 'create_wedding',
           });
-          toast({
-            title: 'Account created!',
-            description: 'Check your email to confirm your account, then finish setting up your wedding.',
+          setSignupSuccess({
+            title: 'Welcome to Zania',
+            accent: 'Couple account created',
+            description: buildSignupSuccessDescription(
+              signupResult,
+              'Check your email to confirm your account, then come back to finish setting up your wedding workspace.',
+              'Your account is ready right away. You can continue straight into your wedding workspace.',
+            ),
           });
-          setIsSignUp(false);
-          setIsForgot(false);
-          setPassword('');
-          setPostSignupMessage(
-            'Account created. Check your email to confirm it, then sign in to finish setting up your wedding.',
-          );
+          setSignupStep('success');
         } else if (signupPath === 'join_wedding') {
           if (!normalizeJoinCode(weddingCode)) {
             throw new Error('Enter the wedding code from your invitation email.');
           }
 
           persistWeddingIntentIfNeeded();
-          await signUp(email, password, fullName, 'couple', {
+          const signupResult = await signUp(email, password, fullName, 'couple', {
             signupIntent: 'join_wedding',
             weddingCode: normalizeJoinCode(weddingCode),
           });
-          toast({
-            title: 'Account created!',
-            description: 'Check your email to confirm your account. After confirmation, we will join you to the wedding that sent the code.',
+          setSignupSuccess({
+            title: 'You are in',
+            accent: 'Invitation account ready',
+            description: buildSignupSuccessDescription(
+              signupResult,
+              'Check your email to confirm your account, then sign in with the same email to join the wedding that invited you.',
+              'Your account is ready. Sign in with the same email to join the wedding that invited you.',
+            ),
           });
-          setIsSignUp(false);
-          setIsForgot(false);
-          setPassword('');
-          setPostSignupMessage(
-            'Account created. Check your email to confirm it, then sign in with the same email to join the wedding.',
-          );
+          setSignupStep('success');
         } else {
+          if (!professionalSignupRole) {
+            throw new Error('Choose whether you are creating a planner or vendor account first.');
+          }
+
           clearPendingWeddingSetup();
-          persistPendingProfessionalSetup(email);
-          await signUp(email, password, fullName, 'couple', {
+          clearPendingProfessionalSetup();
+          const signupResult = await signUp(email, password, fullName, professionalSignupRole, {
             signupIntent: 'professional',
-            professionalRoleLocked: false,
+            professionalRoleLocked: true,
           });
-          toast({ title: 'Account created!', description: 'Check your email to confirm your account.' });
-          setIsSignUp(false);
-          setIsForgot(false);
-          setPassword('');
-          setPostSignupMessage(
-            'Account created. Check your email to confirm it, then sign in to finish your professional setup.',
-          );
+          setSignupSuccess({
+            title: 'You joined the atelier',
+            accent: professionalSignupRole === 'planner' ? 'Planner account created' : 'Vendor account created',
+            description: buildSignupSuccessDescription(
+              signupResult,
+              `Check your email to confirm your account, then sign in to open your ${professionalSignupRole} workspace.`,
+              `Your account is ready. Sign in now to open your ${professionalSignupRole} workspace.`,
+            ),
+          });
+          setSignupStep('success');
         }
       } else {
-        if (!audience) {
-          throw new Error('Choose which kind of account you want to sign in to first.');
-        }
-
         persistWeddingIntentIfNeeded();
-        await signIn(
-          email,
-          password,
-          audience === 'professional'
-            ? { audience: 'professional' }
-            : {
-                audience: 'couple',
-                targetRole: 'couple',
-                plannerType: null,
-              },
-        );
+        await signIn(email, password, adminEntry ? { audience: 'admin' } : undefined);
       }
     } catch (err: any) {
+      setSubmitError(err.message || 'We could not complete that request right now.');
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setGoogleSubmitting(true);
+  const handleOAuthSignIn = async (provider: 'google' | 'apple') => {
+    setOauthSubmittingProvider(provider);
     try {
-      validateGoogleAuthIntent();
+      validateOAuthIntent();
       persistWeddingIntentIfNeeded();
+      const pendingVendorClaim = readPendingVendorClaim();
+      if (vendorClaimEntry && pendingVendorClaim?.token) {
+        persistPendingVendorClaim(pendingVendorClaim.token, email || pendingVendorClaim.email);
+      }
 
-      if (audience === 'professional') {
-        if (isSignUp) {
-          persistPendingProfessionalSetup(email);
-        } else {
-          clearPendingProfessionalSetup();
-        }
+      if (adminEntry) {
+        clearPendingProfessionalSetup();
+        clearPendingWeddingSetup();
+        persistPendingOAuthSignupState({
+          mode: 'signin',
+          audience: 'admin',
+          role: null,
+          plannerType: null,
+          fullName: null,
+        });
+      } else if (audience === 'professional') {
+        clearPendingProfessionalSetup();
         persistPendingOAuthSignupState({
           mode: isSignUp ? 'signup' : 'signin',
           audience: 'professional',
-          role: null,
+          role: isSignUp ? professionalSignupRole : null,
           plannerType: null,
           fullName: fullName.trim() || null,
         });
@@ -494,31 +882,39 @@ export default function Auth() {
         clearPendingOAuthSignupState();
       }
 
-      await signInWithGoogle(
-        audience
+      const oauthOptions = adminEntry
+        ? {
+            audience: 'admin' as const,
+            mode: 'signin' as const,
+          }
+        : audience
           ? {
               audience,
               mode: isSignUp ? 'signup' : 'signin',
-              targetRole: audience === 'professional' ? null : 'couple',
+              targetRole: audience === 'professional' ? (isSignUp ? professionalSignupRole : null) : 'couple',
               plannerType: null,
             }
-          : undefined,
-      );
+          : {
+              mode: 'signin' as const,
+            };
+
+      if (provider === 'google') {
+        await signInWithGoogle(oauthOptions);
+      } else {
+        await signInWithApple(oauthOptions);
+      }
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
-      setGoogleSubmitting(false);
+      setOauthSubmittingProvider(null);
     }
   };
 
-  const switchAudience = (nextAudience: 'couple' | 'professional') => {
-    setPostSignupMessage(null);
-      setSelectedAudience(nextAudience);
-      if (nextAudience === 'couple') {
-        setSignupPath('create_wedding');
-        return;
-      }
+  const handleGoogleSignIn = async () => {
+    await handleOAuthSignIn('google');
+  };
 
-    setSignupPath('professional');
+  const handleAppleSignIn = async () => {
+    await handleOAuthSignIn('apple');
   };
 
   return (
@@ -531,49 +927,79 @@ export default function Auth() {
           <CardTitle className="font-display text-xl">
             {isForgot
               ? 'Forgot Password'
-              : !audience
-                ? isSignUp
-                  ? 'Create Your Account'
-                  : 'Welcome Back'
+              : isSignupSuccessStep
+                ? signupSuccess.title
+              : isSignUp && isSignupMethodStep
+                ? 'Create your Zania account'
+              : isSignUp && isSignupAccountStep
+                ? 'Tell us about you'
+              : isSignUp && isSignupRoleStep
+                ? 'Choose your path'
+              : adminEntry
+                ? 'Admin Sign In'
+                : !isSignUp
+                  ? 'Enter Zania'
+                : vendorClaimEntry
+                ? 'Create Your Vendor Account'
                 : audience === 'professional'
                 ? isSignUp
                   ? 'Create Your Professional Account'
-                  : 'Professional Sign In'
+                  : 'Welcome Back'
                 : isSignUp
                   ? 'Start Your Wedding'
-                  : 'Couple Sign In'}
+                  : 'Welcome Back'}
           </CardTitle>
           <CardDescription>
             {isForgot
               ? 'Enter your email to receive a reset link.'
-              : !audience
-                ? isSignUp
-                  ? 'Choose whether you are joining as a couple or a wedding professional.'
-                  : 'Choose which account you want to open.'
+              : isSignupSuccessStep
+                ? signupSuccess.description
+              : isSignUp && isSignupMethodStep
+                ? 'Start with one clear choice, then we will guide you the rest of the way.'
+              : isSignUp && isSignupAccountStep
+                ? 'Secure your account details first, then we will lock in the workspace that fits you.'
+              : isSignUp && isSignupRoleStep
+                ? 'Pick the account you want Zania to open for you so the setup stays tailored from the start.'
+              : adminEntry
+                ? 'Open the private Zania operations backend.'
+                : !isSignUp
+                  ? 'Use your Zania details and we will take you straight back into the right workspace.'
+                : vendorClaimEntry
+                ? 'Sign in with the invited email to claim this vendor listing, or create a vendor account first.'
                 : audience === 'professional'
                 ? isSignUp
-                  ? 'Create your professional account first. You will choose Planner or Vendor after sign-in.'
-                  : 'Sign in to your professional workspace.'
+                  ? signupStep === 'account'
+                    ? 'Start with your details, then lock this account as planner or vendor.'
+                    : 'Choose the professional workspace this account should open.'
+                  : 'Use the email and password already tied to your Zania account.'
                 : signupPath === 'join_wedding'
                     ? 'Use the wedding code from the couple and the same email that was invited.'
                     : isSignUp
-                    ? 'Create your account now. You will finish your wedding setup in the next step.'
-                    : 'Sign in to your wedding workspace.'}
+                    ? signupStep === 'account'
+                      ? 'Create your account now. You will choose the right path in the next step.'
+                      : 'Choose whether this account starts a new wedding or joins one that already invited you.'
+                    : 'Use the email and password already tied to your Zania account.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {isForgot ? (
             <form onSubmit={handleForgotPassword} className="space-y-4">
+              <FormSubmitError message={forgotSubmitError} />
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setForgotErrors((current) => ({ ...current, email: undefined }));
+                    setForgotSubmitError(null);
+                  }}
                   placeholder="you@example.com"
                   required
                 />
+                <FormFieldError message={forgotErrors.email} />
               </div>
               <Button type="submit" className="w-full" disabled={submitting}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -591,6 +1017,69 @@ export default function Auth() {
             </form>
           ) : (
             <>
+              {isSignupSuccessStep && signupSuccess && (
+                <motion.div
+                  initial={{ opacity: 0, y: 18, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                  className="space-y-6"
+                >
+                  <div className="relative overflow-hidden rounded-[32px] border border-[#e3cfbb] bg-[linear-gradient(180deg,#fff9f2,#f4eadc)] p-6 text-left shadow-warm">
+                    <div className="absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,rgba(212,187,125,0.28),transparent_70%)]" />
+                    <div className="relative flex flex-col gap-5">
+                      <div className="flex items-center gap-4">
+                        <div className="relative flex h-16 w-16 items-center justify-center rounded-full border border-[#d4bb7d]/40 bg-[#fffdf8] shadow-[0_10px_25px_rgba(194,114,79,0.12)]">
+                          <motion.div
+                            animate={{ scale: [1, 1.08, 1], opacity: [0.85, 1, 0.85] }}
+                            transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                            className="absolute inset-2 rounded-full border border-[#d4bb7d]/40"
+                          />
+                          <span className="font-display text-2xl text-[#a85c3c]">Z</span>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#c2724f]">
+                            {signupSuccess.accent}
+                          </p>
+                          <h3 className="mt-2 font-display text-3xl text-[#201814]">
+                            Welcome to a calmer way to plan.
+                          </h3>
+                        </div>
+                      </div>
+                      <p className="max-w-2xl text-sm leading-7 text-[#6f5747]">
+                        Your Zania account is ready. Confirm your email first, then come back and we’ll open the right workspace with your planning, vendors, guests, and next steps waiting for you.
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Button
+                          type="button"
+                          className="h-11"
+                          onClick={() => {
+                            setPostSignupMessage(signupSuccess.description);
+                            setSignupSuccess(null);
+                            setSignupMethod('email');
+                            setSignupStep('account');
+                            setIsSignUp(false);
+                            navigate('/sign-in', { replace: true });
+                          }}
+                        >
+                          Open sign-in page
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-11"
+                          onClick={() => {
+                            resetSignupWizard();
+                            setIsSignUp(true);
+                          }}
+                        >
+                          Create another account
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
               {postSignupMessage && !isSignUp && (
                 <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left">
                   <p className="text-sm font-medium text-emerald-900">Check your email, then sign in</p>
@@ -598,136 +1087,118 @@ export default function Auth() {
                 </div>
               )}
 
-              {authErrorMessage && (
+              {!isSignupSuccessStep && authErrorMessage && (
                 <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left">
                   <p className="text-sm font-medium text-red-900">That account does not exist yet</p>
                   <p className="mt-1 text-sm text-red-800">{authErrorMessage}</p>
                 </div>
               )}
 
-              <div className="mb-5 rounded-2xl border border-border/60 bg-muted/20 p-2">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPostSignupMessage(null);
-                      setIsSignUp(true);
-                      setIsForgot(false);
-                    }}
-                    className={`rounded-xl px-4 py-3 text-left transition-all ${
-                      isSignUp
-                        ? 'border border-primary bg-primary text-primary-foreground shadow-card'
-                        : 'border border-transparent bg-background/70 text-muted-foreground hover:border-border hover:bg-background'
-                    }`}
-                  >
-                    <p className="text-sm font-medium">Sign up</p>
-                    <p className={`mt-1 text-xs ${isSignUp ? 'text-primary-foreground/90' : ''}`}>
-                      Create a new account
-                    </p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPostSignupMessage(null);
-                      setIsSignUp(false);
-                      setIsForgot(false);
-                    }}
-                    className={`rounded-xl px-4 py-3 text-left transition-all ${
-                      !isSignUp
-                        ? 'border border-primary bg-primary text-primary-foreground shadow-card'
-                        : 'border border-transparent bg-background/70 text-muted-foreground hover:border-border hover:bg-background'
-                    }`}
-                  >
-                    <p className="text-sm font-medium">Sign in</p>
-                    <p className={`mt-1 text-xs ${!isSignUp ? 'text-primary-foreground/90' : ''}`}>
-                      Open an existing account
-                    </p>
-                  </button>
-                </div>
-              </div>
-
-              <div className="mb-5 rounded-2xl border border-border/60 bg-muted/20 p-2">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => switchAudience('couple')}
-                    className={`rounded-xl px-4 py-3 text-left transition-all ${
-                      audience === 'couple'
-                        ? 'border border-primary bg-primary text-primary-foreground shadow-card'
-                        : 'border border-transparent bg-background/70 text-muted-foreground hover:border-border hover:bg-background'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      <p className="text-sm font-medium">Couples</p>
+              {!isSignupSuccessStep && (
+                <>
+              {!isSignUp && (
+                <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4 text-left">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 rounded-full bg-primary/12 p-2 text-primary">
+                      <ShieldCheck className="h-4 w-4" />
                     </div>
-                    <p className={`mt-1 text-xs ${audience === 'couple' ? 'text-primary-foreground/90' : ''}`}>
-                      {isSignUp ? 'Create or join your wedding' : 'Sign in to your wedding'}
-                    </p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => switchAudience('professional')}
-                    className={`rounded-xl px-4 py-3 text-left transition-all ${
-                      audience === 'professional'
-                        ? 'border border-primary bg-primary text-primary-foreground shadow-card'
-                        : 'border border-transparent bg-background/70 text-muted-foreground hover:border-border hover:bg-background'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="h-4 w-4" />
-                      <p className="text-sm font-medium">Wedding professionals</p>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {adminEntry ? 'Admin backend' : 'Welcome back'}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {adminEntry
+                          ? 'Sign in with your admin account to open the backend portal.'
+                          : 'Sign in once and Zania will open the right workspace automatically.'}
+                      </p>
                     </div>
-                    <p className={`mt-1 text-xs ${audience === 'professional' ? 'text-primary-foreground/90' : ''}`}>
-                      {isSignUp ? 'Create your planner or vendor account' : 'Sign in as planner or vendor'}
-                    </p>
-                  </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {isSignUp && (
-                <motion.div
-                  initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
-                  animate={hasHomepageCarryover ? { opacity: 1, y: 0, scale: 1 } : { opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                  className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {audience === 'couple' && signupPath === 'join_wedding'
-                        ? 'Join a wedding'
-                        : audience === 'couple'
-                          ? 'Start your wedding'
-                          : audience === 'professional'
-                            ? 'Professional account'
-                            : 'Choose your account type'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {audience === 'couple' && signupPath === 'join_wedding'
-                        ? 'Use the code the couple sent you.'
-                        : audience === 'couple'
-                          ? 'Create the account first, then finish setting up the wedding in the next step.'
-                          : audience === 'professional'
-                            ? isSignUp
-                              ? 'Create your login first. You will choose Planner or Vendor inside Settings.'
-                              : 'Sign in to continue to your professional setup or workspace.'
-                            : 'Choose your account type.'}
-                    </p>
+                <>
+                  <div className="mb-5 rounded-[28px] border border-[#ead9c8] bg-[linear-gradient(180deg,#fffaf4,#f8efe6)] px-5 py-4 text-left shadow-[0_16px_45px_rgba(194,114,79,0.08)]">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#c2724f]">
+                          Guided signup
+                        </p>
+                        <p className="mt-1 text-sm font-medium text-[#2c211c]">
+                          Step {signupProgressStep} of 4
+                        </p>
+                      </div>
+                      <p className="text-xs text-[#7c6353]">
+                        {isSignupMethodStep
+                          ? 'How do you want to start?'
+                          : isSignupAccountStep
+                            ? 'Secure your account'
+                            : isSignupRoleStep
+                              ? 'Choose your workspace'
+                              : 'Almost done'}
+                      </p>
+                    </div>
+                    <div className="mt-4 grid grid-cols-4 gap-2">
+                      {[1, 2, 3, 4].map((step) => (
+                        <div
+                          key={step}
+                          className={`h-2 rounded-full ${
+                            step <= signupProgressStep ? 'bg-[#c2724f]' : 'bg-[#ead9c8]'
+                          }`}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  {audience === 'couple' && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setPostSignupMessage(null);
-                        setSignupPath(signupPath === 'join_wedding' ? 'create_wedding' : 'join_wedding');
-                      }}
+
+                  {!isSignupMethodStep && (
+                    <motion.div
+                      initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
+                      animate={hasHomepageCarryover ? { opacity: 1, y: 0, scale: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                      className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3"
                     >
-                      {signupPath === 'join_wedding' ? 'Start a wedding instead' : 'I have a wedding code'}
-                    </Button>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {signupMethod === 'email'
+                            ? 'Email signup selected'
+                            : signupMethod === 'google'
+                              ? 'Google signup selected'
+                              : signupMethod === 'apple'
+                                ? 'Apple signup selected'
+                                : 'Choose your account type'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {audience === 'couple' && signupPath === 'join_wedding'
+                            ? 'Use the wedding code the couple shared with you.'
+                            : audience === 'couple'
+                              ? 'This will open a shared couple workspace.'
+                              : audience === 'professional'
+                                ? professionalSignupRole === 'vendor'
+                                  ? 'This will open your vendor portfolio and bookings workspace.'
+                                  : professionalSignupRole === 'planner'
+                                    ? 'This will open your planner operations workspace.'
+                                    : 'Choose whether you are joining as planner or vendor.'
+                                : signupMethod === 'email'
+                                  ? 'You can finish this with your email details.'
+                                  : 'You will continue securely with your selected provider in the final step.'}
+                        </p>
+                      </div>
+                      {audience === 'couple' && isSignupRoleStep && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setPostSignupMessage(null);
+                            setSignupPath(signupPath === 'join_wedding' ? 'create_wedding' : 'join_wedding');
+                          }}
+                        >
+                          {signupPath === 'join_wedding' ? 'Start a wedding instead' : 'I have a wedding code'}
+                        </Button>
+                      )}
+                    </motion.div>
                   )}
-                </motion.div>
+                </>
               )}
 
               {isSignUp && hasChosenAudiencePath && (
@@ -739,135 +1210,127 @@ export default function Auth() {
                 </div>
               )}
 
-              {showTopGoogleAuth && (
-                <div className="space-y-4">
-                  <GoogleAuthButton
-                    loading={googleSubmitting}
-                    disabled={submitting || googleSubmitting}
-                    onClick={handleGoogleSignIn}
-                  />
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t border-border" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-card px-2 text-muted-foreground">or use email</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               <form onSubmit={handleSubmit} className="space-y-4">
-                {!hasChosenAudiencePath ? (
-                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                    {isSignUp
-                      ? 'Choose who you are creating an account for first.'
-                      : 'Choose which existing account you want to sign in to first.'}
-                  </div>
-                ) : (
-                  <>
-                    {isSignUp && (
+                {isSignUp ? (
+                  isSignupMethodStep ? (
+                    <>
+                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                        <p className="text-sm font-medium text-foreground">Step 1 of 4</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Choose how you want to begin. We will only show the next choice after this one.
+                        </p>
+                      </div>
+                      <div className="grid gap-3">
+                        <GoogleAuthButton
+                          loading={oauthSubmittingProvider === 'google'}
+                          disabled={submitting || oauthSubmitting}
+                          onClick={() => chooseSignupMethod('google')}
+                          text="Start with Google"
+                        />
+                        {appleAuthEnabled ? (
+                          <AppleAuthButton
+                            loading={oauthSubmittingProvider === 'apple'}
+                            disabled={submitting || oauthSubmitting}
+                            onClick={() => chooseSignupMethod('apple')}
+                            text="Start with Apple"
+                          />
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => chooseSignupMethod('email')}
+                        >
+                          Start with email
+                        </Button>
+                      </div>
+                    </>
+                  ) : isSignupAccountStep ? (
+                    <>
+                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                        <p className="text-sm font-medium text-foreground">Step 2 of 4</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {hasLockedSignupTrack
+                            ? selectedAudience === 'professional'
+                              ? 'Add your details and we will finish creating your vendor account.'
+                              : 'Add your details and wedding code so we can join you to the right wedding.'
+                            : 'Add your details here, then we will move to the workspace choice.'}
+                        </p>
+                      </div>
+                      <FormSubmitError message={submitError} />
+                      {hasLockedSignupTrack ? (
+                        <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
+                          <p className="text-sm font-medium text-foreground">
+                            {selectedAudience === 'professional'
+                              ? professionalSignupRole === 'planner'
+                                ? 'Planner workspace selected'
+                                : 'Vendor workspace selected'
+                              : 'Wedding join path selected'}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {selectedAudience === 'professional'
+                              ? professionalSignupRole === 'planner'
+                                ? 'This account will open your planner operations workspace right after setup.'
+                                : 'This account will open your vendor portfolio, bookings, and listing workspace.'
+                              : 'Use the same invited email and the wedding code the couple shared with you.'}
+                          </p>
+                        </div>
+                      ) : null}
                       <div className="space-y-2">
                         <Label htmlFor="name">Full Name</Label>
                         <Input
                           id="name"
                           value={fullName}
-                          onChange={(event) => setFullName(event.target.value)}
+                          onChange={(event) => {
+                            setFullName(normalizeHumanNameInput(event.target.value));
+                            setFormErrors((current) => ({ ...current, fullName: undefined }));
+                            setSubmitError(null);
+                          }}
+                          onBlur={normalizeFullNameField}
                           placeholder="Your full name"
                           required
                         />
+                        <FormFieldError message={formErrors.fullName} />
                       </div>
-                    )}
 
-                    {showJoinDetails && (
-                      <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-foreground">Wedding code</p>
-                          <p className="text-xs text-muted-foreground">
-                            Use the same email address that received the invite.
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="wedding-code">Wedding Code</Label>
-                          <Input
-                            id="wedding-code"
-                            value={weddingCode}
-                            onChange={(event) => setWeddingCode(normalizeJoinCode(event.target.value))}
-                            placeholder="e.g. ZN-3RM94X"
-                            required
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {showCoupleSignupGoogleAuth && (
-                      <div className="space-y-3">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-foreground">Create your account</p>
-                          <p className="text-xs text-muted-foreground">
-                            Continue with Google or use email and password below.
-                          </p>
-                        </div>
-                        <GoogleAuthButton
-                          loading={googleSubmitting}
-                          disabled={submitting || googleSubmitting}
-                          onClick={handleGoogleSignIn}
+                      <div className="space-y-2">
+                        <Label htmlFor="email">Your email</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={email}
+                          onChange={(event) => {
+                            setEmail(event.target.value);
+                            setFormErrors((current) => ({ ...current, email: undefined }));
+                            setSubmitError(null);
+                          }}
+                          placeholder="you@example.com"
+                          required
                         />
-                        <div className="relative">
-                          <div className="absolute inset-0 flex items-center">
-                            <span className="w-full border-t border-border" />
-                          </div>
-                          <div className="relative flex justify-center text-[11px] uppercase tracking-[0.12em]">
-                            <span className="bg-card px-2 text-muted-foreground">or use email below</span>
-                          </div>
-                        </div>
+                        <FormFieldError message={formErrors.email} />
                       </div>
-                    )}
 
-                    <div className="space-y-2">
-                      <Label htmlFor="email">
-                        {isSignUp ? 'Your email' : 'Email'}
-                      </Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        placeholder="you@example.com"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
+                      <div className="space-y-2">
                         <Label htmlFor="password">Password</Label>
-                        {!isSignUp && (
-                          <button
-                            type="button"
-                            onClick={() => setIsForgot(true)}
-                            className="text-xs text-muted-foreground transition-colors hover:text-primary"
-                          >
-                            Forgot password?
-                          </button>
-                        )}
-                      </div>
-                      <Input
-                        id="password"
-                        type={showPassword ? 'text' : 'password'}
-                        value={password}
-                        onChange={(event) => {
-                          setPassword(event.target.value);
-                          if (generatedPassword && event.target.value !== generatedPassword) {
-                            setGeneratedPassword(null);
-                          }
-                        }}
-                        placeholder="••••••••"
-                        required
-                        minLength={6}
-                      />
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {isSignUp && (
+                        <Input
+                          id="password"
+                          type={showPassword ? 'text' : 'password'}
+                          value={password}
+                          onChange={(event) => {
+                            setPassword(event.target.value);
+                            setFormErrors((current) => ({ ...current, password: undefined }));
+                            setSubmitError(null);
+                            if (generatedPassword && event.target.value !== generatedPassword) {
+                              setGeneratedPassword(null);
+                            }
+                          }}
+                          placeholder="••••••••"
+                          required
+                          minLength={6}
+                        />
+                        <FormFieldError message={formErrors.password} />
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-wrap items-center gap-2">
                             <Button
                               type="button"
                               size="sm"
@@ -878,78 +1341,351 @@ export default function Auth() {
                               <RefreshCw className="h-3.5 w-3.5" />
                               Generate secure password
                             </Button>
-                          )}
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
-                            onClick={() => setShowPassword((current) => !current)}
-                          >
-                            {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                            {showPassword ? 'Hide' : 'Show'}
-                          </Button>
-                          {isSignUp && password && (
                             <Button
                               type="button"
                               size="sm"
                               variant="ghost"
                               className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
-                              onClick={() => void copyGeneratedPassword()}
+                              onClick={() => setShowPassword((current) => !current)}
                             >
-                              <Copy className="h-3.5 w-3.5" />
-                              Copy
+                              {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              {showPassword ? 'Hide' : 'Show'}
                             </Button>
+                            {password && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => void copyGeneratedPassword()}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                                Copy
+                              </Button>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {generatedPassword
+                              ? 'Generated for you. Save it somewhere safe before continuing.'
+                              : 'Use at least 6 characters, or generate one instantly.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {selectedAudience === 'couple' && signupPath === 'join_wedding' ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="wedding-code">Wedding Code</Label>
+                          <Input
+                            id="wedding-code"
+                            value={weddingCode}
+                            onChange={(event) => {
+                              setWeddingCode(normalizeJoinCode(event.target.value));
+                              setFormErrors((current) => ({ ...current, weddingCode: undefined }));
+                              setSubmitError(null);
+                            }}
+                            placeholder="e.g. ZN-3RM94X"
+                            required
+                          />
+                          <FormFieldError message={formErrors.weddingCode} />
+                        </div>
+                      ) : null}
+
+                      <SignupTermsNotice
+                        acceptedTerms={acceptedTerms}
+                        onAcceptedTermsChange={(checked) => {
+                          setAcceptedTerms(checked);
+                          setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
+                        }}
+                        error={formErrors.acceptedTerms}
+                      />
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Button type="button" variant="outline" className="w-full" onClick={resetSignupWizard}>
+                          Back
+                        </Button>
+                        {hasLockedSignupTrack ? (
+                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting}>
+                            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {signupPath === 'join_wedding'
+                              ? 'Create account and join'
+                              : professionalSignupRole === 'planner'
+                                ? 'Create planner account'
+                                : 'Create vendor account'}
+                          </Button>
+                        ) : (
+                          <Button type="button" className="w-full" onClick={continueToRoleStep}>
+                            Continue
+                          </Button>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                        <p className="text-sm font-medium text-foreground">Step 3 of 4</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Lock the workspace you want so Zania sets up the right journey from day one.
+                        </p>
+                      </div>
+                      <FormSubmitError message={submitError} />
+                      <div className="grid gap-3">
+                        <button
+                          type="button"
+                          onClick={() => chooseSignupRole('couple')}
+                          className={`rounded-2xl border px-4 py-4 text-left transition-all ${
+                            selectedAudience === 'couple'
+                              ? 'border-primary bg-primary/6 shadow-card'
+                              : 'border-border/60 bg-muted/20 hover:border-primary/40'
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-foreground">Couple account</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Shared wedding planning, budgets, guests, registry, approvals, and timeline coordination.
+                          </p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => chooseSignupRole('planner')}
+                          className={`rounded-2xl border px-4 py-4 text-left transition-all ${
+                            professionalSignupRole === 'planner'
+                              ? 'border-primary bg-primary/6 shadow-card'
+                              : 'border-border/60 bg-muted/20 hover:border-primary/40'
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-foreground">Planner account</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Client workspaces, approvals, planning operations, and professional coordination tools.
+                          </p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => chooseSignupRole('vendor')}
+                          className={`rounded-2xl border px-4 py-4 text-left transition-all ${
+                            professionalSignupRole === 'vendor'
+                              ? 'border-primary bg-primary/6 shadow-card'
+                              : 'border-border/60 bg-muted/20 hover:border-primary/40'
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-foreground">Vendor account</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Portfolio, listing, leads, pricing, and booking management for your wedding business.
+                          </p>
+                        </button>
+                      </div>
+
+                      {selectedAudience === 'couple' && (
+                        <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={signupPath === 'create_wedding' ? 'default' : 'outline'}
+                              onClick={() => setSignupPath('create_wedding')}
+                            >
+                              Start a new wedding
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={signupPath === 'join_wedding' ? 'default' : 'outline'}
+                              onClick={() => setSignupPath('join_wedding')}
+                            >
+                              I have a wedding code
+                            </Button>
+                          </div>
+                          {showJoinDetails && (
+                            <div className="space-y-2">
+                              <Label htmlFor="wedding-code">Wedding Code</Label>
+                              <Input
+                                id="wedding-code"
+                                value={weddingCode}
+                                onChange={(event) => {
+                                  setWeddingCode(normalizeJoinCode(event.target.value));
+                                  setFormErrors((current) => ({ ...current, weddingCode: undefined }));
+                                  setSubmitError(null);
+                                }}
+                                placeholder="e.g. ZN-3RM94X"
+                                required
+                              />
+                              <FormFieldError message={formErrors.weddingCode} />
+                            </div>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {generatedPassword
-                            ? 'Generated for you. Save it somewhere safe before continuing.'
-                            : isSignUp
-                              ? 'Use at least 6 characters, or generate one instantly.'
-                              : 'Use the password linked to this account.'}
-                        </p>
+                      )}
+
+                      <SignupTermsNotice
+                        acceptedTerms={acceptedTerms}
+                        onAcceptedTermsChange={(checked) => {
+                          setAcceptedTerms(checked);
+                          setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
+                          setSubmitError(null);
+                        }}
+                        error={formErrors.acceptedTerms}
+                      />
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setSignupStep(signupMethod === 'email' ? 'account' : 'method')}
+                        >
+                          Back
+                        </Button>
+                        {signupMethod === 'email' ? (
+                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath}>
+                            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {signupPath === 'create_wedding'
+                              ? 'Create couple account'
+                              : signupPath === 'join_wedding'
+                                ? 'Create account and join'
+                                : professionalSignupRole === 'planner'
+                                  ? 'Create planner account'
+                                  : 'Create vendor account'}
+                          </Button>
+                        ) : signupMethod === 'google' ? (
+                          <GoogleAuthButton
+                            loading={oauthSubmittingProvider === 'google'}
+                            disabled={submitting || oauthSubmitting || !hasChosenPath}
+                            onClick={handleGoogleSignIn}
+                            text="Continue with Google"
+                          />
+                        ) : appleAuthEnabled ? (
+                          <AppleAuthButton
+                            loading={oauthSubmittingProvider === 'apple'}
+                            disabled={submitting || oauthSubmitting || !hasChosenPath}
+                            onClick={handleAppleSignIn}
+                            text="Continue with Apple"
+                          />
+                        ) : null}
+                        
+                      </div>
+                    </>
+                  )
+                ) : (
+                  <>
+                    {!adminEntry ? (
+                      <div className="space-y-3">
+                        <GoogleAuthButton
+                          loading={oauthSubmittingProvider === 'google' && !submitting}
+                          disabled={submitting || oauthSubmitting}
+                          onClick={handleGoogleSignIn}
+                          text="Continue with Google"
+                        />
+                        {appleAuthEnabled ? (
+                          <AppleAuthButton
+                            loading={oauthSubmittingProvider === 'apple' && !submitting}
+                            disabled={submitting || oauthSubmitting}
+                            onClick={handleAppleSignIn}
+                            text="Continue with Apple"
+                          />
+                        ) : null}
+                        <div className="relative py-1">
+                          <div className="absolute inset-0 flex items-center">
+                            <span className="w-full border-t border-border/60" />
+                          </div>
+                          <div className="relative flex justify-center">
+                            <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                              Or use email
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <FormSubmitError message={submitError} />
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={email}
+                        onChange={(event) => {
+                          setEmail(event.target.value);
+                          setFormErrors((current) => ({ ...current, email: undefined }));
+                          setSubmitError(null);
+                        }}
+                        placeholder="you@example.com"
+                        required
+                      />
+                      <FormFieldError message={formErrors.email} />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="password">Password</Label>
+                        <button
+                          type="button"
+                          onClick={() => setIsForgot(true)}
+                          className="text-xs text-muted-foreground transition-colors hover:text-primary"
+                        >
+                          Forgot password?
+                        </button>
+                      </div>
+                      <Input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(event) => {
+                          setPassword(event.target.value);
+                          setFormErrors((current) => ({ ...current, password: undefined }));
+                          setSubmitError(null);
+                        }}
+                        placeholder="••••••••"
+                        required
+                        minLength={6}
+                      />
+                      <FormFieldError message={formErrors.password} />
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => setShowPassword((current) => !current)}
+                        >
+                          {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          {showPassword ? 'Hide' : 'Show'}
+                        </Button>
                       </div>
                     </div>
 
-                    <Button type="submit" className="w-full" disabled={submitting || googleSubmitting || !hasChosenPath}>
+                    <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath}>
                       {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      {isSignUp
-                        ? signupPath === 'create_wedding'
-                          ? 'Create wedding account'
-                            : signupPath === 'join_wedding'
-                              ? 'Create account and join'
-                            : 'Create professional account'
-                        : audience === 'professional'
-                          ? 'Sign in to professional account'
-                          : 'Sign in to wedding'}
+                      {adminEntry ? 'Sign in to admin' : 'Sign in'}
                     </Button>
                   </>
                 )}
               </form>
 
+              {!isSignUp && !adminEntry ? (
+                <div className="mt-5 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
+                  <p className="text-sm font-medium text-foreground">One sign-in. The right workspace.</p>
+                  <p className="mt-1 text-xs leading-6 text-muted-foreground">
+                    Couple, planner, and vendor accounts now open automatically from the email already attached to them.
+                  </p>
+                </div>
+              ) : null}
+
               <div className="mt-4 text-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPostSignupMessage(null);
-                    setIsSignUp((current) => !current);
-                    setSelectedAudience(null);
-                    setSignupPath(null);
-                    setWeddingOwnerRole(null);
-                    clearPendingOAuthSignupState();
-                  }}
-                  className="text-sm text-muted-foreground transition-colors hover:text-primary"
-                >
-                  {isSignUp
-                    ? audience === 'professional'
-                      ? 'Already have a professional account? Sign in'
-                      : 'Already have a wedding account? Sign in'
-                    : audience === 'professional'
-                      ? "Need a professional account? Sign up"
-                      : "Need a wedding account? Sign up"}
-                </button>
+                {!isSignUp ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPostSignupMessage(null);
+                      resetSignupWizard();
+                      setIsForgot(false);
+                      setIsSignUp(true);
+                      navigate('/auth?mode=signup', { replace: true });
+                    }}
+                    className="text-sm text-muted-foreground transition-colors hover:text-primary"
+                  >
+                    Need an account? Start signup
+                  </button>
+                ) : null}
               </div>
+                </>
+              )}
             </>
           )}
         </CardContent>

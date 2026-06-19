@@ -1,7 +1,8 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2 } from 'lucide-react';
 import { getHomeRouteForRole, isProfessionalSetupPending, type AppRole } from '@/lib/roles';
+import { hasPendingWeddingSetup } from '@/lib/pendingWeddingSetup';
+import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 
 export default function ProtectedRoute({
   children,
@@ -41,13 +42,25 @@ export default function ProtectedRoute({
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="min-h-screen bg-background px-6 py-10">
+        <div className="mx-auto max-w-7xl">
+          <WorkspacePageSkeleton />
+        </div>
       </div>
     );
   }
 
-  if (!user) return <Navigate to="/auth" replace state={{ from: location.pathname }} />;
+  if (!user) {
+    if (allowedRoles?.includes('admin') && location.pathname.startsWith('/admin')) {
+      return <Navigate to="/admin/login" replace state={{ from: location.pathname }} />;
+    }
+
+    return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
+  }
+
+  if (hasPendingWeddingSetup(user.user_metadata, user.email ?? null) && location.pathname !== '/wedding-setup') {
+    return <Navigate to="/wedding-setup" replace />;
+  }
 
   if (isProfessionalSetupPending(user.user_metadata, profile?.role, user.email ?? null) && location.pathname !== '/settings') {
     return <Navigate to="/settings" replace />;
