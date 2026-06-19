@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowRight, Bot, Loader2, Send, X } from 'lucide-react';
+import { ArrowRight, Loader2, Send, X } from 'lucide-react';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,6 +11,21 @@ import type { AiAssistantMessage } from '@/lib/aiAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
 import type { PlannerType } from '@/lib/roles';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+
+function ZaniaMonogram({
+  className = '',
+  accentClassName = '',
+}: {
+  className?: string;
+  accentClassName?: string;
+}) {
+  return (
+    <span className={`relative inline-flex items-baseline font-editorial uppercase leading-none tracking-[0.16em] ${className}`}>
+      <span className="font-[300]">Z</span>
+      <span className={`-ml-[0.02em] inline-block scale-[1.04] font-[500] ${accentClassName}`}>A</span>
+    </span>
+  );
+}
 
 function getAssistantFeature(role?: string | null, plannerType?: PlannerType | null): EntitlementFeature | null {
   if (role === 'admin') return null;
@@ -319,7 +334,7 @@ export default function AssistantPanel({
             transition={{ type: 'spring', stiffness: 220, damping: 24 }}
             whileHover={{ y: -4, scale: 1.01 }}
             whileTap={{ scale: 0.98 }}
-            className={`fixed right-3 z-30 w-auto max-w-[190px] overflow-hidden rounded-[1.15rem] border border-white/[0.18] bg-[radial-gradient(circle_at_82%_18%,rgba(255,255,255,0.34),transparent_34%),radial-gradient(circle_at_18%_115%,rgba(238,202,160,0.32),transparent_42%),linear-gradient(135deg,rgba(80,75,64,0.78),rgba(185,155,119,0.60)_50%,rgba(76,87,65,0.78))] px-3 py-2.5 text-left text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_18px_46px_rgba(49,41,33,0.22)] backdrop-blur-[24px] bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:bottom-4 sm:right-4 sm:w-[calc(100vw-2rem)] sm:max-w-[420px] sm:rounded-[1.65rem] sm:p-3.5 lg:bottom-4 lg:right-4 ${
+            className={`fixed right-3 z-30 grid h-14 w-14 place-items-center overflow-hidden rounded-full border border-white/[0.18] bg-[radial-gradient(circle_at_82%_18%,rgba(255,255,255,0.34),transparent_34%),radial-gradient(circle_at_18%_115%,rgba(238,202,160,0.32),transparent_42%),linear-gradient(135deg,rgba(80,75,64,0.78),rgba(185,155,119,0.60)_50%,rgba(76,87,65,0.78))] p-0 text-left text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_18px_46px_rgba(49,41,33,0.22)] backdrop-blur-[24px] bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:bottom-5 sm:right-4 sm:block sm:h-auto sm:w-[calc(100vw-2rem)] sm:max-w-[420px] sm:rounded-[1.65rem] sm:p-3.5 lg:bottom-6 lg:right-5 ${
               compactDesktopLauncher
                 ? 'lg:w-[172px] lg:max-w-[172px] lg:rounded-[1rem] lg:px-2.25 lg:py-1.75'
                 : 'lg:w-[232px] lg:max-w-[232px] lg:rounded-[1.2rem] lg:p-2'
@@ -329,7 +344,16 @@ export default function AssistantPanel({
           >
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(118deg,transparent,rgba(255,255,255,0.20)_42%,transparent_66%)] opacity-75" />
             <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/[0.18]" />
-            <div className={`relative flex items-center justify-between gap-3 ${
+            <div className="relative flex h-full w-full items-center justify-center sm:hidden">
+              <img
+                src="/assistant-badge.svg"
+                alt=""
+                aria-hidden="true"
+                className="h-11 w-11 select-none object-contain"
+              />
+              <span className="absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full bg-[#d9f7cb] ring-2 ring-[#6d5b46]" />
+            </div>
+            <div className={`relative hidden items-center justify-between gap-3 sm:flex ${
               compactDesktopLauncher ? 'mb-2.5 sm:mb-3 lg:mb-0' : 'mb-2.5 sm:mb-3 lg:mb-1'
             }`}>
               <div className="flex items-baseline gap-x-3">
@@ -354,7 +378,9 @@ export default function AssistantPanel({
             <div className={`relative hidden min-h-[3.7rem] items-center gap-3 rounded-[1.25rem] border border-white/45 bg-white/[0.08] px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:flex sm:min-h-[4rem] sm:rounded-[1.35rem] sm:px-4 ${
               compactDesktopLauncher ? 'lg:hidden' : 'lg:min-h-[2.45rem] lg:gap-1.5 lg:rounded-[0.95rem] lg:px-2 lg:py-1.25'
             }`}>
-              <Bot className="h-[17px] w-[17px] shrink-0 text-[#fff6e8]/78 sm:h-[18px] sm:w-[18px] lg:h-[12px] lg:w-[12px]" />
+              <span className="grid h-[17px] w-[17px] shrink-0 place-items-center rounded-full border border-white/20 text-[#fff6e8]/78 sm:h-[18px] sm:w-[18px] lg:h-[12px] lg:w-[12px]">
+                <ZaniaMonogram className="text-[0.4rem] sm:text-[0.42rem] lg:text-[0.28rem]" accentClassName="text-[#d4bb7d]" />
+              </span>
               <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium leading-none text-[#fff6e8]/90 sm:text-[1.03rem] lg:text-[0.72rem]">
                 {inputPlaceholder}
                 <span className="ml-0.5 animate-pulse">|</span>
@@ -362,10 +388,6 @@ export default function AssistantPanel({
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff6e8]/16 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] sm:h-10 sm:w-10 lg:h-7 lg:w-7">
                 <Send className="h-[18px] w-[18px] lg:h-[12px] lg:w-[12px]" />
               </span>
-            </div>
-            <div className="relative flex items-center gap-2 text-[0.8rem] font-medium text-[#fff6e8]/90 sm:hidden">
-              <Bot className="h-[15px] w-[15px] shrink-0 text-[#fff6e8]/74" />
-              <span className="truncate">Open assistant</span>
             </div>
           </motion.button>
         ) : null}
@@ -523,7 +545,7 @@ export default function AssistantPanel({
                   <div className="mb-3 rounded-[1.35rem] border border-white/35 bg-[#fff8ef]/78 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
                     <div className="flex min-h-[3.5rem] items-center gap-3">
                       <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[rgba(123,84,58,0.12)] text-[#7b543a]">
-                        <Bot className="h-4 w-4" />
+                        <ZaniaMonogram className="text-[0.72rem]" accentClassName="text-[#b78162]" />
                       </div>
                       <Textarea
                         ref={inputRef}

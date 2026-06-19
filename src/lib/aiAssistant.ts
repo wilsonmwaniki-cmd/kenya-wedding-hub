@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { describeAiInvokeError, normalizeInvokeError } from '@/lib/invokeErrors';
 
 export interface AiAssistantMessage {
   role: 'user' | 'assistant';
@@ -66,28 +67,6 @@ export class WeddingAiInvokeError extends Error {
   }
 }
 
-function normalizeErrorPayload(rawError: string) {
-  try {
-    const parsed = JSON.parse(rawError);
-    if (parsed && typeof parsed === 'object') {
-      const primaryMessage =
-        typeof parsed.error === 'string'
-          ? parsed.error
-          : typeof parsed.message === 'string'
-            ? parsed.message
-            : typeof parsed.details === 'string'
-              ? parsed.details
-              : null;
-
-      return primaryMessage ? { ...parsed, error: primaryMessage } : parsed;
-    }
-
-    return parsed;
-  } catch {
-    return rawError.trim() ? { error: rawError.trim() } : null;
-  }
-}
-
 export async function invokeWeddingAiChat(
   params: WeddingAiInvokeParams,
 ): Promise<WeddingAiInvokeResult> {
@@ -106,32 +85,14 @@ export async function invokeWeddingAiChat(
   });
 
   if (error) {
-    let statusCode: number | null = null;
-    let usage: AiUsageStatus | null = null;
-    let fallbackError = error.message || 'Request failed';
-    let parsedError: any = null;
-
-    const maybeContext = (error as { context?: Response }).context;
-    if (maybeContext instanceof Response) {
-      statusCode = maybeContext.status;
-      const rawError = await maybeContext.text();
-      parsedError = normalizeErrorPayload(rawError);
-      usage = parsedError?.usage ?? null;
-      fallbackError =
-        parsedError?.error ||
-        parsedError?.message ||
-        parsedError?.details ||
-        (rawError.trim()
-          ? rawError.trim()
-          : `Request failed with status ${maybeContext.status}${maybeContext.statusText ? ` (${maybeContext.statusText})` : ''}`);
-    } else if (fallbackError === 'Failed to send a request to the Edge Function') {
-      fallbackError = 'Could not reach the AI function. Please try again in a few moments.';
-    }
+    const normalized = await normalizeInvokeError(error, 'Request failed');
+    const usage = (normalized.payload?.usage ?? null) as AiUsageStatus | null;
+    const fallbackError = describeAiInvokeError(normalized.statusCode, normalized.message);
 
     throw new WeddingAiInvokeError(fallbackError, {
-      statusCode,
+      statusCode: normalized.statusCode,
       usage,
-      raw: parsedError ?? error,
+      raw: normalized.payload ?? error,
     });
   }
 
