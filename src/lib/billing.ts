@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { describeBillingError, normalizeInvokeError } from '@/lib/invokeErrors';
 import type { PricingAudience, PricingCheckoutCadence } from '@/lib/pricingPlans';
 
 type StartCheckoutArgs = {
@@ -58,7 +59,8 @@ export async function startStripeCheckout({
   });
 
   if (error) {
-    throw error;
+    const normalized = await normalizeInvokeError(error, 'Could not start checkout.');
+    throw new Error(describeBillingError('checkout_start', normalized.statusCode, normalized.message));
   }
 
   if (!data?.url) {
@@ -76,7 +78,8 @@ export async function syncCoupleCheckout(sessionId: string) {
   });
 
   if (error) {
-    throw error;
+    const normalized = await normalizeInvokeError(error, 'Could not sync checkout.');
+    throw new Error(describeBillingError('checkout_sync', normalized.statusCode, normalized.message));
   }
 
   if (!data) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,14 +9,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  coupleAddonDefinitions,
-  couplePlanDefinitions,
   formatEntitlementFeatureLabel,
   getAudiencePlan,
   getAvailableCheckoutCadences,
+  getDisplayPriceForCadence,
   getLookupKeyForCadence,
   getProfessionalAddonDefinition,
-  getProfessionalPlanDefinition,
   professionalAddonEntitlementMap,
   type CoupleAddonCode,
   type CouplePlanCadence,
@@ -26,6 +24,13 @@ import {
   type PricingAudience,
   type PricingCheckoutCadence,
 } from '@/lib/pricingPlans';
+import {
+  getAudiencePlanDefinition,
+  getCoupleAddonDefinitionWithContent,
+  getCouplePlanDefinitionWithContent,
+  getProfessionalPlanDefinitionWithContent,
+  listCouplePlanDefinitions,
+} from '@/lib/pricingContent';
 import { startStripeCheckout, withCheckoutSessionId } from '@/lib/billing';
 import BrandWordmark from '@/components/BrandWordmark';
 
@@ -45,6 +50,35 @@ const cadenceLabels: Record<PricingCheckoutCadence, string> = {
 const coupleCadenceLabels: Record<CouplePlanCadence, string> = {
   monthly: 'Monthly',
   annual: 'Annual',
+};
+
+const coupleTierUpgradeCopy: Record<'free' | 'basic' | 'premium', string> = {
+  free: 'Perfect for smaller weddings, early planning, and couples who want one calm place to begin.',
+  basic: 'Best for weddings with more moving parts, more people involved, and a guest list that is growing quickly.',
+  premium: 'Built for large, multi-event, or high-coordination weddings that need sharper logistics and premium support.',
+};
+
+const professionalPlanCopy: Record<ProfessionalAudience, {
+  sectionTitle: string;
+  sectionDescription: string;
+  freeSummary: string;
+  premiumSummary: string;
+  premiumValue: string;
+}> = {
+  planner: {
+    sectionTitle: 'For planners turning coordination into a repeatable system',
+    sectionDescription: 'Join free, prove the workflow, then upgrade when Zania becomes part of how your business runs.',
+    freeSummary: 'A clean entry into the Zania workflow for testing one live client workspace.',
+    premiumSummary: 'For serious planners who want reusable systems, stronger reporting, and smoother client operations.',
+    premiumValue: 'Run multiple weddings with more rhythm, tighter client delivery, and less manual follow-up.',
+  },
+  vendor: {
+    sectionTitle: 'For vendors who want to be discovered and booked professionally',
+    sectionDescription: 'Start with a free listing, then upgrade for business tools, stronger visibility, and faster deal flow.',
+    freeSummary: 'A strong first step for getting visible inside Zania without friction.',
+    premiumSummary: 'For vendors who want both better operations and stronger high-intent discovery.',
+    premiumValue: 'This is where Zania becomes your booking, quoting, invoicing, and contract workspace, not just your listing.',
+  },
 };
 
 function isPricingAudience(value: string | null): value is PricingAudience {
@@ -83,9 +117,10 @@ export default function Pricing() {
     vendor: 'annual',
   });
   const [selectedProfessionalAddonAudience, setSelectedProfessionalAddonAudience] = useState<ProfessionalAudience>('planner');
+  const couplePlanDefinitions = listCouplePlanDefinitions();
 
   const targetAudience = isPricingAudience(requestedAudience) ? requestedAudience : null;
-  const targetPlan = targetAudience ? getAudiencePlan(targetAudience) : null;
+  const targetPlan = targetAudience ? getAudiencePlanDefinition(targetAudience) : null;
   const highlightedFeature = formatEntitlementFeatureLabel(requestedFeature);
   const focusedCoupleTier =
     requestedPlanCode === 'couple_basic' ? 'basic'
@@ -288,7 +323,7 @@ export default function Pricing() {
   };
 
   const handleCouplePlanCheckout = async (tier: 'basic' | 'premium') => {
-    const plan = couplePlanDefinitions.find((item) => item.tier === tier);
+    const plan = getCouplePlanDefinitionWithContent(tier);
     if (!plan) return;
 
     const cadence = selectedCoupleCadence[tier];
@@ -342,7 +377,7 @@ export default function Pricing() {
   };
 
   const handleCoupleAddonCheckout = async (code: CoupleAddonCode) => {
-    const addon = coupleAddonDefinitions.find((item) => item.code === code);
+    const addon = getCoupleAddonDefinitionWithContent(code);
     if (!addon || !addon.stripeMonthlyLookupKey) return;
 
     if (!user) {
@@ -491,7 +526,7 @@ export default function Pricing() {
     if (!targetAudience) return null;
 
     if (targetAudience === 'couple' && resolvedCoupleTier) {
-      const plan = couplePlanDefinitions.find((item) => item.tier === resolvedCoupleTier);
+      const plan = getCouplePlanDefinitionWithContent(resolvedCoupleTier);
       if (!plan) return null;
 
       const cadence = selectedCoupleCadence[plan.tier];
@@ -577,7 +612,7 @@ export default function Pricing() {
     }
 
     if (targetAudience === 'couple' && focusedCoupleAddon) {
-      const addon = coupleAddonDefinitions.find((item) => item.code === focusedCoupleAddon);
+      const addon = getCoupleAddonDefinitionWithContent(focusedCoupleAddon);
       if (!addon) return null;
 
       const isLoading = checkoutTarget === `addon-${addon.code}`;
@@ -634,7 +669,7 @@ export default function Pricing() {
     }
 
     if (targetAudience === 'planner' || targetAudience === 'vendor') {
-      const plan = getProfessionalPlanDefinition(targetAudience, 'premium');
+      const plan = getProfessionalPlanDefinitionWithContent(targetAudience, 'premium');
       const cadence = selectedProfessionalCadence[targetAudience];
       const isLoading = checkoutTarget === `audience-${targetAudience}`;
       const priceLabel =
@@ -721,9 +756,7 @@ export default function Pricing() {
       const availableCadences = getAvailableCheckoutCadences(targetPlan);
       const cadence = selectedCadence[targetAudience];
       const isLoading = checkoutTarget === `audience-${targetAudience}`;
-      const priceLabel = cadence === 'annual'
-        ? `${formatKesPrice(targetPlan.stripeAnnualLookupKey ? 5000 : null)}`
-        : `${formatKesPrice(targetPlan.stripeMonthlyLookupKey ? 750 : null)}`;
+      const priceLabel = `${formatKesPrice(getDisplayPriceForCadence(targetPlan, cadence))}`;
 
       return (
         <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
@@ -802,6 +835,7 @@ export default function Pricing() {
   };
 
   const focusedUpgradeContent = isFocusedUpgradeView ? renderFocusedUpgrade() : null;
+  const authSignupHref = '/auth?mode=signup';
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#fcf8f3_0%,#fffdfa_24%,#ffffff_100%)] text-foreground">
@@ -814,11 +848,11 @@ export default function Pricing() {
             <Link to="/vendors-directory" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Vendors</Link>
             <Link to="/planners" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Planners</Link>
             <Link to="/pricing" className="text-sm font-medium text-foreground">Pricing</Link>
-            <Link to="/auth" className="inline-flex h-10 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
+            <Link to="/sign-in" className="inline-flex h-10 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
               Sign In
             </Link>
           </div>
-          <Link to="/auth" className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 md:hidden">
+          <Link to="/sign-in" className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 md:hidden">
             Sign In
           </Link>
         </div>
@@ -832,65 +866,75 @@ export default function Pricing() {
             <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
               <div>
                 <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                  Simple pricing
+                  Free to start
                 </Badge>
                 <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-900">
                   <CheckCircle2 className="h-4 w-4" />
                   Every new account starts with a 14-day full-access beta trial
                 </div>
                 <h1 className="mt-6 max-w-4xl font-display text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
-                  Start free. Upgrade when the wedding or the business gets real.
+                  Start free. Upgrade when the wedding gets serious.
                 </h1>
                 <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">
-                  Couples begin with the essentials, then upgrade when planning becomes collaborative and operational.
-                  Planners and vendors list for free, and every account gets two weeks of premium beta access before paid upgrades take over.
+                  Zania gives couples, planners, and vendors one elegant workspace for weddings in Kenya and beyond.
+                  Begin free, build real momentum, and unlock advanced tools only when you need scale, visibility,
+                  or deeper automation.
+                </p>
+                <p className="mt-4 max-w-2xl text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  No clutter. No forced upgrade on day one. Just a better way to run weddings.
                 </p>
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                  <Link to="/auth">
+                  <Link to={authSignupHref}>
                     <Button className="w-full gap-2 sm:w-auto">
                       Start free
                       <ArrowRight className="h-4 w-4" />
                     </Button>
                   </Link>
-                  <Link to="/auth">
+                  <Link to="/sign-in">
                     <Button variant="outline" className="w-full sm:w-auto">
                       Sign in
                     </Button>
+                  </Link>
+                </div>
+                <div className="mt-8 flex flex-wrap gap-3">
+                  <Link to="/pricing?audience=couple">
+                    <Button variant="outline" className="rounded-full">Couples</Button>
+                  </Link>
+                  <Link to="/pricing?audience=planner">
+                    <Button variant="outline" className="rounded-full">Planners</Button>
+                  </Link>
+                  <Link to="/pricing?audience=vendor">
+                    <Button variant="outline" className="rounded-full">Vendors</Button>
                   </Link>
                 </div>
               </div>
 
               <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
                 <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-2xl bg-primary/10 p-3 text-primary">
-                      <Sparkles className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="font-display text-3xl">What changes when you pay</CardTitle>
-                      <CardDescription className="mt-2 text-base leading-7">
-                        Zania stays generous at the start and becomes paid when coordination matters.
-                      </CardDescription>
-                    </div>
+                  <div>
+                    <CardTitle className="font-display text-3xl">How Zania grows with you</CardTitle>
+                    <CardDescription className="mt-2 text-base leading-7">
+                      You do not pay to understand Zania. You pay when the wedding, the workload, or the business value becomes meaningfully bigger.
+                    </CardDescription>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="rounded-2xl border border-border/60 bg-background/70 p-5">
                     <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Couples</p>
                     <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                      Free gets you planning tools. Paid unlocks shared planning, vendor and planner collaboration, AI help, and timeline coordination.
+                      Free gets you a real planning workspace. Paid unlocks bigger guest counts, richer coordination, and deeper automation.
                     </p>
                   </div>
                   <div className="rounded-2xl border border-border/60 bg-background/70 p-5">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Wedding professionals</p>
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Planners</p>
                     <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                      Free gets you discovered. Premium unlocks inquiries, bookings, invoicing, contracts, and public trust tools.
+                      Free gets you in. Pro plans unlock multi-wedding operations, reusable systems, and sharper client delivery.
                     </p>
                   </div>
                   <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Committee access</p>
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Vendors</p>
                     <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                      Committee members access Zania under the couple&apos;s plan. They do not need a separate public pricing tier.
+                      Free gets you listed. Premium unlocks quoting, contracts, invoices, receipts, analytics, and stronger visibility.
                     </p>
                   </div>
                 </CardContent>
@@ -926,11 +970,11 @@ export default function Pricing() {
           <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
             <div className="mb-6 max-w-3xl">
               <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                Couple plans
+                Couples
               </Badge>
-              <h2 className="mt-4 font-display text-4xl font-semibold">Choose the stage your wedding is in</h2>
+              <h2 className="mt-4 font-display text-4xl font-semibold">For couples who want one calm place to run the whole wedding</h2>
               <p className="mt-4 text-base leading-8 text-muted-foreground">
-                Free is for getting started. Basic is for shared planning. Premium is for fully coordinated weddings with AI and timeline support.
+                Start planning for free, then upgrade only when your guest count, events, or coordination needs grow.
               </p>
             </div>
 
@@ -993,9 +1037,12 @@ export default function Pricing() {
                           </li>
                         ))}
                       </ul>
+                      <p className="text-sm leading-7 text-muted-foreground">
+                        {coupleTierUpgradeCopy[plan.tier]}
+                      </p>
 
                       {plan.tier === 'free' ? (
-                        <Link to="/auth" className="block">
+                        <Link to={authSignupHref} className="block">
                           <Button className="w-full gap-2">
                             {plan.ctaLabel}
                             <ArrowRight className="h-4 w-4" />
@@ -1026,18 +1073,18 @@ export default function Pricing() {
           <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
             <div className="mb-6 max-w-3xl">
               <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                Planner & vendor plans
+                Professional plans
               </Badge>
-              <h2 className="mt-4 font-display text-4xl font-semibold">Get discovered free. Upgrade when operations matter.</h2>
+              <h2 className="mt-4 font-display text-4xl font-semibold">For planners and vendors building real wedding businesses</h2>
               <p className="mt-4 text-base leading-8 text-muted-foreground">
-                Both planners and vendors follow the same commercial logic: free for visibility, premium for the tools that help them actually run the work.
+                Both roles begin free. The upgrade path is simple: planners pay for operational depth, and vendors pay for both business tools and stronger visibility.
               </p>
             </div>
 
             <div className="grid gap-6 xl:grid-cols-2">
               {(['planner', 'vendor'] as const).map((audience) => {
-                const freePlan = getProfessionalPlanDefinition(audience, 'free');
-                const premiumPlan = getProfessionalPlanDefinition(audience, 'premium');
+                const freePlan = getProfessionalPlanDefinitionWithContent(audience, 'free');
+                const premiumPlan = getProfessionalPlanDefinitionWithContent(audience, 'premium');
                 const isLoading = checkoutTarget === `audience-${audience}`;
                 const cadence = selectedProfessionalCadence[audience];
                 const priceLabel =
@@ -1051,7 +1098,7 @@ export default function Pricing() {
                       <div>
                         <CardTitle className="font-display text-3xl">{roleLabels[audience]}s</CardTitle>
                         <CardDescription className="mt-2 text-base leading-7">
-                          {getAudiencePlan(audience).subtitle}
+                          {professionalPlanCopy[audience].sectionDescription}
                         </CardDescription>
                       </div>
                     </CardHeader>
@@ -1059,6 +1106,7 @@ export default function Pricing() {
                       <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
                         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{freePlan.title}</p>
                         <p className="mt-2 font-display text-2xl font-semibold">Free</p>
+                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{professionalPlanCopy[audience].freeSummary}</p>
                         <ul className="mt-4 space-y-2 text-sm leading-7 text-muted-foreground">
                           {freePlan.includedFeatures.map((item) => (
                             <li key={item} className="flex items-start gap-2">
@@ -1088,7 +1136,7 @@ export default function Pricing() {
                           </div>
                         </div>
                         <p className="mt-2 font-display text-2xl font-semibold">{priceLabel}</p>
-                        <p className="mt-2 text-sm leading-7 text-foreground/80">{premiumPlan.supportCopy}</p>
+                        <p className="mt-2 text-sm leading-7 text-foreground/80">{professionalPlanCopy[audience].premiumSummary}</p>
                         <ul className="mt-4 space-y-2 text-sm leading-7 text-foreground/85">
                           {premiumPlan.includedFeatures.slice(0, 5).map((item) => (
                             <li key={item} className="flex items-start gap-2">
@@ -1097,6 +1145,7 @@ export default function Pricing() {
                             </li>
                           ))}
                         </ul>
+                        <p className="mt-4 text-sm leading-7 text-muted-foreground">{professionalPlanCopy[audience].premiumValue}</p>
                       </div>
 
                       <Button
@@ -1116,11 +1165,69 @@ export default function Pricing() {
           </section>
 
           <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
+            <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+              <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
+                <CardHeader>
+                  <CardTitle className="font-display text-3xl">Vendor Pro operations</CardTitle>
+                  <CardDescription className="text-base leading-7">
+                    This is the layer that turns Zania from a listing into a working revenue system for vendors.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-7 text-muted-foreground">
+                  <p>Use Zania to move from inquiry to booking without leaving the workspace.</p>
+                  <ul className="space-y-2 text-foreground/85">
+                    {[
+                      'Turn inquiries into quotes',
+                      'Generate contracts, invoices, and receipts',
+                      'Track deposits, balances, and payment status',
+                      'Save reusable document templates',
+                      'Keep client records and wedding deliverables together',
+                    ].map((item) => (
+                      <li key={item} className="flex items-start gap-2">
+                        <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-[28px] border-primary/20 bg-primary/5 shadow-card">
+                <CardHeader>
+                  <CardTitle className="font-display text-3xl">Visibility that feels useful, not noisy</CardTitle>
+                  <CardDescription className="text-base leading-7">
+                    Zania does not sell random ad clutter. Vendors can pay for stronger placement only where they are genuinely relevant.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-7 text-foreground/85">
+                  <ul className="space-y-2">
+                    {[
+                      'Featured in category or county',
+                      'Seasonal campaign boosts',
+                      'Planner-facing preferred placement',
+                      'Sponsored recommendations that stay clearly labelled',
+                      'Analytics on profile views, saves, and inquiries',
+                    ].map((item) => (
+                      <li key={item} className="flex items-start gap-2">
+                        <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="pt-2 text-sm font-medium uppercase tracking-[0.16em] text-primary">
+                    Visibility can be paid for. Trust cannot.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
             <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
               <CardHeader>
-                <CardTitle className="font-display text-3xl">Quick comparison</CardTitle>
+                <CardTitle className="font-display text-3xl">Compare the paths</CardTitle>
                 <CardDescription className="text-base leading-7">
-                  The main difference is simple: couples pay for shared planning and coordination, while professionals pay for business operations.
+                  The difference is simple: couples pay for complexity, planners pay for professional operations, and vendors pay for growth plus workflow tools.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1155,18 +1262,93 @@ export default function Pricing() {
             </Card>
           </section>
 
+          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
+            <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
+              <CardHeader>
+                <CardTitle className="font-display text-3xl">AI that works inside the workflow</CardTitle>
+                <CardDescription className="text-base leading-7">
+                  Zania AI is not just a chatbot. It helps couples plan smarter, planners move faster, and vendors respond more professionally.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 lg:grid-cols-3">
+                {[
+                  {
+                    title: 'For couples',
+                    items: ['Weekly planning focus', 'Budget and timeline guidance', 'Smarter vendor suggestions'],
+                  },
+                  {
+                    title: 'For planners',
+                    items: ['Operational summaries', 'Decision support', 'Workflow acceleration'],
+                  },
+                  {
+                    title: 'For vendors',
+                    items: ['Quote and contract drafting help', 'Follow-up support', 'Faster response workflows'],
+                  },
+                ].map((group) => (
+                  <div key={group.title} className="rounded-2xl border border-border/60 bg-background/60 p-5">
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">{group.title}</p>
+                    <ul className="mt-4 space-y-2 text-sm leading-7 text-muted-foreground">
+                      {group.items.map((item) => (
+                        <li key={item} className="flex items-start gap-2">
+                          <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
+            <div className="mb-6 max-w-3xl">
+              <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
+                FAQ
+              </Badge>
+              <h2 className="mt-4 font-display text-4xl font-semibold">A few practical questions</h2>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {[
+                {
+                  question: 'Why is Zania free to start?',
+                  answer: 'Because wedding planning is already expensive, and the core workspace should be accessible before any upgrade decision.',
+                },
+                {
+                  question: 'What usually triggers a couple upgrade?',
+                  answer: 'Guest volume, multi-event planning, deeper exports, and more advanced coordination needs.',
+                },
+                {
+                  question: 'Why would a planner upgrade?',
+                  answer: 'To manage multiple weddings, reuse systems, add team members, and run a more professional client operation.',
+                },
+                {
+                  question: 'Why would a vendor upgrade?',
+                  answer: 'To handle quotes, contracts, invoices, receipts, bookings, and visibility more professionally from one place.',
+                },
+              ].map((item) => (
+                <Card key={item.question} className="rounded-[24px] border border-border/60 bg-card/95 shadow-card">
+                  <CardContent className="px-6 py-5">
+                    <h3 className="font-display text-2xl font-semibold">{item.question}</h3>
+                    <p className="mt-3 text-sm leading-7 text-muted-foreground">{item.answer}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+
           <section className="mx-auto max-w-7xl px-4 pb-18 sm:px-6 lg:px-8">
             <Card className="rounded-[28px] border border-primary/20 bg-primary/5 shadow-card">
               <CardContent className="flex flex-col gap-5 px-6 py-8 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Ready to start?</p>
-                  <h2 className="mt-2 font-display text-3xl font-semibold">Open your account and choose the right plan later.</h2>
+                  <h2 className="mt-2 font-display text-3xl font-semibold">Choose the path that fits your role. Start free and grow from there.</h2>
                   <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-                    Most couples and professionals can begin on the free tier, get their bearings, and only upgrade when the real coordination work starts.
+                    One elegant wedding workspace. Free to begin. Built to scale with real weddings, real businesses, and real coordination pressure.
                   </p>
                 </div>
                 <div className="flex flex-col gap-3 sm:flex-row">
-                  <Link to="/auth">
+                  <Link to={authSignupHref}>
                     <Button className="w-full gap-2 sm:w-auto">
                       Create account
                       <ArrowRight className="h-4 w-4" />
