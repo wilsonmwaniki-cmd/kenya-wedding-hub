@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
-import { Bell, Calendar, CheckCircle2, Clock, Heart, Sparkles, TimerReset, User } from 'lucide-react';
+import { Bell, Calendar, CheckCircle2, Clock, Heart, TimerReset, User } from 'lucide-react';
 
 interface SharedEvent {
   id: string;
@@ -47,7 +47,7 @@ const VENDOR_ROLE_META: Record<string, { label: string; icon: string }> = {
   dj: { label: 'DJ', icon: '🎵' },
   florist: { label: 'Florist', icon: '💐' },
   caterer: { label: 'Caterer', icon: '🍽️' },
-  decorator: { label: 'Decorator', icon: '✨' },
+  decorator: { label: 'Decorator', icon: 'D' },
   planner: { label: 'Planner', icon: '📋' },
   transport: { label: 'Transport', icon: '🚗' },
   officiant: { label: 'Officiant', icon: '💍' },
@@ -223,8 +223,7 @@ export default function TimelineShare() {
                   </Badge>
                 )}
                 {isPersonalView && (
-                  <Badge variant="outline" className="gap-1.5 rounded-full border-border/70 bg-background/80 px-3 py-1 text-sm">
-                    <Sparkles className="h-3.5 w-3.5" />
+                  <Badge variant="outline" className="rounded-full border-border/70 bg-background/80 px-3 py-1 text-sm">
                     {timeline.events.length} assigned event{timeline.events.length !== 1 ? 's' : ''}
                   </Badge>
                 )}
