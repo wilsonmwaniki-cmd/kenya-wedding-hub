@@ -16,8 +16,11 @@ import InfoTip from '@/components/InfoTip';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, Trash2, Edit2, Copy, Link2, Users, ArrowLeft,
-  Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle, Printer, Sparkles
+  Calendar, FileText, ChevronRight, Share2, X, Check, Timer, GripVertical, MessageCircle, Printer, RotateCw, ShieldOff
 } from 'lucide-react';
+import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
+import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
+import { normalizeInvokeError } from '@/lib/invokeErrors';
 
 const VENDOR_ROLES = [
   { value: 'photographer', label: 'Photographer', icon: '📸' },
@@ -28,7 +31,7 @@ const VENDOR_ROLES = [
   { value: 'dj', label: 'DJ', icon: '🎵' },
   { value: 'florist', label: 'Florist', icon: '💐' },
   { value: 'caterer', label: 'Caterer', icon: '🍽️' },
-  { value: 'decorator', label: 'Decorator', icon: '✨' },
+  { value: 'decorator', label: 'Decorator', icon: 'D' },
   { value: 'planner', label: 'Planner', icon: '📋' },
   { value: 'transport', label: 'Transport', icon: '🚗' },
   { value: 'officiant', label: 'Officiant', icon: '💍' },
@@ -56,10 +59,15 @@ interface Timeline {
   id: string;
   user_id: string;
   client_id: string | null;
+  wedding_id?: string | null;
   title: string;
   timeline_date: string | null;
   is_template: boolean;
   share_token: string;
+  share_expires_at?: string | null;
+  share_revoked_at?: string | null;
+  share_last_accessed_at?: string | null;
+  share_access_count?: number;
   created_at: string;
 }
 
@@ -74,6 +82,13 @@ interface TimelineEvent {
   category: string | null;
 }
 
+async function invokeTimelineOperation(body: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke('timeline-ops', { body });
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error as string);
+  return data;
+}
+
 interface ShareLink {
   id: string;
   timeline_id: string;
@@ -81,6 +96,16 @@ interface ShareLink {
   share_token: string;
   vendor_role: string | null;
   email: string | null;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  last_accessed_at?: string | null;
+  access_count?: number;
+}
+
+function isTokenActive(expiresAt?: string | null, revokedAt?: string | null) {
+  if (revokedAt) return false;
+  if (!expiresAt) return true;
+  return new Date(expiresAt).getTime() > Date.now();
 }
 
 export default function Timeline() {
@@ -88,6 +113,7 @@ export default function Timeline() {
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
+  const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
   const [timelines, setTimelines] = useState<Timeline[]>([]);
   const [selectedTimeline, setSelectedTimeline] = useState<Timeline | null>(null);
@@ -129,6 +155,9 @@ export default function Timeline() {
   // Category filter
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const baseUrl = window.location.origin;
+  const selectedTimelineShareActive = selectedTimeline
+    ? isTokenActive(selectedTimeline.share_expires_at, selectedTimeline.share_revoked_at)
+    : false;
 
   // Load timelines
   const loadTimelines = async () => {
@@ -197,6 +226,14 @@ export default function Timeline() {
 
   // Calculate time offset and create instance from template
   const handleApplyTemplate = async () => {
+    if (plannerNeedsApproval) {
+      toast({
+        title: 'Template cloning stays with the couple',
+        description: 'Use standard timeline requests here so the couple can review changes more clearly.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!user || !selectedTemplateForApply || !newTitle.trim() || !newDate) return;
     setApplyLoading(true);
 
@@ -215,6 +252,7 @@ export default function Timeline() {
       is_template: false,
       timeline_date: newDate,
       client_id: isPlanner && selectedClient ? selectedClient.id : null,
+      wedding_id: isPlanner ? selectedClient?.wedding_id ?? null : null,
     };
     const { data: newTimeline, error } = await supabase.from('timelines').insert(payload).select().single();
     if (error || !newTimeline) {
@@ -255,12 +293,38 @@ export default function Timeline() {
   // Create timeline
   const handleCreate = async () => {
     if (!user || !newTitle.trim()) return;
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      await submitPlannerChangeRequest({
+        clientId: selectedClient.id,
+        coupleUserId: selectedClient.linked_user_id,
+        plannerUserId: user.id,
+        targetTable: 'timelines',
+        changeType: 'create',
+        proposedPayload: {
+          title: newTitle.trim(),
+          is_template: newIsTemplate,
+          timeline_date: newDate || null,
+          wedding_id: selectedClient.wedding_id ?? null,
+        },
+      });
+      toast({
+        title: 'Timeline request sent for approval',
+        description: 'The couple will review this timeline before it goes live.',
+      });
+      setCreateOpen(false);
+      setNewTitle('');
+      setNewDate('');
+      setNewIsTemplate(false);
+      setFromTemplateId(null);
+      return;
+    }
     const payload: any = {
       user_id: user.id,
       title: newTitle.trim(),
       is_template: newIsTemplate,
       timeline_date: newDate || null,
       client_id: isPlanner && selectedClient ? selectedClient.id : null,
+      wedding_id: isPlanner ? selectedClient?.wedding_id ?? null : null,
     };
     const { data, error } = await supabase.from('timelines').insert(payload).select().single();
     if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
@@ -297,6 +361,25 @@ export default function Timeline() {
   };
 
   const deleteTimeline = async (id: string) => {
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      const timeline = timelines.find((row) => row.id === id);
+      if (!timeline) return;
+      await submitPlannerChangeRequest({
+        clientId: selectedClient.id,
+        coupleUserId: selectedClient.linked_user_id,
+        plannerUserId: user!.id,
+        targetTable: 'timelines',
+        changeType: 'delete',
+        targetId: id,
+        currentPayload: timeline as unknown as Record<string, unknown>,
+        proposedPayload: { title: timeline.title },
+      });
+      toast({
+        title: 'Timeline removal sent for approval',
+        description: `${timeline.title} will only be removed if the couple approves it.`,
+      });
+      return;
+    }
     await supabase.from('timelines').delete().eq('id', id);
     if (selectedTimeline?.id === id) { setSelectedTimeline(null); setEvents([]); }
     loadTimelines();
@@ -337,30 +420,87 @@ export default function Timeline() {
       sort_order: editingEvent?.sort_order ?? events.length,
     };
 
-    if (editingEvent) {
-      await supabase.from('timeline_events').update(payload).eq('id', editingEvent.id);
-    } else {
-      await supabase.from('timeline_events').insert(payload);
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      await submitPlannerChangeRequest({
+        clientId: selectedClient.id,
+        coupleUserId: selectedClient.linked_user_id,
+        plannerUserId: user!.id,
+        targetTable: 'timeline_events',
+        changeType: editingEvent ? 'update' : 'create',
+        targetId: editingEvent?.id ?? null,
+        currentPayload: editingEvent as unknown as Record<string, unknown> | null,
+        proposedPayload: payload,
+      });
+      toast({
+        title: editingEvent ? 'Timeline event sent for approval' : 'Timeline event request sent for approval',
+        description: 'The couple will review this timeline event before it goes live.',
+      });
+      setEventDialogOpen(false);
+      return;
+    }
+
+    const idempotencyKey = window.crypto?.randomUUID?.() ?? `${selectedTimeline.id}-${Date.now()}`;
+    try {
+      await invokeTimelineOperation({
+        action: editingEvent ? 'update_event' : 'create_event',
+        timelineId: selectedTimeline.id,
+        timelineEventId: editingEvent?.id ?? null,
+        idempotencyKey,
+        eventTime,
+        title: eventTitle.trim(),
+        description: eventDesc.trim() || null,
+        assignedPeople: assigned,
+        category: eventCategory,
+        sortOrder: payload.sort_order,
+      });
+    } catch (error) {
+      const normalized = await normalizeInvokeError(
+        error,
+        editingEvent ? 'Could not update this timeline event.' : 'Could not create this timeline event.',
+      );
+      toast({ title: 'Timeline update failed', description: normalized.message, variant: 'destructive' });
+      return;
     }
 
     setEventDialogOpen(false);
     loadEvents(selectedTimeline.id);
-
-    // Auto-create share links for new assignees
-    for (const name of assigned) {
-      if (!shareLinks.find(sl => sl.assignee_name === name)) {
-        await supabase.from('timeline_share_links').insert({
-          timeline_id: selectedTimeline.id,
-          assignee_name: name,
-        });
-      }
-    }
     loadShareLinks(selectedTimeline.id);
   };
 
   const deleteEvent = async (id: string) => {
     if (!selectedTimeline) return;
-    await supabase.from('timeline_events').delete().eq('id', id);
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      const event = events.find((row) => row.id === id);
+      if (!event) return;
+      await submitPlannerChangeRequest({
+        clientId: selectedClient.id,
+        coupleUserId: selectedClient.linked_user_id,
+        plannerUserId: user!.id,
+        targetTable: 'timeline_events',
+        changeType: 'delete',
+        targetId: id,
+        currentPayload: event as unknown as Record<string, unknown>,
+        proposedPayload: { title: event.title, event_time: event.event_time },
+      });
+      toast({
+        title: 'Timeline event removal sent for approval',
+        description: `${event.title} will only be removed if the couple approves it.`,
+      });
+      return;
+    }
+    const idempotencyKey = window.crypto?.randomUUID?.() ?? `${id}-${Date.now()}`;
+    try {
+      await invokeTimelineOperation({
+        action: 'delete_event',
+        timelineId: selectedTimeline.id,
+        timelineEventId: id,
+        idempotencyKey,
+      });
+    } catch (error) {
+      const normalized = await normalizeInvokeError(error, 'Could not remove this timeline event.');
+      toast({ title: 'Timeline update failed', description: normalized.message, variant: 'destructive' });
+      return;
+    }
     loadEvents(selectedTimeline.id);
   };
 
@@ -369,18 +509,128 @@ export default function Timeline() {
     toast({ title: 'Link copied!' });
   };
 
+  const refreshSelectedTimelineRow = async (timelineId: string) => {
+    const { data } = await supabase
+      .from('timelines')
+      .select('*')
+      .eq('id', timelineId)
+      .maybeSingle();
+
+    if (!data) return;
+
+    setSelectedTimeline(data as Timeline);
+    setTimelines((prev) => prev.map((timeline) => (timeline.id === timelineId ? (data as Timeline) : timeline)));
+  };
+
+  if (loading) return <WorkspacePageSkeleton compact />;
+
+  const refreshFullTimelineLink = async () => {
+    if (plannerNeedsApproval) return;
+    if (!selectedTimeline) return;
+
+    const { error } = await supabase
+      .from('timelines')
+      .update({
+        share_token: crypto.randomUUID(),
+        share_revoked_at: null,
+        share_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
+        share_last_accessed_at: null,
+        share_access_count: 0,
+      } as never)
+      .eq('id', selectedTimeline.id);
+
+    if (error) {
+      toast({ title: 'Could not refresh full timeline link', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    await refreshSelectedTimelineRow(selectedTimeline.id);
+    toast({ title: 'Full timeline link refreshed', description: 'A new public timeline link is ready to share.' });
+  };
+
+  const revokeFullTimelineLink = async () => {
+    if (plannerNeedsApproval) return;
+    if (!selectedTimeline) return;
+
+    const { error } = await supabase
+      .from('timelines')
+      .update({
+        share_revoked_at: new Date().toISOString(),
+      } as never)
+      .eq('id', selectedTimeline.id);
+
+    if (error) {
+      toast({ title: 'Could not revoke full timeline link', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    await refreshSelectedTimelineRow(selectedTimeline.id);
+    toast({ title: 'Full timeline link revoked', description: 'The current public timeline link is now inactive.' });
+  };
+
+  const refreshAssigneeShareLink = async (shareLink: ShareLink) => {
+    if (plannerNeedsApproval) return;
+    const { error } = await supabase
+      .from('timeline_share_links')
+      .update({
+        share_token: crypto.randomUUID(),
+        revoked_at: null,
+        expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
+        last_accessed_at: null,
+        access_count: 0,
+      } as never)
+      .eq('id', shareLink.id);
+
+    if (error) {
+      toast({ title: 'Could not refresh personal timeline link', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    await loadShareLinks(shareLink.timeline_id);
+    toast({ title: 'Personal timeline link refreshed', description: `A new link is ready for ${shareLink.assignee_name}.` });
+  };
+
+  const revokeAssigneeShareLink = async (shareLink: ShareLink) => {
+    if (plannerNeedsApproval) return;
+    const { error } = await supabase
+      .from('timeline_share_links')
+      .update({
+        revoked_at: new Date().toISOString(),
+      } as never)
+      .eq('id', shareLink.id);
+
+    if (error) {
+      toast({ title: 'Could not revoke personal timeline link', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    await loadShareLinks(shareLink.timeline_id);
+    toast({ title: 'Personal timeline link revoked', description: `${shareLink.assignee_name}'s current link is now inactive.` });
+  };
+
   const shiftAllEvents = async (direction: 'forward' | 'backward') => {
+    if (plannerNeedsApproval) {
+      toast({
+        title: 'Bulk timeline shifting stays with the couple',
+        description: 'Use event-specific requests instead of changing the live timeline in bulk.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (!selectedTimeline || events.length === 0) return;
     const delta = direction === 'forward' ? shiftMinutes : -shiftMinutes;
-    const updates = events.map(ev => {
-      const [h, m] = ev.event_time.split(':').map(Number);
-      const totalMin = Math.max(0, Math.min(23 * 60 + 59, h * 60 + m + delta));
-      const newH = String(Math.floor(totalMin / 60)).padStart(2, '0');
-      const newM = String(totalMin % 60).padStart(2, '0');
-      return { id: ev.id, event_time: `${newH}:${newM}:00` };
-    });
-    for (const u of updates) {
-      await supabase.from('timeline_events').update({ event_time: u.event_time }).eq('id', u.id);
+    const idempotencyKey = window.crypto?.randomUUID?.() ?? `${selectedTimeline.id}-${Date.now()}`;
+    try {
+      await invokeTimelineOperation({
+        action: 'shift_events',
+        timelineId: selectedTimeline.id,
+        idempotencyKey,
+        shiftMinutes: delta,
+      });
+    } catch (error) {
+      const normalized = await normalizeInvokeError(error, 'Could not shift the timeline right now.');
+      toast({ title: 'Timeline update failed', description: normalized.message, variant: 'destructive' });
+      return;
     }
     loadEvents(selectedTimeline.id);
     setShiftDialogOpen(false);
@@ -388,17 +638,33 @@ export default function Timeline() {
   };
 
   const handleDrop = async (fromIdx: number, toIdx: number) => {
+    if (plannerNeedsApproval) {
+      toast({
+        title: 'Timeline reordering stays with the couple',
+        description: 'Use event-specific requests instead of reordering the live timeline directly.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (fromIdx === toIdx || !selectedTimeline) return;
     const reordered = [...events];
     const [moved] = reordered.splice(fromIdx, 1);
     reordered.splice(toIdx, 0, moved);
     // Optimistic update
     setEvents(reordered);
-    // Persist new sort_order
-    for (let i = 0; i < reordered.length; i++) {
-      if (reordered[i].sort_order !== i) {
-        await supabase.from('timeline_events').update({ sort_order: i }).eq('id', reordered[i].id);
-      }
+    const idempotencyKey = window.crypto?.randomUUID?.() ?? `${selectedTimeline.id}-${Date.now()}`;
+    try {
+      await invokeTimelineOperation({
+        action: 'reorder_events',
+        timelineId: selectedTimeline.id,
+        idempotencyKey,
+        orderedEventIds: reordered.map((event) => event.id),
+      });
+    } catch (error) {
+      const normalized = await normalizeInvokeError(error, 'Could not reorder this timeline right now.');
+      toast({ title: 'Timeline update failed', description: normalized.message, variant: 'destructive' });
+      await loadEvents(selectedTimeline.id);
+      return;
     }
     loadEvents(selectedTimeline.id);
   };
@@ -502,7 +768,7 @@ export default function Timeline() {
                         )
                       }
                     >
-                      <Sparkles className="h-4 w-4" /> Create with AI
+                      Create with AI
                     </Button>
                   )}
                 </div>
@@ -635,16 +901,52 @@ export default function Timeline() {
                 <Label className="text-xs uppercase tracking-wide text-muted-foreground">Full Timeline Link</Label>
                 <div className="flex items-center gap-2 mt-1.5">
                   <Input readOnly value={`${baseUrl}/timeline/share/${selectedTimeline.share_token}`} className="text-xs" />
-                  <Button size="icon" variant="outline" onClick={() => copyToClipboard(`${baseUrl}/timeline/share/${selectedTimeline.share_token}`)}>
+                  <Button size="icon" variant="outline" disabled={!selectedTimelineShareActive} onClick={() => copyToClipboard(`${baseUrl}/timeline/share/${selectedTimeline.share_token}`)}>
                     <Copy className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="outline" className="shrink-0 text-primary hover:text-primary hover:bg-primary/10" asChild>
-                    <a href={`https://wa.me/?text=${encodeURIComponent(`Here's the wedding timeline for "${selectedTimeline.title}":\n${baseUrl}/timeline/share/${selectedTimeline.share_token}`)}`} target="_blank" rel="noopener noreferrer">
-                      <MessageCircle className="h-4 w-4" />
-                    </a>
+                  <Button size="icon" variant="outline" className="shrink-0 text-primary hover:text-primary hover:bg-primary/10" disabled={!selectedTimelineShareActive} asChild={selectedTimelineShareActive}>
+                    {selectedTimelineShareActive ? (
+                      <a href={`https://wa.me/?text=${encodeURIComponent(`Here's the wedding timeline for "${selectedTimeline.title}":\n${baseUrl}/timeline/share/${selectedTimeline.share_token}`)}`} target="_blank" rel="noopener noreferrer">
+                        <MessageCircle className="h-4 w-4" />
+                      </a>
+                    ) : (
+                      <span>
+                        <MessageCircle className="h-4 w-4" />
+                      </span>
+                    )}
                   </Button>
                 </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <Badge variant={selectedTimelineShareActive ? 'default' : 'secondary'}>
+                    {selectedTimelineShareActive ? 'Link active' : 'Link inactive'}
+                  </Badge>
+                  {selectedTimeline.share_expires_at && (
+                    <span className="text-xs text-muted-foreground">
+                      Expires {new Date(selectedTimeline.share_expires_at).toLocaleDateString()}
+                    </span>
+                  )}
+                  {typeof selectedTimeline.share_access_count === 'number' && (
+                    <span className="text-xs text-muted-foreground">
+                      {selectedTimeline.share_access_count} public open{selectedTimeline.share_access_count === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground mt-1">Anyone with this link sees the full timeline</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <Button variant="outline" className="gap-2" onClick={() => void refreshFullTimelineLink()}>
+                    <RotateCw className="h-4 w-4" />
+                    Refresh Link
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="gap-2 text-destructive hover:text-destructive"
+                    onClick={() => void revokeFullTimelineLink()}
+                    disabled={!selectedTimelineShareActive}
+                  >
+                    <ShieldOff className="h-4 w-4" />
+                    Revoke Link
+                  </Button>
+                </div>
               </div>
 
               {/* Per-person links */}
@@ -654,6 +956,7 @@ export default function Timeline() {
                   <div className="space-y-3 mt-1.5">
                     {shareLinks.map(sl => {
                       const link = `${baseUrl}/timeline/share/${sl.share_token}`;
+                      const shareIsActive = isTokenActive(sl.expires_at, sl.revoked_at);
                       const roleMeta = getVendorRole(sl.vendor_role);
                       const waText = encodeURIComponent(`Hi ${sl.assignee_name}! Here's your timeline for "${selectedTimeline.title}":\n${link}`);
                       return (
@@ -667,6 +970,9 @@ export default function Timeline() {
                               <span className="text-xs text-muted-foreground">{roleMeta.label}</span>
                             )}
                             <div className="flex-1" />
+                            <Badge variant={shareIsActive ? 'default' : 'secondary'} className="shrink-0">
+                              {shareIsActive ? 'Active' : 'Inactive'}
+                            </Badge>
                             <select
                               className="text-xs border border-input rounded-md px-2 py-1 bg-background"
                               value={sl.vendor_role || ''}
@@ -698,15 +1004,40 @@ export default function Timeline() {
                               }}
                             />
                           </div>
+                          <div className="text-xs text-muted-foreground">
+                            {sl.expires_at
+                              ? `Expires ${new Date(sl.expires_at).toLocaleDateString()}`
+                              : 'No expiry set'}
+                            {typeof sl.access_count === 'number' ? ` • ${sl.access_count} open${sl.access_count === 1 ? '' : 's'}` : ''}
+                            {sl.last_accessed_at ? ` • Last opened ${new Date(sl.last_accessed_at).toLocaleString()}` : ''}
+                          </div>
                           <div className="flex items-center gap-2">
                             <Input readOnly value={link} className="text-xs flex-1" />
-                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8" onClick={() => copyToClipboard(link)}>
+                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8" disabled={!shareIsActive} onClick={() => copyToClipboard(link)}>
                               <Copy className="h-3.5 w-3.5" />
                             </Button>
-                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8 text-primary hover:text-primary hover:bg-primary/10" asChild>
-                              <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer">
-                                <MessageCircle className="h-3.5 w-3.5" />
-                              </a>
+                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8 text-primary hover:text-primary hover:bg-primary/10" disabled={!shareIsActive} asChild={shareIsActive}>
+                              {shareIsActive ? (
+                                <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noopener noreferrer">
+                                  <MessageCircle className="h-3.5 w-3.5" />
+                                </a>
+                              ) : (
+                                <span>
+                                  <MessageCircle className="h-3.5 w-3.5" />
+                                </span>
+                              )}
+                            </Button>
+                            <Button size="icon" variant="outline" className="shrink-0 h-8 w-8" onClick={() => void refreshAssigneeShareLink(sl)}>
+                              <RotateCw className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="shrink-0 h-8 w-8 text-destructive hover:text-destructive"
+                              disabled={!shareIsActive}
+                              onClick={() => void revokeAssigneeShareLink(sl)}
+                            >
+                              <ShieldOff className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         </div>
@@ -836,7 +1167,6 @@ export default function Timeline() {
                     )
                   }
                 >
-                  <Sparkles className="h-4 w-4" />
                   Plan with AI
                 </Button>
               )}
@@ -916,7 +1246,6 @@ export default function Timeline() {
               <Card className="border-dashed shadow-card">
                 <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
                   <div>
-                    <Sparkles className="mb-3 h-10 w-10 text-primary/60" />
                     <p className="text-lg font-semibold text-foreground">Plan with AI</p>
                     <p className="mt-2 text-sm text-muted-foreground">
                       Get a practical first draft.
@@ -931,7 +1260,7 @@ export default function Timeline() {
                       )
                     }
                   >
-                    <Sparkles className="h-4 w-4" /> Create with AI
+                    Create with AI
                   </Button>
                 </CardContent>
               </Card>

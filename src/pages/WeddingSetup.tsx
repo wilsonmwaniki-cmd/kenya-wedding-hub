@@ -10,7 +10,6 @@ import {
   Heart,
   Loader2,
   MapPin,
-  Sparkles,
   UserRound,
   Users,
 } from 'lucide-react';
@@ -39,6 +38,7 @@ import {
   type WeddingPlanningMode,
   type WeddingReferenceCurrency,
 } from '@/lib/weddingWorkspace';
+import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 
 type CreateStep = 'basics' | 'planning' | 'review';
 
@@ -69,6 +69,8 @@ const planningModeOptions: Array<{ value: WeddingPlanningMode; title: string; bo
     body: 'Track the wedding from another country with your own timezone and reference currency.',
   },
 ];
+
+const RECONCILE_SETUP_TIMEOUT_MS = 2500;
 
 function buildSuggestedWeddingName(name: string) {
   const firstName = name.trim().split(/\s+/)[0];
@@ -217,7 +219,14 @@ export default function WeddingSetup() {
     let active = true;
     setReconciling(true);
 
-    void reconcilePendingWeddingSetupForExistingWorkspace(user)
+    const reconcileAttempt = Promise.race([
+      reconcilePendingWeddingSetupForExistingWorkspace(user),
+      new Promise<{ handled: false; route: '' }>((resolve) => {
+        window.setTimeout(() => resolve({ handled: false, route: '' }), RECONCILE_SETUP_TIMEOUT_MS);
+      }),
+    ]);
+
+    void reconcileAttempt
       .then((result) => {
         if (!active || !result.handled) return;
         navigate(result.route, { replace: true });
@@ -237,11 +246,7 @@ export default function WeddingSetup() {
   }, [completion, navigate, pendingSetup, user]);
 
   if (loading || reconciling) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <PublicPageSkeleton />;
   }
 
   if (!user) {
@@ -498,10 +503,7 @@ export default function WeddingSetup() {
                   <div className="grid gap-6">
                     <Card className="border-border/70 shadow-none">
                       <CardHeader>
-                        <CardTitle className="flex items-center gap-2 font-display">
-                          <Sparkles className="h-5 w-5 text-primary" />
-                          Make it feel like your wedding
-                        </CardTitle>
+                        <CardTitle className="font-display">Make it feel like your wedding</CardTitle>
                         <CardDescription>
                           Start with the basics. We will use this to create the shared wedding workspace for both of you.
                         </CardDescription>

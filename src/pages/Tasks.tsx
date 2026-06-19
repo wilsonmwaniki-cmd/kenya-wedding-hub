@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download, Search, ChevronRight, Sparkles, CircleDashed, PanelsTopLeft } from 'lucide-react';
+import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download, Search, ChevronRight, CircleDashed, PanelsTopLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
@@ -26,6 +27,9 @@ import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
+import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 
 interface Task {
   id: string;
@@ -158,16 +162,51 @@ function getTasksAssistantFeature(role?: string | null, plannerType?: string | n
   return 'couple.ai_assistant';
 }
 
+interface TasksWorkspaceData {
+  tasks: Task[];
+  vendorOptions: VendorOption[];
+  budgetCategories: BudgetCategoryOption[];
+}
+
+async function loadTasksWorkspace(dataOrFilter: string): Promise<TasksWorkspaceData> {
+  const [tasksResult, vendorsResult, budgetsResult] = await Promise.all([
+    supabase.from('tasks').select('*').or(dataOrFilter).order('due_date', { ascending: true, nullsFirst: false }),
+    supabase
+      .from('vendors')
+      .select('id, name, category, selection_status, price, amount_paid, payment_status, payment_due_date, contract_status')
+      .or(dataOrFilter)
+      .order('name'),
+    supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope').or(dataOrFilter).order('name'),
+  ]);
+
+  if (tasksResult.error) throw tasksResult.error;
+  if (vendorsResult.error) throw vendorsResult.error;
+  if (budgetsResult.error) throw budgetsResult.error;
+
+  return {
+    tasks: (tasksResult.data ?? []) as Task[],
+    vendorOptions: ((vendorsResult.data ?? []) as any[]).map((vendor) => ({
+      ...vendor,
+      price: vendor.price != null ? Number(vendor.price) : null,
+      amount_paid: Number(vendor.amount_paid ?? 0),
+    })) as VendorOption[],
+    budgetCategories: ((budgetsResult.data ?? []) as any[]).map((category) => ({
+      ...category,
+      allocated: Number(category.allocated ?? 0),
+      spent: Number(category.spent ?? 0),
+    })) as BudgetCategoryOption[],
+  };
+}
+
 export default function Tasks() {
   const { user, profile } = useAuth();
-  const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [vendorOptions, setVendorOptions] = useState<VendorOption[]>([]);
-  const [budgetCategories, setBudgetCategories] = useState<BudgetCategoryOption[]>([]);
+  const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -183,47 +222,24 @@ export default function Tasks() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
+  const [submittingTask, setSubmittingTask] = useState(false);
+  const [taskFormErrors, setTaskFormErrors] = useState<{ title?: string }>({});
+  const [taskSubmitError, setTaskSubmitError] = useState<string | null>(null);
+
+  const tasksQueryKey = ['tasks', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+  const tasksQuery = useQuery({
+    queryKey: tasksQueryKey,
+    queryFn: () => loadTasksWorkspace(dataOrFilter!),
+    enabled: Boolean(dataOrFilter),
+    staleTime: 30_000,
+  });
+  const tasks = tasksQuery.data?.tasks ?? [];
+  const vendorOptions = tasksQuery.data?.vendorOptions ?? [];
+  const budgetCategories = tasksQuery.data?.budgetCategories ?? [];
 
   useEffect(() => {
-    if (isPlanner && !selectedClient) navigate('/clients');
-  }, [isPlanner, selectedClient, navigate]);
-
-  const load = async () => {
-    if (!dataOrFilter) return;
-    const [tasksResult, vendorsResult, budgetsResult] = await Promise.all([
-      supabase.from('tasks').select('*').or(dataOrFilter).order('due_date', { ascending: true, nullsFirst: false }),
-      supabase
-        .from('vendors')
-        .select('id, name, category, selection_status, price, amount_paid, payment_status, payment_due_date, contract_status')
-        .or(dataOrFilter)
-        .order('name'),
-      supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope').or(dataOrFilter).order('name'),
-    ]);
-
-    if (tasksResult.data) setTasks(tasksResult.data as Task[]);
-    if (vendorsResult.data) {
-      setVendorOptions(
-        (vendorsResult.data as any[]).map((vendor) => ({
-          ...vendor,
-          price: vendor.price != null ? Number(vendor.price) : null,
-          amount_paid: Number(vendor.amount_paid ?? 0),
-        })) as VendorOption[],
-      );
-    }
-    if (budgetsResult.data) {
-      setBudgetCategories(
-        (budgetsResult.data as any[]).map((category) => ({
-          ...category,
-          allocated: Number(category.allocated ?? 0),
-          spent: Number(category.spent ?? 0),
-        })) as BudgetCategoryOption[],
-      );
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [user, selectedClient, dataOrFilter]);
+    if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
+  }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
 
   const vendorLookup = useMemo(
     () => Object.fromEntries(vendorOptions.map((vendor) => [vendor.id, vendor])),
@@ -324,19 +340,46 @@ export default function Tasks() {
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    setTaskSubmitError(null);
     if (!title.trim()) {
-      toast({
-        title: 'Choose a task first',
-        description: 'Pick a checklist task or type a custom title before saving.',
-        variant: 'destructive',
-      });
+      setTaskFormErrors({ title: 'Pick a checklist task or type a custom title before saving.' });
       return;
     }
+    setTaskFormErrors({});
+    setSubmittingTask(true);
 
     const linkedVendor = sourceVendorId !== 'none' ? vendorLookup[sourceVendorId] : null;
     const categoryName = linkedVendor?.category ?? selectedCategoryName ?? null;
 
     try {
+      if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'tasks',
+          changeType: 'create',
+          proposedPayload: {
+            title,
+            description: description || null,
+            due_date: dueDate || null,
+            assigned_to: assignedTo || null,
+            source_vendor_id: linkedVendor?.id ?? null,
+            category: categoryName,
+            phase: selectedTaskTemplate?.phase ?? null,
+            visibility: resolvedTaskDefaults?.visibility ?? 'public',
+            priority_level: resolvedTaskDefaults?.priorityLevel ?? null,
+            delegatable: resolvedTaskDefaults?.delegatable ?? false,
+            recommended_role: resolvedTaskDefaults?.recommendedRole ?? null,
+            template_source: selectedTaskTemplate?.key ? 'planner_spreadsheet_picker_v1' : selectedCategoryDefaults ? 'manual_category_template_v1' : null,
+            completed: false,
+          },
+        });
+        toast({
+          title: 'Task request sent for approval',
+          description: 'The couple will review this task before it goes live.',
+        });
+      } else {
       await createVendorTask({
         userId: user.id,
         title,
@@ -353,6 +396,7 @@ export default function Tasks() {
         recommendedRole: resolvedTaskDefaults?.recommendedRole ?? null,
         templateSource: selectedTaskTemplate?.key ? 'planner_spreadsheet_picker_v1' : selectedCategoryDefaults ? 'manual_category_template_v1' : null,
       });
+      }
       setTitle('');
       setDescription('');
       setDueDate('');
@@ -362,20 +406,61 @@ export default function Tasks() {
       setTaskPickerMode('suggested');
       setSourceVendorId('none');
       setOpen(false);
-      await load();
+      await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
     } catch (error: any) {
+      setTaskSubmitError(error.message || 'Could not save this task right now.');
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setSubmittingTask(false);
     }
   };
 
   const toggleTask = async (id: string, completed: boolean) => {
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      const task = tasks.find((row) => row.id === id);
+      if (!task) return;
+      await submitPlannerChangeRequest({
+        clientId: selectedClient.id,
+        coupleUserId: selectedClient.linked_user_id,
+        plannerUserId: user!.id,
+        targetTable: 'tasks',
+        changeType: 'update',
+        targetId: id,
+        currentPayload: { completed },
+        proposedPayload: { completed: !completed },
+      });
+      toast({
+        title: 'Task status change sent for approval',
+        description: `${task.title} will update after the couple approves it.`,
+      });
+      return;
+    }
     await supabase.from('tasks').update({ completed: !completed }).eq('id', id);
-    load();
+    await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
   };
 
   const deleteTask = async (id: string) => {
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      const task = tasks.find((row) => row.id === id);
+      if (!task) return;
+      await submitPlannerChangeRequest({
+        clientId: selectedClient.id,
+        coupleUserId: selectedClient.linked_user_id,
+        plannerUserId: user!.id,
+        targetTable: 'tasks',
+        changeType: 'delete',
+        targetId: id,
+        currentPayload: task as unknown as Record<string, unknown>,
+        proposedPayload: { title: task.title },
+      });
+      toast({
+        title: 'Task removal sent for approval',
+        description: `${task.title} will only be removed if the couple approves it.`,
+      });
+      return;
+    }
     await supabase.from('tasks').delete().eq('id', id);
-    load();
+    await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
   };
 
   const pending = tasks.filter((task) => !task.completed);
@@ -649,7 +734,8 @@ export default function Tasks() {
     }
   }, [visibleTasks, selectedTaskId]);
 
-  if (isPlanner && !selectedClient) return null;
+  if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
+  if (tasksQuery.isLoading) return <WorkspacePageSkeleton compact />;
 
   const exportTasks = () => {
     downloadCsv(
@@ -905,6 +991,7 @@ export default function Tasks() {
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
               <DialogHeader><DialogTitle className="font-display">Add Task</DialogTitle></DialogHeader>
               <form onSubmit={addTask} className="space-y-4">
+                <FormSubmitError message={taskSubmitError} />
                 <div className="space-y-2">
                   <Label>Checklist Category</Label>
                   <Select
@@ -1024,10 +1111,12 @@ export default function Tasks() {
                     <Label>Custom Task Title</Label>
                     <Input
                       value={title}
-                      onChange={(e) => setTitle(e.target.value)}
+                      onChange={(e) => { setTitle(e.target.value); setTaskFormErrors((current) => ({ ...current, title: undefined })); setTaskSubmitError(null); }}
                       placeholder="e.g. Confirm ushers transport plan"
                       required
+                      aria-invalid={!!taskFormErrors.title}
                     />
+                    <FormFieldError message={taskFormErrors.title} />
                     <p className="text-xs text-muted-foreground">
                       Use this only if the checklist task you want is not in the suggested list above.
                     </p>
@@ -1091,7 +1180,9 @@ export default function Tasks() {
                   <Label>Description (optional)</Label>
                   <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add contract, deposit, or logistics notes..." rows={3} />
                 </div>
-                <Button type="submit" className="w-full">Add Task</Button>
+                <Button type="submit" className="w-full" disabled={submittingTask}>
+                  {submittingTask ? 'Saving...' : 'Add Task'}
+                </Button>
               </form>
             </DialogContent>
           </Dialog>
@@ -1349,10 +1440,7 @@ export default function Tasks() {
                   </div>
 
                   <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                    <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      <Sparkles className="h-4 w-4 text-primary" />
-                      Recommended next move
-                    </p>
+                    <p className="text-sm font-medium text-foreground">Recommended next move</p>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {selectedTask.completed
                         ? 'This one is already complete. Move to the next item in the queue or review the completed history.'

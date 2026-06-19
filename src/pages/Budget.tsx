@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Loader2, Save, Receipt, Sparkles, Lock, CalendarDays, Download, HandCoins, Search, ChevronRight, CircleDashed, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Loader2, Save, Receipt, Lock, CalendarDays, Download, HandCoins, Search, ChevronRight, CircleDashed, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -28,6 +29,9 @@ import InfoTip from '@/components/InfoTip';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { syncCoupleCheckout } from '@/lib/billing';
+import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
+import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 
 interface BudgetCategory {
   id: string;
@@ -136,18 +140,68 @@ function getBudgetAssistantFeature(role?: string | null, plannerType?: string | 
   return 'couple.ai_assistant';
 }
 
+async function loadBudgetCategories(dataOrFilter: string): Promise<BudgetCategory[]> {
+  const { data, error } = await supabase.from('budget_categories').select('*').or(dataOrFilter).order('created_at');
+  if (error) throw error;
+
+  return ((data ?? []) as any[]).map((item) => ({
+    ...item,
+    allocated: Number(item.allocated),
+    spent: Number(item.spent),
+    budget_scope: (item.budget_scope ?? 'wedding') as BudgetScope,
+    visibility: (item.visibility ?? 'public') as 'public' | 'private',
+    committee_role_in_charge: item.committee_role_in_charge ?? null,
+    contract_status: item.contract_status ?? (item.budget_scope === 'personal' ? 'not_required' : 'not_started'),
+  })) as BudgetCategory[];
+}
+
+async function loadBudgetVendorOptions(dataOrFilter: string): Promise<BudgetVendorOption[]> {
+  const { data, error } = await supabase
+    .from('vendors')
+    .select('id, name, category, price, amount_paid, payment_status, payment_due_date, selection_status')
+    .or(dataOrFilter)
+    .order('category');
+
+  if (error) throw error;
+
+  return ((data ?? []) as any[]).map((row) => ({
+    ...row,
+    amount_paid: Number(row.amount_paid ?? 0),
+    price: row.price != null ? Number(row.price) : null,
+  }));
+}
+
+async function loadBudgetPaymentRecords(dataOrFilter: string): Promise<BudgetPaymentRecord[]> {
+  const { data, error } = await supabase
+    .from('budget_payments')
+    .select('*')
+    .or(dataOrFilter)
+    .order('payment_date', { ascending: false });
+
+  if (error) throw error;
+
+  return ((data ?? []) as any[]).map((row) => ({
+    ...row,
+    amount: Number(row.amount ?? 0),
+  })) as BudgetPaymentRecord[];
+}
+
 export default function Budget() {
   const { user, profile } = useAuth();
-  const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const { entitlements: weddingEntitlements, couplePlanTier, refresh } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
-  const [categories, setCategories] = useState<BudgetCategory[]>([]);
+  const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [allocated, setAllocated] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [categoryFormErrors, setCategoryFormErrors] = useState<{ name?: string; allocated?: string }>({});
+  const [categorySubmitError, setCategorySubmitError] = useState<string | null>(null);
   const [selectedTemplateName, setSelectedTemplateName] = useState('');
   const [newCategoryScope, setNewCategoryScope] = useState<BudgetScope>('wedding');
   const [activeBudgetScope, setActiveBudgetScope] = useState<BudgetScope>('wedding');
@@ -164,11 +218,12 @@ export default function Budget() {
   const [addModalBenchmarkLoading, setAddModalBenchmarkLoading] = useState(false);
   const [recordingCategory, setRecordingCategory] = useState<BudgetCategory | null>(null);
   const [recordingSpend, setRecordingSpend] = useState(false);
-  const [finalVendorPayments, setFinalVendorPayments] = useState<FinalVendorPayment[]>([]);
-  const [vendorOptions, setVendorOptions] = useState<BudgetVendorOption[]>([]);
-  const [paymentRecords, setPaymentRecords] = useState<BudgetPaymentRecord[]>([]);
+  const [spendFormErrors, setSpendFormErrors] = useState<{ vendorName?: string; amount?: string }>({});
+  const [spendSubmitError, setSpendSubmitError] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [recordingPaymentMade, setRecordingPaymentMade] = useState(false);
+  const [paymentFormErrors, setPaymentFormErrors] = useState<{ categorySelection?: string; payeeName?: string; amount?: string }>({});
+  const [paymentSubmitError, setPaymentSubmitError] = useState<string | null>(null);
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [spendLog, setSpendLog] = useState<SpendLogForm>({
     vendorName: '',
@@ -189,6 +244,47 @@ export default function Budget() {
   const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
   const upgradeState = searchParams.get('upgrade');
   const checkoutSessionId = searchParams.get('checkout_session_id');
+
+  const categoriesQueryKey = ['budget', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+  const vendorsQueryKey = ['budget-vendors', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+  const paymentsQueryKey = ['budget-payments', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+
+  const categoriesQuery = useQuery({
+    queryKey: categoriesQueryKey,
+    queryFn: () => loadBudgetCategories(dataOrFilter!),
+    enabled: Boolean(dataOrFilter),
+    staleTime: 30_000,
+  });
+
+  const vendorOptionsQuery = useQuery({
+    queryKey: vendorsQueryKey,
+    queryFn: () => loadBudgetVendorOptions(dataOrFilter!),
+    enabled: Boolean(dataOrFilter),
+    staleTime: 30_000,
+  });
+
+  const paymentRecordsQuery = useQuery({
+    queryKey: paymentsQueryKey,
+    queryFn: () => loadBudgetPaymentRecords(dataOrFilter!),
+    enabled: Boolean(dataOrFilter),
+    staleTime: 30_000,
+  });
+
+  const categories = categoriesQuery.data ?? [];
+  const vendorOptions = vendorOptionsQuery.data ?? [];
+  const paymentRecords = paymentRecordsQuery.data ?? [];
+  const finalVendorPayments = useMemo(
+    () => vendorOptions.filter((row) => row.selection_status === 'final') as FinalVendorPayment[],
+    [vendorOptions],
+  );
+
+  const refreshBudgetWorkspace = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: categoriesQueryKey }),
+      queryClient.invalidateQueries({ queryKey: vendorsQueryKey }),
+      queryClient.invalidateQueries({ queryKey: paymentsQueryKey }),
+    ]);
+  };
 
   useEffect(() => {
     if (
@@ -235,8 +331,8 @@ export default function Budget() {
   }, [checkoutSessionId, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
 
   useEffect(() => {
-    if (isPlanner && !selectedClient) navigate('/clients');
-  }, [isPlanner, selectedClient, navigate]);
+    if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
+  }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
 
   const showPersonalBudget = !isPlanner;
   const exportFeature = isPlanner
@@ -280,29 +376,11 @@ export default function Budget() {
     setName('');
   }, [newCategoryScope]);
 
-  const load = async () => {
-    if (!dataOrFilter) return;
-    const { data, error } = await supabase.from('budget_categories').select('*').or(dataOrFilter).order('created_at');
-    if (error) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-      return;
-    }
-
-    const rows = (data ?? []).map((item) => ({
-      ...item,
-      allocated: Number(item.allocated),
-      spent: Number(item.spent),
-      budget_scope: (item.budget_scope ?? 'wedding') as BudgetScope,
-      visibility: (item.visibility ?? 'public') as 'public' | 'private',
-      committee_role_in_charge: item.committee_role_in_charge ?? null,
-      contract_status: item.contract_status ?? (item.budget_scope === 'personal' ? 'not_required' : 'not_started'),
-    })) as BudgetCategory[];
-
-    setCategories(rows);
-    setSpentDrafts(Object.fromEntries(rows.map((row) => [row.id, String(row.spent || 0)])));
+  useEffect(() => {
+    setSpentDrafts(Object.fromEntries(categories.map((row) => [row.id, String(row.spent || 0)])));
     setWorkflowDrafts(
       Object.fromEntries(
-        rows.map((row) => [
+        categories.map((row) => [
           row.id,
           {
             committeeRoleInCharge: row.committee_role_in_charge ?? 'unassigned',
@@ -311,11 +389,7 @@ export default function Budget() {
         ]),
       ),
     );
-  };
-
-  useEffect(() => {
-    void load();
-  }, [user, selectedClient, dataOrFilter]);
+  }, [categories]);
 
   const loadBenchmarks = async (rows: BudgetCategory[]) => {
     if (!rows.length) {
@@ -353,68 +427,6 @@ export default function Budget() {
     void loadBenchmarks(categories);
   }, [categories, selectedClient?.wedding_location]);
 
-  const loadFinalVendorPayments = async () => {
-    if (!dataOrFilter) return;
-
-    const { data, error } = await supabase
-      .from('vendors')
-      .select('id, name, category, price, amount_paid, payment_status, payment_due_date, selection_status')
-      .or(dataOrFilter)
-      .order('category');
-
-    if (error) {
-      toast({
-        title: 'Failed to load final vendor payments',
-        description: error.message,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const normalized = ((data ?? []) as any[]).map((row) => ({
-      ...row,
-      amount_paid: Number(row.amount_paid ?? 0),
-      price: row.price != null ? Number(row.price) : null,
-    }));
-
-    setVendorOptions(normalized);
-    setFinalVendorPayments(normalized.filter((row) => (row as any).selection_status === 'final'));
-  };
-
-  useEffect(() => {
-    void loadFinalVendorPayments();
-  }, [user, selectedClient, dataOrFilter]);
-
-  const loadPaymentRecords = async () => {
-    if (!dataOrFilter) return;
-
-    const { data, error } = await supabase
-      .from('budget_payments')
-      .select('*')
-      .or(dataOrFilter)
-      .order('payment_date', { ascending: false });
-
-    if (error) {
-      toast({
-        title: 'Failed to load payment records',
-        description: error.message,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setPaymentRecords(
-      ((data ?? []) as any[]).map((row) => ({
-        ...row,
-        amount: Number(row.amount ?? 0),
-      })),
-    );
-  };
-
-  useEffect(() => {
-    void loadPaymentRecords();
-  }, [user, selectedClient, dataOrFilter]);
-
   useEffect(() => {
     if (!open) return;
 
@@ -449,19 +461,20 @@ export default function Budget() {
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!name.trim()) {
-      toast({
-        title: 'Add a category name',
-        description: 'Choose a suggested category or type your own before saving.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    const nextErrors: { name?: string; allocated?: string } = {};
+    const allocatedAmount = allocated.trim() === '' ? Number.NaN : parseFloat(allocated);
+    if (!name.trim()) nextErrors.name = 'Choose a suggested category or type your own before saving.';
+    if (!Number.isFinite(allocatedAmount) || allocatedAmount < 0) nextErrors.allocated = 'Enter a valid allocated amount in KES.';
+    setCategoryFormErrors(nextErrors);
+    setCategorySubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    setAddingCategory(true);
 
     const insert: Record<string, unknown> = {
       user_id: user.id,
       name,
-      allocated: parseFloat(allocated) || 0,
+      allocated: allocatedAmount,
       spent: 0,
       budget_scope: newCategoryScope,
       visibility: newCategoryScope === 'personal' ? 'private' : 'public',
@@ -469,9 +482,44 @@ export default function Budget() {
 
     if (newCategoryScope === 'wedding' && isPlanner && selectedClient) insert.client_id = selectedClient.id;
 
+    if (plannerNeedsApproval && newCategoryScope === 'wedding' && selectedClient?.linked_user_id) {
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'budget_categories',
+          changeType: 'create',
+          proposedPayload: {
+            name: insert.name,
+            allocated: insert.allocated,
+            spent: insert.spent,
+            budget_scope: insert.budget_scope,
+            visibility: insert.visibility,
+          },
+        });
+        setName('');
+        setAllocated('');
+        setSelectedTemplateName('');
+        setOpen(false);
+        toast({
+          title: 'Budget category sent for approval',
+          description: 'The couple will review this budget line before it goes live.',
+        });
+      } catch (error: any) {
+        setCategorySubmitError(error?.message || 'We could not submit this budget category for approval.');
+        toast({ title: 'Could not submit budget request', description: error?.message, variant: 'destructive' });
+      } finally {
+        setAddingCategory(false);
+      }
+      return;
+    }
+
     const { error } = await supabase.from('budget_categories').insert(insert);
     if (error) {
+      setCategorySubmitError(error.message || 'We could not save this budget category right now.');
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      setAddingCategory(false);
       return;
     }
 
@@ -479,7 +527,8 @@ export default function Budget() {
     setAllocated('');
     setSelectedTemplateName('');
     setOpen(false);
-    await load();
+    await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
+    setAddingCategory(false);
   };
 
   const saveSpent = async (category: BudgetCategory) => {
@@ -496,6 +545,28 @@ export default function Budget() {
     }
 
     setSavingSpentId(category.id);
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'budget_categories',
+          changeType: 'update',
+          targetId: category.id,
+          currentPayload: { spent: category.spent },
+          proposedPayload: { spent: nextSpent },
+        });
+        toast({
+          title: 'Spent update sent for approval',
+          description: `${category.name} will update after the couple approves it.`,
+        });
+      } catch (error: any) {
+        toast({ title: 'Could not submit spent update', description: error?.message, variant: 'destructive' });
+      }
+      setSavingSpentId(null);
+      return;
+    }
     const { error } = await supabase
       .from('budget_categories')
       .update({ spent: nextSpent })
@@ -508,15 +579,40 @@ export default function Budget() {
         title: 'Spent total updated',
         description: `${category.name} now shows ${formatCurrency(nextSpent)} spent.`,
       });
-      await load();
+      await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
     }
     setSavingSpentId(null);
   };
 
   const deleteCategory = async (id: string) => {
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      const category = categories.find((item) => item.id === id);
+      if (!category) return;
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'budget_categories',
+          changeType: 'delete',
+          targetId: id,
+          currentPayload: category as unknown as Record<string, unknown>,
+          proposedPayload: { name: category.name, allocated: category.allocated },
+        });
+        toast({
+          title: 'Budget removal sent for approval',
+          description: `${category.name} will only be removed if the couple approves it.`,
+        });
+      } catch (error: any) {
+        toast({ title: 'Could not submit removal request', description: error?.message, variant: 'destructive' });
+      }
+      return;
+    }
     await supabase.from('budget_categories').delete().eq('id', id);
-    await load();
-    await loadPaymentRecords();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: categoriesQueryKey }),
+      queryClient.invalidateQueries({ queryKey: paymentsQueryKey }),
+    ]);
   };
 
   const saveWorkflow = async (category: BudgetCategory) => {
@@ -524,6 +620,31 @@ export default function Budget() {
     if (!draft) return;
 
     setSavingWorkflowId(category.id);
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'budget_categories',
+          changeType: 'update',
+          targetId: category.id,
+          currentPayload: category as unknown as Record<string, unknown>,
+          proposedPayload: {
+            committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
+            contract_status: draft.contractStatus,
+          },
+        });
+        toast({
+          title: 'Budget workflow sent for approval',
+          description: `${category.name} ownership and contract updates are pending couple approval.`,
+        });
+      } catch (error: any) {
+        toast({ title: 'Could not submit workflow update', description: error?.message, variant: 'destructive' });
+      }
+      setSavingWorkflowId(null);
+      return;
+    }
     const { error } = await supabase
       .from('budget_categories')
       .update({
@@ -539,7 +660,7 @@ export default function Budget() {
         title: 'Budget workflow updated',
         description: `${category.name} now tracks ownership and contract state.`,
       });
-      await load();
+      await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
     }
     setSavingWorkflowId(null);
   };
@@ -559,25 +680,40 @@ export default function Budget() {
     if (!recordingCategory) return;
 
     const amount = Number(spendLog.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast({
-        title: 'Invalid amount',
-        description: 'Enter a real KES amount greater than zero.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!spendLog.vendorName.trim()) {
-      toast({
-        title: 'Vendor name required',
-        description: 'Enter the vendor or payee name for this spend.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    const nextErrors: { vendorName?: string; amount?: string } = {};
+    if (!Number.isFinite(amount) || amount <= 0) nextErrors.amount = 'Enter a real KES amount greater than zero.';
+    if (!spendLog.vendorName.trim()) nextErrors.vendorName = 'Enter the vendor or payee name for this spend.';
+    setSpendFormErrors(nextErrors);
+    setSpendSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
 
     setRecordingSpend(true);
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'budget_categories',
+          changeType: 'update',
+          targetId: recordingCategory.id,
+          currentPayload: { spent: recordingCategory.spent },
+          proposedPayload: { spent: recordingCategory.spent + amount },
+          note: `${spendLog.vendorName.trim()} • ${spendLog.notes.trim() || 'Spend observation'}`,
+        });
+        toast({
+          title: 'Spend update sent for approval',
+          description: 'The couple can approve this spend adjustment before it changes the live budget.',
+        });
+        setRecordingCategory(null);
+      } catch (error: any) {
+        setSpendSubmitError(error?.message || 'We could not submit this spend update right now.');
+        toast({ title: 'Could not submit spend update', description: error?.message, variant: 'destructive' });
+      } finally {
+        setRecordingSpend(false);
+      }
+      return;
+    }
     try {
       await createVendorPriceObservation({
         amount,
@@ -607,8 +743,9 @@ export default function Budget() {
         description: 'Your actual spend has been added to pricing intelligence.',
       });
       setRecordingCategory(null);
-      await load();
+      await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
     } catch (error: any) {
+      setSpendSubmitError(error.message || 'We could not record this spend right now.');
       toast({
         title: 'Failed to record spend',
         description: error.message,
@@ -797,24 +934,11 @@ export default function Budget() {
     if (!user) return;
 
     const amount = Number(paymentLog.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast({
-        title: 'Invalid payment amount',
-        description: 'Enter a KES amount greater than zero.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    const nextErrors: { categorySelection?: string; payeeName?: string; amount?: string } = {};
+    if (!Number.isFinite(amount) || amount <= 0) nextErrors.amount = 'Enter a KES amount greater than zero.';
 
     const selectedCategoryOption = selectedPaymentCategoryOption;
-    if (!selectedCategoryOption) {
-      toast({
-        title: 'Category required',
-        description: 'Choose the budget category this payment belongs to.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    if (!selectedCategoryOption) nextErrors.categorySelection = 'Choose the budget category this payment belongs to.';
 
     let selectedCategory =
       paymentScopeCategories.find((category) => category.id === selectedCategoryOption.budgetCategoryId) ??
@@ -823,18 +947,17 @@ export default function Budget() {
 
     const selectedVendor = vendorOptions.find((vendor) => vendor.id === paymentLog.vendorId);
     const payeeName = paymentLog.payeeName.trim() || selectedVendor?.name;
-    if (!payeeName) {
-      toast({
-        title: 'Payee required',
-        description: 'Enter the vendor or payee name for this payment.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    if (!payeeName) nextErrors.payeeName = 'Enter the vendor or payee name for this payment.';
+    setPaymentFormErrors(nextErrors);
+    setPaymentSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
 
     setRecordingPaymentMade(true);
     try {
       if (!selectedCategory) {
+        if (plannerNeedsApproval) {
+          throw new Error('Ask the couple to approve or create the budget category first, then record the payment.');
+        }
         const insert: Record<string, unknown> = {
           user_id: user.id,
           name: selectedCategoryOption.name,
@@ -866,6 +989,48 @@ export default function Budget() {
           contract_status:
             insertedCategory.contract_status ?? (paymentLog.budgetScope === 'personal' ? 'not_required' : 'not_started'),
         } as BudgetCategory;
+      }
+
+      if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+        const nextPaid = selectedVendor ? Number(selectedVendor.amount_paid ?? 0) + amount : null;
+        const nextStatus =
+          selectedVendor && selectedVendor.price && nextPaid != null && nextPaid >= selectedVendor.price
+            ? 'paid_full'
+            : selectedVendor && nextPaid != null && nextPaid > 0
+              ? 'part_paid'
+              : selectedVendor?.payment_status ?? null;
+
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'budget_payments',
+          changeType: 'create',
+          currentPayload: {
+            category_spent: selectedCategory.spent,
+          },
+          proposedPayload: {
+            budget_category_id: selectedCategory.id,
+            vendor_id: selectedVendor?.id ?? null,
+            budget_scope: paymentLog.budgetScope,
+            category_name: selectedCategory.name,
+            payee_name: payeeName,
+            amount,
+            payment_date: paymentLog.paymentDate,
+            reference: paymentLog.reference.trim() || null,
+            notes: paymentLog.notes.trim() || null,
+            vendor_amount_paid: nextPaid,
+            vendor_payment_status: nextStatus,
+          },
+        });
+
+        toast({
+          title: 'Payment request sent for approval',
+          description: `${formatCurrency(amount)} is waiting on the couple before it affects the budget.`,
+        });
+
+        setPaymentDialogOpen(false);
+        return;
       }
 
       const { error } = await supabase.from('budget_payments').insert({
@@ -917,8 +1082,9 @@ export default function Budget() {
       });
 
       setPaymentDialogOpen(false);
-      await Promise.all([load(), loadFinalVendorPayments(), loadPaymentRecords()]);
+      await refreshBudgetWorkspace();
     } catch (error: any) {
+      setPaymentSubmitError(error.message || 'We could not record this payment right now.');
       toast({
         title: 'Failed to record payment',
         description: error.message,
@@ -1083,7 +1249,10 @@ export default function Budget() {
     );
   };
 
-  if (isPlanner && !selectedClient) return null;
+  if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
+  if (categoriesQuery.isLoading || vendorOptionsQuery.isLoading || paymentRecordsQuery.isLoading) {
+    return <WorkspacePageSkeleton compact />;
+  }
 
   return (
     <div className="space-y-6">
@@ -1240,6 +1409,7 @@ export default function Budget() {
                 <DialogTitle className="font-display">Record Payment Made</DialogTitle>
               </DialogHeader>
               <form onSubmit={recordPaymentMade} className="space-y-4">
+                <FormSubmitError message={paymentSubmitError} />
                 {showPersonalBudget && (
                   <div className="space-y-2">
                     <Label>Budget Type</Label>
@@ -1267,7 +1437,11 @@ export default function Budget() {
                   <Label>Category</Label>
                   <Select
                     value={paymentLog.categorySelection}
-                    onValueChange={(value) => setPaymentLog((prev) => ({ ...prev, categorySelection: value, vendorId: '' }))}
+                    onValueChange={(value) => {
+                      setPaymentLog((prev) => ({ ...prev, categorySelection: value, vendorId: '' }));
+                      setPaymentFormErrors((current) => ({ ...current, categorySelection: undefined }));
+                      setPaymentSubmitError(null);
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Choose a budget category" />
@@ -1280,6 +1454,7 @@ export default function Budget() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormFieldError message={paymentFormErrors.categorySelection} />
                 </div>
                 {paymentLog.budgetScope === 'wedding' && (
                   <div className="space-y-2">
@@ -1317,10 +1492,15 @@ export default function Budget() {
                   <Label>Payee name</Label>
                   <Input
                     value={paymentLog.payeeName}
-                    onChange={(e) => setPaymentLog((prev) => ({ ...prev, payeeName: e.target.value }))}
+                    onChange={(e) => {
+                      setPaymentLog((prev) => ({ ...prev, payeeName: e.target.value }));
+                      setPaymentFormErrors((current) => ({ ...current, payeeName: undefined }));
+                      setPaymentSubmitError(null);
+                    }}
                     placeholder="e.g. Little Cake Girl"
                     required
                   />
+                  <FormFieldError message={paymentFormErrors.payeeName} />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
@@ -1328,10 +1508,15 @@ export default function Budget() {
                     <Input
                       type="number"
                       value={paymentLog.amount}
-                      onChange={(e) => setPaymentLog((prev) => ({ ...prev, amount: e.target.value }))}
+                      onChange={(e) => {
+                        setPaymentLog((prev) => ({ ...prev, amount: e.target.value }));
+                        setPaymentFormErrors((current) => ({ ...current, amount: undefined }));
+                        setPaymentSubmitError(null);
+                      }}
                       placeholder="0"
                       required
                     />
+                    <FormFieldError message={paymentFormErrors.amount} />
                   </div>
                   <div className="space-y-2">
                     <Label>Payment date</Label>
@@ -1402,10 +1587,11 @@ export default function Budget() {
                 <DialogTitle className="font-display">Add Budget Category</DialogTitle>
               </DialogHeader>
               <form onSubmit={addCategory} className="space-y-4">
+                <FormSubmitError message={categorySubmitError} />
                 {newCategoryScope === 'wedding' ? (
                   <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      {addModalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-primary" />}
+                      {addModalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                       Market signal for this category
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -1482,6 +1668,8 @@ export default function Budget() {
                     value={name}
                     onChange={e => {
                       setName(e.target.value);
+                      setCategoryFormErrors((current) => ({ ...current, name: undefined }));
+                      setCategorySubmitError(null);
                       if (selectedTemplateName && e.target.value !== selectedTemplateName) {
                         setSelectedTemplateName('');
                       }
@@ -1489,12 +1677,21 @@ export default function Budget() {
                     placeholder={newCategoryScope === 'personal' ? 'e.g. Honeymoon, Wedding Bands' : 'e.g. Venue, Catering'}
                     required
                   />
+                  <FormFieldError message={categoryFormErrors.name} />
                 </div>
                 <div className="space-y-2">
                   <Label>Allocated Amount (KES)</Label>
-                  <Input type="number" value={allocated} onChange={e => setAllocated(e.target.value)} placeholder="0" required />
+                  <Input type="number" value={allocated} onChange={e => {
+                    setAllocated(e.target.value);
+                    setCategoryFormErrors((current) => ({ ...current, allocated: undefined }));
+                    setCategorySubmitError(null);
+                  }} placeholder="0" required />
+                  <FormFieldError message={categoryFormErrors.allocated} />
                 </div>
-                <Button type="submit" className="w-full">Add Category</Button>
+                <Button type="submit" className="w-full" disabled={addingCategory}>
+                  {addingCategory ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {addingCategory ? 'Saving...' : 'Add Category'}
+                </Button>
               </form>
             </DialogContent>
           </Dialog>
@@ -1520,7 +1717,6 @@ export default function Budget() {
                 className="gap-2"
                 onClick={() => assistantPanel.openAssistant(budgetNudge.prompt)}
               >
-                <Sparkles className="h-4 w-4" />
                 Review with AI
               </Button>
               <Button
@@ -2210,24 +2406,35 @@ export default function Budget() {
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={recordSpendObservation} className="space-y-4">
+            <FormSubmitError message={spendSubmitError} />
             <div className="space-y-2">
               <Label>Vendor / payee name</Label>
               <Input
                 value={spendLog.vendorName}
-                onChange={(e) => setSpendLog((prev) => ({ ...prev, vendorName: e.target.value }))}
+                onChange={(e) => {
+                  setSpendLog((prev) => ({ ...prev, vendorName: e.target.value }));
+                  setSpendFormErrors((current) => ({ ...current, vendorName: undefined }));
+                  setSpendSubmitError(null);
+                }}
                 placeholder="e.g. Enashipai, Bloom Flowers, DJ Mo"
                 required
               />
+              <FormFieldError message={spendFormErrors.vendorName} />
             </div>
             <div className="space-y-2">
               <Label>Amount paid (KES)</Label>
               <Input
                 type="number"
                 value={spendLog.amount}
-                onChange={(e) => setSpendLog((prev) => ({ ...prev, amount: e.target.value }))}
+                onChange={(e) => {
+                  setSpendLog((prev) => ({ ...prev, amount: e.target.value }));
+                  setSpendFormErrors((current) => ({ ...current, amount: undefined }));
+                  setSpendSubmitError(null);
+                }}
                 placeholder="0"
                 required
               />
+              <FormFieldError message={spendFormErrors.amount} />
             </div>
             <div className="space-y-2">
               <Label>Notes (optional)</Label>

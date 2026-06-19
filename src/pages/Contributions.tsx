@@ -26,7 +26,10 @@ import {
   summarizeContributions,
 } from '@/lib/contributions';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
-import { ArrowUpRight, Banknote, CalendarDays, Copy, Download, ExternalLink, Gift, HandCoins, Loader2, MessageCircle, Plus, Printer, Share2, Trash2, Users } from 'lucide-react';
+import { ArrowUpRight, Banknote, CalendarDays, Copy, Download, ExternalLink, Gift, HandCoins, Loader2, MessageCircle, Plus, Printer, RotateCw, Share2, ShieldOff, Trash2, Users } from 'lucide-react';
+import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
+import { ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 
 type ContributionRound = {
   id: string;
@@ -83,6 +86,15 @@ type RoundFormState = {
   isActive: boolean;
 };
 
+type ContributionShareState = {
+  id: string;
+  shareToken: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
+};
+
 const CONTRIBUTOR_GROUP_OPTIONS = [
   'Family',
   'Friends',
@@ -130,16 +142,31 @@ function formatCurrency(value: number | null | undefined) {
   return `KES ${amount.toLocaleString()}`;
 }
 
+function isTokenActive(expiresAt?: string | null, revokedAt?: string | null) {
+  if (revokedAt) return false;
+  if (!expiresAt) return true;
+  return new Date(expiresAt).getTime() > Date.now();
+}
+
 export default function Contributions() {
   const { user, profile } = useAuth();
-  const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
   const db = supabase as any;
+  const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
   const [loading, setLoading] = useState(true);
   const [savingContribution, setSavingContribution] = useState(false);
   const [savingRound, setSavingRound] = useState(false);
+  const [roundFormErrors, setRoundFormErrors] = useState<{ title?: string }>({});
+  const [roundSubmitError, setRoundSubmitError] = useState<string | null>(null);
+  const [contributionFormErrors, setContributionFormErrors] = useState<{
+    contributorName?: string;
+    contributorPhone?: string;
+    inKindItem?: string;
+  }>({});
+  const [contributionSubmitError, setContributionSubmitError] = useState<string | null>(null);
   const [rounds, setRounds] = useState<ContributionRound[]>([]);
   const [rows, setRows] = useState<ContributionRow[]>([]);
   const [budgetTarget, setBudgetTarget] = useState(0);
@@ -150,13 +177,14 @@ export default function Contributions() {
   const [contributionForm, setContributionForm] = useState<ContributionFormState>(emptyContributionForm());
   const [roundForm, setRoundForm] = useState<RoundFormState>(emptyRoundForm());
   const [shareLink, setShareLink] = useState('');
+  const [shareState, setShareState] = useState<ContributionShareState | null>(null);
   const [creatingShareLink, setCreatingShareLink] = useState(false);
 
   useEffect(() => {
-    if (isPlanner && !selectedClient) {
+    if (isPlanner && !plannerClientHydrating && !selectedClient) {
       navigate('/clients');
     }
-  }, [isPlanner, selectedClient, navigate]);
+  }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
 
   const load = async () => {
     if (!user || !dataOrFilter) return;
@@ -188,6 +216,35 @@ export default function Contributions() {
         in_kind_value: Number(row.in_kind_value ?? 0),
       })));
       setBudgetTarget((budgetResult.data ?? []).reduce((sum, row) => sum + Number(row.allocated ?? 0), 0));
+
+      const shareQuery = db
+        .from('contribution_summary_shares')
+        .select('id, share_token, expires_at, revoked_at, last_accessed_at, access_count')
+        .eq('user_id', user.id);
+
+      if (isPlanner && selectedClient) {
+        shareQuery.eq('client_id', selectedClient.id);
+      } else {
+        shareQuery.is('client_id', null);
+      }
+
+      const { data: shareData, error: shareError } = await shareQuery.maybeSingle();
+      if (shareError) throw shareError;
+
+      if (shareData) {
+        setShareState({
+          id: String(shareData.id),
+          shareToken: String(shareData.share_token),
+          expiresAt: typeof shareData.expires_at === 'string' ? shareData.expires_at : null,
+          revokedAt: typeof shareData.revoked_at === 'string' ? shareData.revoked_at : null,
+          lastAccessedAt: typeof shareData.last_accessed_at === 'string' ? shareData.last_accessed_at : null,
+          accessCount: Number(shareData.access_count ?? 0),
+        });
+        setShareLink(`${window.location.origin}/contributions/share/${shareData.share_token}`);
+      } else {
+        setShareState(null);
+        setShareLink('');
+      }
     } catch (error: any) {
       toast({
         title: 'Could not load contributions',
@@ -241,6 +298,7 @@ export default function Contributions() {
     [filteredRows],
   );
   const latestShareUrl = shareLink || '';
+  const shareIsActive = isTokenActive(shareState?.expiresAt, shareState?.revokedAt);
 
   const copyText = async (value: string, successTitle: string, successDescription?: string) => {
     try {
@@ -279,7 +337,7 @@ export default function Contributions() {
   };
 
   const ensureShareUrl = async () => {
-    if (latestShareUrl) return latestShareUrl;
+    if (latestShareUrl && shareIsActive) return latestShareUrl;
 
     setCreatingShareLink(true);
     const { data, error } = await supabase.rpc('ensure_contribution_share_token', {
@@ -299,7 +357,71 @@ export default function Contributions() {
     const origin = window.location.origin;
     const url = `${origin}/contributions/share/${data}`;
     setShareLink(url);
+    await load();
     return url;
+  };
+
+  const refreshShareSummaryLink = async () => {
+    if (!shareState) {
+      await ensureShareUrl();
+      return;
+    }
+
+    setCreatingShareLink(true);
+    const { error } = await db
+      .from('contribution_summary_shares')
+      .update({
+        share_token: crypto.randomUUID(),
+        revoked_at: null,
+        expires_at: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+        last_accessed_at: null,
+        access_count: 0,
+      })
+      .eq('id', shareState.id);
+    setCreatingShareLink(false);
+
+    if (error) {
+      toast({
+        title: 'Could not refresh share link',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    await load();
+    toast({
+      title: 'Share link refreshed',
+      description: 'A new public contribution summary link is ready to share.',
+    });
+  };
+
+  const revokeShareSummaryLink = async () => {
+    if (!shareState) return;
+
+    setCreatingShareLink(true);
+    const { error } = await db
+      .from('contribution_summary_shares')
+      .update({
+        revoked_at: new Date().toISOString(),
+      })
+      .eq('id', shareState.id);
+    setCreatingShareLink(false);
+
+    if (error) {
+      toast({
+        title: 'Could not revoke share link',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    await load();
+    toast({
+      title: 'Share link revoked',
+      description: 'The current public contribution summary link is now inactive.',
+    });
   };
 
   const copyShareSummaryLink = async () => {
@@ -365,10 +487,11 @@ export default function Contributions() {
   const saveRound = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!user) return;
-    if (!roundForm.title.trim()) {
-      toast({ title: 'Add a round name', description: 'Give this fundraising round a clear name before saving.', variant: 'destructive' });
-      return;
-    }
+    const nextErrors: { title?: string } = {};
+    if (!roundForm.title.trim()) nextErrors.title = 'Give this fundraising round a clear name before saving.';
+    setRoundFormErrors(nextErrors);
+    setRoundSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
 
     const payload: Record<string, unknown> = {
       user_id: user.id,
@@ -380,12 +503,45 @@ export default function Contributions() {
       is_active: roundForm.isActive,
     };
     if (isPlanner && selectedClient) payload.client_id = selectedClient.id;
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      setSavingRound(true);
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'contribution_rounds',
+          changeType: 'create',
+          proposedPayload: {
+            title: payload.title,
+            goal_amount: payload.goal_amount,
+            notes: payload.notes,
+            starts_on: payload.starts_on,
+            ends_on: payload.ends_on,
+            is_active: payload.is_active,
+          },
+        });
+        setRoundDialogOpen(false);
+        setRoundForm(emptyRoundForm());
+        toast({
+          title: 'Round request sent for approval',
+          description: 'The fundraising round will go live after the couple approves it.',
+        });
+      } catch (error: any) {
+        setRoundSubmitError(error?.message || 'We could not submit this round for approval.');
+        toast({ title: 'Could not submit round request', description: error?.message, variant: 'destructive' });
+      } finally {
+        setSavingRound(false);
+      }
+      return;
+    }
 
     setSavingRound(true);
     const { error } = await db.from('contribution_rounds').insert(payload);
     setSavingRound(false);
 
     if (error) {
+      setRoundSubmitError(error.message || 'We could not save this round right now.');
       toast({ title: 'Could not save round', description: error.message, variant: 'destructive' });
       return;
     }
@@ -399,16 +555,20 @@ export default function Contributions() {
   const saveContribution = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!user) return;
-    if (!contributionForm.contributorName.trim()) {
-      toast({ title: 'Add a contributor name', description: 'Capture who made the pledge or contribution.', variant: 'destructive' });
-      return;
+    const nextErrors: {
+      contributorName?: string;
+      contributorPhone?: string;
+      inKindItem?: string;
+    } = {};
+    if (!contributionForm.contributorName.trim()) nextErrors.contributorName = 'Capture who made the pledge or contribution.';
+    if (contributionForm.contributorPhone.trim() && !/^[\d+\s()-]{7,}$/.test(contributionForm.contributorPhone.trim())) {
+      nextErrors.contributorPhone = 'Enter a valid phone number or leave it blank.';
     }
-
     const isInKind = contributionForm.contributionType === 'in_kind';
-    if (isInKind && !contributionForm.inKindItem.trim()) {
-      toast({ title: 'Add the in-kind item', description: 'Describe the goods or support being contributed.', variant: 'destructive' });
-      return;
-    }
+    if (isInKind && !contributionForm.inKindItem.trim()) nextErrors.inKindItem = 'Describe the goods or support being contributed.';
+    setContributionFormErrors(nextErrors);
+    setContributionSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
 
     const payload: Record<string, unknown> = {
       user_id: user.id,
@@ -428,6 +588,50 @@ export default function Contributions() {
       notes: contributionForm.notes.trim() || null,
     };
     if (isPlanner && selectedClient) payload.client_id = selectedClient.id;
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      setSavingContribution(true);
+      const targetRow = editingContributionId ? rows.find((row) => row.id === editingContributionId) ?? null : null;
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'wedding_contributions',
+          changeType: editingContributionId ? 'update' : 'create',
+          targetId: editingContributionId,
+          currentPayload: targetRow as unknown as Record<string, unknown> | null,
+          proposedPayload: {
+            round_id: payload.round_id,
+            contributor_name: payload.contributor_name,
+            contributor_phone: payload.contributor_phone,
+            contributor_group: payload.contributor_group,
+            contribution_type: payload.contribution_type,
+            status: payload.status,
+            payment_method: payload.payment_method,
+            pledged_amount: payload.pledged_amount,
+            paid_amount: payload.paid_amount,
+            in_kind_value: payload.in_kind_value,
+            in_kind_item: payload.in_kind_item,
+            purpose: payload.purpose,
+            paid_on: payload.paid_on,
+            notes: payload.notes,
+          },
+        });
+        setContributionDialogOpen(false);
+        resetContributionForm(selectedRoundId === 'all' ? 'none' : selectedRoundId);
+        toast({
+          title: editingContributionId ? 'Contribution change sent for approval' : 'Contribution request sent for approval',
+          description: 'The contribution update will go live once the couple approves it.',
+        });
+        await load();
+      } catch (error: any) {
+        setContributionSubmitError(error?.message || 'We could not submit this contribution for approval.');
+        toast({ title: 'Could not submit contribution request', description: error?.message, variant: 'destructive' });
+      } finally {
+        setSavingContribution(false);
+      }
+      return;
+    }
 
     setSavingContribution(true);
     const query = editingContributionId
@@ -437,6 +641,7 @@ export default function Contributions() {
     setSavingContribution(false);
 
     if (error) {
+      setContributionSubmitError(error.message || 'We could not save this contribution right now.');
       toast({ title: 'Could not save contribution', description: error.message, variant: 'destructive' });
       return;
     }
@@ -448,6 +653,33 @@ export default function Contributions() {
   };
 
   const deleteContribution = async (id: string) => {
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      const row = rows.find((item) => item.id === id);
+      if (!row) return;
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'wedding_contributions',
+          changeType: 'delete',
+          targetId: id,
+          currentPayload: row as unknown as Record<string, unknown>,
+          proposedPayload: {
+            contributor_name: row.contributor_name,
+            pledged_amount: row.pledged_amount,
+          },
+        });
+        toast({
+          title: 'Contribution removal sent for approval',
+          description: `${row.contributor_name} will only be removed if the couple approves it.`,
+        });
+        await load();
+      } catch (error: any) {
+        toast({ title: 'Could not submit removal request', description: error?.message, variant: 'destructive' });
+      }
+      return;
+    }
     const { error } = await db.from('wedding_contributions').delete().eq('id', id);
     if (error) {
       toast({ title: 'Could not delete contribution', description: error.message, variant: 'destructive' });
@@ -479,7 +711,7 @@ export default function Contributions() {
     );
   };
 
-  if (isPlanner && !selectedClient) return null;
+  if (isPlanner && (plannerClientHydrating || !selectedClient)) return null;
 
   return (
     <div className="space-y-6">
@@ -510,11 +742,11 @@ export default function Contributions() {
             <div className="mt-4 flex flex-wrap gap-3">
               <Button onClick={openCreateContribution} className="gap-2">
                 <Plus className="h-4 w-4" />
-                Add contribution
+                {plannerNeedsApproval ? 'Request contribution' : 'Add contribution'}
               </Button>
               <Button variant="outline" onClick={() => setRoundDialogOpen(true)} className="gap-2">
                 <CalendarDays className="h-4 w-4" />
-                Add round
+                {plannerNeedsApproval ? 'Request round' : 'Add round'}
               </Button>
               <Button variant="outline" onClick={exportContributions} disabled={filteredRows.length === 0} className="gap-2">
                 <Download className="h-4 w-4" />
@@ -524,10 +756,12 @@ export default function Contributions() {
                 <Printer className="h-4 w-4" />
                 Print meeting summary
               </Button>
-              <Button variant="outline" onClick={() => void copyShareSummaryLink()} disabled={creatingShareLink} className="gap-2">
-                {creatingShareLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
-                Share summary
-              </Button>
+              {!plannerNeedsApproval && (
+                <Button variant="outline" onClick={() => void copyShareSummaryLink()} disabled={creatingShareLink} className="gap-2">
+                  {creatingShareLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+                  Share summary
+                </Button>
+              )}
             </div>
           </div>
           <div className="space-y-4 rounded-2xl border border-border/70 bg-background/90 p-5">
@@ -719,20 +953,61 @@ export default function Contributions() {
                   <Copy className="h-4 w-4" />
                   Copy pending summary
                 </Button>
-                <Button variant="outline" onClick={() => void openShareSummaryPage()} className="gap-2">
-                  <ExternalLink className="h-4 w-4" />
-                  Open share page
-                </Button>
+                {!plannerNeedsApproval && (
+                  <Button variant="outline" onClick={() => void openShareSummaryPage()} className="gap-2">
+                    <ExternalLink className="h-4 w-4" />
+                    Open share page
+                  </Button>
+                )}
               </div>
-              {latestShareUrl ? (
+              {!plannerNeedsApproval && latestShareUrl ? (
                 <div className="mt-4 rounded-xl border border-border/60 bg-background/75 p-3">
                   <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Public summary link</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Badge variant={shareIsActive ? 'default' : 'secondary'}>
+                      {shareIsActive ? 'Link active' : 'Link inactive'}
+                    </Badge>
+                    {shareState?.expiresAt && (
+                      <span className="text-xs text-muted-foreground">
+                        Expires {new Date(shareState.expiresAt).toLocaleDateString()}
+                      </span>
+                    )}
+                    {typeof shareState?.accessCount === 'number' && (
+                      <span className="text-xs text-muted-foreground">
+                        {shareState.accessCount} public open{shareState.accessCount === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-2 flex gap-2">
                     <Input readOnly value={latestShareUrl} className="text-xs" />
-                    <Button size="icon" variant="outline" onClick={() => void copyShareSummaryLink()}>
+                    <Button size="icon" variant="outline" disabled={!shareIsActive} onClick={() => void copyShareSummaryLink()}>
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {shareState?.lastAccessedAt
+                      ? `Last opened ${new Date(shareState.lastAccessedAt).toLocaleString()}`
+                      : 'No public opens recorded yet.'}
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Button variant="outline" className="gap-2" onClick={() => void refreshShareSummaryLink()} disabled={creatingShareLink}>
+                      {creatingShareLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+                      Refresh Link
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2 text-destructive hover:text-destructive"
+                      onClick={() => void revokeShareSummaryLink()}
+                      disabled={creatingShareLink || !shareIsActive}
+                    >
+                      <ShieldOff className="h-4 w-4" />
+                      Revoke Link
+                    </Button>
+                  </div>
+                </div>
+              ) : plannerNeedsApproval ? (
+                <div className="mt-4 rounded-xl border border-primary/15 bg-primary/5 p-3 text-sm text-muted-foreground">
+                  Public contribution summary links, refresh, and revoke controls stay on the couple side.
                 </div>
               ) : null}
             </div>
@@ -811,9 +1086,8 @@ export default function Contributions() {
             </div>
           </div>
           {loading ? (
-            <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/70 p-6 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading contributions...
+            <div className="rounded-2xl border border-dashed border-border/70 p-4">
+              <ListRowsSkeleton rows={4} />
             </div>
           ) : filteredRows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 p-6">
@@ -893,11 +1167,11 @@ export default function Contributions() {
                         </div>
                         <div className="flex flex-wrap gap-2 sm:col-span-3 xl:col-span-1">
                           <Button variant="outline" size="sm" onClick={() => openEditContribution(row)}>
-                            Edit
+                            {plannerNeedsApproval ? 'Request edit' : 'Edit'}
                           </Button>
                           <Button variant="ghost" size="sm" className="text-destructive" onClick={() => void deleteContribution(row.id)}>
                             <Trash2 className="mr-1 h-4 w-4" />
-                            Delete
+                            {plannerNeedsApproval ? 'Request delete' : 'Delete'}
                           </Button>
                         </div>
                       </div>
@@ -995,16 +1269,22 @@ export default function Contributions() {
       <Dialog open={roundDialogOpen} onOpenChange={setRoundDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-display">Add fundraising round</DialogTitle>
+            <DialogTitle className="font-display">{plannerNeedsApproval ? 'Request fundraising round' : 'Add fundraising round'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={saveRound} className="space-y-4">
+            <FormSubmitError message={roundSubmitError} />
             <div className="space-y-2">
               <Label>Round name</Label>
               <Input
                 value={roundForm.title}
-                onChange={(event) => setRoundForm((current) => ({ ...current, title: event.target.value }))}
+                onChange={(event) => {
+                  setRoundForm((current) => ({ ...current, title: event.target.value }));
+                  setRoundFormErrors((current) => ({ ...current, title: undefined }));
+                  setRoundSubmitError(null);
+                }}
                 placeholder="e.g. First family harambee"
               />
+              <FormFieldError message={roundFormErrors.title} />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -1060,7 +1340,7 @@ export default function Contributions() {
             </div>
             <Button type="submit" disabled={savingRound} className="w-full">
               {savingRound ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Save round
+              {plannerNeedsApproval ? 'Send round for approval' : 'Save round'}
             </Button>
           </form>
         </DialogContent>
@@ -1069,25 +1349,40 @@ export default function Contributions() {
       <Dialog open={contributionDialogOpen} onOpenChange={setContributionDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="font-display">{editingContributionId ? 'Edit contribution' : 'Add contribution'}</DialogTitle>
+            <DialogTitle className="font-display">
+              {editingContributionId
+                ? plannerNeedsApproval ? 'Request contribution update' : 'Edit contribution'
+                : plannerNeedsApproval ? 'Request contribution' : 'Add contribution'}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={saveContribution} className="space-y-4">
+            <FormSubmitError message={contributionSubmitError} />
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Contributor name</Label>
                 <Input
                   value={contributionForm.contributorName}
-                  onChange={(event) => setContributionForm((current) => ({ ...current, contributorName: event.target.value }))}
+                  onChange={(event) => {
+                    setContributionForm((current) => ({ ...current, contributorName: event.target.value }));
+                    setContributionFormErrors((current) => ({ ...current, contributorName: undefined }));
+                    setContributionSubmitError(null);
+                  }}
                   placeholder="e.g. Auntie Mary"
                 />
+                <FormFieldError message={contributionFormErrors.contributorName} />
               </div>
               <div className="space-y-2">
                 <Label>Phone number</Label>
                 <Input
                   value={contributionForm.contributorPhone}
-                  onChange={(event) => setContributionForm((current) => ({ ...current, contributorPhone: event.target.value }))}
+                  onChange={(event) => {
+                    setContributionForm((current) => ({ ...current, contributorPhone: event.target.value }));
+                    setContributionFormErrors((current) => ({ ...current, contributorPhone: undefined }));
+                    setContributionSubmitError(null);
+                  }}
                   placeholder="+2547..."
                 />
+                <FormFieldError message={contributionFormErrors.contributorPhone} />
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
@@ -1225,9 +1520,14 @@ export default function Contributions() {
                 <Label>In-kind item</Label>
                 <Input
                   value={contributionForm.inKindItem}
-                  onChange={(event) => setContributionForm((current) => ({ ...current, inKindItem: event.target.value }))}
+                  onChange={(event) => {
+                    setContributionForm((current) => ({ ...current, inKindItem: event.target.value }));
+                    setContributionFormErrors((current) => ({ ...current, inKindItem: undefined }));
+                    setContributionSubmitError(null);
+                  }}
                   placeholder="e.g. Goat, chairs, cake sponsorship"
                 />
+                <FormFieldError message={contributionFormErrors.inKindItem} />
               </div>
               <div className="space-y-2">
                 <Label>Purpose</Label>
@@ -1256,7 +1556,9 @@ export default function Contributions() {
             </div>
             <Button type="submit" disabled={savingContribution} className="w-full">
               {savingContribution ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {editingContributionId ? 'Save changes' : 'Save contribution'}
+              {editingContributionId
+                ? plannerNeedsApproval ? 'Send change for approval' : 'Save changes'
+                : plannerNeedsApproval ? 'Send contribution for approval' : 'Save contribution'}
             </Button>
           </form>
         </DialogContent>

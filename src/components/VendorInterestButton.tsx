@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Sparkles, Check, Loader2, Clock } from 'lucide-react';
+import { Check, Loader2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
@@ -65,7 +65,7 @@ export default function VendorInterestButton({
       }
     } else {
       setStatus('pending');
-      toast({ title: 'Interest sent! ✨', description: `${vendorName} will review your request.` });
+      toast({ title: 'Interest sent', description: `${vendorName} will review your request.` });
       onStatusChange?.();
       // Send email notification with action links (fire-and-forget)
       if (vendorEmail) {
@@ -120,7 +120,7 @@ export default function VendorInterestButton({
             onClick={(e) => { e.stopPropagation(); setUpgradeOpen(true); }}
             className="gap-1.5 hover:border-primary hover:text-primary transition-colors"
           >
-            <Sparkles className="h-3.5 w-3.5" /> Upgrade to Connect
+            Upgrade to Connect
           </Button>
           <UpgradePromptDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} decision={connectDecision} />
         </>
@@ -132,7 +132,7 @@ export default function VendorInterestButton({
         onClick={(e) => { e.stopPropagation(); setDialogOpen(true); }}
         className="gap-1.5 hover:border-primary hover:text-primary transition-colors"
       >
-        <Sparkles className="h-3.5 w-3.5" /> Interested
+        Interested
       </Button>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -155,7 +155,7 @@ export default function VendorInterestButton({
               />
             </div>
             <Button onClick={handleSendInterest} disabled={submitting} className="w-full gap-2">
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Send Interest
             </Button>
           </div>

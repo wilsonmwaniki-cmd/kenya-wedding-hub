@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { motion } from 'framer-motion';
+import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 
 interface PortfolioData {
   id: string;
@@ -68,11 +69,7 @@ export default function WeddingPortfolio() {
   }, [token]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <PublicPageSkeleton card={false} />;
   }
 
   if (!portfolio) {

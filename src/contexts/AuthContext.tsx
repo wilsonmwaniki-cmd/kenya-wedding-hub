@@ -18,7 +18,7 @@ import {
   type WeddingReferenceCurrency,
   type WeddingOwnerRole,
   type WeddingSignupIntent,
-} from '@/lib/weddingWorkspace';
+} from '@/lib/pendingWeddingSetup';
 import {
   buildBetaTrialWindow,
   shouldStartBetaTrial,
@@ -47,6 +47,7 @@ interface Profile {
   planner_type: PlannerType | null;
   committee_name: string | null;
   planner_verified: boolean;
+  founding_planner_contributor: boolean;
   planner_verification_requested: boolean;
   planner_verification_requested_at: string | null;
   planner_subscription_status: 'inactive' | 'active' | 'past_due' | 'cancelled';
@@ -58,6 +59,11 @@ interface Profile {
   beta_trial_status: BetaTrialStatus;
   beta_trial_started_at: string | null;
   beta_trial_expires_at: string | null;
+  marketing_opt_out: boolean;
+  marketing_opt_out_at: string | null;
+  directory_opt_out: boolean;
+  directory_opt_out_at: string | null;
+  privacy_data_deleted_at: string | null;
   primary_county: string | null;
   primary_town: string | null;
   service_areas: string[] | null;
@@ -98,7 +104,7 @@ interface AuthContextType {
       ownerTimezone?: string | null;
       professionalRoleLocked?: boolean | null;
     }
-  ) => Promise<void>;
+  ) => Promise<{ requiresEmailConfirmation: boolean; confirmationEmailResent: boolean }>;
   signIn: (
     email: string,
     password: string,
@@ -114,6 +120,12 @@ interface AuthContextType {
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
   }) => Promise<void>;
+  signInWithApple: (options?: {
+    audience?: 'couple' | 'professional' | null;
+    mode?: 'signup' | 'signin';
+    targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+    plannerType?: PlannerType | null;
+  }) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
   setRolePreview: (role: RolePreview) => void;
@@ -122,6 +134,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const ROLE_PREVIEW_STORAGE_KEY = 'zania-admin-role-preview';
+const PASSWORD_RECOVERY_SESSION_KEY = 'zania:password-recovery-active';
 export type RolePreview = 'admin' | 'couple' | 'vendor' | 'planner' | 'committee';
 
 type RequestedSignupState = {
@@ -146,6 +159,54 @@ const clearStoredSupabaseAuthState = () => {
 
   clearMatchingKeys(window.localStorage);
   clearMatchingKeys(window.sessionStorage);
+};
+
+const isPasswordRecoveryFlowActive = () => {
+  if (typeof window === 'undefined') return false;
+
+  const currentUrl = new URL(window.location.href);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const isResetRoute = currentUrl.pathname === '/reset-password';
+  const hasRecoverySignal =
+    currentUrl.searchParams.get('type') === 'recovery'
+    || hashParams.get('type') === 'recovery'
+    || Boolean(currentUrl.searchParams.get('code'))
+    || Boolean(currentUrl.searchParams.get('token_hash'))
+    || Boolean(hashParams.get('token_hash'))
+    || (
+      Boolean(hashParams.get('access_token'))
+      && Boolean(hashParams.get('refresh_token'))
+    );
+  const hasStoredRecoveryFlag =
+    window.sessionStorage.getItem(PASSWORD_RECOVERY_SESSION_KEY) === 'true';
+
+  return isResetRoute && (hasRecoverySignal || hasStoredRecoveryFlag);
+};
+
+const persistPasswordRecoveryFlagFromLocation = () => {
+  if (typeof window === 'undefined') return false;
+
+  const currentUrl = new URL(window.location.href);
+  if (currentUrl.pathname !== '/reset-password') return false;
+
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const hasRecoverySignal =
+    currentUrl.searchParams.get('type') === 'recovery'
+    || hashParams.get('type') === 'recovery'
+    || Boolean(currentUrl.searchParams.get('code'))
+    || Boolean(currentUrl.searchParams.get('token_hash'))
+    || Boolean(hashParams.get('token_hash'))
+    || (
+      Boolean(hashParams.get('access_token'))
+      && Boolean(hashParams.get('refresh_token'))
+    );
+
+  if (hasRecoverySignal) {
+    window.sessionStorage.setItem(PASSWORD_RECOVERY_SESSION_KEY, 'true');
+    return true;
+  }
+
+  return false;
 };
 
 const plannerPreviewExpiry = () => {
@@ -197,6 +258,7 @@ const normalizeProductionAuthEntry = (): boolean => {
   if (typeof window === 'undefined') return false;
 
   const currentUrl = new URL(window.location.href);
+  const hashParams = new URLSearchParams(currentUrl.hash.replace(/^#/, ''));
   const isProductionHost =
     currentUrl.hostname === 'zaniaweddings.com'
     || currentUrl.hostname === 'www.zaniaweddings.com';
@@ -204,15 +266,23 @@ const normalizeProductionAuthEntry = (): boolean => {
   if (!isProductionHost) return false;
 
   const hasAuthHash = currentUrl.hash.includes('access_token=');
+  const isRecoveryHash = hashParams.get('type') === 'recovery';
+  const isRecoveryResetRoute =
+    currentUrl.pathname === '/reset-password'
+    || currentUrl.searchParams.get('type') === 'recovery'
+    || isRecoveryHash;
   const needsWwwHost = currentUrl.hostname !== 'www.zaniaweddings.com';
-  const needsCallbackPath = hasAuthHash && currentUrl.pathname !== '/auth/callback';
+  const needsCallbackPath =
+    hasAuthHash
+    && !isRecoveryResetRoute
+    && currentUrl.pathname !== '/auth/callback';
 
   if (!needsWwwHost && !needsCallbackPath) return false;
 
   const targetUrl = new URL(currentUrl.toString());
   targetUrl.hostname = 'www.zaniaweddings.com';
 
-  if (hasAuthHash) {
+  if (hasAuthHash && !isRecoveryResetRoute) {
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
     targetUrl.pathname = '/auth/callback';
     if (pendingOAuthTarget?.mode) {
@@ -266,6 +336,7 @@ const buildPreviewProfile = (baseProfile: Profile, preview: RolePreview): Profil
     planner_type: preview === 'committee' ? 'committee' : 'professional',
     committee_name: preview === 'committee' ? (baseProfile.committee_name || `${baseProfile.full_name || 'Admin'} Committee`) : null,
     planner_verified: true,
+    founding_planner_contributor: baseProfile.founding_planner_contributor,
     planner_verification_requested: false,
     planner_verification_requested_at: null,
     planner_subscription_status: 'active',
@@ -279,6 +350,25 @@ const normalizeAdminBaseProfile = (profile: Profile): Profile => ({
   planner_type: null,
   committee_name: null,
 });
+
+const getRequestedRoleFromMetadata = (
+  userMetadata: Record<string, unknown> | null | undefined,
+): AppRole | 'committee' | null => {
+  const metadataRole = userMetadata?.role;
+  const signupTargetRole = userMetadata?.signup_target_role;
+  const professionalSignupRole = userMetadata?.professional_signup_role;
+
+  const resolvedRole = [metadataRole, signupTargetRole, professionalSignupRole].find(
+    (value) =>
+      value === 'admin'
+      || value === 'couple'
+      || value === 'vendor'
+      || value === 'planner'
+      || value === 'committee',
+  );
+
+  return (resolvedRole as AppRole | 'committee' | null | undefined) ?? null;
+};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -301,7 +391,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getFallbackRole = async (authUser: User): Promise<AppRole> => {
-    const requestedRole = authUser.user_metadata?.role;
+    const requestedRole = getRequestedRoleFromMetadata(authUser.user_metadata as Record<string, unknown> | null | undefined);
     const professionalSetupPending =
       authUser.user_metadata?.signup_intent === 'professional'
       && authUser.user_metadata?.professional_role_locked === false;
@@ -414,7 +504,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getRequestedSignupState = (authUser: User): RequestedSignupState => {
-    const requestedRole = authUser.user_metadata?.role;
+    const requestedRole = getRequestedRoleFromMetadata(authUser.user_metadata as Record<string, unknown> | null | undefined);
     const requestedPlannerType = authUser.user_metadata?.planner_type;
     const requestedCommitteeName = authUser.user_metadata?.committee_name;
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
@@ -549,6 +639,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         : null,
     committee_name: authUser.user_metadata?.committee_name || null,
     planner_verified: false,
+    founding_planner_contributor: false,
     planner_verification_requested: false,
     planner_verification_requested_at: null,
     planner_subscription_status: 'inactive',
@@ -560,6 +651,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     beta_trial_status: 'inactive',
     beta_trial_started_at: null,
     beta_trial_expires_at: null,
+    marketing_opt_out: false,
+    marketing_opt_out_at: null,
+    directory_opt_out: false,
+    directory_opt_out_at: null,
+    privacy_data_deleted_at: null,
     primary_county: null,
     primary_town: null,
     service_areas: [],
@@ -839,6 +935,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user) return;
+    if (isPasswordRecoveryFlowActive()) {
+      pendingWeddingRecoveryRef.current = null;
+      return;
+    }
 
     const pendingSetup = getPendingWeddingSetup(user.user_metadata, user.email ?? null);
     if (!pendingSetup) {
@@ -887,6 +987,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hydrateSessionFromHash = async () => {
     if (typeof window === 'undefined') return;
     if (!window.location.hash.includes('access_token=')) return;
+
+    persistPasswordRecoveryFlagFromLocation();
 
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const accessToken = hashParams.get('access_token');
@@ -937,6 +1039,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       timedOut: result === 'timeout',
       sessionPromise,
     };
+  };
+
+  const validateSessionWithTimeout = async (
+    candidateSession: Session | null,
+    timeoutMs = 2500,
+  ): Promise<Session | null> => {
+    if (!candidateSession) return null;
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const result = await Promise.race([
+      supabase.auth.getUser(candidateSession.access_token).then(({ data, error }) => {
+        if (error || !data.user) {
+          return null;
+        }
+
+        return candidateSession;
+      }),
+      new Promise<Session | null>((resolve) => {
+        timeoutId = setTimeout(() => {
+          console.warn(`Auth user validation timed out after ${timeoutMs}ms; using existing session state for now.`);
+          resolve(candidateSession);
+        }, timeoutMs);
+      }),
+    ]);
+
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    return result;
   };
 
   useEffect(() => {
@@ -1135,10 +1267,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (normalizeProductionAuthEntry()) {
           return;
         }
+        persistPasswordRecoveryFlagFromLocation();
         await hydrateSessionFromHash();
         const { session, timedOut, sessionPromise } = await getSessionWithTimeout();
         if (!active) return;
-        await syncAuthState(session, { requestId });
+        const validatedSession = await validateSessionWithTimeout(session);
+        if (!active) return;
+
+        if (!validatedSession && session) {
+          clearStoredSupabaseAuthState();
+        }
+
+        await syncAuthState(validatedSession, { requestId });
 
         if (timedOut) {
           void sessionPromise
@@ -1153,7 +1293,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
               setLoading(true);
               try {
-                await syncAuthState(lateSession, { requestId });
+                const validatedLateSession = await validateSessionWithTimeout(lateSession);
+                if (!validatedLateSession && lateSession) {
+                  clearStoredSupabaseAuthState();
+                }
+                await syncAuthState(validatedLateSession, { requestId });
               } finally {
                 if (active) setLoading(false);
               }
@@ -1199,76 +1343,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       professionalRoleLocked?: boolean | null;
     },
   ) => {
-    const isCommittee = role === 'committee';
-    const weddingCounty = options?.weddingCounty?.trim() || null;
-    const weddingTown = options?.weddingTown?.trim() || null;
-    const primaryCounty = options?.primaryCounty?.trim() || null;
-    const primaryTown = options?.primaryTown?.trim() || null;
-    const professionalRoleLocked = options?.professionalRoleLocked ?? null;
-    const partnerEmail = options?.partnerEmail?.trim().toLowerCase() || null;
-    const weddingName = options?.weddingName?.trim() || null;
-    const weddingCode = options?.weddingCode?.trim().toUpperCase() || null;
-    const signupIntent = options?.signupIntent ?? 'professional';
-    const weddingDate = options?.weddingDate?.trim() || null;
-    const planningMode = options?.planningMode === 'diaspora' ? 'diaspora' : 'local';
-    const planningCountry = planningMode === 'diaspora' ? options?.planningCountry?.trim() || null : null;
-    const referenceCurrency = planningMode === 'diaspora' ? options?.referenceCurrency ?? null : null;
-    const ownerTimezone = planningMode === 'diaspora' ? options?.ownerTimezone?.trim() || null : null;
-    const { data, error } = await supabase.auth.signUp({
+    const emailRedirectTo = `${getCanonicalAppOrigin()}/auth/callback`;
+    const { performAuthEntrySignUp } = await import('@/lib/authEntryFlows');
+    const result = await performAuthEntrySignUp({
       email,
       password,
-      options: {
-        data: {
-          full_name: fullName,
-          role: isCommittee ? 'planner' : role,
-          planner_type: isCommittee ? 'committee' : role === 'planner' ? 'professional' : null,
-          committee_name: isCommittee ? options?.committeeName ?? null : null,
-          signup_intent: signupIntent,
-          professional_role_locked: signupIntent === 'professional' ? professionalRoleLocked ?? false : true,
-          wedding_setup_completed: signupIntent === 'professional',
-          wedding_owner_role: options?.weddingOwnerRole ?? null,
-          partner_email: partnerEmail,
-          wedding_name: weddingName,
-          wedding_code: weddingCode,
-          wedding_county: weddingCounty,
-          wedding_town: weddingTown,
-          wedding_date: weddingDate,
-          wedding_location: weddingTown || weddingCounty ? [weddingTown, weddingCounty].filter(Boolean).join(', ') : null,
-          planning_mode: signupIntent === 'create_wedding' ? planningMode : null,
-          planning_country: signupIntent === 'create_wedding' ? planningCountry : null,
-          reference_currency: signupIntent === 'create_wedding' ? referenceCurrency : null,
-          owner_timezone: signupIntent === 'create_wedding' ? ownerTimezone : null,
-          primary_county: primaryCounty,
-          primary_town: primaryTown,
-        },
-        emailRedirectTo: `${getCanonicalAppOrigin()}/auth/callback`,
-      },
+      fullName,
+      role,
+      options,
+      emailRedirectTo,
     });
-    if (error) throw error;
 
-    if (data.session) {
+    if (result.session) {
       setLoading(true);
       try {
-        await syncAuthState(data.session);
+        await syncAuthState(result.session);
       } finally {
         setLoading(false);
       }
     }
+
+    return {
+      requiresEmailConfirmation: result.requiresEmailConfirmation,
+      confirmationEmailResent: result.confirmationEmailResent,
+    };
   };
 
   const signIn = async (
     email: string,
     password: string,
     options?: {
-      audience?: 'couple' | 'professional' | null;
+      audience?: 'couple' | 'professional' | 'admin' | null;
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
     },
   ) => {
-    if (!options?.targetRole && !options?.audience) {
-      throw new Error('Choose which kind of account you are signing in to first.');
-    }
-
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
 
@@ -1282,6 +1391,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             options.plannerType ?? null,
           );
           await activateRequestedRole(updatedUser, options.targetRole, options.plannerType ?? null);
+        } else if (options?.audience === 'admin') {
+          const roles = await fetchAvailableRoles(data.session.user.id);
+          const hasAdminAccess =
+            roles.includes('admin')
+            || data.session.user.user_metadata?.role === 'admin';
+
+          if (!hasAdminAccess) {
+            throw new Error('This email does not have an admin account.');
+          }
         } else if (options?.audience === 'professional') {
           const roles = await fetchAvailableRoles(data.session.user.id);
           const professionalRoles = roles.filter((role) => role === 'planner' || role === 'vendor');
@@ -1321,43 +1439,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithOAuthProvider = async (
+    provider: 'google' | 'apple',
+    options?: {
+      audience?: 'couple' | 'professional' | 'admin' | null;
+      mode?: 'signup' | 'signin';
+      targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+      plannerType?: PlannerType | null;
+    },
+  ) => {
+    const { performOAuthEntrySignIn } = await import('@/lib/authEntryFlows');
+    await performOAuthEntrySignIn({
+      provider,
+      redirectBase: getCanonicalAppOrigin(),
+      audience: options?.audience,
+      mode: options?.mode,
+      targetRole: options?.targetRole,
+      plannerType: options?.plannerType,
+    });
+  };
+
   const signInWithGoogle = async (options?: {
-    audience?: 'couple' | 'professional' | null;
+    audience?: 'couple' | 'professional' | 'admin' | null;
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
   }) => {
-    const redirectUrl = new URL(`${getCanonicalAppOrigin()}/auth/callback`);
-    const mode = options?.mode === 'signin' ? 'signin' : 'signup';
-    const targetRole = options?.targetRole ?? null;
-    const audience = options?.audience ?? (targetRole === 'couple' ? 'couple' : 'professional');
+    await signInWithOAuthProvider('google', options);
+  };
 
-    redirectUrl.searchParams.set('auth_mode', mode);
-    redirectUrl.searchParams.set('audience', audience);
-
-    if (targetRole) {
-      redirectUrl.searchParams.set('target_role', targetRole);
-      if (mode === 'signup') {
-        redirectUrl.searchParams.set('signup_role', targetRole);
-      }
-      if (targetRole === 'planner') {
-        redirectUrl.searchParams.set(
-          'planner_type',
-          options?.plannerType === 'committee' ? 'committee' : 'professional',
-        );
-      }
-    }
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectUrl.toString(),
-        queryParams: {
-          prompt: 'select_account',
-        },
-      },
-    });
-    if (error) throw error;
+  const signInWithApple = async (options?: {
+    audience?: 'couple' | 'professional' | 'admin' | null;
+    mode?: 'signup' | 'signin';
+    targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
+    plannerType?: PlannerType | null;
+  }) => {
+    await signInWithOAuthProvider('apple', options);
   };
 
   const signOut = async () => {
@@ -1441,6 +1558,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         signIn,
         signInWithGoogle,
+        signInWithApple,
         signOut,
         updateProfile,
         setRolePreview,

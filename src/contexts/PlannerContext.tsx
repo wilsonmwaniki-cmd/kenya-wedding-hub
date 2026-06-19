@@ -14,6 +14,7 @@ export interface PlannerClient {
   notes: string | null;
   created_at: string;
   linked_user_id: string | null;
+  wedding_id: string | null;
 }
 
 interface LinkedPlannerInfo {
@@ -28,6 +29,7 @@ interface PlannerContextType {
   selectClient: (client: PlannerClient | null) => void;
   loadClients: () => Promise<void>;
   isPlanner: boolean;
+  plannerClientHydrating: boolean;
   /** Returns filter info for queries */
   dataFilterKey: 'user_id' | 'client_id' | null;
   dataFilterValue: string | null;
@@ -41,11 +43,16 @@ interface PlannerContextType {
 
 const PlannerContext = createContext<PlannerContextType | undefined>(undefined);
 
+function getSelectedPlannerClientStorageKey(userId: string) {
+  return `zania:selected-planner-client:${userId}`;
+}
+
 export function PlannerProvider({ children }: { children: ReactNode }) {
   const { user, profile } = useAuth();
   const [clients, setClients] = useState<PlannerClient[]>([]);
   const [selectedClient, setSelectedClient] = useState<PlannerClient | null>(null);
   const [linkedPlanner, setLinkedPlanner] = useState<LinkedPlannerInfo | null>(null);
+  const [plannerClientHydrating, setPlannerClientHydrating] = useState(false);
 
   const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
   const isPlanner = profile?.role === 'planner' && !isCommittee;
@@ -53,12 +60,32 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
 
   const loadClients = async () => {
     if (!user || !isPlanner) return;
-    const { data } = await supabase
-      .from('planner_clients')
-      .select('*')
-      .eq('planner_user_id', user.id)
-      .order('created_at', { ascending: false });
-    if (data) setClients(data as PlannerClient[]);
+    setPlannerClientHydrating(true);
+    try {
+      const { data } = await supabase
+        .from('planner_clients')
+        .select('*')
+        .eq('planner_user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      const nextClients = (data as PlannerClient[] | null) ?? [];
+      setClients(nextClients);
+
+      const storageKey = getSelectedPlannerClientStorageKey(user.id);
+      const storedClientId = window.sessionStorage.getItem(storageKey);
+      const restoredClient = storedClientId
+        ? nextClients.find((client) => client.id === storedClientId) ?? null
+        : null;
+
+      if (restoredClient) {
+        setSelectedClient(restoredClient);
+      } else if (selectedClient) {
+        setSelectedClient(null);
+        window.sessionStorage.removeItem(storageKey);
+      }
+    } finally {
+      setPlannerClientHydrating(false);
+    }
   };
 
   const loadLinkedPlanner = async () => {
@@ -92,6 +119,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     } else {
       setClients([]);
       setSelectedClient(null);
+      setPlannerClientHydrating(false);
     }
   }, [isPlanner, user]);
 
@@ -103,7 +131,18 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     }
   }, [isCouple, user]);
 
-  const selectClient = (client: PlannerClient | null) => setSelectedClient(client);
+  const selectClient = (client: PlannerClient | null) => {
+    setSelectedClient(client);
+
+    if (!user) return;
+
+    const storageKey = getSelectedPlannerClientStorageKey(user.id);
+    if (client) {
+      window.sessionStorage.setItem(storageKey, client.id);
+    } else {
+      window.sessionStorage.removeItem(storageKey);
+    }
+  };
 
   const unlinkPlanner = async () => {
     if (!user || !linkedPlanner) return;
@@ -150,7 +189,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
 
   return (
     <PlannerContext.Provider value={{
-      clients, selectedClient, selectClient, loadClients, isPlanner,
+      clients, selectedClient, selectClient, loadClients, isPlanner, plannerClientHydrating,
       dataFilterKey, dataFilterValue, dataOrFilter,
       linkedPlanner, loadLinkedPlanner, unlinkPlanner,
     }}>

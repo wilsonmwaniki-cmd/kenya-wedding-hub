@@ -1,6 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import Stripe from 'https://esm.sh/stripe@14.25.0?target=denonext';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
+import { AbuseProtectionError, assertRecentFunctionEventLimit } from '../_shared/abuseProtection.ts';
+import { loadPricingCheckoutConfig } from '../_shared/pricingCatalog.ts';
+import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,34 +11,37 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const allowedLookupKeys = new Set([
-  'planning_pass_one_time',
-  'committee_pass_one_time',
-  'planner_pro_monthly',
-  'planner_pro_annual',
-  'planner_premium_monthly',
-  'planner_premium_annual',
-  'vendor_pro_monthly',
-  'vendor_pro_annual',
-  'vendor_premium_monthly',
-  'vendor_premium_annual',
-  'couple_basic_monthly',
-  'couple_basic_annual',
-  'couple_premium_monthly',
-  'couple_premium_annual',
-  'gift_registry_addon',
-  'guest_rsvp_management_addon',
-  'media_addon',
-  'advertising_addon',
-  'team_workspace_bundle_3',
-  'team_workspace_bundle_5',
-  'team_workspace_bundle_10',
-]);
+function mergeAllowedLookupKeys(baseLookupKeys: string[]) {
+  const envValue = Deno.env.get('STRIPE_ALLOWED_LOOKUP_KEYS')?.trim();
+  if (!envValue) return new Set(baseLookupKeys);
+
+  try {
+    const parsed = envValue.startsWith('[')
+      ? JSON.parse(envValue)
+      : envValue.split(',').map((item) => item.trim()).filter(Boolean);
+
+    if (!Array.isArray(parsed)) {
+      console.warn('STRIPE_ALLOWED_LOOKUP_KEYS is not an array-like value. Falling back to Supabase/default lookup keys.');
+      return new Set(baseLookupKeys);
+    }
+
+    const normalized = parsed
+      .map((item) => typeof item === 'string' ? item.trim() : '')
+      .filter(Boolean);
+
+    return new Set([...baseLookupKeys, ...normalized]);
+  } catch (error) {
+    console.warn('Could not parse STRIPE_ALLOWED_LOOKUP_KEYS. Falling back to Supabase/default lookup keys.', error);
+    return new Set(baseLookupKeys);
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const requestId = crypto.randomUUID();
 
   try {
     const authHeader = req.headers.get('Authorization');
@@ -86,6 +92,8 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
     const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const pricingCheckoutConfig = await loadPricingCheckoutConfig(serviceClient);
+    const allowedLookupKeys = mergeAllowedLookupKeys(pricingCheckoutConfig.allowedLookupKeys);
 
     const {
       data: { user },
@@ -98,6 +106,32 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    await assertRecentFunctionEventLimit(serviceClient, {
+      functionName: 'create-stripe-checkout',
+      userId: user.id,
+      eventType: 'checkout_start_requested',
+      lookbackMs: 10 * 60 * 1000,
+      maxAttempts: 6,
+      message: 'Too many checkout attempts in a short period. Please wait a few minutes before trying again.',
+      retryAfterSeconds: 5 * 60,
+    });
+
+    await logFunctionEvent({
+      functionName: 'create-stripe-checkout',
+      severity: 'info',
+      status: 'success',
+      eventType: 'checkout_start_requested',
+      message: 'Checkout session creation requested.',
+      userId: user.id,
+      audience: typeof audience === 'string' ? audience : null,
+      entityId: typeof weddingId === 'string' ? weddingId : null,
+      requestId,
+      details: {
+        lookupKey,
+        feature: typeof feature === 'string' ? feature : null,
+      },
+    });
 
     const { data: profile, error: profileError } = await serviceClient
       .from('profiles')
@@ -210,12 +244,61 @@ serve(async (req) => {
         : { payment_intent_data: { metadata } }),
     });
 
+    await logFunctionEvent({
+      functionName: 'create-stripe-checkout',
+      severity: 'info',
+      status: 'success',
+      eventType: 'checkout_session_created',
+      message: 'Checkout session created successfully.',
+      userId: user.id,
+      audience: typeof audience === 'string' ? audience : null,
+      entityId: typeof weddingId === 'string' ? weddingId : null,
+      requestId,
+      details: {
+        lookupKey,
+        sessionId: session.id,
+      },
+    });
+
     return new Response(JSON.stringify({ url: session.url, sessionId: session.id }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('create-stripe-checkout error:', error);
+    if (error instanceof AbuseProtectionError) {
+      await logFunctionEvent({
+        functionName: 'create-stripe-checkout',
+        severity: 'warn',
+        status: 'failure',
+        eventType: 'checkout_rate_limited',
+        message: error.message,
+        requestId,
+        details: {
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+      });
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          ...(error.retryAfterSeconds ? { 'Retry-After': String(error.retryAfterSeconds) } : {}),
+        },
+      });
+    }
+
+    await logFunctionEvent({
+      functionName: 'create-stripe-checkout',
+      severity: 'error',
+      status: 'failure',
+      eventType: 'checkout_start_failed',
+      message: error instanceof Error ? error.message : 'Unknown checkout start error',
+      requestId,
+      details: {
+        error: error instanceof Error ? error.stack ?? error.message : String(error),
+      },
+    });
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

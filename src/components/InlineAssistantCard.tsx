@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Loader2, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Loader2, X } from 'lucide-react';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -56,8 +56,7 @@ export default function InlineAssistantCard({
       <CardHeader className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-2">
-            <Badge variant="secondary" className="w-fit gap-1">
-              <Sparkles className="h-3.5 w-3.5" />
+            <Badge variant="secondary" className="w-fit">
               {badgeLabel}
             </Badge>
             <div className="space-y-1">
@@ -116,7 +115,6 @@ export default function InlineAssistantCard({
                       onClick={() => onPromptClick?.(prompt)}
                       disabled={loading || !canUseAssistant}
                     >
-                      <Sparkles className="mt-0.5 h-4 w-4 text-primary" />
                       <span>{prompt}</span>
                     </Button>
                   ))}

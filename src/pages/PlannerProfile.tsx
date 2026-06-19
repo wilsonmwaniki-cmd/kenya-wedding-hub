@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, CheckCircle2, Clock, Sparkles, MapPin } from 'lucide-react';
+import { Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, CheckCircle2, Clock, MapPin } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,6 +15,8 @@ import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import BrandWordmark from '@/components/BrandWordmark';
+import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
+import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 
 interface PlannerData {
   id: string;
@@ -33,6 +35,7 @@ interface PlannerData {
   travel_scope: string | null;
   minimum_budget_kes: number | null;
   maximum_budget_kes: number | null;
+  founding_planner_contributor: boolean;
 }
 
 export default function PlannerProfile() {
@@ -48,6 +51,8 @@ export default function PlannerProfile() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [message, setMessage] = useState('');
+  const [networkSignals, setNetworkSignals] = useState<{ total: number; trusted: number; workedWith: number } | null>(null);
+  const professionalNetworkEnabled = isProfessionalNetworkEnabled();
 
   const isCouple = profile?.role === 'couple';
   const connectDecision = getEntitlementDecision('couple.connect_planners', {
@@ -61,13 +66,30 @@ export default function PlannerProfile() {
       const load = async () => {
       const { data, error } = await supabase
         .from('public_planner_profiles')
-        .select('id, user_id, full_name, company_name, company_email, company_phone, company_website, bio, specialties, avatar_url, primary_county, primary_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes')
+        .select('id, user_id, full_name, company_name, company_email, company_phone, company_website, bio, specialties, avatar_url, primary_county, primary_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes, founding_planner_contributor')
         .eq('id', id)
         .single();
       if (error || !data) {
         setNotFound(true);
       } else {
         setPlanner(data as PlannerData);
+        if (professionalNetworkEnabled) {
+          const { data: signalRows } = await (supabase as any)
+            .from('professional_network_relationships')
+            .select('relationship_type')
+            .eq('target_user_id', data.user_id)
+            .eq('active', true)
+            .eq('is_public', true);
+          const summary = ((signalRows as Array<{ relationship_type: string }> | null) ?? []).reduce((acc, row) => {
+            acc.total += 1;
+            if (row.relationship_type === 'trusted_collaborator' || row.relationship_type === 'recommended') acc.trusted += 1;
+            if (row.relationship_type === 'worked_with') acc.workedWith += 1;
+            return acc;
+          }, { total: 0, trusted: 0, workedWith: 0 });
+          setNetworkSignals(summary.total > 0 ? summary : null);
+        } else {
+          setNetworkSignals(null);
+        }
         // Check existing link request
         if (user) {
           const { data: req } = await supabase
@@ -100,7 +122,7 @@ export default function PlannerProfile() {
     setRequestStatus('pending');
     setDialogOpen(false);
     setMessage('');
-    toast({ title: 'Interest sent! ✨', description: 'Your planner will review your request.' });
+    toast({ title: 'Interest sent', description: 'Your planner will review your request.' });
     // Send email notification with action links (fire-and-forget)
     if (planner.company_email) {
       supabase.functions.invoke('send-connection-notification', {
@@ -117,11 +139,7 @@ export default function PlannerProfile() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <PublicPageSkeleton card={false} />;
   }
 
   if (notFound || !planner) {
@@ -159,6 +177,11 @@ export default function PlannerProfile() {
             <h1 className="font-display text-2xl font-bold text-foreground">
               {planner.company_name || planner.full_name || 'Wedding Planner'}
             </h1>
+            {planner.founding_planner_contributor && (
+              <Badge className="mt-2 border-0 bg-[#ead8a8] text-[#4c3528]">
+                Founding Planner Contributor
+              </Badge>
+            )}
             {planner.company_name && planner.full_name && (
               <p className="text-muted-foreground">{planner.full_name}</p>
             )}
@@ -187,7 +210,6 @@ export default function PlannerProfile() {
                 </>
               ) : (
                 <>
-                  <Sparkles className="h-5 w-5 text-primary shrink-0" />
                   <div className="flex-1">
                     <p className="font-medium text-card-foreground">Work with this planner</p>
                     <p className="text-sm text-muted-foreground">Send a connection request to share your wedding progress.</p>
@@ -197,7 +219,7 @@ export default function PlannerProfile() {
                     size="sm"
                     className="gap-1.5"
                   >
-                    <Sparkles className="h-3.5 w-3.5" /> Interested
+                    Interested
                   </Button>
                 </>
               )}
@@ -226,7 +248,7 @@ export default function PlannerProfile() {
                 />
               </div>
               <Button onClick={sendRequest} disabled={sending} className="w-full gap-2">
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Send Interest
               </Button>
             </div>
@@ -238,6 +260,22 @@ export default function PlannerProfile() {
           onOpenChange={setUpgradeOpen}
           decision={connectDecision.allowed ? null : connectDecision}
         />
+
+        {professionalNetworkEnabled && networkSignals && (
+          <Card className="shadow-card">
+            <CardHeader>
+              <CardTitle className="font-display text-base">Professional network credibility</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">
+                {networkSignals.total} public signal{networkSignals.total === 1 ? '' : 's'} attached to this planner profile
+              </p>
+              <p>
+                {networkSignals.trusted} trust mark{networkSignals.trusted === 1 ? '' : 's'} · {networkSignals.workedWith} worked-with signal{networkSignals.workedWith === 1 ? '' : 's'}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Contact Card */}
         {(planner.company_email || planner.company_phone || planner.company_website) && (

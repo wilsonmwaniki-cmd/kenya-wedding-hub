@@ -1,5 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import {
+  AbuseProtectionError,
+  assertMaxLength,
+  assertMessageCount,
+  assertRecentFunctionEventLimit,
+} from "../_shared/abuseProtection.ts";
+import { logFunctionEvent } from "../_shared/runtimeLogger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -955,6 +962,8 @@ async function executeTool(name: string, args: Record<string, any>, context: Too
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();
+
   try {
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4.1-mini";
@@ -1004,8 +1013,23 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, userScopedKey, {
       global: { headers: { Authorization: `Bearer ${accessToken}` } },
     });
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const { messages, selectedClientId, allowWriteActions = false, confirmedActions = [] } = await req.json();
+    assertMessageCount(messages, 24);
+    for (const message of messages) {
+      if (!message || typeof message !== "object") {
+        throw new AbuseProtectionError("Each AI message must be an object.", 400);
+      }
+      if (message.role !== "user" && message.role !== "assistant") {
+        throw new AbuseProtectionError("Invalid AI message role.", 400);
+      }
+      if (typeof message.content !== "string" || !message.content.trim()) {
+        throw new AbuseProtectionError("Each AI message must include text content.", 400);
+      }
+      assertMaxLength(message.content, 6000, "AI message");
+    }
+
     const today = new Date().toISOString().slice(0, 10);
 
     const { data: profile } = await supabase
@@ -1016,6 +1040,40 @@ serve(async (req) => {
 
     const role = profile?.role || "couple";
     const plannerType = profile?.planner_type || null;
+    const aiAudience =
+      role === "planner" && plannerType === "committee"
+        ? "committee"
+        : role === "planner"
+          ? "planner"
+          : role === "vendor"
+            ? "vendor"
+            : "couple";
+
+    await assertRecentFunctionEventLimit(adminClient, {
+      functionName: "wedding-ai-chat",
+      userId: user.id,
+      eventType: "ai_request_started",
+      audience: aiAudience,
+      lookbackMs: 60 * 1000,
+      maxAttempts: 12,
+      message: "Too many AI requests in a short period. Please wait a moment before trying again.",
+      retryAfterSeconds: 60,
+    });
+
+    await logFunctionEvent({
+      functionName: "wedding-ai-chat",
+      severity: "info",
+      status: "success",
+      eventType: "ai_request_started",
+      message: "AI request started.",
+      userId: user.id,
+      audience: aiAudience,
+      requestId,
+      details: {
+        messageCount: messages.length,
+        allowWriteActions,
+      },
+    });
 
     const { data: plannerClients } = role === "planner"
       ? await supabase
@@ -1567,6 +1625,39 @@ Operating rules:
     });
   } catch (error) {
     console.error("chat error:", error);
+    if (error instanceof AbuseProtectionError) {
+      await logFunctionEvent({
+        functionName: "wedding-ai-chat",
+        severity: "warn",
+        status: "failure",
+        eventType: "ai_request_rate_limited",
+        message: error.message,
+        requestId,
+        details: {
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+      });
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          ...(error.retryAfterSeconds ? { "Retry-After": String(error.retryAfterSeconds) } : {}),
+        },
+      });
+    }
+
+    await logFunctionEvent({
+      functionName: 'wedding-ai-chat',
+      severity: 'error',
+      status: 'failure',
+      eventType: 'ai_request_failed',
+      message: error instanceof Error ? error.message : 'Unknown AI request error',
+      requestId,
+      details: {
+        error: error instanceof Error ? error.stack ?? error.message : String(error),
+      },
+    });
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

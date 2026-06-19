@@ -12,8 +12,10 @@ import {
   NotebookPen,
   Printer,
   Receipt,
+  RotateCw,
   Save,
   Send,
+  ShieldOff,
   Trash2,
   Wallet,
 } from 'lucide-react';
@@ -33,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
+import DocumentMomentumCard from '@/components/documents/DocumentMomentumCard';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
 import InfoTip from '@/components/InfoTip';
 import {
@@ -47,23 +50,31 @@ import {
   convertQuoteToInvoice,
   deleteCommercialDocument,
   ensureCommercialDocumentShareToken,
+  getCommercialDocumentShareState,
   getCommercialDocument,
   issueReceiptFromPayment,
   listCommercialDocuments,
+  listDocumentTemplates,
   listVendorBookingOptions,
   listVendorListingOptions,
   recordCommercialDocumentPayment,
+  refreshCommercialDocumentShareToken,
+  revokeCommercialDocumentShareToken,
   saveCommercialDocumentItems,
   updateCommercialDocument,
+  updateDocumentTemplate,
   type CommercialDocumentDetail,
   type CommercialDocumentPaymentMethod,
   type CommercialDocumentRecord,
+  type CommercialDocumentShareState,
   type CommercialDocumentStatus,
   type CommercialDocumentType,
+  type ProfessionalDocumentTemplateRecord,
   type SaveCommercialDocumentItemInput,
   type VendorBookingOption,
   type VendorListingOption,
 } from '@/lib/commercialDocuments';
+import { buildDocumentMomentumSummary } from '@/lib/documentMomentum';
 
 type CreateDocumentDraft = {
   documentType: CommercialDocumentType;
@@ -74,6 +85,7 @@ type CreateDocumentDraft = {
   weddingName: string;
   vendorListingId: string;
   vendorId: string;
+  templateId: string;
   issueDate: string;
   dueDate: string;
   notes: string;
@@ -90,6 +102,15 @@ type PaymentDraft = {
 
 type FilterType = 'all' | CommercialDocumentType;
 type DocumentsSection = 'overview' | 'quotes' | 'invoices' | 'receipts' | 'contracts' | 'templates';
+
+type VendorDocumentsPrefillState = {
+  createDocumentForVendorId?: string;
+  createDocumentRecipientName?: string;
+  createDocumentRecipientEmail?: string | null;
+  createDocumentRecipientPhone?: string | null;
+  createDocumentWeddingName?: string | null;
+  createDocumentBookingLabel?: string | null;
+};
 
 function formatCurrency(amount: number) {
   return `KES ${amount.toLocaleString()}`;
@@ -112,9 +133,16 @@ function nextDueDateValue(type: CommercialDocumentType) {
   return nextWeek.toISOString().slice(0, 10);
 }
 
+function isTokenActive(expiresAt?: string | null, revokedAt?: string | null) {
+  if (revokedAt) return false;
+  if (!expiresAt) return true;
+  return new Date(expiresAt).getTime() > Date.now();
+}
+
 export default function VendorDocuments() {
   const { toast } = useToast();
   const location = useLocation();
+  const routePrefill = (location.state as VendorDocumentsPrefillState | null) ?? null;
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [documents, setDocuments] = useState<CommercialDocumentRecord[]>([]);
@@ -123,6 +151,7 @@ export default function VendorDocuments() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [vendorListings, setVendorListings] = useState<VendorListingOption[]>([]);
   const [vendorBookings, setVendorBookings] = useState<VendorBookingOption[]>([]);
+  const [documentTemplates, setDocumentTemplates] = useState<ProfessionalDocumentTemplateRecord[]>([]);
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -132,6 +161,7 @@ export default function VendorDocuments() {
   const [convertingQuote, setConvertingQuote] = useState(false);
   const [issuingReceiptId, setIssuingReceiptId] = useState<string | null>(null);
   const [sharingDocumentId, setSharingDocumentId] = useState<string | null>(null);
+  const [shareState, setShareState] = useState<CommercialDocumentShareState | null>(null);
   const [createDraft, setCreateDraft] = useState<CreateDocumentDraft>({
     documentType: 'quote',
     title: '',
@@ -141,6 +171,7 @@ export default function VendorDocuments() {
     weddingName: '',
     vendorListingId: '',
     vendorId: '',
+    templateId: '',
     issueDate: todayIso(),
     dueDate: nextDueDateValue('quote'),
     notes: '',
@@ -166,6 +197,7 @@ export default function VendorDocuments() {
     terms: string;
   } | null>(null);
   const [itemDrafts, setItemDrafts] = useState<SaveCommercialDocumentItemInput[]>([]);
+  const [hasAppliedRoutePrefill, setHasAppliedRoutePrefill] = useState(false);
 
   const activeSection: DocumentsSection = useMemo(() => {
     if (location.pathname.endsWith('/quotes')) return 'quotes';
@@ -202,18 +234,21 @@ export default function VendorDocuments() {
 
     const load = async () => {
       try {
-        const [listingsResult, bookingsResult] = await Promise.allSettled([
+        const [listingsResult, bookingsResult, templatesResult] = await Promise.allSettled([
           listVendorListingOptions(),
           listVendorBookingOptions(),
+          listDocumentTemplates({ role: 'vendor' }),
         ]);
 
         const listings = listingsResult.status === 'fulfilled' ? listingsResult.value : [];
         const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : [];
+        const templates = templatesResult.status === 'fulfilled' ? templatesResult.value : [];
 
         if (cancelled) return;
 
         setVendorListings(listings);
         setVendorBookings(bookings);
+        setDocumentTemplates(templates.filter((template) => template.templateType !== 'contract'));
         setCreateDraft((current) => ({
           ...current,
           vendorListingId: current.vendorListingId || listings[0]?.id || '',
@@ -224,6 +259,9 @@ export default function VendorDocuments() {
         }
         if (listingsResult.status === 'rejected') {
           console.error('Could not load vendor listing options:', listingsResult.reason);
+        }
+        if (templatesResult.status === 'rejected') {
+          console.error('Could not load vendor template options:', templatesResult.reason);
         }
 
         await loadDocuments();
@@ -342,9 +380,31 @@ export default function VendorDocuments() {
     };
   }, [documents]);
 
+  const bookingOptions = useMemo(() => {
+    const prefillVendorId = routePrefill?.createDocumentForVendorId?.trim();
+    if (!prefillVendorId) return vendorBookings;
+    if (vendorBookings.some((booking) => booking.id === prefillVendorId)) return vendorBookings;
+
+    return [
+      {
+        id: prefillVendorId,
+        label: routePrefill?.createDocumentBookingLabel?.trim() || routePrefill?.createDocumentRecipientName?.trim() || 'Workspace relationship',
+        coupleName: routePrefill?.createDocumentRecipientName?.trim() || 'Couple account',
+        paymentStatus: null,
+        quotedAmount: null,
+      },
+      ...vendorBookings,
+    ];
+  }, [routePrefill?.createDocumentBookingLabel, routePrefill?.createDocumentForVendorId, routePrefill?.createDocumentRecipientName, vendorBookings]);
+
   const selectedBooking = useMemo(
-    () => vendorBookings.find((booking) => booking.id === createDraft.vendorId) ?? null,
-    [vendorBookings, createDraft.vendorId],
+    () => bookingOptions.find((booking) => booking.id === createDraft.vendorId) ?? null,
+    [bookingOptions, createDraft.vendorId],
+  );
+
+  const selectedTemplate = useMemo(
+    () => documentTemplates.find((template) => template.id === createDraft.templateId) ?? null,
+    [documentTemplates, createDraft.templateId],
   );
 
   useEffect(() => {
@@ -357,6 +417,62 @@ export default function VendorDocuments() {
         `${commercialDocumentTypeLabel(current.documentType)} for ${selectedBooking.coupleName}`,
     }));
   }, [selectedBooking]);
+
+  useEffect(() => {
+    if (loading || hasAppliedRoutePrefill) return;
+
+    const prefillVendorId = routePrefill?.createDocumentForVendorId?.trim();
+    const recipientName = routePrefill?.createDocumentRecipientName?.trim();
+    const recipientEmail = routePrefill?.createDocumentRecipientEmail?.trim() || '';
+    const recipientPhone = routePrefill?.createDocumentRecipientPhone?.trim() || '';
+    const weddingName = routePrefill?.createDocumentWeddingName?.trim() || '';
+
+    if (!prefillVendorId && !recipientName && !recipientEmail && !recipientPhone && !weddingName) {
+      setHasAppliedRoutePrefill(true);
+      return;
+    }
+
+    setCreateDraft((current) => ({
+      ...current,
+      vendorId: prefillVendorId || current.vendorId,
+      recipientName: recipientName || current.recipientName,
+      recipientEmail: recipientEmail || current.recipientEmail,
+      recipientPhone: recipientPhone || current.recipientPhone,
+      weddingName: weddingName || current.weddingName,
+      title:
+        current.title ||
+        `${commercialDocumentTypeLabel(current.documentType)} for ${recipientName || weddingName || 'this wedding'}`,
+    }));
+    setCreateOpen(true);
+    setHasAppliedRoutePrefill(true);
+  }, [hasAppliedRoutePrefill, loading, routePrefill]);
+
+  useEffect(() => {
+    if (!selectedTemplate) return;
+
+    setCreateDraft((current) => ({
+      ...current,
+      templateId: selectedTemplate.id,
+      documentType: selectedTemplate.templateType === 'contract' ? current.documentType : selectedTemplate.templateType,
+      title: selectedTemplate.defaultTitle || current.title || `${commercialDocumentTypeLabel(selectedTemplate.templateType)} for ${selectedBooking?.coupleName ?? 'this wedding'}`,
+      notes: selectedTemplate.defaultNotes || current.notes,
+      terms: selectedTemplate.defaultTerms || current.terms,
+    }));
+  }, [selectedTemplate?.id]);
+
+  const createMomentum = useMemo(
+    () =>
+      buildDocumentMomentumSummary({
+        documentType: createDraft.documentType,
+        title: createDraft.title,
+        recipientName: createDraft.recipientName,
+        issueDate: createDraft.issueDate,
+        dueDate: createDraft.dueDate,
+        notes: createDraft.notes,
+        terms: createDraft.terms,
+      }),
+    [createDraft],
+  );
 
   const handleCreate = async () => {
     if (!createDraft.recipientName.trim()) {
@@ -394,7 +510,24 @@ export default function VendorDocuments() {
         notes: createDraft.notes.trim() || null,
         terms: createDraft.terms.trim() || null,
         status: defaultStatusFor(createDraft.documentType),
+        metadata: selectedTemplate
+          ? {
+              sourceTemplateId: selectedTemplate.id,
+              sourceTemplateName: selectedTemplate.name,
+            }
+          : undefined,
       });
+
+      if (selectedTemplate) {
+        const currentUseCount = Number(selectedTemplate.metadata?.useCount ?? 0);
+        await updateDocumentTemplate(selectedTemplate.id, {
+          metadata: {
+            ...selectedTemplate.metadata,
+            useCount: Number.isFinite(currentUseCount) ? currentUseCount + 1 : 1,
+            lastUsedAt: new Date().toISOString(),
+          },
+        });
+      }
 
       await loadDocuments(created.id);
       setCreateOpen(false);
@@ -406,6 +539,7 @@ export default function VendorDocuments() {
         recipientPhone: '',
         weddingName: '',
         vendorId: '',
+        templateId: '',
         issueDate: todayIso(),
         dueDate: nextDueDateValue(current.documentType),
         notes: '',
@@ -413,7 +547,9 @@ export default function VendorDocuments() {
       }));
       toast({
         title: `${commercialDocumentTypeLabel(created.documentType)} created`,
-        description: `${created.documentNumber} is ready for line items and payment tracking.`,
+        description: selectedTemplate
+          ? `${created.documentNumber} started from ${selectedTemplate.name}.`
+          : `${created.documentNumber} is ready for line items and payment tracking.`,
       });
     } catch (error) {
       console.error('Could not create document:', error);
@@ -627,6 +763,7 @@ export default function VendorDocuments() {
     try {
       const token = await ensureCommercialDocumentShareToken(selectedDetail.id);
       const url = buildCommercialDocumentShareUrl(token, window.location.origin);
+      setShareState(await getCommercialDocumentShareState(selectedDetail.id));
       await navigator.clipboard.writeText(url);
       toast({
         title: 'Share link copied',
@@ -650,6 +787,7 @@ export default function VendorDocuments() {
     try {
       const token = await ensureCommercialDocumentShareToken(selectedDetail.id);
       const url = buildCommercialDocumentShareUrl(token, window.location.origin);
+      setShareState(await getCommercialDocumentShareState(selectedDetail.id));
       const draft = buildCommercialDocumentShareEmailDraft({
         document: selectedDetail,
         shareUrl: url,
@@ -666,6 +804,61 @@ export default function VendorDocuments() {
       setSharingDocumentId(null);
     }
   };
+
+  const handleRefreshShareLink = async () => {
+    if (!selectedDetail) return;
+    setSharingDocumentId(selectedDetail.id);
+    try {
+      const state = await refreshCommercialDocumentShareToken(selectedDetail.id);
+      setShareState(state);
+      toast({
+        title: 'Share link refreshed',
+        description: 'A new commercial document link is ready to share.',
+      });
+    } catch (error) {
+      console.error('Could not refresh share link:', error);
+      toast({
+        title: 'Could not refresh share link',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSharingDocumentId(null);
+    }
+  };
+
+  const handleRevokeShareLink = async () => {
+    if (!selectedDetail) return;
+    setSharingDocumentId(selectedDetail.id);
+    try {
+      const state = await revokeCommercialDocumentShareToken(selectedDetail.id);
+      setShareState(state);
+      toast({
+        title: 'Share link revoked',
+        description: 'The current commercial document link is now inactive.',
+      });
+    } catch (error) {
+      console.error('Could not revoke share link:', error);
+      toast({
+        title: 'Could not revoke share link',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSharingDocumentId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedDetail) {
+      setShareState(null);
+      return;
+    }
+
+    void getCommercialDocumentShareState(selectedDetail.id)
+      .then(setShareState)
+      .catch(() => setShareState(null));
+  }, [selectedDetail]);
 
   if (loading) {
     return (
@@ -773,6 +966,31 @@ export default function VendorDocuments() {
         actionLabel: 'New document',
         actionType: 'create' as const,
       };
+  const selectedShareActive = isTokenActive(shareState?.expiresAt, shareState?.revokedAt);
+  const selectedShareUrl = shareState
+    ? buildCommercialDocumentShareUrl(shareState.shareToken, window.location.origin)
+    : '';
+  const detailMomentum =
+    selectedDetail && headerDraft
+      ? buildDocumentMomentumSummary({
+          documentType: selectedDetail.documentType,
+          status: headerDraft.status,
+          title: headerDraft.title,
+          recipientName: headerDraft.recipientName,
+          issueDate: headerDraft.issueDate,
+          dueDate: headerDraft.dueDate,
+          notes: headerDraft.notes,
+          terms: headerDraft.terms,
+          items: itemDrafts.map((item) => ({
+            description: item.description,
+            quantity: Number(item.quantity ?? 1),
+            unitPrice: Number(item.unitPrice ?? 0),
+          })),
+          totalAmount: selectedDetail.totalAmount,
+          amountPaid: selectedDetail.amountPaid,
+          shareActive: selectedShareActive,
+        })
+      : null;
 
   if (activeSection === 'contracts') {
     return (
@@ -789,7 +1007,7 @@ export default function VendorDocuments() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 sm:pb-28">
       <Card className="border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.08),rgba(255,255,255,0.98)_32%,rgba(255,247,242,0.9))] shadow-card">
         <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.7fr)_360px]">
           <div className="space-y-6">
@@ -948,7 +1166,7 @@ export default function VendorDocuments() {
 
         <Card className="border-border/70 shadow-card">
           <CardHeader className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <CardTitle className="font-display text-xl">
                   {selectedDetail ? selectedDetail.documentNumber : 'Document details'}
@@ -960,6 +1178,8 @@ export default function VendorDocuments() {
                 </CardDescription>
               </div>
               {selectedDetail && (
+                <>
+                <div className="flex w-full flex-col gap-4 lg:w-auto lg:max-w-[520px] lg:items-end">
                 <div className="flex flex-wrap gap-2">
                   {selectedDetail.documentType === 'quote' && (
                     <Button
@@ -988,7 +1208,7 @@ export default function VendorDocuments() {
                     variant="outline"
                     className="gap-2"
                     onClick={handleCopyShareLink}
-                    disabled={sharingDocumentId === selectedDetail.id}
+                    disabled={sharingDocumentId === selectedDetail.id || (!!shareState && !selectedShareActive)}
                   >
                     {sharingDocumentId === selectedDetail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
                     Copy link
@@ -997,7 +1217,7 @@ export default function VendorDocuments() {
                     variant="outline"
                     className="gap-2"
                     onClick={handleEmailShare}
-                    disabled={sharingDocumentId === selectedDetail.id}
+                    disabled={sharingDocumentId === selectedDetail.id || (!!shareState && !selectedShareActive)}
                   >
                     <Mail className="h-4 w-4" />
                     Email link
@@ -1007,6 +1227,53 @@ export default function VendorDocuments() {
                     Delete
                   </Button>
                 </div>
+                <div className="w-full rounded-2xl border border-border/70 bg-muted/10 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={selectedShareActive ? 'default' : 'secondary'}>
+                      {selectedShareActive ? 'Share link active' : 'Share link inactive'}
+                    </Badge>
+                    {shareState?.expiresAt && (
+                      <span className="text-xs text-muted-foreground">
+                        Expires {new Date(shareState.expiresAt).toLocaleDateString()}
+                      </span>
+                    )}
+                    {typeof shareState?.accessCount === 'number' && (
+                      <span className="text-xs text-muted-foreground">
+                        {shareState.accessCount} public open{shareState.accessCount === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </div>
+                  {selectedShareUrl ? (
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <Input readOnly value={selectedShareUrl} className="text-xs" />
+                      <Button size="icon" variant="outline" disabled={!selectedShareActive} onClick={handleCopyShareLink}>
+                        <Link2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : null}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {shareState?.lastAccessedAt
+                      ? `Last opened ${new Date(shareState.lastAccessedAt).toLocaleString()}`
+                      : 'No public opens recorded yet.'}
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Button variant="outline" className="gap-2" onClick={handleRefreshShareLink} disabled={sharingDocumentId === selectedDetail.id}>
+                      {sharingDocumentId === selectedDetail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+                      Refresh Link
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2 text-destructive hover:text-destructive"
+                      onClick={handleRevokeShareLink}
+                      disabled={sharingDocumentId === selectedDetail.id || !shareState || !selectedShareActive}
+                    >
+                      <ShieldOff className="h-4 w-4" />
+                      Revoke Link
+                    </Button>
+                  </div>
+                </div>
+                </div>
+                </>
               )}
             </div>
           </CardHeader>
@@ -1024,16 +1291,24 @@ export default function VendorDocuments() {
               </div>
             ) : (
               <div className="space-y-6">
+                {detailMomentum && (
+                  <DocumentMomentumCard
+                    title="Document momentum"
+                    subtitle="This tracks how ready the document is to share, convert, or collect against."
+                    summary={detailMomentum}
+                  />
+                )}
                 <section className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label>Title</Label>
+                    <Label htmlFor="vendor-document-title">Title</Label>
                     <Input
+                      id="vendor-document-title"
                       value={headerDraft.title}
                       onChange={(event) => setHeaderDraft((current) => current ? { ...current, title: event.target.value } : current)}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Status</Label>
+                    <Label htmlFor="vendor-document-status">Status</Label>
                     <Select
                       value={headerDraft.status}
                       onValueChange={(value) =>
@@ -1042,7 +1317,7 @@ export default function VendorDocuments() {
                         )
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id="vendor-document-status" aria-label="Status">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1055,8 +1330,9 @@ export default function VendorDocuments() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Recipient name</Label>
+                    <Label htmlFor="vendor-document-recipient-name">Recipient name</Label>
                     <Input
+                      id="vendor-document-recipient-name"
                       value={headerDraft.recipientName}
                       onChange={(event) =>
                         setHeaderDraft((current) => current ? { ...current, recipientName: event.target.value } : current)
@@ -1064,8 +1340,9 @@ export default function VendorDocuments() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Wedding name</Label>
+                    <Label htmlFor="vendor-document-wedding-name">Wedding name</Label>
                     <Input
+                      id="vendor-document-wedding-name"
                       value={headerDraft.weddingName}
                       onChange={(event) =>
                         setHeaderDraft((current) => current ? { ...current, weddingName: event.target.value } : current)
@@ -1073,8 +1350,9 @@ export default function VendorDocuments() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Recipient email</Label>
+                    <Label htmlFor="vendor-document-recipient-email">Recipient email</Label>
                     <Input
+                      id="vendor-document-recipient-email"
                       type="email"
                       value={headerDraft.recipientEmail}
                       onChange={(event) =>
@@ -1083,8 +1361,9 @@ export default function VendorDocuments() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Recipient phone</Label>
+                    <Label htmlFor="vendor-document-recipient-phone">Recipient phone</Label>
                     <Input
+                      id="vendor-document-recipient-phone"
                       value={headerDraft.recipientPhone}
                       onChange={(event) =>
                         setHeaderDraft((current) => current ? { ...current, recipientPhone: event.target.value } : current)
@@ -1092,8 +1371,9 @@ export default function VendorDocuments() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Issue date</Label>
+                    <Label htmlFor="vendor-document-issue-date">Issue date</Label>
                     <Input
+                      id="vendor-document-issue-date"
                       type="date"
                       value={headerDraft.issueDate}
                       onChange={(event) =>
@@ -1102,8 +1382,9 @@ export default function VendorDocuments() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Due date</Label>
+                    <Label htmlFor="vendor-document-due-date">Due date</Label>
                     <Input
+                      id="vendor-document-due-date"
                       type="date"
                       value={headerDraft.dueDate}
                       disabled={selectedDetail.documentType === 'receipt'}
@@ -1113,8 +1394,9 @@ export default function VendorDocuments() {
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label>Notes</Label>
+                    <Label htmlFor="vendor-document-notes">Notes</Label>
                     <Textarea
+                      id="vendor-document-notes"
                       rows={3}
                       value={headerDraft.notes}
                       onChange={(event) =>
@@ -1123,8 +1405,9 @@ export default function VendorDocuments() {
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label>Terms</Label>
+                    <Label htmlFor="vendor-document-terms">Terms</Label>
                     <Textarea
+                      id="vendor-document-terms"
                       rows={3}
                       value={headerDraft.terms}
                       onChange={(event) =>
@@ -1177,8 +1460,9 @@ export default function VendorDocuments() {
                         return (
                           <div key={`${index}-${item.description}`} className="grid gap-3 rounded-2xl border border-border bg-muted/5 p-4 md:grid-cols-[1.6fr_0.45fr_0.55fr_auto]">
                             <div className="space-y-2">
-                              <Label>Description</Label>
+                              <Label htmlFor={`vendor-line-item-description-${index}`}>Description</Label>
                               <Input
+                                id={`vendor-line-item-description-${index}`}
                                 value={item.description}
                                 onChange={(event) =>
                                   setItemDrafts((current) =>
@@ -1190,8 +1474,9 @@ export default function VendorDocuments() {
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label>Qty</Label>
+                              <Label htmlFor={`vendor-line-item-quantity-${index}`}>Qty</Label>
                               <Input
+                                id={`vendor-line-item-quantity-${index}`}
                                 type="number"
                                 min="1"
                                 value={String(item.quantity ?? 1)}
@@ -1205,8 +1490,9 @@ export default function VendorDocuments() {
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label>Unit price</Label>
+                              <Label htmlFor={`vendor-line-item-unit-price-${index}`}>Unit price</Label>
                               <Input
+                                id={`vendor-line-item-unit-price-${index}`}
                                 type="number"
                                 min="0"
                                 value={String(item.unitPrice ?? 0)}
@@ -1314,6 +1600,30 @@ export default function VendorDocuments() {
           </DialogHeader>
           <div className="grid gap-4 py-2 md:grid-cols-2">
             <div className="space-y-2">
+              <Label>Start from template</Label>
+              <Select
+                value={createDraft.templateId || 'none'}
+                onValueChange={(value) =>
+                  setCreateDraft((current) => ({
+                    ...current,
+                    templateId: value === 'none' ? '' : value,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose reusable starter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Start blank</SelectItem>
+                  {documentTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label>Document type</Label>
               <Select
                 value={createDraft.documentType}
@@ -1321,6 +1631,11 @@ export default function VendorDocuments() {
                   setCreateDraft((current) => ({
                     ...current,
                     documentType: value as CommercialDocumentType,
+                    templateId:
+                      current.templateId &&
+                      documentTemplates.find((template) => template.id === current.templateId)?.templateType === value
+                        ? current.templateId
+                        : '',
                     dueDate: nextDueDateValue(value as CommercialDocumentType),
                   }))
                 }
@@ -1454,6 +1769,13 @@ export default function VendorDocuments() {
                 onChange={(event) => setCreateDraft((current) => ({ ...current, terms: event.target.value }))}
               />
             </div>
+            <div className="md:col-span-2">
+              <DocumentMomentumCard
+                title="Document momentum"
+                subtitle="Fill the key fields now so the document starts in a send-ready state."
+                summary={createMomentum}
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-3">
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>
@@ -1474,8 +1796,9 @@ export default function VendorDocuments() {
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="space-y-2">
-              <Label>Amount</Label>
+              <Label htmlFor="vendor-payment-amount">Amount</Label>
               <Input
+                id="vendor-payment-amount"
                 type="number"
                 min="0"
                 value={paymentDraft.amount}
@@ -1484,15 +1807,16 @@ export default function VendorDocuments() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Payment date</Label>
+              <Label htmlFor="vendor-payment-date">Payment date</Label>
               <Input
+                id="vendor-payment-date"
                 type="date"
                 value={paymentDraft.paymentDate}
                 onChange={(event) => setPaymentDraft((current) => ({ ...current, paymentDate: event.target.value }))}
               />
             </div>
             <div className="space-y-2">
-              <Label>Payment method</Label>
+              <Label htmlFor="vendor-payment-method">Payment method</Label>
               <Select
                 value={paymentDraft.paymentMethod}
                 onValueChange={(value) =>
@@ -1502,7 +1826,7 @@ export default function VendorDocuments() {
                   }))
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger id="vendor-payment-method" aria-label="Payment method">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1515,16 +1839,18 @@ export default function VendorDocuments() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Reference</Label>
+              <Label htmlFor="vendor-payment-reference">Reference</Label>
               <Input
+                id="vendor-payment-reference"
                 value={paymentDraft.reference}
                 onChange={(event) => setPaymentDraft((current) => ({ ...current, reference: event.target.value }))}
                 placeholder="M-Pesa code, bank ref, or note"
               />
             </div>
             <div className="space-y-2">
-              <Label>Notes</Label>
+              <Label htmlFor="vendor-payment-notes">Notes</Label>
               <Textarea
+                id="vendor-payment-notes"
                 rows={3}
                 value={paymentDraft.notes}
                 onChange={(event) => setPaymentDraft((current) => ({ ...current, notes: event.target.value }))}

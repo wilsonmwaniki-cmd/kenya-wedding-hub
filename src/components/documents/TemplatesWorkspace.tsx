@@ -21,6 +21,8 @@ import {
   type ProfessionalDocumentTemplateRecord,
   type ProfessionalTemplateType,
 } from '@/lib/commercialDocuments';
+import { getKenyanDocumentTemplateStarters, type DocumentTemplateStarter } from '@/lib/documentTemplateStarters';
+import { getTemplateUseCount } from '@/lib/documentMomentum';
 
 type TemplateDraft = {
   templateType: ProfessionalTemplateType;
@@ -48,6 +50,18 @@ function blankTemplateDraft(): TemplateDraft {
   };
 }
 
+function starterToDraft(starter: DocumentTemplateStarter): TemplateDraft {
+  return {
+    templateType: starter.templateType,
+    name: starter.name,
+    description: starter.description,
+    defaultTitle: starter.defaultTitle,
+    defaultNotes: starter.defaultNotes,
+    defaultTerms: starter.defaultTerms,
+    defaultItems: starter.defaultItems.length ? starter.defaultItems : [{ description: '', quantity: 1, unitPrice: 0 }],
+  };
+}
+
 export default function TemplatesWorkspace({ role }: Props) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -58,9 +72,11 @@ export default function TemplatesWorkspace({ role }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<TemplateDraft>(blankTemplateDraft());
   const [detailDraft, setDetailDraft] = useState<TemplateDraft | null>(null);
+  const [selectedStarter, setSelectedStarter] = useState<DocumentTemplateStarter | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const starterTemplates = useMemo(() => getKenyanDocumentTemplateStarters(role), [role]);
 
   const loadTemplates = async (preferredId?: string | null) => {
     const next = await listDocumentTemplates({ role, search: search.trim() || undefined });
@@ -164,6 +180,8 @@ export default function TemplatesWorkspace({ role }: Props) {
     };
   }, [selectedTemplate, stats.total]);
 
+  const selectedTemplateUseCount = selectedTemplate ? getTemplateUseCount(selectedTemplate) : 0;
+
   const sanitizedItems = (items: DocumentTemplateItem[]) =>
     items
       .map((item) => ({
@@ -189,9 +207,15 @@ export default function TemplatesWorkspace({ role }: Props) {
         defaultNotes: createDraft.defaultNotes.trim() || null,
         defaultTerms: createDraft.defaultTerms.trim() || null,
         defaultItems: sanitizedItems(createDraft.defaultItems),
+        metadata: {
+          starterKey: selectedStarter?.key ?? null,
+          legalNote: selectedStarter?.legalNote ?? null,
+          useCount: 0,
+        },
       });
       await loadTemplates(created.id);
       setCreateDraft(blankTemplateDraft());
+      setSelectedStarter(null);
       setCreateOpen(false);
       toast({ title: 'Template saved', description: 'You can now reuse this as a starting point later.' });
     } catch (error) {
@@ -239,6 +263,12 @@ export default function TemplatesWorkspace({ role }: Props) {
     } finally {
       setDeleting(false);
     }
+  };
+
+  const openStarter = (starter: DocumentTemplateStarter) => {
+    setSelectedStarter(starter);
+    setCreateDraft(starterToDraft(starter));
+    setCreateOpen(true);
   };
 
   const updateDraftItem = (index: number, patch: Partial<DocumentTemplateItem>, target: 'create' | 'detail') => {
@@ -423,9 +453,17 @@ export default function TemplatesWorkspace({ role }: Props) {
                         {detailDraft.defaultItems.filter((item) => item.description.trim().length > 0).length === 1 ? '' : 's'} ready to reuse
                       </p>
                     </div>
-                    <Badge variant="secondary">{professionalTemplateTypeLabel(detailDraft.templateType)}</Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary">{professionalTemplateTypeLabel(detailDraft.templateType)}</Badge>
+                      <Badge variant="outline">Used {selectedTemplateUseCount} time{selectedTemplateUseCount === 1 ? '' : 's'}</Badge>
+                    </div>
                   </div>
                 </div>
+                {typeof selectedTemplate.metadata?.legalNote === 'string' && selectedTemplate.metadata.legalNote.trim().length > 0 && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                    {selectedTemplate.metadata.legalNote}
+                  </div>
+                )}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Template name</Label>
@@ -509,75 +547,113 @@ export default function TemplatesWorkspace({ role }: Props) {
         </Card>
       </section>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
+      <Card className="border-border/70 bg-white/95 shadow-card">
+        <CardHeader>
+          <CardTitle className="font-display text-xl">Kenya-ready starters</CardTitle>
+          <CardDescription>
+            Start from a practical quote, invoice, receipt, or contract outline, then amend it to match your business, taxes, and engagement terms.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          {starterTemplates.map((starter) => (
+            <div key={starter.key} className="rounded-2xl border border-border bg-muted/5 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <Badge variant="secondary">{professionalTemplateTypeLabel(starter.templateType)}</Badge>
+                <Button type="button" variant="outline" size="sm" onClick={() => openStarter(starter)}>
+                  Use starter
+                </Button>
+              </div>
+              <p className="mt-3 font-semibold text-foreground">{starter.name}</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{starter.description}</p>
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">{starter.legalNote}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Dialog open={createOpen} onOpenChange={(open) => {
+        setCreateOpen(open);
+        if (!open) {
+          setSelectedStarter(null);
+        }
+      }}>
+        <DialogContent className="flex max-h-[88vh] w-[min(92vw,56rem)] max-w-[56rem] flex-col overflow-hidden p-0">
+          <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-5">
             <DialogTitle>Create template</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Template name</Label>
-              <Input value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. Standard photography quote" />
-            </div>
-            <div className="space-y-2">
-              <Label>Template type</Label>
-              <Select value={createDraft.templateType} onValueChange={(value) => setCreateDraft((current) => ({ ...current, templateType: value as ProfessionalTemplateType }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {professionalTemplateTypeOptions.map((type) => (
-                    <SelectItem key={type} value={type}>{professionalTemplateTypeLabel(type)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Description</Label>
-              <Textarea rows={2} value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} placeholder="When should you reach for this starter?" />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Default title</Label>
-              <Input value={createDraft.defaultTitle} onChange={(event) => setCreateDraft((current) => ({ ...current, defaultTitle: event.target.value }))} />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Default terms</Label>
-              <Textarea rows={6} value={createDraft.defaultTerms} onChange={(event) => setCreateDraft((current) => ({ ...current, defaultTerms: event.target.value }))} />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Default notes</Label>
-              <Textarea rows={3} value={createDraft.defaultNotes} onChange={(event) => setCreateDraft((current) => ({ ...current, defaultNotes: event.target.value }))} />
-            </div>
-            <div className="space-y-3 rounded-2xl border border-border bg-muted/10 p-4 md:col-span-2">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-foreground">Default items</p>
-                  <p className="text-sm text-muted-foreground">Save the lines or clauses you repeat most often.</p>
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="space-y-5">
+              {selectedStarter && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                  {selectedStarter.legalNote}
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={() => addItem('create')}>Add item</Button>
-              </div>
-              <div className="space-y-3">
-                {createDraft.defaultItems.map((item, index) => (
-                  <div key={`create-${index}`} className="grid gap-3 md:grid-cols-[1.5fr_0.6fr_0.8fr_auto] md:items-end">
-                    <div className="space-y-2">
-                      <Label>Description</Label>
-                      <Input value={item.description} onChange={(event) => updateDraftItem(index, { description: event.target.value }, 'create')} />
+              )}
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Template name</Label>
+                  <Input value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. Standard photography quote" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Template type</Label>
+                  <Select value={createDraft.templateType} onValueChange={(value) => setCreateDraft((current) => ({ ...current, templateType: value as ProfessionalTemplateType }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {professionalTemplateTypeOptions.map((type) => (
+                        <SelectItem key={type} value={type}>{professionalTemplateTypeLabel(type)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Description</Label>
+                  <Textarea rows={2} value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} placeholder="When should you reach for this starter?" />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Default title</Label>
+                  <Input value={createDraft.defaultTitle} onChange={(event) => setCreateDraft((current) => ({ ...current, defaultTitle: event.target.value }))} />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Default terms</Label>
+                  <Textarea rows={6} value={createDraft.defaultTerms} onChange={(event) => setCreateDraft((current) => ({ ...current, defaultTerms: event.target.value }))} />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Default notes</Label>
+                  <Textarea rows={3} value={createDraft.defaultNotes} onChange={(event) => setCreateDraft((current) => ({ ...current, defaultNotes: event.target.value }))} />
+                </div>
+                <div className="space-y-3 rounded-2xl border border-border bg-muted/10 p-4 md:col-span-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">Default items</p>
+                      <p className="text-sm text-muted-foreground">Save the lines or clauses you repeat most often.</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Qty</Label>
-                      <Input type="number" min="0" value={item.quantity ?? 1} onChange={(event) => updateDraftItem(index, { quantity: Number(event.target.value) }, 'create')} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{createDraft.templateType === 'contract' ? 'Value' : 'Unit price'}</Label>
-                      <Input type="number" min="0" value={item.unitPrice ?? 0} onChange={(event) => updateDraftItem(index, { unitPrice: Number(event.target.value) }, 'create')} />
-                    </div>
-                    <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => removeItem(index, 'create')}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => addItem('create')}>Add item</Button>
                   </div>
-                ))}
+                  <div className="space-y-3">
+                    {createDraft.defaultItems.map((item, index) => (
+                      <div key={`create-${index}`} className="grid gap-3 md:grid-cols-[1.5fr_0.6fr_0.8fr_auto] md:items-end">
+                        <div className="space-y-2">
+                          <Label>Description</Label>
+                          <Input value={item.description} onChange={(event) => updateDraftItem(index, { description: event.target.value }, 'create')} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Qty</Label>
+                          <Input type="number" min="0" value={item.quantity ?? 1} onChange={(event) => updateDraftItem(index, { quantity: Number(event.target.value) }, 'create')} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>{createDraft.templateType === 'contract' ? 'Value' : 'Unit price'}</Label>
+                          <Input type="number" min="0" value={item.unitPrice ?? 0} onChange={(event) => updateDraftItem(index, { unitPrice: Number(event.target.value) }, 'create')} />
+                        </div>
+                        <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => removeItem(index, 'create')}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <div className="flex justify-end">
+          <div className="flex shrink-0 justify-end border-t border-border/70 bg-background px-6 py-4">
             <Button className="gap-2" onClick={handleCreate} disabled={creating}>
               <FilePlus2 className="h-4 w-4" />
               {creating ? 'Creating...' : 'Create template'}

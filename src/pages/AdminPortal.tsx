@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning, Sparkles, Calculator } from "lucide-react";
+import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning, Calculator, BadgeDollarSign, History, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/lib/roles";
+import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkspacePageSkeleton } from "@/components/AppLoadingSkeletons";
 
 interface AdminDashboardMetrics {
   total_users: number;
@@ -41,7 +43,7 @@ interface AdminUserRow {
 
 interface AdminVendorRow {
   listing_id: string;
-  user_id: string;
+  user_id: string | null;
   business_name: string;
   category: string;
   location: string | null;
@@ -54,6 +56,12 @@ interface AdminVendorRow {
   updated_at: string;
   owner_name: string | null;
   owner_email: string | null;
+  profile_kind: "claimed" | "curated" | "featured";
+  public_listing_note: string | null;
+  featured_rank: number;
+  claim_contact_email: string | null;
+  claim_invited_at: string | null;
+  claim_expires_at: string | null;
 }
 
 interface AdminPlannerRow {
@@ -70,6 +78,21 @@ interface AdminPlannerRow {
   planner_subscription_status: "inactive" | "active" | "past_due" | "cancelled";
   planner_subscription_expires_at: string | null;
   updated_at: string;
+  founding_planner_contributor: boolean;
+}
+
+interface AdminVendorSuggestionRow {
+  suggestion_id: string;
+  vendor_name: string;
+  category: string;
+  instagram_or_website: string | null;
+  location: string | null;
+  recommendation_reason: string;
+  status: "pending" | "reviewed" | "converted" | "rejected";
+  created_at: string;
+  suggester_role: string | null;
+  suggester_name: string | null;
+  suggester_email: string | null;
 }
 
 interface AdminCouplePassRow {
@@ -84,14 +107,40 @@ interface AdminCouplePassRow {
   email: string | null;
 }
 
+interface AdminBetaReadinessSnapshot {
+  active_beta_trials: number;
+  active_couple_passes: number;
+  active_planner_subscriptions: number;
+  active_vendor_subscriptions: number;
+  active_wedding_entitlements: number;
+  active_professional_entitlements: number;
+  recent_failed_syncs: number;
+  recent_ai_failures: number;
+}
+
+interface AdminFunctionEventRow {
+  created_at: string;
+  function_name: string;
+  severity: "info" | "warn" | "error";
+  status: "success" | "failure";
+  event_type: string;
+  message: string;
+  user_id: string | null;
+  audience: string | null;
+  entity_id: string | null;
+  request_id: string | null;
+  details: Record<string, unknown> | null;
+}
+
 type UserRoleFilter = "all" | AppRole;
-type VendorStatusFilter = "all" | "pending" | "approved";
-type PlannerVerificationFilter = "all" | "pending" | "verified" | "requested";
+type VendorStatusFilter = "all" | "pending" | "approved" | "claimed" | "curated" | "featured";
+type PlannerVerificationFilter = "all" | "pending" | "verified" | "requested" | "founding";
 type PlanningPassFilter = "all" | "inactive" | "active" | "past_due" | "cancelled";
 type ReputationIssueFilter = "all" | "flagged" | "clean";
 type ReputationVisibilityFilter = "all" | "private" | "planner_network" | "admin_only";
 type AiAudience = "couple" | "committee" | "planner" | "vendor";
 type AiAudienceFilter = "all" | AiAudience;
+type VendorSuggestionFilter = "all" | "pending" | "reviewed" | "converted" | "rejected";
 
 interface AdminReputationMetrics {
   total_reviews: number;
@@ -166,6 +215,71 @@ interface AdminEstimatorSeedRow {
   notes: string | null;
 }
 
+interface AdminPricingCatalogRow {
+  catalog_key: string;
+  display_name: string;
+  is_active: boolean;
+  config: Json;
+  updated_at: string;
+}
+
+interface AdminPricingRevisionRow {
+  id: string;
+  catalog_key: string;
+  display_name: string;
+  config: Json;
+  change_source: string;
+  created_by_user_id: string | null;
+  created_at: string;
+}
+
+type AdminPricingPlanCard = {
+  title?: string;
+  tagline?: string;
+  supportCopy?: string;
+  monthlyPriceKes?: number | null;
+  annualPriceKes?: number | null;
+  ctaLabel?: string;
+  stripeMonthlyLookupKey?: string | null;
+  stripeAnnualLookupKey?: string | null;
+  includedFeatures?: string[];
+};
+
+type AdminPricingAddonCard = {
+  title?: string;
+  supportCopy?: string;
+  stripeMonthlyLookupKey?: string | null;
+  stripeAnnualLookupKey?: string | null;
+  seatLimit?: number | null;
+};
+
+type AdminAudiencePricingCard = {
+  title?: string;
+  subtitle?: string;
+  pricingModel?: string;
+  freeTierName?: string;
+  paidTierName?: string;
+  displayOneTimePriceKes?: number | null;
+  displayMonthlyPriceKes?: number | null;
+  displayAnnualPriceKes?: number | null;
+  stripeOneTimeLookupKey?: string | null;
+  stripeMonthlyLookupKey?: string | null;
+  stripeAnnualLookupKey?: string | null;
+};
+
+interface AdminPricingCatalogConfig {
+  couplePlans?: Record<string, AdminPricingPlanCard>;
+  coupleAddons?: Record<string, AdminPricingAddonCard>;
+  professionalPlans?: Record<string, Record<string, AdminPricingPlanCard>>;
+  professionalAddons?: Record<string, AdminPricingAddonCard>;
+  audiencePlans?: Record<string, AdminAudiencePricingCard>;
+  checkout?: {
+    allowedLookupKeys?: string[];
+    coupleCheckoutMap?: Record<string, unknown>;
+    professionalCheckoutMap?: Record<string, unknown>;
+  };
+}
+
 type EstimatorPriceType = "quote" | "booked" | "final_paid";
 type EstimatorWeddingStyle = "intimate" | "classic" | "garden" | "luxury";
 
@@ -173,6 +287,209 @@ const roleOptions: AppRole[] = ["couple", "planner", "vendor", "admin"];
 const estimatorCategories = ["Venue", "Catering", "Photography", "Videography", "Flowers", "Music/DJ", "Décor", "Transport", "MC", "Cake", "Other"] as const;
 const estimatorPriceTypes: EstimatorPriceType[] = ["quote", "booked", "final_paid"];
 const estimatorWeddingStyles: EstimatorWeddingStyle[] = ["intimate", "classic", "garden", "luxury"];
+
+const pricingAudienceCards = [
+  { key: "couple", label: "Couples" },
+  { key: "committee", label: "Committees" },
+  { key: "planner", label: "Planners" },
+  { key: "vendor", label: "Vendors" },
+] as const;
+
+const pricingCouplePlanCards = [
+  { key: "free", label: "Couple Free" },
+  { key: "basic", label: "Couple Basic" },
+  { key: "premium", label: "Couple Premium" },
+] as const;
+
+const pricingCoupleAddonCards = [
+  { key: "gift_registry_addon", label: "Gift Registry Add-on" },
+  { key: "guest_rsvp_management_addon", label: "Guest RSVP Add-on" },
+] as const;
+
+const pricingProfessionalPlanCards = [
+  { audience: "planner", tier: "free", label: "Planner Free" },
+  { audience: "planner", tier: "premium", label: "Planner Premium" },
+  { audience: "vendor", tier: "free", label: "Vendor Free" },
+  { audience: "vendor", tier: "premium", label: "Vendor Premium" },
+] as const;
+
+const pricingProfessionalAddonCards = [
+  { key: "media_addon", label: "Media Add-on" },
+  { key: "advertising_addon", label: "Advertising Add-on" },
+  { key: "team_workspace_bundle_3", label: "Team Workspace 3" },
+  { key: "team_workspace_bundle_5", label: "Team Workspace 5" },
+  { key: "team_workspace_bundle_10", label: "Team Workspace 10" },
+] as const;
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function asAdminPricingCatalogConfig(value: Json): AdminPricingCatalogConfig {
+  if (!isObjectRecord(value)) return {};
+  return value as unknown as AdminPricingCatalogConfig;
+}
+
+function getTrimmedOrNull(value: string | undefined) {
+  const next = value?.trim() ?? "";
+  return next.length > 0 ? next : null;
+}
+
+function getNumberOrNull(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function deriveAllowedLookupKeys(config: AdminPricingCatalogConfig) {
+  const keys = new Set<string>();
+  const collect = (value?: string | null) => {
+    if (typeof value === "string" && value.trim()) keys.add(value.trim());
+  };
+
+  Object.values(config.audiencePlans ?? {}).forEach((plan) => {
+    collect(plan.stripeOneTimeLookupKey);
+    collect(plan.stripeMonthlyLookupKey);
+    collect(plan.stripeAnnualLookupKey);
+  });
+
+  Object.values(config.couplePlans ?? {}).forEach((plan) => {
+    collect(plan.stripeMonthlyLookupKey);
+    collect(plan.stripeAnnualLookupKey);
+  });
+
+  Object.values(config.coupleAddons ?? {}).forEach((addon) => {
+    collect(addon.stripeMonthlyLookupKey);
+    collect(addon.stripeAnnualLookupKey);
+  });
+
+  Object.values(config.professionalPlans ?? {}).forEach((tiers) => {
+    Object.values(tiers ?? {}).forEach((plan) => {
+      collect(plan.stripeMonthlyLookupKey);
+      collect(plan.stripeAnnualLookupKey);
+    });
+  });
+
+  Object.values(config.professionalAddons ?? {}).forEach((addon) => {
+    collect(addon.stripeMonthlyLookupKey);
+    collect(addon.stripeAnnualLookupKey);
+  });
+
+  return Array.from(keys);
+}
+
+function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): AdminPricingCatalogConfig {
+  const next: AdminPricingCatalogConfig = {
+    ...config,
+    checkout: {
+      ...(config.checkout ?? {}),
+      allowedLookupKeys: deriveAllowedLookupKeys(config),
+      coupleCheckoutMap: {
+        ...((config.checkout?.coupleCheckoutMap ?? {}) as Record<string, unknown>),
+      },
+      professionalCheckoutMap: {
+        ...((config.checkout?.professionalCheckoutMap ?? {}) as Record<string, unknown>),
+      },
+    },
+  };
+
+  const coupleAudienceOneTimeKey = next.audiencePlans?.couple?.stripeOneTimeLookupKey?.trim();
+  if (coupleAudienceOneTimeKey) {
+    next.checkout!.coupleCheckoutMap![coupleAudienceOneTimeKey] = {
+      bundleCode: "planning_pass_one_time",
+      bundleType: "wedding_pass",
+      features: [
+        "wedding_collaboration",
+        "planner_collaboration",
+        "vendor_collaboration",
+        "committee_collaboration",
+        "family_collaboration",
+        "timeline_management",
+        "ai_wedding_assistant",
+      ],
+      couplePlanTier: "premium",
+      seatLimits: { committee: 20, family: 20 },
+      syncLegacyPlanningPass: true,
+    };
+  }
+
+  const couplePlans = [
+    { key: next.couplePlans?.basic?.stripeMonthlyLookupKey, bundleCode: "couple_basic_monthly", tier: "basic", committee: 10, family: 10, cadence: "monthly" },
+    { key: next.couplePlans?.basic?.stripeAnnualLookupKey, bundleCode: "couple_basic_annual", tier: "basic", committee: 10, family: 10, cadence: "annual" },
+    { key: next.couplePlans?.premium?.stripeMonthlyLookupKey, bundleCode: "couple_premium_monthly", tier: "premium", committee: 20, family: 20, cadence: "monthly" },
+    { key: next.couplePlans?.premium?.stripeAnnualLookupKey, bundleCode: "couple_premium_annual", tier: "premium", committee: 20, family: 20, cadence: "annual" },
+  ] as const;
+
+  couplePlans.forEach((plan) => {
+    const lookupKey = plan.key?.trim();
+    if (!lookupKey) return;
+    next.checkout!.coupleCheckoutMap![lookupKey] = {
+      bundleCode: plan.bundleCode,
+      bundleType: "wedding_pass",
+      features: plan.tier === "basic"
+        ? [
+            "wedding_collaboration",
+            "planner_collaboration",
+            "vendor_collaboration",
+            "committee_collaboration",
+            "family_collaboration",
+          ]
+        : [
+            "wedding_collaboration",
+            "planner_collaboration",
+            "vendor_collaboration",
+            "committee_collaboration",
+            "family_collaboration",
+            "timeline_management",
+            "ai_wedding_assistant",
+          ],
+      couplePlanTier: plan.tier,
+      seatLimits: { committee: plan.committee, family: plan.family },
+      syncLegacyPlanningPass: plan.tier === "premium",
+    };
+  });
+
+  const giftRegistryKey = next.coupleAddons?.gift_registry_addon?.stripeMonthlyLookupKey?.trim();
+  if (giftRegistryKey) {
+    next.checkout!.coupleCheckoutMap![giftRegistryKey] = {
+      bundleCode: "gift_registry_addon",
+      bundleType: "registry_addon",
+      features: ["gift_registry"],
+      couplePlanTier: null,
+      seatLimits: null,
+      syncLegacyPlanningPass: false,
+    };
+  }
+
+  const guestRsvpKey = next.coupleAddons?.guest_rsvp_management_addon?.stripeMonthlyLookupKey?.trim();
+  if (guestRsvpKey) {
+    next.checkout!.coupleCheckoutMap![guestRsvpKey] = {
+      bundleCode: "guest_rsvp_management_addon",
+      bundleType: "guest_rsvp_addon",
+      features: ["guest_rsvp_management"],
+      couplePlanTier: null,
+      seatLimits: null,
+      syncLegacyPlanningPass: false,
+    };
+  }
+
+  const professionalAddons = [
+    { key: next.professionalAddons?.media_addon?.stripeMonthlyLookupKey, feature: "media_portfolio", seatLimit: null },
+    { key: next.professionalAddons?.advertising_addon?.stripeMonthlyLookupKey, feature: "advertising", seatLimit: null },
+    { key: next.professionalAddons?.team_workspace_bundle_3?.stripeMonthlyLookupKey, feature: "team_workspace", seatLimit: 3 },
+    { key: next.professionalAddons?.team_workspace_bundle_5?.stripeMonthlyLookupKey, feature: "team_workspace", seatLimit: 5 },
+    { key: next.professionalAddons?.team_workspace_bundle_10?.stripeMonthlyLookupKey, feature: "team_workspace", seatLimit: 10 },
+  ] as const;
+
+  professionalAddons.forEach((addon) => {
+    const lookupKey = addon.key?.trim();
+    if (!lookupKey) return;
+    next.checkout!.professionalCheckoutMap![lookupKey] = {
+      features: [addon.feature],
+      ...(addon.seatLimit ? { seatLimit: addon.seatLimit } : {}),
+    };
+  });
+
+  return next;
+}
 
 function countLabel(value?: number) {
   return Number(value ?? 0).toLocaleString();
@@ -188,12 +505,23 @@ export default function AdminPortal() {
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [vendors, setVendors] = useState<AdminVendorRow[]>([]);
   const [planners, setPlanners] = useState<AdminPlannerRow[]>([]);
+  const [vendorSuggestions, setVendorSuggestions] = useState<AdminVendorSuggestionRow[]>([]);
   const [couples, setCouples] = useState<AdminCouplePassRow[]>([]);
+  const [betaSnapshot, setBetaSnapshot] = useState<AdminBetaReadinessSnapshot | null>(null);
+  const [functionEvents, setFunctionEvents] = useState<AdminFunctionEventRow[]>([]);
   const [reputationMetrics, setReputationMetrics] = useState<AdminReputationMetrics | null>(null);
   const [reputationReviews, setReputationReviews] = useState<AdminReputationRow[]>([]);
   const [aiUsageMetrics, setAiUsageMetrics] = useState<AdminAiUsageMetrics | null>(null);
   const [aiUsageRows, setAiUsageRows] = useState<AdminAiUsageRow[]>([]);
   const [aiPlanConfigs, setAiPlanConfigs] = useState<AdminAiPlanConfigRow[]>([]);
+  const [pricingCatalog, setPricingCatalog] = useState<AdminPricingCatalogRow | null>(null);
+  const [pricingHistory, setPricingHistory] = useState<AdminPricingRevisionRow[]>([]);
+  const [pricingCatalogDraft, setPricingCatalogDraft] = useState<AdminPricingCatalogConfig | null>(null);
+  const [pricingDisplayNameDraft, setPricingDisplayNameDraft] = useState("");
+  const [loadingPricingCatalog, setLoadingPricingCatalog] = useState(false);
+  const [loadingPricingHistory, setLoadingPricingHistory] = useState(false);
+  const [savingPricingCatalog, setSavingPricingCatalog] = useState(false);
+  const [restoringPricingRevisionId, setRestoringPricingRevisionId] = useState<string | null>(null);
   const [estimatorSeeds, setEstimatorSeeds] = useState<AdminEstimatorSeedRow[]>([]);
   const [savingEstimatorSeed, setSavingEstimatorSeed] = useState(false);
   const [loadingEstimatorSeeds, setLoadingEstimatorSeeds] = useState(false);
@@ -213,7 +541,13 @@ export default function AdminPortal() {
   const [plannerSubscriptionDrafts, setPlannerSubscriptionDrafts] = useState<Record<string, AdminPlannerRow["planner_subscription_status"]>>({});
   const [plannerSubscriptionExpiryDrafts, setPlannerSubscriptionExpiryDrafts] = useState<Record<string, string>>({});
   const [plannerVerificationDrafts, setPlannerVerificationDrafts] = useState<Record<string, boolean>>({});
+  const [plannerFoundingDrafts, setPlannerFoundingDrafts] = useState<Record<string, boolean>>({});
   const [planningPassDrafts, setPlanningPassDrafts] = useState<Record<string, AdminCouplePassRow["planning_pass_status"]>>({});
+  const [vendorProfileKindDrafts, setVendorProfileKindDrafts] = useState<Record<string, AdminVendorRow["profile_kind"]>>({});
+  const [vendorProfileNoteDrafts, setVendorProfileNoteDrafts] = useState<Record<string, string>>({});
+  const [vendorFeaturedRankDrafts, setVendorFeaturedRankDrafts] = useState<Record<string, string>>({});
+  const [vendorClaimEmailDrafts, setVendorClaimEmailDrafts] = useState<Record<string, string>>({});
+  const [vendorClaimLinkDrafts, setVendorClaimLinkDrafts] = useState<Record<string, string>>({});
   const [planningPassExpiryDrafts, setPlanningPassExpiryDrafts] = useState<Record<string, string>>({});
   const [reviewVisibilityDrafts, setReviewVisibilityDrafts] = useState<Record<string, ReputationVisibilityFilter>>({});
   const [aiCapDrafts, setAiCapDrafts] = useState<Record<string, string>>({});
@@ -230,6 +564,8 @@ export default function AdminPortal() {
   const [userRoleFilter, setUserRoleFilter] = useState<UserRoleFilter>("all");
   const [vendorSearch, setVendorSearch] = useState("");
   const [vendorStatusFilter, setVendorStatusFilter] = useState<VendorStatusFilter>("pending");
+  const [vendorSuggestionSearch, setVendorSuggestionSearch] = useState("");
+  const [vendorSuggestionFilter, setVendorSuggestionFilter] = useState<VendorSuggestionFilter>("pending");
   const [plannerSearch, setPlannerSearch] = useState("");
   const [plannerVerificationFilter, setPlannerVerificationFilter] = useState<PlannerVerificationFilter>("all");
   const [coupleSearch, setCoupleSearch] = useState("");
@@ -295,6 +631,26 @@ export default function AdminPortal() {
       }
       return next;
     });
+    setVendorProfileKindDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.listing_id] = row.profile_kind;
+      return next;
+    });
+    setVendorProfileNoteDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.listing_id] = row.public_listing_note ?? "";
+      return next;
+    });
+    setVendorFeaturedRankDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.listing_id] = String(row.featured_rank ?? 0);
+      return next;
+    });
+    setVendorClaimEmailDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.listing_id] = row.claim_contact_email ?? row.owner_email ?? "";
+      return next;
+    });
   };
 
   const loadReputationMetrics = async () => {
@@ -329,6 +685,22 @@ export default function AdminPortal() {
       for (const row of rows) next[row.user_id] = row.planner_verified;
       return next;
     });
+    setPlannerFoundingDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.founding_planner_contributor;
+      return next;
+    });
+  };
+
+  const loadVendorSuggestions = async () => {
+    const { data, error } = await supabase.rpc("admin_list_vendor_suggestions" as any, {
+      search_query: vendorSuggestionSearch.trim() || null,
+      status_filter: vendorSuggestionFilter,
+      limit_rows: 100,
+      offset_rows: 0,
+    });
+    if (error) throw error;
+    setVendorSuggestions((data ?? []) as unknown as AdminVendorSuggestionRow[]);
   };
 
   const loadReputationReviews = async () => {
@@ -375,6 +747,22 @@ export default function AdminPortal() {
       for (const row of rows) next[row.user_id] = row.planning_pass_expires_at ? row.planning_pass_expires_at.slice(0, 10) : "";
       return next;
     });
+  };
+
+  const loadBetaSnapshot = async () => {
+    const { data, error } = await supabase.rpc("admin_beta_readiness_snapshot" as any);
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    setBetaSnapshot((row ?? null) as unknown as AdminBetaReadinessSnapshot | null);
+  };
+
+  const loadFunctionEvents = async () => {
+    const { data, error } = await supabase.rpc("admin_recent_function_events" as any, {
+      status_filter: "failure",
+      limit_rows: 50,
+    });
+    if (error) throw error;
+    setFunctionEvents((data ?? []) as unknown as AdminFunctionEventRow[]);
   };
 
   const loadAiUsageMetrics = async () => {
@@ -427,6 +815,34 @@ export default function AdminPortal() {
     });
   };
 
+  const loadPricingCatalog = async () => {
+    setLoadingPricingCatalog(true);
+    try {
+      const { data, error } = await supabase.rpc("admin_get_active_pricing_catalog" as any);
+      if (error) throw error;
+      const row = (Array.isArray(data) ? data[0] : data) as AdminPricingCatalogRow | null;
+      setPricingCatalog(row);
+      const nextConfig = asAdminPricingCatalogConfig((row?.config ?? {}) as Json);
+      setPricingCatalogDraft(nextConfig);
+      setPricingDisplayNameDraft(row?.display_name ?? "Default Live Pricing Catalog");
+    } finally {
+      setLoadingPricingCatalog(false);
+    }
+  };
+
+  const loadPricingHistory = async () => {
+    setLoadingPricingHistory(true);
+    try {
+      const { data, error } = await supabase.rpc("admin_list_pricing_catalog_revisions" as any, {
+        limit_rows: 12,
+      });
+      if (error) throw error;
+      setPricingHistory(((data ?? []) as unknown as AdminPricingRevisionRow[]) ?? []);
+    } finally {
+      setLoadingPricingHistory(false);
+    }
+  };
+
   const loadEstimatorSeeds = async () => {
     setLoadingEstimatorSeeds(true);
     try {
@@ -452,13 +868,18 @@ export default function AdminPortal() {
         loadMetrics(),
         loadUsers(),
         loadVendors(),
+        loadVendorSuggestions(),
         loadPlanners(),
         loadCouples(),
+        loadBetaSnapshot(),
+        loadFunctionEvents(),
         loadReputationMetrics(),
         loadReputationReviews(),
         loadAiUsageMetrics(),
         loadAiUsageRows(),
         loadAiPlanConfigs(),
+        loadPricingCatalog(),
+        loadPricingHistory(),
         loadEstimatorSeeds(),
       ]);
     } catch (error: any) {
@@ -557,6 +978,110 @@ export default function AdminPortal() {
 
     return { missingNames, pendingVendorCount, noLocationCount, flaggedReviews };
   }, [users, vendors, reputationMetrics]);
+
+  const updateAudiencePricingDraft = (
+    audienceKey: string,
+    field: keyof AdminAudiencePricingCard,
+    value: string | number | null,
+  ) => {
+    setPricingCatalogDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        audiencePlans: {
+          ...(current.audiencePlans ?? {}),
+          [audienceKey]: {
+            ...(current.audiencePlans?.[audienceKey] ?? {}),
+            [field]: value,
+          },
+        },
+      };
+    });
+  };
+
+  const updateCouplePlanDraft = (
+    tierKey: string,
+    field: keyof AdminPricingPlanCard,
+    value: string | number | null | string[],
+  ) => {
+    setPricingCatalogDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        couplePlans: {
+          ...(current.couplePlans ?? {}),
+          [tierKey]: {
+            ...(current.couplePlans?.[tierKey] ?? {}),
+            [field]: value,
+          },
+        },
+      };
+    });
+  };
+
+  const updateCoupleAddonDraft = (
+    addonKey: string,
+    field: keyof AdminPricingAddonCard,
+    value: string | number | null,
+  ) => {
+    setPricingCatalogDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        coupleAddons: {
+          ...(current.coupleAddons ?? {}),
+          [addonKey]: {
+            ...(current.coupleAddons?.[addonKey] ?? {}),
+            [field]: value,
+          },
+        },
+      };
+    });
+  };
+
+  const updateProfessionalPlanDraft = (
+    audienceKey: string,
+    tierKey: string,
+    field: keyof AdminPricingPlanCard,
+    value: string | number | null | string[],
+  ) => {
+    setPricingCatalogDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        professionalPlans: {
+          ...(current.professionalPlans ?? {}),
+          [audienceKey]: {
+            ...(current.professionalPlans?.[audienceKey] ?? {}),
+            [tierKey]: {
+              ...(current.professionalPlans?.[audienceKey]?.[tierKey] ?? {}),
+              [field]: value,
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const updateProfessionalAddonDraft = (
+    addonKey: string,
+    field: keyof AdminPricingAddonCard,
+    value: string | number | null,
+  ) => {
+    setPricingCatalogDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        professionalAddons: {
+          ...(current.professionalAddons ?? {}),
+          [addonKey]: {
+            ...(current.professionalAddons?.[addonKey] ?? {}),
+            [field]: value,
+          },
+        },
+      };
+    });
+  };
 
   const handleRoleUpdate = async (targetUserId: string) => {
     const target = users.find((item) => item.user_id === targetUserId);
@@ -688,6 +1213,184 @@ export default function AdminPortal() {
     }
   };
 
+  const handlePlannerFoundingUpdate = async (targetUserId: string) => {
+    const nextFounding = plannerFoundingDrafts[targetUserId];
+    if (nextFounding === undefined) return;
+
+    setSavingUserId(targetUserId);
+    try {
+      const { error } = await supabase.rpc("admin_set_planner_founding_contributor" as any, {
+        target_user_id: targetUserId,
+        new_founding_planner_contributor: nextFounding,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Founding status updated",
+        description: `Planner founding contributor status is now ${nextFounding ? "enabled" : "disabled"}.`,
+      });
+
+      await loadPlanners();
+    } catch (error: any) {
+      toast({
+        title: "Founding status update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingUserId(null);
+    }
+  };
+
+  const handleVendorProfileSave = async (listingId: string) => {
+    const nextKind = vendorProfileKindDrafts[listingId];
+    const nextNote = vendorProfileNoteDrafts[listingId] ?? "";
+    const nextRank = Number(vendorFeaturedRankDrafts[listingId] ?? 0);
+    if (!nextKind || !Number.isFinite(nextRank) || nextRank < 0) {
+      toast({
+        title: "Invalid featured rank",
+        description: "Featured rank must be 0 or greater.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingVendorId(listingId);
+    try {
+      const { error } = await supabase.rpc("admin_set_vendor_listing_profile" as any, {
+        listing_id: listingId,
+        new_profile_kind: nextKind,
+        new_public_listing_note: nextNote.trim() || null,
+        new_featured_rank: nextRank,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Listing profile updated",
+        description: `Vendor profile is now ${nextKind}.`,
+      });
+
+      await loadVendors();
+    } catch (error: any) {
+      toast({
+        title: "Vendor profile update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingVendorId(null);
+    }
+  };
+
+  const handleVendorClaimInvite = async (listingId: string) => {
+    const claimEmail = vendorClaimEmailDrafts[listingId]?.trim().toLowerCase() ?? "";
+    if (!claimEmail) {
+      toast({
+        title: "Claim email required",
+        description: "Enter the vendor email that should receive this claim invite.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingVendorId(listingId);
+    try {
+      const { data, error } = await supabase.rpc("admin_prepare_vendor_listing_claim" as any, {
+        listing_id: listingId,
+        claim_email: claimEmail,
+      });
+      if (error) throw error;
+
+      const row = Array.isArray(data) ? data[0] : data;
+      const claimUrl = row?.claim_url as string | undefined;
+      if (claimUrl) {
+        setVendorClaimLinkDrafts((prev) => ({
+          ...prev,
+          [listingId]: claimUrl,
+        }));
+      }
+
+      toast({
+        title: "Claim invite prepared",
+        description: "Share the generated claim link with the vendor so they can attach this listing to their account.",
+      });
+
+      await loadVendors();
+    } catch (error: any) {
+      toast({
+        title: "Could not prepare claim invite",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingVendorId(null);
+    }
+  };
+
+  const applyVendorSuggestionFilters = async () => {
+    try {
+      await loadVendorSuggestions();
+    } catch (error: any) {
+      toast({
+        title: "Failed to load vendor suggestions",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleVendorSuggestionStatus = async (suggestionId: string, newStatus: VendorSuggestionFilter) => {
+    if (newStatus === "all") return;
+    setSavingVendorId(suggestionId);
+    try {
+      const { error } = await supabase.rpc("admin_set_vendor_suggestion_status" as any, {
+        suggestion_id: suggestionId,
+        new_status: newStatus,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Suggestion updated",
+        description: `Suggestion marked ${newStatus}.`,
+      });
+
+      await loadVendorSuggestions();
+    } catch (error: any) {
+      toast({
+        title: "Suggestion update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingVendorId(null);
+    }
+  };
+
+  const handleVendorSuggestionConvert = async (suggestionId: string) => {
+    setSavingVendorId(suggestionId);
+    try {
+      const { error } = await supabase.rpc("admin_convert_vendor_suggestion" as any, {
+        suggestion_id: suggestionId,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Suggestion converted",
+        description: "A curated vendor listing was created from the suggestion.",
+      });
+
+      await Promise.all([loadVendorSuggestions(), loadVendors(), loadMetrics()]);
+    } catch (error: any) {
+      toast({
+        title: "Suggestion conversion failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingVendorId(null);
+    }
+  };
+
   const handlePlanningPassUpdate = async (targetUserId: string) => {
     const nextStatus = planningPassDrafts[targetUserId];
     const nextExpiry = planningPassExpiryDrafts[targetUserId]?.trim() || null;
@@ -789,6 +1492,70 @@ export default function AdminPortal() {
     }
   };
 
+  const handlePricingCatalogSave = async () => {
+    if (!pricingCatalogDraft) return;
+
+    setSavingPricingCatalog(true);
+    try {
+      const normalizedConfig = normalizePricingCatalogConfig(pricingCatalogDraft);
+      const { error } = await supabase.rpc("admin_set_active_pricing_catalog" as any, {
+        next_config: normalizedConfig,
+        next_display_name: pricingDisplayNameDraft.trim() || "Default Live Pricing Catalog",
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Pricing catalog updated",
+        description: "Live pricing settings were saved to Supabase.",
+      });
+
+      await Promise.all([loadPricingCatalog(), loadPricingHistory()]);
+    } catch (error: any) {
+      toast({
+        title: "Pricing update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingPricingCatalog(false);
+    }
+  };
+
+  const handleLoadPricingRevisionDraft = (revision: AdminPricingRevisionRow) => {
+    const nextConfig = asAdminPricingCatalogConfig(revision.config);
+    setPricingCatalogDraft(nextConfig);
+    setPricingDisplayNameDraft(revision.display_name);
+    toast({
+      title: "Revision loaded",
+      description: "This revision is now staged in the editor. Save pricing when you are ready to make it live.",
+    });
+  };
+
+  const handleRestorePricingRevision = async (revision: AdminPricingRevisionRow) => {
+    setRestoringPricingRevisionId(revision.id);
+    try {
+      const { error } = await supabase.rpc("admin_restore_pricing_catalog_revision" as any, {
+        revision_id: revision.id,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Pricing restored",
+        description: `${revision.display_name} is live again.`,
+      });
+
+      await Promise.all([loadPricingCatalog(), loadPricingHistory()]);
+    } catch (error: any) {
+      toast({
+        title: "Restore failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setRestoringPricingRevisionId(null);
+    }
+  };
+
   const handleEstimatorSeedSave = async () => {
     const normalizedAmount = Number(estimatorSeedForm.amount);
     const normalizedGuestCount = estimatorSeedForm.guestCount.trim() ? Number(estimatorSeedForm.guestCount) : null;
@@ -857,11 +1624,7 @@ export default function AdminPortal() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <WorkspacePageSkeleton compact />;
   }
 
   return (
@@ -929,7 +1692,6 @@ export default function AdminPortal() {
           </CardHeader>
           <CardContent className="flex items-center justify-between">
             <p className="text-2xl font-semibold">{countLabel(aiUsageMetrics?.total_messages)}</p>
-            <Sparkles className="h-5 w-5 text-primary" />
           </CardContent>
         </Card>
       </div>
@@ -937,6 +1699,8 @@ export default function AdminPortal() {
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="h-auto w-full flex-wrap justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="ops">Ops & Beta</TabsTrigger>
+          <TabsTrigger value="pricing">Pricing</TabsTrigger>
           <TabsTrigger value="estimator">Estimator Seeding</TabsTrigger>
           <TabsTrigger value="users">Users & Roles</TabsTrigger>
           <TabsTrigger value="couples">Wedding Plans</TabsTrigger>
@@ -1001,12 +1765,477 @@ export default function AdminPortal() {
                 </div>
               </CardContent>
             </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Beta Readiness</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between"><span>Active beta trials</span><span>{countLabel(betaSnapshot?.active_beta_trials)}</span></div>
+                <div className="flex justify-between"><span>Recent failed syncs</span><span>{countLabel(betaSnapshot?.recent_failed_syncs)}</span></div>
+                <div className="flex justify-between"><span>Recent AI failures</span><span>{countLabel(betaSnapshot?.recent_ai_failures)}</span></div>
+                <div className="flex justify-between"><span>Wedding entitlements</span><span>{countLabel(betaSnapshot?.active_wedding_entitlements)}</span></div>
+              </CardContent>
+            </Card>
           </div>
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="py-4">
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <ShieldCheck className="h-4 w-4 text-primary" />
                 Admin actions are executed through secure RPCs and blocked for non-admin users at the database layer.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="ops" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Active Beta Trials</CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold">{countLabel(betaSnapshot?.active_beta_trials)}</CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Active Couple Plans</CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold">{countLabel(betaSnapshot?.active_couple_passes)}</CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Professional Subs</CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold">
+                {countLabel((betaSnapshot?.active_planner_subscriptions ?? 0) + (betaSnapshot?.active_vendor_subscriptions ?? 0))}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Recent Runtime Failures</CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold">
+                {countLabel((betaSnapshot?.recent_failed_syncs ?? 0) + (betaSnapshot?.recent_ai_failures ?? 0))}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Recent Function Failures</CardTitle>
+              <CardDescription>
+                Runtime failures from checkout activation and AI requests. This gives admins a quick operational view during beta.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Function</TableHead>
+                    <TableHead>Event</TableHead>
+                    <TableHead>Audience</TableHead>
+                    <TableHead>Message</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {functionEvents.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                        No recent function failures logged.
+                      </TableCell>
+                    </TableRow>
+                  ) : functionEvents.map((row) => (
+                    <TableRow key={`${row.function_name}-${row.created_at}-${row.request_id ?? "no-request-id"}`}>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(row.created_at).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium text-foreground">{row.function_name}</div>
+                        {row.request_id ? (
+                          <div className="text-[11px] text-muted-foreground">Request: {row.request_id}</div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
+                          {row.event_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {row.audience ?? "n/a"}
+                      </TableCell>
+                      <TableCell className="max-w-[420px] text-sm text-foreground">
+                        {row.message}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="pricing" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Live Pricing Catalog</CardTitle>
+              <CardDescription>
+                Change plan names, copy, displayed prices, and Stripe lookup keys here. Zania saves this to Supabase and the pricing page reads it live.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Catalog name</label>
+                  <Input
+                    value={pricingDisplayNameDraft}
+                    onChange={(e) => setPricingDisplayNameDraft(e.target.value)}
+                    placeholder="Default Live Pricing Catalog"
+                  />
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {pricingCatalog?.updated_at ? `Last updated ${new Date(pricingCatalog.updated_at).toLocaleString()}` : "No active catalog loaded yet."}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Button variant="outline" onClick={() => void loadPricingCatalog()} disabled={loadingPricingCatalog || savingPricingCatalog}>
+                  {loadingPricingCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Reload pricing
+                </Button>
+                <Button variant="outline" onClick={() => void loadPricingHistory()} disabled={loadingPricingHistory || savingPricingCatalog}>
+                  {loadingPricingHistory ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
+                  Reload history
+                </Button>
+                <Button onClick={() => void handlePricingCatalogSave()} disabled={!pricingCatalogDraft || savingPricingCatalog}>
+                  {savingPricingCatalog ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeDollarSign className="h-4 w-4" />}
+                  Save pricing
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Pricing Revision History</CardTitle>
+              <CardDescription>
+                Every admin save creates a snapshot. Load an older revision into the editor to inspect it, or restore it live in one step.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Catalog</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Summary</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pricingHistory.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-sm text-muted-foreground">
+                        {loadingPricingHistory ? "Loading pricing revisions..." : "No pricing revisions have been saved yet."}
+                      </TableCell>
+                    </TableRow>
+                  ) : pricingHistory.map((revision) => {
+                    const revisionConfig = asAdminPricingCatalogConfig(revision.config);
+                    const lookupCount = deriveAllowedLookupKeys(revisionConfig).length;
+                    const couplePlanCount = Object.keys(revisionConfig.couplePlans ?? {}).length;
+                    const professionalPlanCount = Object.values(revisionConfig.professionalPlans ?? {}).reduce((count, tierMap) => {
+                      return count + Object.keys(tierMap ?? {}).length;
+                    }, 0);
+
+                    return (
+                      <TableRow key={revision.id}>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Date(revision.created_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium text-foreground">{revision.display_name}</div>
+                          <div className="text-[11px] text-muted-foreground">{revision.catalog_key}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={revision.change_source === "admin_restore" ? "outline" : "secondary"}>
+                            {revision.change_source === "admin_restore"
+                              ? "Restore"
+                              : revision.change_source === "initial_import"
+                                ? "Initial import"
+                                : "Save"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {couplePlanCount} couple plans, {professionalPlanCount} professional plans, {lookupCount} lookup keys
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleLoadPricingRevisionDraft(revision)}
+                              disabled={savingPricingCatalog || restoringPricingRevisionId === revision.id}
+                            >
+                              Load to editor
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void handleRestorePricingRevision(revision)}
+                              disabled={savingPricingCatalog || restoringPricingRevisionId === revision.id}
+                            >
+                              {restoringPricingRevisionId === revision.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-4 w-4" />
+                              )}
+                              Restore live
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            {pricingAudienceCards.map((item) => {
+              const plan = pricingCatalogDraft?.audiencePlans?.[item.key] ?? {};
+              return (
+                <Card key={item.key}>
+                  <CardHeader>
+                    <CardTitle className="text-base">{item.label} pricing card</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Title</label>
+                      <Input value={plan.title ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "title", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Pricing model</label>
+                      <Input value={plan.pricingModel ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "pricingModel", e.target.value)} />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-medium">Subtitle</label>
+                      <Textarea value={plan.subtitle ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "subtitle", e.target.value)} rows={3} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Free tier name</label>
+                      <Input value={plan.freeTierName ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "freeTierName", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Paid tier name</label>
+                      <Input value={plan.paidTierName ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "paidTierName", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Display one-time price</label>
+                      <Input type="number" value={plan.displayOneTimePriceKes ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "displayOneTimePriceKes", e.target.value ? Number(e.target.value) : null)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">One-time lookup key</label>
+                      <Input value={plan.stripeOneTimeLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "stripeOneTimeLookupKey", getTrimmedOrNull(e.target.value))} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Display monthly price</label>
+                      <Input type="number" value={plan.displayMonthlyPriceKes ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "displayMonthlyPriceKes", e.target.value ? Number(e.target.value) : null)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Monthly lookup key</label>
+                      <Input value={plan.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Display annual price</label>
+                      <Input type="number" value={plan.displayAnnualPriceKes ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "displayAnnualPriceKes", e.target.value ? Number(e.target.value) : null)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Annual lookup key</label>
+                      <Input value={plan.stripeAnnualLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "stripeAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            {pricingCouplePlanCards.map((item) => {
+              const plan = pricingCatalogDraft?.couplePlans?.[item.key] ?? {};
+              return (
+                <Card key={item.key}>
+                  <CardHeader>
+                    <CardTitle className="text-base">{item.label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Title</label>
+                        <Input value={plan.title ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "title", e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Tagline</label>
+                        <Input value={plan.tagline ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "tagline", e.target.value)} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">Support copy</label>
+                        <Textarea value={plan.supportCopy ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "supportCopy", e.target.value)} rows={4} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Monthly price</label>
+                        <Input type="number" value={plan.monthlyPriceKes ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "monthlyPriceKes", e.target.value ? Number(e.target.value) : null)} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Annual price</label>
+                        <Input type="number" value={plan.annualPriceKes ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "annualPriceKes", e.target.value ? Number(e.target.value) : null)} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Monthly lookup key</label>
+                        <Input value={plan.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Annual lookup key</label>
+                        <Input value={plan.stripeAnnualLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "stripeAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">CTA label</label>
+                        <Input value={plan.ctaLabel ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "ctaLabel", e.target.value)} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">Included features</label>
+                        <Textarea
+                          value={(plan.includedFeatures ?? []).join("\n")}
+                          onChange={(e) => updateCouplePlanDraft(item.key, "includedFeatures", e.target.value.split("\n").map((line) => line.trim()).filter(Boolean))}
+                          rows={5}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            {pricingProfessionalPlanCards.map((item) => {
+              const plan = pricingCatalogDraft?.professionalPlans?.[item.audience]?.[item.tier] ?? {};
+              return (
+                <Card key={`${item.audience}-${item.tier}`}>
+                  <CardHeader>
+                    <CardTitle className="text-base">{item.label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Title</label>
+                        <Input value={plan.title ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "title", e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Tagline</label>
+                        <Input value={plan.tagline ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "tagline", e.target.value)} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">Support copy</label>
+                        <Textarea value={plan.supportCopy ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "supportCopy", e.target.value)} rows={4} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Monthly price</label>
+                        <Input type="number" value={plan.monthlyPriceKes ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "monthlyPriceKes", e.target.value ? Number(e.target.value) : null)} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Annual price</label>
+                        <Input type="number" value={plan.annualPriceKes ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "annualPriceKes", e.target.value ? Number(e.target.value) : null)} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Monthly lookup key</label>
+                        <Input value={plan.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Annual lookup key</label>
+                        <Input value={plan.stripeAnnualLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "stripeAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">CTA label</label>
+                        <Input value={plan.ctaLabel ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "ctaLabel", e.target.value)} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium">Included features</label>
+                        <Textarea
+                          value={(plan.includedFeatures ?? []).join("\n")}
+                          onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "includedFeatures", e.target.value.split("\n").map((line) => line.trim()).filter(Boolean))}
+                          rows={5}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            {pricingCoupleAddonCards.map((item) => {
+              const addon = pricingCatalogDraft?.coupleAddons?.[item.key] ?? {};
+              return (
+                <Card key={item.key}>
+                  <CardHeader>
+                    <CardTitle className="text-base">{item.label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Title</label>
+                      <Input value={addon.title ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "title", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Monthly lookup key</label>
+                      <Input value={addon.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-medium">Support copy</label>
+                      <Textarea value={addon.supportCopy ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "supportCopy", e.target.value)} rows={4} />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+
+            {pricingProfessionalAddonCards.map((item) => {
+              const addon = pricingCatalogDraft?.professionalAddons?.[item.key] ?? {};
+              return (
+                <Card key={item.key}>
+                  <CardHeader>
+                    <CardTitle className="text-base">{item.label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Title</label>
+                      <Input value={addon.title ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "title", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Monthly lookup key</label>
+                      <Input value={addon.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-medium">Support copy</label>
+                      <Textarea value={addon.supportCopy ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "supportCopy", e.target.value)} rows={4} />
+                    </div>
+                    {item.key.startsWith("team_workspace") ? (
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Seat limit</label>
+                        <Input type="number" value={addon.seatLimit ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "seatLimit", e.target.value ? Number(e.target.value) : null)} />
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="py-4">
+              <p className="text-sm text-muted-foreground">
+                Saving here also refreshes the pricing catalog lookup allowlist and checkout activation mapping behind the scenes, so billing stays aligned with the copy and lookup keys you set above.
               </p>
             </CardContent>
           </Card>
@@ -1421,6 +2650,117 @@ export default function AdminPortal() {
         <TabsContent value="vendors" className="space-y-4">
           <Card>
             <CardHeader className="space-y-3">
+              <CardTitle className="text-base">Vendor Suggestions</CardTitle>
+              <CardDescription>
+                Review directory suggestions from planners and couples, then convert the best ones into curated listings.
+              </CardDescription>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Input
+                  value={vendorSuggestionSearch}
+                  onChange={(e) => setVendorSuggestionSearch(e.target.value)}
+                  placeholder="Search by vendor, suggester, category, or location"
+                />
+                <Select value={vendorSuggestionFilter} onValueChange={(value) => setVendorSuggestionFilter(value as VendorSuggestionFilter)}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="reviewed">Reviewed</SelectItem>
+                    <SelectItem value="converted">Converted</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                    <SelectItem value="all">All statuses</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={() => applyVendorSuggestionFilters()}>
+                  Apply
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Suggested Vendor</TableHead>
+                    <TableHead>Recommended By</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Why They Matter</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vendorSuggestions.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        No vendor suggestions found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {vendorSuggestions.map((item) => (
+                    <TableRow key={item.suggestion_id}>
+                      <TableCell>
+                        <p className="font-medium">{item.vendor_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.category}
+                          {item.location ? ` • ${item.location}` : ""}
+                          {item.instagram_or_website ? ` • ${item.instagram_or_website}` : ""}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-sm">{item.suggester_name || "Unknown user"}</p>
+                        <p className="text-xs text-muted-foreground">{[item.suggester_role, item.suggester_email].filter(Boolean).join(" • ")}</p>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={item.status === "pending" ? "outline" : item.status === "converted" ? "secondary" : item.status === "rejected" ? "destructive" : "outline"}>
+                          {item.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[360px] text-sm text-muted-foreground">
+                        {item.recommendation_reason}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          {item.status !== "converted" && (
+                            <Button
+                              size="sm"
+                              disabled={savingVendorId === item.suggestion_id}
+                              onClick={() => handleVendorSuggestionConvert(item.suggestion_id)}
+                            >
+                              {savingVendorId === item.suggestion_id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                              Convert to curated
+                            </Button>
+                          )}
+                          {item.status !== "reviewed" && item.status !== "converted" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={savingVendorId === item.suggestion_id}
+                              onClick={() => handleVendorSuggestionStatus(item.suggestion_id, "reviewed")}
+                            >
+                              Review
+                            </Button>
+                          )}
+                          {item.status !== "rejected" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={savingVendorId === item.suggestion_id}
+                              onClick={() => handleVendorSuggestionStatus(item.suggestion_id, "rejected")}
+                            >
+                              Reject
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="space-y-3">
               <CardTitle className="text-base">Review Queue</CardTitle>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Input
@@ -1435,6 +2775,9 @@ export default function AdminPortal() {
                   <SelectContent>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="claimed">Claimed</SelectItem>
+                    <SelectItem value="curated">Curated</SelectItem>
+                    <SelectItem value="featured">Featured</SelectItem>
                     <SelectItem value="all">All statuses</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1453,6 +2796,7 @@ export default function AdminPortal() {
                     <TableHead>Listing</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Owner</TableHead>
+                    <TableHead>Directory Profile</TableHead>
                     <TableHead>Subscription</TableHead>
                     <TableHead>Last Updated</TableHead>
                     <TableHead className="text-right">Action</TableHead>
@@ -1461,7 +2805,7 @@ export default function AdminPortal() {
                 <TableBody>
                   {vendors.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
                         No vendor listings found.
                       </TableCell>
                     </TableRow>
@@ -1484,8 +2828,117 @@ export default function AdminPortal() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <p className="text-sm">{item.owner_name || "Unknown owner"}</p>
-                        <p className="text-xs text-muted-foreground">{item.owner_email || item.user_id}</p>
+                        <p className="text-sm">{item.owner_name || (item.user_id ? "Unknown owner" : "Curated listing")}</p>
+                        <p className="text-xs text-muted-foreground">{item.owner_email || item.user_id || "No claimed vendor yet"}</p>
+                        {!item.user_id && item.claim_contact_email && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Claim invite: {item.claim_contact_email}
+                            {item.claim_expires_at ? ` until ${new Date(item.claim_expires_at).toLocaleDateString()}` : ""}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <Select
+                            value={vendorProfileKindDrafts[item.listing_id] ?? item.profile_kind}
+                            onValueChange={(value) =>
+                              setVendorProfileKindDrafts((prev) => ({
+                                ...prev,
+                                [item.listing_id]: value as AdminVendorRow["profile_kind"],
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-[150px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="claimed">claimed</SelectItem>
+                              <SelectItem value="curated">curated</SelectItem>
+                              <SelectItem value="featured">featured</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            value={vendorFeaturedRankDrafts[item.listing_id] ?? "0"}
+                            onChange={(e) =>
+                              setVendorFeaturedRankDrafts((prev) => ({
+                                ...prev,
+                                [item.listing_id]: e.target.value,
+                              }))
+                            }
+                            placeholder="Featured rank"
+                            type="number"
+                            min="0"
+                            className="w-[150px]"
+                          />
+                          <Textarea
+                            value={vendorProfileNoteDrafts[item.listing_id] ?? ""}
+                            onChange={(e) =>
+                              setVendorProfileNoteDrafts((prev) => ({
+                                ...prev,
+                                [item.listing_id]: e.target.value,
+                              }))
+                            }
+                            placeholder="Public listing note"
+                            rows={3}
+                            className="min-w-[240px]"
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={savingVendorId === item.listing_id}
+                            onClick={() => handleVendorProfileSave(item.listing_id)}
+                          >
+                            Save profile
+                          </Button>
+                          {!item.user_id && (
+                            <div className="space-y-2 rounded-lg border border-dashed border-border/70 p-3">
+                              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                                Vendor claim invite
+                              </p>
+                              <Input
+                                type="email"
+                                value={vendorClaimEmailDrafts[item.listing_id] ?? ""}
+                                onChange={(e) =>
+                                  setVendorClaimEmailDrafts((prev) => ({
+                                    ...prev,
+                                    [item.listing_id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="vendor@example.com"
+                                className="min-w-[240px]"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={savingVendorId === item.listing_id}
+                                onClick={() => handleVendorClaimInvite(item.listing_id)}
+                              >
+                                Create claim link
+                              </Button>
+                              {vendorClaimLinkDrafts[item.listing_id] && (
+                                <div className="space-y-2">
+                                  <Input readOnly value={vendorClaimLinkDrafts[item.listing_id]} className="min-w-[240px]" />
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={async () => {
+                                      const claimLink = vendorClaimLinkDrafts[item.listing_id];
+                                      if (!claimLink) return;
+                                      const copied = await navigator.clipboard.writeText(claimLink).then(() => true).catch(() => false);
+                                      toast({
+                                        title: copied ? "Claim link copied" : "Could not copy claim link",
+                                        description: copied ? "Share the link with the vendor." : "Copy and share the claim URL manually.",
+                                        variant: copied ? "default" : "destructive",
+                                      });
+                                    }}
+                                  >
+                                    Copy claim link
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="space-y-2">
@@ -1612,6 +3065,7 @@ export default function AdminPortal() {
                     <SelectItem value="requested">Verification requested</SelectItem>
                     <SelectItem value="pending">Unverified</SelectItem>
                     <SelectItem value="verified">Verified</SelectItem>
+                    <SelectItem value="founding">Founding contributors</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button variant="outline" onClick={() => applyPlannerFilters()}>
@@ -1629,6 +3083,7 @@ export default function AdminPortal() {
                     <TableHead>Planner</TableHead>
                     <TableHead>Type / Status</TableHead>
                     <TableHead>Subscription</TableHead>
+                    <TableHead>Founding</TableHead>
                     <TableHead>Last Updated</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
@@ -1636,7 +3091,7 @@ export default function AdminPortal() {
                 <TableBody>
                   {planners.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
                         No planner profiles found.
                       </TableCell>
                     </TableRow>
@@ -1665,6 +3120,9 @@ export default function AdminPortal() {
                         </Badge>
                         {item.planner_verification_requested && !item.planner_verified && (
                           <Badge variant="outline">Verification requested</Badge>
+                        )}
+                        {item.founding_planner_contributor && (
+                          <Badge className="border-0 bg-[#ead8a8] text-[#4c3528]">Founding contributor</Badge>
                         )}
                       </TableCell>
                       <TableCell>
@@ -1712,6 +3170,31 @@ export default function AdminPortal() {
                             />
                             <span className="text-sm">Verified</span>
                           </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={plannerFoundingDrafts[item.user_id] ?? item.founding_planner_contributor}
+                              onChange={(e) =>
+                                setPlannerFoundingDrafts((prev) => ({
+                                  ...prev,
+                                  [item.user_id]: e.target.checked,
+                                }))
+                              }
+                            />
+                            <span className="text-sm">Founding planner contributor</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={savingUserId === item.user_id}
+                            onClick={() => handlePlannerFoundingUpdate(item.user_id)}
+                          >
+                            Save founding
+                          </Button>
                         </div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">

@@ -198,20 +198,105 @@ export type MyWeddingOwnershipSummary = {
 
 const normalizeEmail = (value: string | null | undefined) => value?.trim().toLowerCase() || null;
 
+const formatInviteWaitTime = (seconds: number) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) return 'a few minutes';
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? '' : 's'}`;
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.ceil((seconds % 3600) / 60);
+
+  if (hours <= 0) {
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+
+  if (minutes === 0) {
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+
+  return `${hours} hour${hours === 1 ? '' : 's'} ${minutes} minute${minutes === 1 ? '' : 's'}`;
+};
+
 export async function sendWeddingInviteEmail(inviteId: string) {
-  const { data, error } = await supabase.functions.invoke<SendInviteResult>('send-wedding-invite', {
-    body: { inviteId },
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('You must be signed in to send invite email right now.');
+  }
+
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-wedding-invite`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ inviteId }),
   });
 
-  if (error) {
-    throw new Error(error.message || 'Could not send invite email right now.');
+  const payload = (await response.json().catch(() => null)) as SendInviteResult | { error?: string; message?: string } | null;
+  const responseMessage =
+    typeof payload?.error === 'string'
+      ? payload.error
+      : typeof payload?.message === 'string'
+        ? payload.message
+        : null;
+
+  if (!response.ok) {
+    const retryAfterHeader = response.headers.get('Retry-After');
+    const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+    const waitSuffix =
+      Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      && !(responseMessage ?? '').toLowerCase().includes('please wait')
+        ? ` Please wait ${formatInviteWaitTime(retryAfterSeconds)} before trying again.`
+        : '';
+
+    throw new Error((responseMessage || 'Could not send invite email right now.') + waitSuffix);
   }
 
-  if (!data?.success) {
-    throw new Error(data?.error || 'Could not send invite email right now.');
+  if (!payload || !('success' in payload) || !payload.success) {
+    throw new Error(responseMessage || 'Could not send invite email right now.');
   }
 
-  return data;
+  return payload;
+}
+
+export function getWeddingInviteDeliveryFailureMessage(
+  error: unknown,
+  fallbackMessage = 'The invite was created, but the email could not be delivered right now.',
+) {
+  const rawMessage = error instanceof Error ? error.message : String(error ?? '');
+  const normalizedMessage = rawMessage.trim();
+  const lowerMessage = normalizedMessage.toLowerCase();
+
+  if (!normalizedMessage) return fallbackMessage;
+
+  if (lowerMessage.includes('already sent recently') || lowerMessage.includes('wait before resending')) {
+    return normalizedMessage;
+  }
+
+  if (lowerMessage.includes('rate limit') || lowerMessage.includes('too many')) {
+    return normalizedMessage;
+  }
+
+  if (
+    lowerMessage.includes('edge function returned a non-2xx status code')
+    || lowerMessage.includes('failed to send a request to the edge function')
+    || lowerMessage.includes('relay error invoking the edge function')
+  ) {
+    return 'The invite was created, but Zania could not send the email right now. You can still share the wedding code manually.';
+  }
+
+  if (lowerMessage.includes('resend_api_key') || lowerMessage.includes('not configured')) {
+    return 'The invite was created, but email sending is not configured yet. You can still share the wedding code manually.';
+  }
+
+  if (lowerMessage.includes('domain') || lowerMessage.includes('sender')) {
+    return 'The invite was created, but the sender email still needs email-domain setup before delivery will work.';
+  }
+
+  return `${fallbackMessage} ${normalizedMessage}`;
 }
 
 export async function getMyWeddingOwnershipSummary(): Promise<MyWeddingOwnershipSummary | null> {
@@ -411,6 +496,13 @@ export function getPendingWeddingSetup(
   return readPendingWeddingSetupFromMetadata(userMetadata as PendingWeddingSetupMetadata | null | undefined);
 }
 
+export function hasPendingWeddingSetup(
+  userMetadata: Record<string, unknown> | null | undefined,
+  currentEmail?: string | null,
+) {
+  return Boolean(getPendingWeddingSetup(userMetadata, currentEmail));
+}
+
 export function isPendingWeddingSetupReadyForCompletion(pendingSetup: PendingWeddingSetup | null): boolean {
   if (!pendingSetup) return false;
 
@@ -499,6 +591,7 @@ export async function reconcilePendingWeddingSetupForExistingWorkspace(user: Use
   await markWeddingSetupComplete(user, {
     role: 'couple',
     planner_type: null,
+    partner_email: pendingSetup.partnerEmail ?? null,
   });
   clearPendingWeddingSetup();
 
@@ -594,6 +687,7 @@ export async function completePendingWeddingSetup(user: User): Promise<{
       await markWeddingSetupComplete(user, {
         role: 'couple',
         planner_type: null,
+        partner_email: pendingSetup.partnerEmail ?? null,
       });
 
       clearPendingWeddingSetup();
@@ -620,6 +714,7 @@ export async function completePendingWeddingSetup(user: User): Promise<{
     await markWeddingSetupComplete(user, {
       role: 'couple',
       planner_type: null,
+      partner_email: pendingSetup.partnerEmail ?? null,
     });
     clearPendingWeddingSetup();
     return {

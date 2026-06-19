@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
-import { Loader2, Send, Sparkles, Wand2, Wallet, CalendarClock, Users, Store, BriefcaseBusiness, CheckSquare2, BellRing, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Loader2, Send, Wand2, Wallet, CalendarClock, Users, Store, BriefcaseBusiness, CheckSquare2, BellRing, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { AssistantWorkspaceSkeleton } from '@/components/AppLoadingSkeletons';
 import {
   invokeWeddingAiChat,
   WeddingAiInvokeError,
@@ -285,24 +288,175 @@ function getAssistantExperience(
   };
 }
 
+async function loadVendorListingAccess(userId: string): Promise<VendorListingAccess | null> {
+  const { data, error } = await supabase
+    .from('vendor_listings')
+    .select('id, is_approved, is_verified, verification_requested, subscription_status, subscription_expires_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as VendorListingAccess | null) ?? null;
+}
+
+async function loadAiUsageStatus(): Promise<AiUsageStatus | null> {
+  const { data, error } = await (supabase.rpc as any)('get_ai_usage_status');
+  if (error) throw error;
+  return ((Array.isArray(data) ? data[0] : data) ?? null) as AiUsageStatus | null;
+}
+
+async function loadWorkspaceSnapshot(args: {
+  profileRole: string;
+  dataOrFilter: string | null | undefined;
+  vendorListingId?: string | null;
+}): Promise<WorkspaceSnapshot | null> {
+  const { profileRole, dataOrFilter, vendorListingId } = args;
+
+  if (profileRole === 'vendor' && vendorListingId) {
+    const [bookingsRes, followUpsRes] = await Promise.all([
+      supabase
+        .from('vendors')
+        .select('id, category, status')
+        .eq('vendor_listing_id', vendorListingId)
+        .limit(100),
+      supabase
+        .from('vendor_follow_up_reminders')
+        .select('id, status')
+        .eq('vendor_listing_id', vendorListingId)
+        .limit(100),
+    ]);
+
+    if (bookingsRes.error) throw bookingsRes.error;
+    if (followUpsRes.error) throw followUpsRes.error;
+
+    const bookings = bookingsRes.data ?? [];
+    const followUps = followUpsRes.data ?? [];
+    const categoryCounts = bookings.reduce<Record<string, number>>((acc, booking: any) => {
+      const key = booking.category || 'booking';
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+    const mostUrgentVendorCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+    return {
+      overdueTasks: 0,
+      pendingTasks: 0,
+      pendingGuests: 0,
+      confirmedGuests: 0,
+      trackedVendors: 0,
+      finalVendors: 0,
+      budgetAllocated: 0,
+      budgetSpent: 0,
+      paymentRecords: 0,
+      openVendorFollowUps: followUps.filter((item: any) => item.status !== 'completed').length,
+      vendorBookings: bookings.length,
+      nextDueTaskTitle: null,
+      highestBudgetCategory: null,
+      mostUrgentVendorCategory,
+    };
+  }
+
+  if (!dataOrFilter) return null;
+
+  const [tasksRes, budgetRes, paymentsRes, guestsRes, vendorsRes] = await Promise.all([
+    supabase
+      .from('tasks')
+      .select('title, due_date, completed, category')
+      .or(dataOrFilter)
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .limit(100),
+    supabase
+      .from('budget_categories')
+      .select('name, allocated, spent')
+      .or(dataOrFilter)
+      .limit(100),
+    supabase
+      .from('budget_payments')
+      .select('id')
+      .or(dataOrFilter)
+      .limit(100),
+    supabase
+      .from('guests')
+      .select('rsvp_status')
+      .or(dataOrFilter)
+      .limit(200),
+    supabase
+      .from('vendors')
+      .select('category, selection_status')
+      .or(dataOrFilter)
+      .limit(100),
+  ]);
+
+  if (tasksRes.error) throw tasksRes.error;
+  if (budgetRes.error) throw budgetRes.error;
+  if (paymentsRes.error) throw paymentsRes.error;
+  if (guestsRes.error) throw guestsRes.error;
+  if (vendorsRes.error) throw vendorsRes.error;
+
+  const tasks = tasksRes.data ?? [];
+  const budgetCategories = budgetRes.data ?? [];
+  const guests = guestsRes.data ?? [];
+  const vendors = vendorsRes.data ?? [];
+  const categorySpend = budgetCategories
+    .map((item: any) => ({
+      name: item.name as string,
+      ratio: Number(item.allocated || 0) > 0 ? Number(item.spent || 0) / Number(item.allocated || 0) : 0,
+    }))
+    .sort((a, b) => b.ratio - a.ratio);
+  const vendorCounts = vendors.reduce<Record<string, number>>((acc, vendor: any) => {
+    if (vendor.selection_status === 'final') return acc;
+    const key = vendor.category || 'vendor';
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    overdueTasks: tasks.filter((task: any) => !task.completed && task.due_date && task.due_date < new Date().toISOString().slice(0, 10)).length,
+    pendingTasks: tasks.filter((task: any) => !task.completed).length,
+    pendingGuests: guests.filter((guest: any) => guest.rsvp_status === 'pending').length,
+    confirmedGuests: guests.filter((guest: any) => guest.rsvp_status === 'confirmed').length,
+    trackedVendors: vendors.length,
+    finalVendors: vendors.filter((vendor: any) => vendor.selection_status === 'final').length,
+    budgetAllocated: budgetCategories.reduce((sum: number, item: any) => sum + Number(item.allocated || 0), 0),
+    budgetSpent: budgetCategories.reduce((sum: number, item: any) => sum + Number(item.spent || 0), 0),
+    paymentRecords: (paymentsRes.data ?? []).length,
+    openVendorFollowUps: 0,
+    vendorBookings: 0,
+    nextDueTaskTitle: tasks.find((task: any) => !task.completed && task.due_date)?.title ?? null,
+    highestBudgetCategory: categorySpend[0]?.name ?? null,
+    mostUrgentVendorCategory: Object.entries(vendorCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+  };
+}
+
 export default function AiChat() {
   const { session, profile, baseProfile, isSuperAdmin } = useAuth();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const { toast } = useToast();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
-  const [vendorListing, setVendorListing] = useState<VendorListingAccess | null>(null);
-  const [accessLoading, setAccessLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [inputError, setInputError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [usage, setUsage] = useState<AiUsageStatus | null>(null);
-  const [usageLoading, setUsageLoading] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [workspaceSnapshot, setWorkspaceSnapshot] = useState<WorkspaceSnapshot | null>(null);
-  const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [pendingActions, setPendingActions] = useState<PendingWriteAction[]>([]);
   const [confirmingWriteActions, setConfirmingWriteActions] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const vendorListingQueryKey = ['ai-chat-vendor-listing', profile?.user_id ?? null] as const;
+  const usageQueryKey = ['ai-chat-usage', session?.user?.id ?? null, profile?.role ?? null] as const;
+
+  const vendorListingQuery = useQuery({
+    queryKey: vendorListingQueryKey,
+    queryFn: async () => {
+      if (!profile?.user_id) return null;
+      return loadVendorListingAccess(profile.user_id);
+    },
+    enabled: Boolean(profile?.role === 'vendor' && profile?.user_id && !isSuperAdmin && baseProfile?.role !== 'admin'),
+    staleTime: 30_000,
+  });
+  const vendorListing = vendorListingQuery.data ?? null;
 
   const feature = useMemo(
     () => getAssistantFeature(profile?.role, profile?.planner_type),
@@ -320,6 +474,34 @@ export default function AiChat() {
     });
   }, [baseProfile?.role, couplePlanTier, feature, isSuperAdmin, profile, vendorListing, weddingEntitlements]);
 
+  const usageQuery = useQuery({
+    queryKey: usageQueryKey,
+    queryFn: loadAiUsageStatus,
+    enabled: Boolean(session && decision?.allowed),
+    staleTime: 30_000,
+  });
+  const workspaceSnapshotQueryKey = [
+    'ai-chat-workspace-snapshot',
+    session?.user?.id ?? null,
+    profile?.role ?? null,
+    selectedClient?.id ?? null,
+    dataOrFilter ?? null,
+    vendorListing?.id ?? null,
+  ] as const;
+  const workspaceSnapshotQuery = useQuery({
+    queryKey: workspaceSnapshotQueryKey,
+    queryFn: async () => {
+      if (!profile?.role) return null;
+      return loadWorkspaceSnapshot({
+        profileRole: profile.role,
+        dataOrFilter,
+        vendorListingId: vendorListing?.id ?? null,
+      });
+    },
+    enabled: Boolean(session && decision?.allowed && profile?.role),
+    staleTime: 30_000,
+  });
+  const workspaceSnapshot = workspaceSnapshotQuery.data ?? null;
   const experience = useMemo(
     () => getAssistantExperience(profile?.role, profile?.planner_type, selectedClient?.client_name ?? null, workspaceSnapshot),
     [profile?.planner_type, profile?.role, selectedClient?.client_name, workspaceSnapshot],
@@ -336,210 +518,40 @@ export default function AiChat() {
   }, [messages]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadVendorListing = async () => {
-      if (profile?.role !== 'vendor' || isSuperAdmin || baseProfile?.role === 'admin') {
-        setVendorListing(null);
-        return;
-      }
-
-      setAccessLoading(true);
-      const { data, error } = await supabase
-        .from('vendor_listings')
-        .select('id, is_approved, is_verified, verification_requested, subscription_status, subscription_expires_at')
-        .eq('user_id', profile.user_id)
-        .maybeSingle();
-
-      if (!cancelled) {
-        if (error) {
-          console.error('Failed to load vendor assistant access state:', error);
-          setVendorListing(null);
-        } else {
-          setVendorListing((data as VendorListingAccess | null) ?? null);
-        }
-        setAccessLoading(false);
-      }
-    };
-
-    void loadVendorListing();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [baseProfile?.role, isSuperAdmin, profile?.role, profile?.user_id]);
+    if (vendorListingQuery.error) {
+      console.error('Failed to load vendor assistant access state:', vendorListingQuery.error);
+    }
+  }, [vendorListingQuery.error]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadUsage = async () => {
-      if (!session || !decision?.allowed) {
-        setUsage(null);
-        return;
-      }
-
-      setUsageLoading(true);
-      const { data, error } = await (supabase.rpc as any)('get_ai_usage_status');
-      if (!cancelled) {
-        if (error) {
-          console.error('Failed to load AI usage status:', error);
-        } else {
-          setUsage((Array.isArray(data) ? data[0] : data) ?? null);
-        }
-        setUsageLoading(false);
-      }
-    };
-
-    void loadUsage();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [decision?.allowed, session]);
+    if (!session || !decision?.allowed) {
+      setUsage(null);
+      return;
+    }
+    if (usageQuery.data !== undefined) {
+      setUsage(usageQuery.data);
+    }
+  }, [decision?.allowed, session, usageQuery.data]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadWorkspaceSnapshot = async () => {
-      if (!session || !decision?.allowed || !profile) {
-        setWorkspaceSnapshot(null);
-        return;
-      }
-
-      setSnapshotLoading(true);
-
-      if (profile.role === 'vendor' && vendorListing) {
-        const [bookingsRes, followUpsRes] = await Promise.all([
-          supabase
-            .from('vendors')
-            .select('id, category, status')
-            .eq('vendor_listing_id', vendorListing.id)
-            .limit(100),
-          supabase
-            .from('vendor_follow_up_reminders')
-            .select('id, status')
-            .eq('vendor_listing_id', vendorListing.id)
-            .limit(100),
-        ]);
-
-        if (!cancelled) {
-          const bookings = bookingsRes.data ?? [];
-          const followUps = followUpsRes.data ?? [];
-          const categoryCounts = bookings.reduce<Record<string, number>>((acc, booking: any) => {
-            const key = booking.category || 'booking';
-            acc[key] = (acc[key] ?? 0) + 1;
-            return acc;
-          }, {});
-          const mostUrgentVendorCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-
-          setWorkspaceSnapshot({
-            overdueTasks: 0,
-            pendingTasks: 0,
-            pendingGuests: 0,
-            confirmedGuests: 0,
-            trackedVendors: 0,
-            finalVendors: 0,
-            budgetAllocated: 0,
-            budgetSpent: 0,
-            paymentRecords: 0,
-            openVendorFollowUps: followUps.filter((item: any) => item.status !== 'completed').length,
-            vendorBookings: bookings.length,
-            nextDueTaskTitle: null,
-            highestBudgetCategory: null,
-            mostUrgentVendorCategory,
-          });
-          setSnapshotLoading(false);
-        }
-        return;
-      }
-
-      if (!dataOrFilter) {
-        setWorkspaceSnapshot(null);
-        setSnapshotLoading(false);
-        return;
-      }
-
-      const [tasksRes, budgetRes, paymentsRes, guestsRes, vendorsRes] = await Promise.all([
-        supabase
-          .from('tasks')
-          .select('title, due_date, completed, category')
-          .or(dataOrFilter)
-          .order('due_date', { ascending: true, nullsFirst: false })
-          .limit(100),
-        supabase
-          .from('budget_categories')
-          .select('name, allocated, spent')
-          .or(dataOrFilter)
-          .limit(100),
-        supabase
-          .from('budget_payments')
-          .select('id')
-          .or(dataOrFilter)
-          .limit(100),
-        supabase
-          .from('guests')
-          .select('rsvp_status')
-          .or(dataOrFilter)
-          .limit(200),
-        supabase
-          .from('vendors')
-          .select('category, selection_status')
-          .or(dataOrFilter)
-          .limit(100),
-      ]);
-
-      if (!cancelled) {
-        const tasks = tasksRes.data ?? [];
-        const budgetCategories = budgetRes.data ?? [];
-        const guests = guestsRes.data ?? [];
-        const vendors = vendorsRes.data ?? [];
-        const categorySpend = budgetCategories
-          .map((item: any) => ({
-            name: item.name as string,
-            ratio: Number(item.allocated || 0) > 0 ? Number(item.spent || 0) / Number(item.allocated || 0) : 0,
-          }))
-          .sort((a, b) => b.ratio - a.ratio);
-        const vendorCounts = vendors.reduce<Record<string, number>>((acc, vendor: any) => {
-          if (vendor.selection_status === 'final') return acc;
-          const key = vendor.category || 'vendor';
-          acc[key] = (acc[key] ?? 0) + 1;
-          return acc;
-        }, {});
-
-        setWorkspaceSnapshot({
-          overdueTasks: tasks.filter((task: any) => !task.completed && task.due_date && task.due_date < new Date().toISOString().slice(0, 10)).length,
-          pendingTasks: tasks.filter((task: any) => !task.completed).length,
-          pendingGuests: guests.filter((guest: any) => guest.rsvp_status === 'pending').length,
-          confirmedGuests: guests.filter((guest: any) => guest.rsvp_status === 'confirmed').length,
-          trackedVendors: vendors.length,
-          finalVendors: vendors.filter((vendor: any) => vendor.selection_status === 'final').length,
-          budgetAllocated: budgetCategories.reduce((sum: number, item: any) => sum + Number(item.allocated || 0), 0),
-          budgetSpent: budgetCategories.reduce((sum: number, item: any) => sum + Number(item.spent || 0), 0),
-          paymentRecords: (paymentsRes.data ?? []).length,
-          openVendorFollowUps: 0,
-          vendorBookings: 0,
-          nextDueTaskTitle: tasks.find((task: any) => !task.completed && task.due_date)?.title ?? null,
-          highestBudgetCategory: categorySpend[0]?.name ?? null,
-          mostUrgentVendorCategory: Object.entries(vendorCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
-        });
-        setSnapshotLoading(false);
-      }
-    };
-
-    void loadWorkspaceSnapshot();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dataOrFilter, decision?.allowed, profile, session, vendorListing]);
+    if (usageQuery.error) {
+      console.error('Failed to load AI usage status:', usageQuery.error);
+    }
+    if (workspaceSnapshotQuery.error) {
+      console.error('Failed to load AI workspace snapshot:', workspaceSnapshotQuery.error);
+    }
+  }, [usageQuery.error, workspaceSnapshotQuery.error]);
 
   const sendMessage = async (
     nextInput: string,
     options?: { allowWriteActions?: boolean; confirmedActions?: PendingWriteAction[]; skipUserEcho?: boolean },
   ) => {
     if (!nextInput.trim() || loading) return;
+    setInputError(null);
+    setSubmitError(null);
 
     if (!session?.access_token) {
+      setSubmitError('Your session is missing or expired for this workspace. Please sign out and sign back in.');
       toast({
         title: 'Sign in again',
         description: 'Your session is missing or expired for this workspace. Please sign out and sign back in.',
@@ -554,6 +566,7 @@ export default function AiChat() {
     }
 
     if (usage && usage.remaining_messages <= 0) {
+      setSubmitError('This account has used its AI allowance for the current month.');
       toast({
         title: 'Monthly AI limit reached',
         description: 'This account has used its AI allowance for the current month.',
@@ -565,6 +578,7 @@ export default function AiChat() {
     const shouldEchoUser = !options?.skipUserEcho;
     const userMsg: Message = { role: 'user', content: nextInput.trim() };
     const updatedMessages = shouldEchoUser ? [...messages, userMsg] : messages;
+    const previousInput = input;
     if (shouldEchoUser) {
       setPendingActions([]);
     }
@@ -588,19 +602,26 @@ export default function AiChat() {
 
       if (result.usage) {
         setUsage(result.usage);
+        queryClient.setQueryData(usageQueryKey, result.usage);
       }
       setPendingActions(result.pendingActions);
       setMessages((prev) => [...prev, { role: 'assistant', content: result.content }]);
+      if (options?.allowWriteActions && options.confirmedActions?.length) {
+        await queryClient.invalidateQueries({ queryKey: workspaceSnapshotQueryKey });
+      }
     } catch (error) {
       console.error('Chat error:', error);
       if (error instanceof WeddingAiInvokeError) {
         if (error.usage) {
           setUsage(error.usage);
+          queryClient.setQueryData(usageQueryKey, error.usage);
         }
 
         if (error.requiresUpgrade) {
           setUpgradeOpen(true);
         }
+        setSubmitError(error.message);
+        if (shouldEchoUser) setInput(previousInput || nextInput);
 
         toast({
           title:
@@ -615,6 +636,8 @@ export default function AiChat() {
         return;
       }
 
+      setSubmitError('Could not reach the AI assistant.');
+      if (shouldEchoUser) setInput(previousInput || nextInput);
       toast({
         title: 'Connection Error',
         description: 'Could not reach the AI assistant.',
@@ -627,6 +650,10 @@ export default function AiChat() {
 
   const send = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!input.trim()) {
+      setInputError('Enter a message for Ask Zania first.');
+      return;
+    }
     await sendMessage(input);
   };
 
@@ -675,8 +702,7 @@ export default function AiChat() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2">
-              <Badge variant="secondary" className="gap-1">
-                <Sparkles className="h-3.5 w-3.5" />
+              <Badge variant="secondary">
                 Premium
               </Badge>
               {profile?.role === 'planner' && profile?.planner_type === 'committee' && (
@@ -716,7 +742,7 @@ export default function AiChat() {
               <div>
                 <p className="text-sm font-medium text-foreground">Workspace signal</p>
                 <p className="text-sm text-muted-foreground">
-                  {snapshotLoading
+                  {workspaceSnapshotQuery.isLoading
                     ? 'Scanning the current workspace so the assistant can suggest the right next moves.'
                     : workspaceSnapshot
                       ? `Tracking ${workspaceSnapshot.pendingTasks} open tasks, ${workspaceSnapshot.trackedVendors} vendors, and ${workspaceSnapshot.paymentRecords} payment records in this workspace.`
@@ -756,11 +782,8 @@ export default function AiChat() {
           })}
         </div>
 
-        {accessLoading ? (
-          <Card className="flex items-center gap-3 rounded-3xl p-5 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Checking AI access for this account...
-          </Card>
+        {vendorListingQuery.isLoading ? (
+          <AssistantWorkspaceSkeleton />
         ) : !decision?.allowed ? (
           <Card className="rounded-3xl border-border/70 p-5 shadow-card">
             {decision && <InlineUpgradePrompt decision={decision} />}
@@ -786,7 +809,7 @@ export default function AiChat() {
                   <div className="flex items-center justify-between gap-4">
                     <span className="font-medium text-foreground">Monthly AI usage</span>
                     <span className="text-muted-foreground">
-                      {usageLoading
+                      {usageQuery.isLoading
                         ? 'Loading...'
                         : usage
                           ? `${usage.messages_used}/${usage.monthly_message_cap}`
@@ -927,15 +950,23 @@ export default function AiChat() {
             </div>
 
             <form onSubmit={send} className="flex gap-2 border-t border-border p-4">
-              <Input
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder={experience.inputPlaceholder}
-                className="flex-1"
-                disabled={inputBlocked}
-              />
+              <div className="flex-1 space-y-2">
+                <FormSubmitError message={submitError} />
+                <Input
+                  value={input}
+                  onChange={(event) => {
+                    setInput(event.target.value);
+                    setInputError(null);
+                    setSubmitError(null);
+                  }}
+                  placeholder={experience.inputPlaceholder}
+                  className="flex-1"
+                  disabled={inputBlocked}
+                />
+                <FormFieldError message={inputError} />
+              </div>
               <Button type="submit" size="icon" disabled={inputBlocked || !input.trim()}>
-                <Send className="h-4 w-4" />
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             </form>
           </Card>

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Zania</title>
+  <desc id="desc">Zania wedding management system social preview</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#201814" />
+      <stop offset="100%" stop-color="#3b2d26" />
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2e231f" />
+      <stop offset="100%" stop-color="#46362f" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect x="56" y="56" width="1088" height="518" rx="38" fill="none" stroke="#ead7c4" stroke-opacity="0.52" stroke-width="3" />
+  <rect x="94" y="94" width="1012" height="442" rx="30" fill="url(#panel)" stroke="#c9a96e" stroke-opacity="0.46" stroke-width="2" />
+  <text
+    x="118"
+    y="186"
+    fill="#f6eee6"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="84"
+    font-weight="400"
+    letter-spacing="22"
+  >
+    ZANIA
+  </text>
+  <rect x="120" y="212" width="124" height="6" rx="3" fill="#c2724f" />
+  <text
+    x="118"
+    y="290"
+    fill="#d4bb7d"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="28"
+    font-weight="700"
+    letter-spacing="9"
+  >
+    WEDDING MANAGEMENT SYSTEM
+  </text>
+  <text
+    x="118"
+    y="386"
+    fill="#f7efe7"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="58"
+    font-weight="400"
+  >
+    Kenyan and diaspora wedding planning,
+  </text>
+  <text
+    x="118"
+    y="452"
+    fill="#f7efe7"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="58"
+    font-weight="400"
+  >
+    beautifully organized.
+  </text>
+  <text
+    x="118"
+    y="514"
+    fill="#ead7c4"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="30"
+    font-weight="500"
+  >
+    budgets • guests • vendors • timelines • payments
+  </text>
+</svg>

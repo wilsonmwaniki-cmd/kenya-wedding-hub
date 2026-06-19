@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Heart, MapPin, Calendar, CheckCircle2, XCircle, Loader2, Sparkles } from 'lucide-react';
+import { Heart, MapPin, Calendar, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface RsvpData {
@@ -208,10 +208,7 @@ export default function GuestRsvp() {
 
               <div className="mt-6 space-y-3">
                 <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-primary" />
-                    <p className="text-sm font-medium text-foreground">Guest-friendly</p>
-                  </div>
+                  <p className="text-sm font-medium text-foreground">Guest-friendly</p>
                   <p className="mt-2 text-sm text-muted-foreground">
                     This page is designed to keep your RSVP simple, clear, and easy to revisit if plans change.
                   </p>

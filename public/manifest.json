@@ -1,0 +1,23 @@
+{
+  "name": "Zania",
+  "short_name": "Zania",
+  "description": "Wedding Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#201814",
+  "theme_color": "#201814",
+  "icons": [
+    {
+      "src": "/favicon.svg?v=2",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.svg?v=2",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

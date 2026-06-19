@@ -4,9 +4,10 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Search, CheckCircle2, UserCheck, Users, X, Undo2 } from 'lucide-react';
+import { Search, CheckCircle2, UserCheck, Users, X, Undo2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
+import { normalizeInvokeError } from '@/lib/invokeErrors';
 
 interface Guest {
   id: string;
@@ -15,6 +16,7 @@ interface Guest {
   rsvp_status: string | null;
   group_name: string | null;
   category: string | null;
+  wedding_id: string | null;
   checked_in: boolean;
   checked_in_at: string | null;
 }
@@ -29,6 +31,18 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
   const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [lastAction, setLastAction] = useState<{ id: string; name: string } | null>(null);
+  const [pendingGuestId, setPendingGuestId] = useState<string | null>(null);
+  const [deviceId] = useState(() => {
+    if (typeof window === 'undefined') return 'guest-check-in-device';
+
+    const storageKey = 'zania_guest_check_in_device_id';
+    const existing = window.localStorage.getItem(storageKey);
+    if (existing) return existing;
+
+    const created = window.crypto?.randomUUID?.() ?? `guest-check-in-${Date.now()}`;
+    window.localStorage.setItem(storageKey, created);
+    return created;
+  });
 
   const confirmed = guests.filter(g => g.rsvp_status === 'confirmed');
   const checkedIn = guests.filter(g => g.checked_in).length;
@@ -39,24 +53,71 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
     : confirmed;
 
   const checkIn = async (guest: Guest) => {
-    const newStatus = !guest.checked_in;
-    await supabase.from('guests').update({
-      checked_in: newStatus,
-      checked_in_at: newStatus ? new Date().toISOString() : null,
-    }).eq('id', guest.id);
-
-    if (newStatus) {
-      setLastAction({ id: guest.id, name: guest.name });
-      toast({ title: `✓ ${guest.name} checked in` });
+    if (pendingGuestId === guest.id) return;
+    if (!guest.wedding_id) {
+      toast({
+        title: 'Wedding workspace missing',
+        description: `${guest.name} is not attached to a wedding workspace yet, so check-in cannot start.`,
+        variant: 'destructive',
+      });
+      return;
     }
-    onUpdate();
+
+    setPendingGuestId(guest.id);
+    const newStatus = !guest.checked_in;
+    const idempotencyKey = window.crypto?.randomUUID?.() ?? `${guest.id}-${Date.now()}`;
+
+    try {
+      const { data, error } = await supabase.functions.invoke('guest-check-in', {
+        body: {
+          guestId: guest.id,
+          weddingId: guest.wedding_id,
+          action: newStatus ? 'check_in' : 'undo_check_in',
+          idempotencyKey,
+          deviceId,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      if (newStatus) {
+        setLastAction({ id: guest.id, name: guest.name });
+        toast({
+          title: data?.idempotent ? `${guest.name} is already checked in` : `✓ ${guest.name} checked in`,
+        });
+      } else {
+        setLastAction(null);
+        toast({
+          title: data?.idempotent ? `${guest.name} was already marked as not checked in` : `${guest.name} check-in undone`,
+        });
+      }
+
+      onUpdate();
+    } catch (error) {
+      const normalized = await normalizeInvokeError(
+        error,
+        `Could not ${newStatus ? 'check in' : 'undo check-in for'} ${guest.name}.`,
+      );
+      toast({
+        title: 'Check-in failed',
+        description: normalized.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPendingGuestId(null);
+    }
   };
 
   const undoCheckIn = async () => {
     if (!lastAction) return;
-    await supabase.from('guests').update({ checked_in: false, checked_in_at: null }).eq('id', lastAction.id);
-    setLastAction(null);
-    onUpdate();
+    const guest = guests.find((entry) => entry.id === lastAction.id);
+    if (!guest) {
+      setLastAction(null);
+      return;
+    }
+
+    await checkIn({ ...guest, checked_in: true });
   };
 
   return (
@@ -127,14 +188,20 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
             animate={{ opacity: 1 }}
           >
             <Card
-              className={`cursor-pointer transition-colors ${g.checked_in ? 'bg-success/5 border-success/20' : 'hover:bg-muted/50'}`}
+              className={`cursor-pointer transition-colors ${g.checked_in ? 'bg-success/5 border-success/20' : 'hover:bg-muted/50'} ${pendingGuestId === g.id ? 'pointer-events-none opacity-70' : ''}`}
               onClick={() => checkIn(g)}
             >
               <CardContent className="flex items-center gap-3 py-3 px-4">
                 <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${
                   g.checked_in ? 'bg-success text-success-foreground' : 'bg-muted text-muted-foreground'
                 }`}>
-                  {g.checked_in ? <CheckCircle2 className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+                  {pendingGuestId === g.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : g.checked_in ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <Users className="h-4 w-4" />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`font-medium truncate ${g.checked_in ? 'text-success' : 'text-foreground'}`}>{g.name}</p>

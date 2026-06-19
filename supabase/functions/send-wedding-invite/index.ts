@@ -1,5 +1,11 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
+import {
+  AbuseProtectionError,
+  assertRecentFunctionEventLimit,
+  getRetryAfterSeconds,
+} from '../_shared/abuseProtection.ts';
+import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,6 +21,7 @@ type InviteRow = {
   proposed_role: string;
   status: string;
   expires_at: string | null;
+  sent_at: string | null;
   created_by_user_id: string | null;
 };
 
@@ -25,7 +32,39 @@ type WeddingRow = {
   wedding_date: string | null;
   location_county: string | null;
   location_town: string | null;
+  created_by_user_id: string | null;
 };
+
+type UserRoleRow = {
+  role: string;
+};
+
+const formatWaitTime = (seconds: number | null | undefined) => {
+  if (!seconds || !Number.isFinite(seconds) || seconds <= 0) return 'a few minutes';
+
+  if (seconds < 60) {
+    return `${seconds} second${seconds === 1 ? '' : 's'}`;
+  }
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.ceil((seconds % 3600) / 60);
+
+  if (hours <= 0) {
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+
+  if (minutes === 0) {
+    return `${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+
+  return `${hours} hour${hours === 1 ? '' : 's'} ${minutes} minute${minutes === 1 ? '' : 's'}`;
+};
+
+const buildResendCooldownMessage = (seconds: number) =>
+  `This invite was already sent recently. Please wait ${formatWaitTime(seconds)} before resending it.`;
+
+const buildHourlyRateLimitMessage = (audienceLabel: string, seconds: number | null) =>
+  `Too many ${audienceLabel} attempts were made recently. Please wait ${formatWaitTime(seconds)} before sending more.`;
 
 const friendlyRole = (role: string) => {
   switch (role) {
@@ -60,6 +99,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const requestId = crypto.randomUUID();
+
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -73,7 +114,8 @@ serve(async (req) => {
     const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-    const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Zania <onboarding@resend.dev>';
+    const RESEND_FROM_EMAIL =
+      Deno.env.get('RESEND_FROM_EMAIL') || 'Zania Weddings <invites@zaniaweddings.com>';
     const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') || req.headers.get('origin') || 'https://kenya-wedding-hub.vercel.app';
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -117,7 +159,7 @@ serve(async (req) => {
 
     const { data: inviteData, error: inviteError } = await authClient
       .from('wedding_invites')
-      .select('id, wedding_id, email, invite_type, proposed_role, status, expires_at, created_by_user_id')
+      .select('id, wedding_id, email, invite_type, proposed_role, status, expires_at, sent_at, created_by_user_id')
       .eq('id', inviteId)
       .maybeSingle();
 
@@ -137,9 +179,11 @@ serve(async (req) => {
       });
     }
 
+    const isPartnerInvite = invite.invite_type === 'partner';
+
     const { data: weddingData, error: weddingError } = await authClient
       .from('weddings')
-      .select('id, name, wedding_code, wedding_date, location_county, location_town')
+      .select('id, name, wedding_code, wedding_date, location_county, location_town, created_by_user_id')
       .eq('id', invite.wedding_id)
       .maybeSingle();
 
@@ -151,6 +195,81 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    const [{ data: senderProfile }, { data: senderRoles }, { data: ownerMembership }] = await Promise.all([
+      serviceClient.from('profiles').select('role').eq('user_id', user.id).maybeSingle(),
+      serviceClient.from('user_roles').select('role').eq('user_id', user.id),
+      isPartnerInvite
+        ? serviceClient
+            .from('wedding_memberships')
+            .select('id, user_id, email')
+            .eq('wedding_id', invite.wedding_id)
+            .eq('membership_status', 'active')
+            .eq('is_owner', true)
+            .in('role', ['bride', 'groom'])
+            .then(({ data, error }) => {
+              if (error) return { data: null, error };
+
+              const matchingMembership =
+                (data ?? []).find((row) => row.user_id === user.id)
+                ?? (user.email
+                  ? (data ?? []).find((row) => typeof row.email === 'string' && row.email.trim().toLowerCase() === user.email?.trim().toLowerCase())
+                  : null)
+                ?? null;
+
+              return { data: matchingMembership, error: null };
+            })
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+
+    const senderRoleRows = (senderRoles ?? []) as UserRoleRow[];
+    const senderIsAdmin =
+      senderProfile?.role === 'admin' || senderRoleRows.some((row) => row.role === 'admin');
+    const senderIsWeddingOwner = Boolean(ownerMembership) || wedding.created_by_user_id === user.id;
+    const bypassPartnerHourlyLimit = isPartnerInvite && (senderIsAdmin || senderIsWeddingOwner);
+
+    const inviteRequestEventType = isPartnerInvite
+      ? 'wedding_partner_invite_requested'
+      : 'wedding_invite_requested';
+
+    if (!bypassPartnerHourlyLimit) {
+      await assertRecentFunctionEventLimit(serviceClient, {
+        functionName: 'send-wedding-invite',
+        userId: user.id,
+        eventType: inviteRequestEventType,
+        lookbackMs: 60 * 60 * 1000,
+        maxAttempts: isPartnerInvite ? 40 : 20,
+        message: (retryAfterSeconds) =>
+          buildHourlyRateLimitMessage(isPartnerInvite ? 'partner invite' : 'wedding invite', retryAfterSeconds),
+        retryAfterStrategy: 'window',
+      });
+    }
+
+    const inviteCooldownSeconds = getRetryAfterSeconds(invite.sent_at, isPartnerInvite ? 2 * 60 * 1000 : 5 * 60 * 1000);
+    if (inviteCooldownSeconds > 0) {
+      throw new AbuseProtectionError(
+        buildResendCooldownMessage(inviteCooldownSeconds),
+        429,
+        inviteCooldownSeconds,
+      );
+    }
+
+    await logFunctionEvent({
+      functionName: 'send-wedding-invite',
+      severity: 'info',
+      status: 'success',
+      eventType: inviteRequestEventType,
+      message: 'Wedding invite send requested.',
+      userId: user.id,
+      entityId: invite.id,
+      requestId,
+      details: {
+        inviteId: invite.id,
+        weddingId: invite.wedding_id,
+        inviteType: invite.invite_type,
+        bypassPartnerHourlyLimit,
+      },
+    });
 
     const inviterId = invite.created_by_user_id ?? user.id;
     const [{ data: inviterProfile }, { data: inviterUser }] = await Promise.all([
@@ -253,6 +372,20 @@ serve(async (req) => {
     const resendPayload = await resendResponse.json();
     if (!resendResponse.ok) {
       console.error('send-wedding-invite resend error:', resendPayload);
+      await logFunctionEvent({
+        functionName: 'send-wedding-invite',
+        severity: 'error',
+        status: 'failure',
+        eventType: 'wedding_invite_failed',
+        message: resendPayload.message || 'Failed to send wedding invite email.',
+        userId: user.id,
+        entityId: invite.id,
+        requestId,
+        details: {
+          inviteId: invite.id,
+          resend: resendPayload,
+        },
+      });
       return new Response(JSON.stringify({ error: resendPayload.message || 'Failed to send email.' }), {
         status: resendResponse.status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -263,6 +396,21 @@ serve(async (req) => {
       .from('wedding_invites')
       .update({ sent_at: new Date().toISOString() })
       .eq('id', invite.id);
+
+    await logFunctionEvent({
+      functionName: 'send-wedding-invite',
+      severity: 'info',
+      status: 'success',
+      eventType: 'wedding_invite_sent',
+      message: 'Wedding invite sent successfully.',
+      userId: user.id,
+      entityId: invite.id,
+      requestId,
+      details: {
+        inviteId: invite.id,
+        emailId: resendPayload.id,
+      },
+    });
 
     return new Response(
       JSON.stringify({
@@ -277,6 +425,39 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error('send-wedding-invite error:', error);
+    if (error instanceof AbuseProtectionError) {
+      await logFunctionEvent({
+        functionName: 'send-wedding-invite',
+        severity: 'warn',
+        status: 'failure',
+        eventType: 'wedding_invite_rate_limited',
+        message: error.message,
+        requestId,
+        details: {
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+      });
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          ...(error.retryAfterSeconds ? { 'Retry-After': String(error.retryAfterSeconds) } : {}),
+        },
+      });
+    }
+
+    await logFunctionEvent({
+      functionName: 'send-wedding-invite',
+      severity: 'error',
+      status: 'failure',
+      eventType: 'wedding_invite_failed',
+      message: error instanceof Error ? error.message : 'Unknown wedding invite error',
+      requestId,
+      details: {
+        error: error instanceof Error ? error.stack ?? error.message : String(error),
+      },
+    });
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

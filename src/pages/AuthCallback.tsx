@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { getSafeAuthRouteTarget } from '@/lib/authRouting';
 import { getHomeRouteForRole, isProfessionalSetupPending, type AppRole, type PlannerType } from '@/lib/roles';
 import { hasPendingEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 import {
@@ -14,25 +15,36 @@ import {
   persistPendingProfessionalSetup,
   readPendingProfessionalSetup,
 } from '@/lib/professionalSetupState';
+import { readPendingVendorClaim } from '@/lib/vendorClaimState';
 import {
   completePendingWeddingSetup,
   getPendingWeddingSetup,
   isPendingWeddingSetupReadyForCompletion,
   reconcilePendingWeddingSetupForExistingWorkspace,
 } from '@/lib/weddingWorkspace';
+import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 
 function getAuthTargetFromMetadata(
   userMetadata: Record<string, unknown> | null | undefined,
 ): { role: AppRole; plannerType: PlannerType | null } | null {
-  const role = userMetadata?.role;
+  const role =
+    userMetadata?.role === 'admin'
+    || userMetadata?.role === 'couple'
+    || userMetadata?.role === 'vendor'
+    || userMetadata?.role === 'planner'
+    || userMetadata?.role === 'committee'
+      ? userMetadata.role
+      : userMetadata?.signup_target_role === 'admin'
+        || userMetadata?.signup_target_role === 'couple'
+        || userMetadata?.signup_target_role === 'vendor'
+        || userMetadata?.signup_target_role === 'planner'
+        || userMetadata?.signup_target_role === 'committee'
+          ? userMetadata.signup_target_role
+          : userMetadata?.professional_signup_role === 'vendor'
+            || userMetadata?.professional_signup_role === 'planner'
+              ? userMetadata.professional_signup_role
+              : null;
   const plannerType = userMetadata?.planner_type;
-
-  if (
-    userMetadata?.signup_intent === 'professional'
-    && userMetadata?.professional_role_locked === false
-  ) {
-    return { role: 'planner', plannerType: 'professional' };
-  }
 
   if (role === 'committee') {
     return { role: 'planner', plannerType: 'committee' };
@@ -50,6 +62,13 @@ function getAuthTargetFromMetadata(
       role,
       plannerType: null,
     };
+  }
+
+  if (
+    userMetadata?.signup_intent === 'professional'
+    && userMetadata?.professional_role_locked === false
+  ) {
+    return { role: 'couple', plannerType: null };
   }
 
   return null;
@@ -82,7 +101,7 @@ function getAuthTargetFromCallbackUrl(): { role: AppRole; plannerType: PlannerTy
 function getOAuthAuthTarget():
   | {
       mode: 'signup' | 'signin';
-      audience: 'couple' | 'professional';
+      audience: 'couple' | 'professional' | 'admin';
       role: 'couple' | 'planner' | 'vendor' | null;
       plannerType: PlannerType | null;
     }
@@ -91,7 +110,12 @@ function getOAuthAuthTarget():
   if (callbackUrlTarget) return callbackUrlTarget;
 
   const pendingOAuthTarget = getPendingOAuthSignupTarget();
-  if (pendingOAuthTarget?.role === 'couple' || pendingOAuthTarget?.role === 'planner' || pendingOAuthTarget?.role === 'vendor') {
+  if (
+    pendingOAuthTarget?.audience === 'admin'
+    || pendingOAuthTarget?.role === 'couple'
+    || pendingOAuthTarget?.role === 'planner'
+    || pendingOAuthTarget?.role === 'vendor'
+  ) {
     return pendingOAuthTarget;
   }
 
@@ -101,12 +125,15 @@ function getOAuthAuthTarget():
 function matchesOAuthTarget(
   userMetadata: Record<string, unknown> | null | undefined,
   target: {
-    audience: 'couple' | 'professional';
+    audience: 'couple' | 'professional' | 'admin';
     role: 'couple' | 'planner' | 'vendor' | null;
     plannerType: PlannerType | null;
   } | null,
 ) {
   if (!target) return true;
+  if (target.audience === 'admin') {
+    return userMetadata?.role === 'admin';
+  }
   if (target.audience === 'professional' && target.role === null) {
     return (
       userMetadata?.signup_intent === 'professional'
@@ -196,6 +223,16 @@ export default function AuthCallback() {
       const desiredRole = pendingOAuthSignupState?.role ?? callbackOAuthTarget?.role;
       const requestedAudience = pendingOAuthSignupState?.audience ?? callbackOAuthTarget?.audience ?? null;
       const shouldPrepareProfessionalSetup = requestedAudience === 'professional' && !desiredRole;
+      const shouldRejectMissingProfessionalRole =
+        authMode === 'signup'
+        && requestedAudience === 'professional'
+        && !desiredRole;
+
+      if (shouldRejectMissingProfessionalRole) {
+        await rejectUnexpectedOAuthSignIn(null, null);
+        throw new Error('OAuth signup rejected because the professional role selection was missing.');
+      }
+
       if (!desiredRole) {
         if (authMode === 'signin' && requestedAudience === 'professional') {
           const { data: existingRoles, error: rolesError } = await supabase
@@ -296,11 +333,13 @@ export default function AuthCallback() {
       const nextMetadata: Record<string, unknown> = {
         ...currentMetadata,
         role: desiredRole,
+        signup_target_role: desiredRole,
+        professional_signup_role: desiredRole === 'vendor' || desiredRole === 'planner' ? desiredRole : null,
         planner_type: desiredPlannerType,
         signup_intent: 'professional',
         professional_role_locked:
           pendingOAuthSignupState?.audience === 'professional' && authMode === 'signup'
-            ? false
+            ? true
             : currentMetadata.professional_role_locked,
         wedding_setup_completed: true,
       };
@@ -447,14 +486,20 @@ export default function AuthCallback() {
       const resolvedTarget = matchesOAuthTarget(user?.user_metadata, callbackUrlTarget ?? pendingOAuthTarget ?? null)
           ? resolvedFromSession
           : callbackUrlTarget ?? pendingOAuthTarget ?? resolvedFromSession;
-        const { role, plannerType } =
+        const { role, plannerType } = getSafeAuthRouteTarget(
           resolvedTarget
-          ?? fallbackTarget;
+          ?? fallbackTarget,
+        );
         window.history.replaceState({}, document.title, '/auth/callback');
         if (!active) return;
 
         if (user && isProfessionalSetupPending(user.user_metadata, role, user.email ?? null)) {
-          navigate('/settings', { replace: true });
+          navigate(readPendingVendorClaim() ? '/settings?claim_vendor=1' : '/settings', { replace: true });
+          return;
+        }
+
+        if (user && readPendingVendorClaim()) {
+          navigate('/vendor-claim', { replace: true });
           return;
         }
 
@@ -481,9 +526,5 @@ export default function AuthCallback() {
     return <Navigate to="/auth" replace />;
   }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-    </div>
-  );
+  return <PublicPageSkeleton />;
 }

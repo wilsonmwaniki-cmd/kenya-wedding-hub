@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import MyConnections from '@/components/MyConnections';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { isCommitteePlanner } from '@/lib/plannerAccess';
 import { requestPlannerLinkByCode } from '@/lib/collaborationCodes';
 import { getEntitlementDecision } from '@/lib/entitlements';
@@ -43,6 +44,11 @@ export default function PlannerDashboard() {
   const [collabCode, setCollabCode] = useState('');
   const [collabNote, setCollabNote] = useState('');
   const [submittingCode, setSubmittingCode] = useState(false);
+  const [addingClient, setAddingClient] = useState(false);
+  const [codeFormErrors, setCodeFormErrors] = useState<{ collabCode?: string }>({});
+  const [codeSubmitError, setCodeSubmitError] = useState<string | null>(null);
+  const [clientFormErrors, setClientFormErrors] = useState<{ client_name?: string; email?: string; phone?: string }>({});
+  const [clientSubmitError, setClientSubmitError] = useState<string | null>(null);
   const [form, setForm] = useState({
     client_name: '', partner_name: '', wedding_date: '', wedding_location: '', email: '', phone: '',
   });
@@ -103,8 +109,13 @@ export default function PlannerDashboard() {
 
   const submitCodeRequest = async (e: React.FormEvent) => {
     e.preventDefault();
+    const nextErrors: { collabCode?: string } = {};
     if (!collabCode.trim()) {
-      toast({ title: 'Add a collaboration code', description: 'Ask the couple to share their Zania collaboration code first.', variant: 'destructive' });
+      nextErrors.collabCode = 'Ask the couple to share their Zania collaboration code first.';
+    }
+    setCodeFormErrors(nextErrors);
+    setCodeSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) {
       return;
     }
 
@@ -123,6 +134,7 @@ export default function PlannerDashboard() {
       setCollabNote('');
       await loadLinkRequests();
     } catch (error: any) {
+      setCodeSubmitError(error.message || 'Could not send request right now.');
       toast({ title: 'Could not send request', description: error.message, variant: 'destructive' });
     } finally {
       setSubmittingCode(false);
@@ -132,16 +144,35 @@ export default function PlannerDashboard() {
   const addClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    const nextErrors: { client_name?: string; email?: string; phone?: string } = {};
+    if (!form.client_name.trim()) {
+      nextErrors.client_name = 'Add a client name.';
+    }
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      nextErrors.email = 'Enter a valid email address.';
+    }
+    if (form.phone.trim() && form.phone.trim().length < 7) {
+      nextErrors.phone = 'Enter a valid phone number.';
+    }
+    setClientFormErrors(nextErrors);
+    setClientSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    setAddingClient(true);
     const { error } = await supabase.from('planner_clients').insert({
       planner_user_id: user.id,
-      client_name: form.client_name,
-      partner_name: form.partner_name || null,
+      client_name: form.client_name.trim(),
+      partner_name: form.partner_name.trim() || null,
       wedding_date: form.wedding_date || null,
-      wedding_location: form.wedding_location || null,
-      email: form.email || null,
-      phone: form.phone || null,
+      wedding_location: form.wedding_location.trim() || null,
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
     });
     if (error) {
+      setClientSubmitError(error.message || 'Could not save this wedding workspace right now.');
+      setAddingClient(false);
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
       return;
     }
@@ -149,6 +180,7 @@ export default function PlannerDashboard() {
     setOpen(false);
     loadClients();
     toast({ title: 'Client added!' });
+    setAddingClient(false);
   };
 
   const deleteClient = async (id: string) => {
@@ -378,14 +410,21 @@ export default function PlannerDashboard() {
                 <DialogTitle className="font-display">Link an Existing Couple Workspace</DialogTitle>
               </DialogHeader>
               <form onSubmit={submitCodeRequest} className="space-y-4">
+                <FormSubmitError message={codeSubmitError} />
                 <div className="space-y-2">
                   <Label>Couple Collaboration Code</Label>
                   <Input
                     value={collabCode}
-                    onChange={(e) => setCollabCode(e.target.value.toUpperCase())}
+                    onChange={(e) => {
+                      setCollabCode(e.target.value.toUpperCase());
+                      setCodeFormErrors((current) => ({ ...current, collabCode: undefined }));
+                      setCodeSubmitError(null);
+                    }}
                     placeholder="e.g. ZN-4K7P2Q"
                     required
+                    aria-invalid={!!codeFormErrors.collabCode}
                   />
+                  <FormFieldError message={codeFormErrors.collabCode} />
                   <p className="text-xs text-muted-foreground">
                     Ask the couple to share the code from their dashboard. Once they approve, their wedding appears here automatically.
                   </p>
@@ -417,10 +456,12 @@ export default function PlannerDashboard() {
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
               <DialogHeader><DialogTitle className="font-display">{isCommittee ? 'New Wedding Workspace' : 'New Client'}</DialogTitle></DialogHeader>
               <form onSubmit={addClient} className="space-y-4">
+                <FormSubmitError message={clientSubmitError} />
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Client Name</Label>
-                    <Input value={form.client_name} onChange={e => setForm(f => ({ ...f, client_name: e.target.value }))} placeholder="e.g. Jane Wanjiku" required />
+                    <Input value={form.client_name} onChange={e => { setForm(f => ({ ...f, client_name: e.target.value })); setClientFormErrors((current) => ({ ...current, client_name: undefined })); setClientSubmitError(null); }} placeholder="e.g. Jane Wanjiku" required aria-invalid={!!clientFormErrors.client_name} />
+                    <FormFieldError message={clientFormErrors.client_name} />
                   </div>
                   <div className="space-y-2">
                     <Label>Partner Name</Label>
@@ -440,14 +481,18 @@ export default function PlannerDashboard() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Email</Label>
-                    <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="client@email.com" />
+                    <Input type="email" value={form.email} onChange={e => { setForm(f => ({ ...f, email: e.target.value })); setClientFormErrors((current) => ({ ...current, email: undefined })); setClientSubmitError(null); }} placeholder="client@email.com" aria-invalid={!!clientFormErrors.email} />
+                    <FormFieldError message={clientFormErrors.email} />
                   </div>
                   <div className="space-y-2">
                     <Label>Phone</Label>
-                    <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+254..." />
+                    <Input value={form.phone} onChange={e => { setForm(f => ({ ...f, phone: e.target.value })); setClientFormErrors((current) => ({ ...current, phone: undefined })); setClientSubmitError(null); }} placeholder="+254..." aria-invalid={!!clientFormErrors.phone} />
+                    <FormFieldError message={clientFormErrors.phone} />
                   </div>
                 </div>
-                <Button type="submit" className="w-full">{addLabel}</Button>
+                <Button type="submit" className="w-full" disabled={addingClient}>
+                  {addingClient ? 'Saving...' : addLabel}
+                </Button>
               </form>
             </DialogContent>
           </Dialog>
