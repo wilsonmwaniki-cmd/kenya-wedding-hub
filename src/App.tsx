@@ -25,6 +25,7 @@ const ContributionsShare = lazy(() => import("./pages/ContributionsShare"));
 const GiftRegistry = lazy(() => import("./pages/GiftRegistry"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const VendorDirectory = lazy(() => import("./pages/VendorDirectory"));
+const VendorClaim = lazy(() => import("./pages/VendorClaim"));
 const VendorSettings = lazy(() => import("./pages/VendorSettings"));
 const VendorDashboard = lazy(() => import("./pages/VendorDashboard"));
 const VendorDocuments = lazy(() => import("./pages/VendorDocuments"));
@@ -86,12 +87,14 @@ const App = () => (
                 <Routes>
                   <Route path="/" element={<Landing />} />
                   <Route path="/auth" element={<Auth />} />
+                  <Route path="/sign-in" element={<Auth />} />
                   <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
                   <Route path="/wedding-setup" element={<ProtectedRoute allowedRoles={['couple']}><WeddingSetup /></ProtectedRoute>} />
                   <Route path="/pricing" element={<Pricing />} />
                   <Route path="/planners" element={<PlannerDirectory />} />
                   <Route path="/vendors-directory" element={<VendorDirectory />} />
+                  <Route path="/vendor-claim" element={<VendorClaim />} />
                   <Route path="/planner/:id" element={<PlannerProfile />} />
                   <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
                   <Route path="/dashboard" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Dashboard /></ProtectedPage>} />

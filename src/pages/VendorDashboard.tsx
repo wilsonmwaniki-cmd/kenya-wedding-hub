@@ -1,20 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, Sparkles, X, Check, LockKeyhole, ShieldCheck, CreditCard, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText } from 'lucide-react';
+import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, X, Check, LockKeyhole, ShieldCheck, CreditCard, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText, FilePlus2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { vendorHasFullAccess } from '@/lib/vendorAccess';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
+import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
+import { listAcceptedWorkspaceVendorInvitesForUser } from '@/lib/workspaceVendorInvites';
+import { vendorPaymentStatusLabel, vendorPaymentStatuses, type VendorPaymentStatus } from '@/lib/vendorPayments';
+import {
+  createVendorWorkspaceUpdate,
+  listVendorWorkspaceUpdates,
+  vendorWorkspaceUpdateLabel,
+  type VendorWorkspaceUpdate,
+  type VendorWorkspaceUpdateType,
+} from '@/lib/vendorWorkspaceUpdates';
 
 interface Booking {
   id: string;
@@ -102,96 +115,276 @@ interface VendorListingAccess {
   beta_trial_expires_at?: string | null;
 }
 
+interface WorkspaceInviteRelationship {
+  inviteId: string;
+  inviteStatus: string;
+  acceptedAt: string | null;
+  inviteSentAt: string | null;
+  inviteContactEmail: string | null;
+  inviteContactPhone: string | null;
+  inviteMessage: string | null;
+  vendorId: string;
+  userId: string;
+  vendorName: string;
+  vendorCategory: string;
+  vendorPhone: string | null;
+  vendorEmail: string | null;
+  vendorNotes: string | null;
+  vendorInternalNotes: string | null;
+  quotedPrice: number | null;
+  amountPaid: number | null;
+  paymentDueDate: string | null;
+  weddingId: string;
+  weddingName: string | null;
+  weddingDate: string | null;
+  weddingLocation: string | null;
+  hasPublicListingConnection: boolean;
+}
+
+const vendorStatusOptions = ['considering', 'contacted', 'quoted', 'booked', 'completed', 'rejected'] as const;
+type VendorWorkspaceStatus = typeof vendorStatusOptions[number];
+
+function vendorStatusLabel(status: string | null | undefined) {
+  switch (status) {
+    case 'considering':
+      return 'Considering';
+    case 'contacted':
+      return 'Contacted';
+    case 'quoted':
+      return 'Quoted';
+    case 'booked':
+      return 'Booked';
+    case 'completed':
+      return 'Completed';
+    case 'rejected':
+      return 'Rejected';
+    default:
+      return status || 'Unknown';
+  }
+}
+
 export default function VendorDashboard() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
+  const location = useLocation();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
+  const [workspaceInvites, setWorkspaceInvites] = useState<WorkspaceInviteRelationship[]>([]);
   const [loading, setLoading] = useState(true);
   const [listingId, setListingId] = useState<string | null>(null);
   const [listing, setListing] = useState<VendorListingAccess | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [calendarBookingId, setCalendarBookingId] = useState<string | null>(null);
   const [savingInternalNotesId, setSavingInternalNotesId] = useState<string | null>(null);
+  const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
+  const [savingPaymentStateId, setSavingPaymentStateId] = useState<string | null>(null);
+  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [profilesByUserId, setProfilesByUserId] = useState<Record<string, BookingProfile>>({});
   const [taskSummaryByBookingId, setTaskSummaryByBookingId] = useState<Record<string, VendorTaskSummary>>({});
   const [paymentSummaryByBookingId, setPaymentSummaryByBookingId] = useState<Record<string, VendorPaymentSummary>>({});
   const [taskDetailsByBookingId, setTaskDetailsByBookingId] = useState<Record<string, VendorTaskDetail[]>>({});
   const [paymentDetailsByBookingId, setPaymentDetailsByBookingId] = useState<Record<string, VendorPaymentDetail[]>>({});
+  const [workspaceUpdatesByBookingId, setWorkspaceUpdatesByBookingId] = useState<Record<string, VendorWorkspaceUpdate[]>>({});
   const [internalNoteDrafts, setInternalNoteDrafts] = useState<Record<string, string>>({});
+  const [statusDrafts, setStatusDrafts] = useState<Record<string, VendorWorkspaceStatus>>({});
+  const [paymentStateDrafts, setPaymentStateDrafts] = useState<Record<string, {
+    contractAmount: string;
+    amountPaid: string;
+    paymentStatus: VendorPaymentStatus;
+    paymentDueDate: string;
+  }>>({});
+  const [workspaceUpdateDrafts, setWorkspaceUpdateDrafts] = useState<Record<string, {
+    updateType: VendorWorkspaceUpdateType;
+    noteMessage: string;
+  }>>({});
+  const [loadingWorkspaceUpdatesId, setLoadingWorkspaceUpdatesId] = useState<string | null>(null);
+  const [savingWorkspaceUpdateId, setSavingWorkspaceUpdateId] = useState<string | null>(null);
   const { entitlements: professionalEntitlements, teamSeatLimit: professionalTeamSeatLimit } = useProfessionalEntitlements('vendor');
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
+  const claimedWorkspaceInviteId =
+    location.state && typeof (location.state as { claimedWorkspaceInviteId?: unknown }).claimedWorkspaceInviteId === 'string'
+      ? (location.state as { claimedWorkspaceInviteId: string }).claimedWorkspaceInviteId
+      : null;
 
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      // Get vendor's listing ID
-      const { data: listing } = await supabase
-        .from('vendor_listings')
-        .select('id, business_name, is_approved, is_verified, verification_requested, subscription_status, subscription_expires_at')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      try {
+        await loadAcceptedWorkspaceInvites(user.id);
 
-      if (listing) {
-        setListing(listing as VendorListingAccess);
-        setListingId(listing.id);
-        if (vendorPreviewMode || vendorHasFullAccess({
-          ...(listing as VendorListingAccess),
-          beta_trial_status: profile?.beta_trial_status ?? null,
-          beta_trial_started_at: profile?.beta_trial_started_at ?? null,
-          beta_trial_expires_at: profile?.beta_trial_expires_at ?? null,
-        })) {
-          const { data } = await supabase
-            .from('vendors')
-            .select('id, user_id, name, category, status, price, phone, email, notes, vendor_internal_notes, payment_status, amount_paid, payment_due_date, vendor_calendar_synced_at, created_at')
-            .eq('vendor_listing_id', listing.id)
-            .order('created_at', { ascending: false });
-          if (data) {
-            const rows = (data as any[]).map((d) => ({
-              ...d,
-              price: d.price != null ? Number(d.price) : null,
-              amount_paid: d.amount_paid != null ? Number(d.amount_paid) : null,
-            })) as Booking[];
-            setBookings(rows);
-            setInternalNoteDrafts(
-              Object.fromEntries(rows.map((row) => [row.id, row.vendor_internal_notes ?? ''])),
-            );
-            await loadBookingContext(rows);
+        // Get vendor's listing ID
+        const { data: listing } = await supabase
+          .from('vendor_listings')
+          .select('id, business_name, is_approved, is_verified, verification_requested, subscription_status, subscription_expires_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (listing) {
+          setListing(listing as VendorListingAccess);
+          setListingId(listing.id);
+          if (vendorPreviewMode || vendorHasFullAccess({
+            ...(listing as VendorListingAccess),
+            beta_trial_status: profile?.beta_trial_status ?? null,
+            beta_trial_started_at: profile?.beta_trial_started_at ?? null,
+            beta_trial_expires_at: profile?.beta_trial_expires_at ?? null,
+          })) {
+            const { data } = await supabase
+              .from('vendors')
+              .select('id, user_id, name, category, status, price, phone, email, notes, vendor_internal_notes, payment_status, amount_paid, payment_due_date, vendor_calendar_synced_at, created_at')
+              .eq('vendor_listing_id', listing.id)
+              .order('created_at', { ascending: false });
+            if (data) {
+              const rows = (data as any[]).map((d) => ({
+                ...d,
+                price: d.price != null ? Number(d.price) : null,
+                amount_paid: d.amount_paid != null ? Number(d.amount_paid) : null,
+              })) as Booking[];
+              setBookings(rows);
+              setInternalNoteDrafts(
+                Object.fromEntries(rows.map((row) => [row.id, row.vendor_internal_notes ?? ''])),
+              );
+              await loadBookingContext(rows);
+            } else {
+              setBookings([]);
+              setProfilesByUserId({});
+              setTaskSummaryByBookingId({});
+              setPaymentSummaryByBookingId({});
+              setTaskDetailsByBookingId({});
+              setPaymentDetailsByBookingId({});
+              setInternalNoteDrafts({});
+            }
+
+            await loadConnectionRequests(listing.id);
           } else {
             setBookings([]);
-            setProfilesByUserId({});
-            setTaskSummaryByBookingId({});
-            setPaymentSummaryByBookingId({});
-            setTaskDetailsByBookingId({});
-            setPaymentDetailsByBookingId({});
-            setInternalNoteDrafts({});
+            setConnectionRequests([]);
           }
-
-          await loadConnectionRequests(listing.id);
+        } else if (vendorPreviewMode) {
+          setListing({
+            id: 'admin-preview-vendor',
+            business_name: 'Admin Preview Vendor',
+            is_approved: true,
+            is_verified: true,
+            verification_requested: false,
+            subscription_status: 'active',
+            subscription_expires_at: null,
+          });
+          setListingId(null);
+          setBookings([]);
+          setConnectionRequests([]);
         } else {
+          setListing(null);
+          setListingId(null);
           setBookings([]);
           setConnectionRequests([]);
         }
-      } else if (vendorPreviewMode) {
-        setListing({
-          id: 'admin-preview-vendor',
-          business_name: 'Admin Preview Vendor',
-          is_approved: true,
-          is_verified: true,
-          verification_requested: false,
-          subscription_status: 'active',
-          subscription_expires_at: null,
+      } catch (error) {
+        console.error('Error loading vendor dashboard', error);
+        toast({
+          title: 'Could not load vendor dashboard',
+          description: error instanceof Error ? error.message : 'Please refresh and try again.',
+          variant: 'destructive',
         });
-        setListingId(null);
-        setBookings([]);
-        setConnectionRequests([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
-    load();
-  }, [profile?.beta_trial_expires_at, profile?.beta_trial_started_at, profile?.beta_trial_status, user, vendorPreviewMode]);
+    void load();
+  }, [profile?.beta_trial_expires_at, profile?.beta_trial_started_at, profile?.beta_trial_status, toast, user, vendorPreviewMode]);
+
+  const loadAcceptedWorkspaceInvites = async (vendorUserId: string) => {
+    const invites = await listAcceptedWorkspaceVendorInvitesForUser(vendorUserId);
+
+    if (invites.length === 0) {
+      setWorkspaceInvites([]);
+      return;
+    }
+
+    const vendorIds = [...new Set(invites.map((invite) => invite.vendor_id).filter(Boolean))];
+    const weddingIds = [...new Set(invites.map((invite) => invite.wedding_id).filter(Boolean))];
+
+    const [vendorsRes, weddingsRes] = await Promise.all([
+      vendorIds.length > 0
+        ? supabase
+            .from('vendors')
+            .select('id, user_id, name, category, phone, email, notes, vendor_internal_notes, price, amount_paid, payment_due_date, vendor_listing_id')
+            .in('id', vendorIds)
+        : Promise.resolve({ data: [], error: null } as any),
+      weddingIds.length > 0
+        ? supabase
+            .from('weddings' as any)
+            .select('id, wedding_name, wedding_date, location_county, location_town')
+            .in('id', weddingIds)
+        : Promise.resolve({ data: [], error: null } as any),
+    ]);
+
+    if (vendorsRes.error) throw vendorsRes.error;
+    if (weddingsRes.error) throw weddingsRes.error;
+
+    const vendorMap = new Map<string, any>(((vendorsRes.data as any[]) ?? []).map((row) => [row.id, row]));
+    const weddingMap = new Map<string, any>(((weddingsRes.data as any[]) ?? []).map((row) => [row.id, row]));
+    const vendorRows = ((vendorsRes.data as any[]) ?? []).map((row) => ({
+      id: row.id,
+      user_id: row.user_id,
+      name: row.name,
+      category: row.category,
+      status: null,
+      price: row.price != null ? Number(row.price) : null,
+      phone: row.phone ?? null,
+      email: row.email ?? null,
+      notes: row.notes ?? null,
+      vendor_internal_notes: row.vendor_internal_notes ?? null,
+      payment_status: null,
+      amount_paid: row.amount_paid != null ? Number(row.amount_paid) : null,
+      payment_due_date: row.payment_due_date ?? null,
+      vendor_calendar_synced_at: null,
+      created_at: new Date().toISOString(),
+    })) as Booking[];
+
+    if (vendorRows.length > 0) {
+      setInternalNoteDrafts((prev) => ({
+        ...prev,
+        ...Object.fromEntries(vendorRows.map((row) => [row.id, row.vendor_internal_notes ?? ''])),
+      }));
+      await loadBookingContext(vendorRows);
+    }
+
+    setWorkspaceInvites(
+      invites.map((invite) => {
+        const vendor = vendorMap.get(invite.vendor_id);
+        const wedding = weddingMap.get(invite.wedding_id);
+        const weddingLocation = [wedding?.location_town, wedding?.location_county].filter(Boolean).join(', ') || null;
+
+        return {
+          inviteId: invite.id,
+          inviteStatus: invite.invite_status,
+          acceptedAt: invite.accepted_at,
+          inviteSentAt: invite.invite_sent_at,
+          inviteContactEmail: invite.invite_contact_email,
+          inviteContactPhone: invite.invite_contact_phone,
+          inviteMessage: invite.invite_message,
+          vendorId: invite.vendor_id,
+          userId: vendor?.user_id ?? '',
+          vendorName: vendor?.name ?? 'Vendor workspace',
+          vendorCategory: vendor?.category ?? 'Vendor',
+          vendorPhone: vendor?.phone ?? null,
+          vendorEmail: vendor?.email ?? null,
+          vendorNotes: vendor?.notes ?? null,
+          vendorInternalNotes: vendor?.vendor_internal_notes ?? null,
+          quotedPrice: vendor?.price != null ? Number(vendor.price) : null,
+          amountPaid: vendor?.amount_paid != null ? Number(vendor.amount_paid) : null,
+          paymentDueDate: vendor?.payment_due_date ?? null,
+          weddingId: invite.wedding_id,
+          weddingName: wedding?.wedding_name ?? null,
+          weddingDate: wedding?.wedding_date ?? null,
+          weddingLocation,
+          hasPublicListingConnection: Boolean(invite.claimed_vendor_listing_id ?? vendor?.vendor_listing_id),
+        } satisfies WorkspaceInviteRelationship;
+      }),
+    );
+  };
 
   const loadBookingContext = async (rows: Booking[]) => {
     const userIds = [...new Set(rows.map((row) => row.user_id).filter(Boolean))];
@@ -227,7 +420,7 @@ export default function VendorDashboard() {
         wedding_location: profile.wedding_location ?? null,
       };
     });
-    setProfilesByUserId(nextProfiles);
+    setProfilesByUserId((prev) => ({ ...prev, ...nextProfiles }));
 
     const nextTaskSummary: Record<string, VendorTaskSummary> = {};
     const nextTaskDetails: Record<string, VendorTaskDetail[]> = {};
@@ -264,7 +457,7 @@ export default function VendorDashboard() {
       });
       nextTaskDetails[task.source_vendor_id] = currentDetails;
     });
-    setTaskSummaryByBookingId(nextTaskSummary);
+    setTaskSummaryByBookingId((prev) => ({ ...prev, ...nextTaskSummary }));
     Object.values(nextTaskDetails).forEach((tasks) =>
       tasks.sort((a, b) => {
         if (a.completed !== b.completed) return Number(a.completed) - Number(b.completed);
@@ -274,7 +467,7 @@ export default function VendorDashboard() {
         return a.title.localeCompare(b.title);
       }),
     );
-    setTaskDetailsByBookingId(nextTaskDetails);
+    setTaskDetailsByBookingId((prev) => ({ ...prev, ...nextTaskDetails }));
 
     const nextPaymentSummary: Record<string, VendorPaymentSummary> = {};
     const nextPaymentDetails: Record<string, VendorPaymentDetail[]> = {};
@@ -305,7 +498,7 @@ export default function VendorDashboard() {
       });
       nextPaymentDetails[payment.vendor_id] = currentDetails;
     });
-    setPaymentSummaryByBookingId(nextPaymentSummary);
+    setPaymentSummaryByBookingId((prev) => ({ ...prev, ...nextPaymentSummary }));
     Object.values(nextPaymentDetails).forEach((payments) =>
       payments.sort((a, b) => {
         if (a.payment_date && b.payment_date && a.payment_date !== b.payment_date) return b.payment_date.localeCompare(a.payment_date);
@@ -314,7 +507,7 @@ export default function VendorDashboard() {
         return b.amount - a.amount;
       }),
     );
-    setPaymentDetailsByBookingId(nextPaymentDetails);
+    setPaymentDetailsByBookingId((prev) => ({ ...prev, ...nextPaymentDetails }));
   };
 
   const loadConnectionRequests = async (vendorListingId: string) => {
@@ -406,6 +599,9 @@ export default function VendorDashboard() {
     .filter(b => b.status === 'booked' && b.price)
     .reduce((sum, b) => sum + (b.price || 0), 0);
   const pendingRequests = connectionRequests.filter(r => r.status === 'pending');
+  const claimedWorkspaceInvite = claimedWorkspaceInviteId
+    ? workspaceInvites.find((invite) => invite.inviteId === claimedWorkspaceInviteId) ?? null
+    : null;
   const workspaceDecision = getEntitlementDecision('vendor.direct_leads', {
     vendorListing: listing,
     bypass: vendorPreviewMode,
@@ -432,6 +628,27 @@ export default function VendorDashboard() {
     bypass: vendorPreviewMode,
   });
   const fullAccess = workspaceDecision.allowed;
+  const workspaceInviteBookings = useMemo(
+    () =>
+      workspaceInvites.map((invite) => ({
+        id: invite.vendorId,
+        user_id: invite.userId,
+        name: invite.vendorName,
+        category: invite.vendorCategory,
+        status: invite.inviteStatus,
+        price: invite.quotedPrice,
+        phone: invite.inviteContactPhone || invite.vendorPhone,
+        email: invite.inviteContactEmail || invite.vendorEmail,
+        notes: invite.vendorNotes || invite.inviteMessage,
+        vendor_internal_notes: invite.vendorInternalNotes,
+        payment_status: null,
+        amount_paid: invite.amountPaid,
+        payment_due_date: invite.paymentDueDate,
+        vendor_calendar_synced_at: null,
+        created_at: invite.acceptedAt || invite.inviteSentAt || new Date().toISOString(),
+      })) as Booking[],
+    [workspaceInvites],
+  );
   const bookingsSorted = useMemo(
     () =>
       [...bookings].sort((a, b) => {
@@ -446,17 +663,17 @@ export default function VendorDashboard() {
       }),
     [bookings, profilesByUserId],
   );
-  const selectedBooking = selectedBookingId ? bookings.find((booking) => booking.id === selectedBookingId) ?? null : null;
+  const selectedBooking = selectedBookingId
+    ? bookings.find((booking) => booking.id === selectedBookingId)
+      ?? workspaceInviteBookings.find((booking) => booking.id === selectedBookingId)
+      ?? null
+    : null;
   const selectedProfile = selectedBooking ? profilesByUserId[selectedBooking.user_id] : null;
   const selectedTaskDetails = selectedBooking ? taskDetailsByBookingId[selectedBooking.id] ?? [] : [];
   const selectedPaymentDetails = selectedBooking ? paymentDetailsByBookingId[selectedBooking.id] ?? [] : [];
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <WorkspacePageSkeleton compact />;
   }
 
   const statusColor = (status: string | null) => {
@@ -480,12 +697,74 @@ export default function VendorDashboard() {
     setSelectedBookingId(bookingId);
   };
 
+  const selectedWorkspaceInvite = selectedBooking
+    ? workspaceInvites.find((invite) => invite.vendorId === selectedBooking.id) ?? null
+    : null;
+  const selectedWorkspaceUpdates = selectedBooking ? workspaceUpdatesByBookingId[selectedBooking.id] ?? [] : [];
+
+  useEffect(() => {
+    if (!selectedBooking) return;
+
+    setStatusDrafts((prev) => ({
+      ...prev,
+      [selectedBooking.id]: (prev[selectedBooking.id] ?? (selectedBooking.status as VendorWorkspaceStatus) ?? 'considering') as VendorWorkspaceStatus,
+    }));
+
+    setPaymentStateDrafts((prev) => ({
+      ...prev,
+      [selectedBooking.id]: prev[selectedBooking.id] ?? {
+        contractAmount: selectedBooking.price != null ? String(selectedBooking.price) : '',
+        amountPaid: selectedBooking.amount_paid != null ? String(selectedBooking.amount_paid) : '',
+        paymentStatus: ((selectedBooking.payment_status || 'unpaid') as VendorPaymentStatus),
+        paymentDueDate: selectedBooking.payment_due_date ?? '',
+      },
+    }));
+    setWorkspaceUpdateDrafts((prev) => ({
+      ...prev,
+      [selectedBooking.id]: prev[selectedBooking.id] ?? {
+        updateType: 'on_track',
+        noteMessage: '',
+      },
+    }));
+  }, [selectedBooking]);
+
+  useEffect(() => {
+    if (!selectedWorkspaceInvite) return;
+
+    let cancelled = false;
+    setLoadingWorkspaceUpdatesId(selectedWorkspaceInvite.vendorId);
+
+    void listVendorWorkspaceUpdates(selectedWorkspaceInvite.vendorId)
+      .then((updates) => {
+        if (cancelled) return;
+        setWorkspaceUpdatesByBookingId((prev) => ({
+          ...prev,
+          [selectedWorkspaceInvite.vendorId]: updates.filter((update) => !update.is_archived),
+        }));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        toast({
+          title: 'Could not load vendor updates',
+          description: error instanceof Error ? error.message : 'Please refresh and try again.',
+          variant: 'destructive',
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingWorkspaceUpdatesId((current) => (current === selectedWorkspaceInvite.vendorId ? null : current));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWorkspaceInvite, toast]);
+
   const handleSaveInternalNotes = async (bookingId: string) => {
     const nextNotes = (internalNoteDrafts[bookingId] ?? '').trim();
     setSavingInternalNotesId(bookingId);
-    const { data, error } = await (supabase.rpc as any)('update_vendor_booking_internal_notes', {
+    const { data, error } = await (supabase.rpc as any)('update_vendor_workspace_record', {
       target_vendor_id: bookingId,
-      internal_notes_input: nextNotes || null,
+      internal_notes_input: nextNotes || '',
     });
 
     if (error) {
@@ -498,13 +777,7 @@ export default function VendorDashboard() {
       return;
     }
 
-    const savedNotes = typeof data === 'string' || data === null ? data : nextNotes || null;
-    setBookings((prev) =>
-      prev.map((booking) =>
-        booking.id === bookingId ? { ...booking, vendor_internal_notes: savedNotes } : booking,
-      ),
-    );
-    setInternalNoteDrafts((prev) => ({ ...prev, [bookingId]: savedNotes ?? '' }));
+    applyVendorWorkspaceRecord(data);
     toast({
       title: 'Internal notes saved',
       description: 'These notes stay private to your vendor workspace.',
@@ -558,12 +831,298 @@ export default function VendorDashboard() {
     setCalendarBookingId(null);
   };
 
+  const applyVendorWorkspaceRecord = (row: any) => {
+    const normalized = {
+      ...row,
+      price: row?.price != null ? Number(row.price) : null,
+      amount_paid: row?.amount_paid != null ? Number(row.amount_paid) : null,
+      vendor_internal_notes: row?.vendor_internal_notes ?? null,
+      payment_due_date: row?.payment_due_date ?? null,
+      payment_status: row?.payment_status ?? null,
+      status: row?.status ?? null,
+    };
+
+    setBookings((prev) =>
+      prev.map((booking) =>
+        booking.id === normalized.id
+          ? {
+              ...booking,
+              status: normalized.status,
+              price: normalized.price,
+              amount_paid: normalized.amount_paid,
+              payment_status: normalized.payment_status,
+              payment_due_date: normalized.payment_due_date,
+              vendor_internal_notes: normalized.vendor_internal_notes,
+            }
+          : booking,
+      ),
+    );
+    setWorkspaceInvites((prev) =>
+      prev.map((invite) =>
+        invite.vendorId === normalized.id
+          ? {
+              ...invite,
+              quotedPrice: normalized.price,
+              amountPaid: normalized.amount_paid,
+              paymentDueDate: normalized.payment_due_date,
+              vendorInternalNotes: normalized.vendor_internal_notes,
+              inviteStatus: invite.inviteStatus,
+            }
+          : invite,
+      ),
+    );
+    setInternalNoteDrafts((prev) => ({
+      ...prev,
+      [normalized.id]: normalized.vendor_internal_notes ?? '',
+    }));
+    setStatusDrafts((prev) => ({
+      ...prev,
+      [normalized.id]: (normalized.status || 'considering') as VendorWorkspaceStatus,
+    }));
+    setPaymentStateDrafts((prev) => ({
+      ...prev,
+      [normalized.id]: {
+        contractAmount: normalized.price != null ? String(normalized.price) : '',
+        amountPaid: normalized.amount_paid != null ? String(normalized.amount_paid) : '',
+        paymentStatus: (normalized.payment_status || 'unpaid') as VendorPaymentStatus,
+        paymentDueDate: normalized.payment_due_date ?? '',
+      },
+    }));
+  };
+
+  const handleSaveStatus = async (booking: Booking) => {
+    const nextStatus = statusDrafts[booking.id] ?? (booking.status as VendorWorkspaceStatus) ?? 'considering';
+    setSavingStatusId(booking.id);
+    const { data, error } = await (supabase.rpc as any)('update_vendor_workspace_record', {
+      target_vendor_id: booking.id,
+      status_input: nextStatus,
+    });
+    if (error) {
+      toast({
+        title: 'Could not update vendor status',
+        description: error.message,
+        variant: 'destructive',
+      });
+      setSavingStatusId(null);
+      return;
+    }
+
+    applyVendorWorkspaceRecord(data);
+    toast({
+      title: 'Vendor status updated',
+      description: `${booking.name} now shows ${vendorStatusLabel(nextStatus).toLowerCase()} in this workspace.`,
+    });
+    setSavingStatusId(null);
+  };
+
+  const handleSavePaymentState = async (booking: Booking) => {
+    const draft = paymentStateDrafts[booking.id] ?? {
+      contractAmount: booking.price != null ? String(booking.price) : '',
+      amountPaid: booking.amount_paid != null ? String(booking.amount_paid) : '',
+      paymentStatus: (booking.payment_status || 'unpaid') as VendorPaymentStatus,
+      paymentDueDate: booking.payment_due_date ?? '',
+    };
+
+    const nextContractAmount = draft.contractAmount.trim() === '' ? null : Number(draft.contractAmount);
+    const nextAmountPaid = draft.amountPaid.trim() === '' ? 0 : Number(draft.amountPaid);
+
+    if ((draft.contractAmount.trim() !== '' && (!Number.isFinite(nextContractAmount) || nextContractAmount < 0)) || !Number.isFinite(nextAmountPaid) || nextAmountPaid < 0) {
+      toast({
+        title: 'Invalid payment values',
+        description: 'Use zero or greater for the quoted amount and amount paid.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingPaymentStateId(booking.id);
+    const { data, error } = await (supabase.rpc as any)('update_vendor_workspace_record', {
+      target_vendor_id: booking.id,
+      contract_amount_input: nextContractAmount,
+      amount_paid_input: nextAmountPaid,
+      payment_status_input: draft.paymentStatus,
+      payment_due_date_input: draft.paymentDueDate || null,
+    });
+
+    if (error) {
+      toast({
+        title: 'Could not update payment state',
+        description: error.message,
+        variant: 'destructive',
+      });
+      setSavingPaymentStateId(null);
+      return;
+    }
+
+    applyVendorWorkspaceRecord(data);
+    setPaymentSummaryByBookingId((prev) => ({
+      ...prev,
+      [booking.id]: {
+        ...(prev[booking.id] ?? { total: 0, latestPaymentDate: null, totalPaid: 0 }),
+        totalPaid: nextAmountPaid,
+      },
+    }));
+    toast({
+      title: 'Payment state updated',
+      description: `${booking.name} now shows ${vendorPaymentStatusLabel(draft.paymentStatus).toLowerCase()}.`,
+    });
+    setSavingPaymentStateId(null);
+  };
+
+  const handleToggleTaskCompletion = async (bookingId: string, task: VendorTaskDetail) => {
+    setSavingTaskId(task.id);
+    const { data, error } = await (supabase.rpc as any)('update_vendor_workspace_task', {
+      target_task_id: task.id,
+      completed_input: !task.completed,
+    });
+
+    if (error) {
+      toast({
+        title: 'Could not update task',
+        description: error.message,
+        variant: 'destructive',
+      });
+      setSavingTaskId(null);
+      return;
+    }
+
+    const updatedTask = data as Partial<VendorTaskDetail> & { id: string; completed: boolean; due_date?: string | null };
+    const currentTasks = taskDetailsByBookingId[bookingId] ?? [];
+    const nextTasks = currentTasks
+      .map((currentTask) =>
+        currentTask.id === updatedTask.id
+          ? { ...currentTask, completed: Boolean(updatedTask.completed) }
+          : currentTask,
+      )
+      .sort((a, b) => {
+        if (a.completed !== b.completed) return Number(a.completed) - Number(b.completed);
+        if (a.due_date && b.due_date && a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
+        if (a.due_date && !b.due_date) return -1;
+        if (!a.due_date && b.due_date) return 1;
+        return a.title.localeCompare(b.title);
+      });
+    const openTasks = nextTasks.filter((currentTask) => !currentTask.completed);
+
+    setTaskDetailsByBookingId((prev) => {
+      return {
+        ...prev,
+        [bookingId]: nextTasks,
+      };
+    });
+
+    setTaskSummaryByBookingId((prev) => {
+      return {
+        ...prev,
+        [bookingId]: {
+          total: nextTasks.length,
+          open: openTasks.length,
+          completed: nextTasks.length - openTasks.length,
+          nextDueDate: openTasks
+            .map((currentTask) => currentTask.due_date)
+            .filter((value): value is string => Boolean(value))
+            .sort((left, right) => left.localeCompare(right))[0] ?? null,
+        },
+      };
+    });
+
+    toast({
+      title: updatedTask.completed ? 'Task marked complete' : 'Task reopened',
+      description: updatedTask.completed
+        ? 'This vendor-linked task now shows complete in the shared workspace.'
+        : 'This task is back in the active vendor queue.',
+    });
+    setSavingTaskId(null);
+  };
+
+  const handleCreateWorkspaceUpdate = async (bookingId: string) => {
+    const draft = workspaceUpdateDrafts[bookingId] ?? {
+      updateType: 'on_track' as VendorWorkspaceUpdateType,
+      noteMessage: '',
+    };
+
+    if (draft.updateType === 'freeform' && !draft.noteMessage.trim()) {
+      toast({
+        title: 'Add a note first',
+        description: 'Freeform vendor updates need a short message before you post them.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingWorkspaceUpdateId(bookingId);
+    try {
+      const created = await createVendorWorkspaceUpdate({
+        vendorId: bookingId,
+        updateType: draft.updateType,
+        noteMessage: draft.noteMessage.trim() || null,
+      });
+
+      setWorkspaceUpdatesByBookingId((prev) => ({
+        ...prev,
+        [bookingId]: [created, ...(prev[bookingId] ?? []).filter((update) => update.id !== created.id)],
+      }));
+      setWorkspaceUpdateDrafts((prev) => ({
+        ...prev,
+        [bookingId]: {
+          updateType: 'on_track',
+          noteMessage: '',
+        },
+      }));
+      toast({
+        title: 'Vendor update posted',
+        description: 'The couple workspace can now see this update in its own vendor updates feed.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Could not post vendor update',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingWorkspaceUpdateId(null);
+    }
+  };
+
+  const vendorUpdateTone = (type: string | null) => {
+    switch (type) {
+      case 'waiting_on_couple':
+      case 'need_approval':
+        return 'secondary' as const;
+      case 'delivered':
+        return 'default' as const;
+      default:
+        return 'outline' as const;
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-3xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground">Track your bookings and client inquiries.</p>
+        <p className="text-muted-foreground">Track your workspace invites, bookings, and client inquiries.</p>
       </div>
+
+      {claimedWorkspaceInvite && (
+        <Card className="border-primary/30 bg-primary/5 shadow-card">
+          <CardContent className="flex flex-col gap-3 py-5 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="font-display text-lg text-foreground">Workspace invite accepted</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                You are now connected to {claimedWorkspaceInvite.weddingName || 'a wedding workspace'} as the{' '}
+                {claimedWorkspaceInvite.vendorCategory.toLowerCase()} vendor record.
+              </p>
+            </div>
+            {!listingId && (
+              <Button asChild variant="outline" className="gap-2 self-start lg:self-auto">
+                <Link to="/vendor-settings">
+                  Finish your public vendor profile
+                  <ArrowUpRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {vendorPreviewMode && (
         <Card className="border-primary/30 bg-primary/5">
@@ -684,12 +1243,12 @@ export default function VendorDashboard() {
         </Card>
         <Card className="shadow-card">
           <CardContent className="flex items-center gap-4 py-5">
-            <div className="rounded-xl bg-primary/10 p-3">
-              <Sparkles className="h-5 w-5 text-primary" />
+            <div className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+              Live
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground">{pendingRequests.length}</p>
-              <p className="text-sm text-muted-foreground">Pending Requests</p>
+              <p className="text-2xl font-bold text-foreground">{workspaceInvites.length}</p>
+              <p className="text-sm text-muted-foreground">Workspace Invites</p>
             </div>
           </CardContent>
         </Card>
@@ -708,10 +1267,193 @@ export default function VendorDashboard() {
         </Card>
       </div>
 
-      {!listing && (
+      {!listing && workspaceInvites.length === 0 && (
         <Card className="shadow-card">
           <CardContent className="py-10 text-center text-muted-foreground">
             Set up your vendor listing first to unlock the vendor workflow.
+          </CardContent>
+        </Card>
+      )}
+
+      {workspaceInvites.length > 0 && (
+        <Card className="shadow-card border-primary/20">
+          <CardHeader>
+            <CardTitle className="font-display flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-primary" />
+              Wedding Workspace Invites
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              These couples or planners added you into their Zania workspace first. You can collaborate here even before your public vendor listing is fully set up.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {workspaceInvites.map((invite) => (
+              <div key={invite.inviteId} className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                {(() => {
+                  const inviteTaskSummary = taskSummaryByBookingId[invite.vendorId] ?? {
+                    total: 0,
+                    open: 0,
+                    completed: 0,
+                    nextDueDate: null,
+                  };
+                  const invitePaymentSummary = paymentSummaryByBookingId[invite.vendorId] ?? {
+                    total: 0,
+                    totalPaid: invite.amountPaid ?? 0,
+                    latestPaymentDate: null,
+                  };
+                  const inviteOutstandingBalance = Math.max((invite.quotedPrice ?? 0) - (invitePaymentSummary.totalPaid || 0), 0);
+                  const inviteProfile = invite.userId ? profilesByUserId[invite.userId] : null;
+
+                  return (
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="min-w-0 flex-1 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-display text-xl text-foreground">
+                        {invite.weddingName || 'Wedding workspace'}
+                      </p>
+                      <Badge className="bg-primary/10 text-primary border border-primary/20">
+                        {invite.inviteStatus}
+                      </Badge>
+                      <Badge variant="outline">{invite.vendorCategory}</Badge>
+                      <Badge variant={invite.hasPublicListingConnection ? 'secondary' : 'outline'}>
+                        {invite.hasPublicListingConnection ? 'Public profile linked' : 'Private workspace link'}
+                      </Badge>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Wedding</p>
+                        <div className="mt-2 space-y-1 text-sm text-foreground">
+                          <p className="flex items-center gap-2">
+                            <CalendarDays className="h-4 w-4 text-primary" />
+                            {invite.weddingDate ? formatShortDate(invite.weddingDate) : 'Date not shared yet'}
+                          </p>
+                          <p className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4 text-primary" />
+                            {invite.weddingLocation || 'Location not shared yet'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Couple workspace</p>
+                        <div className="mt-2 space-y-1 text-sm text-foreground">
+                          <p>{inviteProfile?.full_name || 'Couple account'}</p>
+                          <p className="text-muted-foreground">
+                            Accepted {formatShortDate(invite.acceptedAt || invite.inviteSentAt)}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {invite.vendorName}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact details</p>
+                        <div className="mt-2 space-y-1 text-sm text-foreground">
+                          <p className="flex items-center gap-2 break-all">
+                            <Mail className="h-4 w-4 text-primary" />
+                            {invite.inviteContactEmail || invite.vendorEmail || 'No email saved'}
+                          </p>
+                          <p className="flex items-center gap-2">
+                            <Phone className="h-4 w-4 text-primary" />
+                            {invite.inviteContactPhone || invite.vendorPhone || 'No phone saved'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Next step</p>
+                        <div className="mt-2 space-y-2 text-sm text-foreground">
+                          <p>
+                            {invite.hasPublicListingConnection
+                              ? 'Your public listing is already tied into this relationship.'
+                              : 'You can keep working privately or finish your public listing later.'}
+                          </p>
+                          {!invite.hasPublicListingConnection && (
+                            <Button asChild size="sm" variant="outline" className="w-full gap-2">
+                              <Link to="/vendor-settings">
+                                Complete vendor profile
+                                <ArrowUpRight className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="w-full gap-2"
+                            onClick={() => openBookingDetail(invite.vendorId)}
+                          >
+                            <ArrowUpRight className="h-4 w-4" />
+                            Open workspace details
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Shared tasks</p>
+                        <div className="mt-2 space-y-1 text-sm text-foreground">
+                          <p>{inviteTaskSummary.open} open · {inviteTaskSummary.completed} complete</p>
+                          <p className="text-muted-foreground">
+                            {inviteTaskSummary.nextDueDate
+                              ? `Next due ${formatShortDate(inviteTaskSummary.nextDueDate)}`
+                              : 'No due task yet'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payments</p>
+                        <div className="mt-2 space-y-1 text-sm text-foreground">
+                          <p>KES {(invite.quotedPrice ?? 0).toLocaleString()} quoted</p>
+                          <p className="text-primary">KES {(invitePaymentSummary.totalPaid || 0).toLocaleString()} paid</p>
+                          <p className="text-muted-foreground">KES {inviteOutstandingBalance.toLocaleString()} balance</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment activity</p>
+                        <div className="mt-2 space-y-1 text-sm text-foreground">
+                          <p>{invitePaymentSummary.total} payment{invitePaymentSummary.total === 1 ? '' : 's'} recorded</p>
+                          <p className="text-muted-foreground">
+                            {invite.paymentDueDate
+                              ? `Due ${formatShortDate(invite.paymentDueDate)}`
+                              : 'No payment due date'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Private notes</p>
+                        <div className="mt-2 space-y-1 text-sm text-foreground">
+                          <p className="line-clamp-3">
+                            {invite.vendorInternalNotes || 'No private notes saved yet.'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {invite.inviteMessage && (
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Invite note</p>
+                        <p className="mt-2 text-sm leading-6 text-foreground/85">{invite.inviteMessage}</p>
+                      </div>
+                    )}
+
+                    {invite.vendorNotes && (
+                      <div className="rounded-xl border border-border/70 bg-background p-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Shared booking notes</p>
+                        <p className="mt-2 text-sm leading-6 text-foreground/85">{invite.vendorNotes}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                  );
+                })()}
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}
@@ -721,7 +1463,6 @@ export default function VendorDashboard() {
         <Card className="shadow-card border-primary/20">
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
               Connection Requests
               {pendingRequests.length > 0 && (
                 <Badge className="ml-2">{pendingRequests.length} new</Badge>
@@ -809,6 +1550,8 @@ export default function VendorDashboard() {
               <p className="text-muted-foreground">
                 {!fullAccess
                   ? 'Bookings and planner requests unlock after subscription and verification.'
+                  : workspaceInvites.length > 0
+                  ? 'Your accepted workspace invites appear above. Bookings tied to your public listing will show here once couples or planners connect them.'
                   : listingId
                   ? 'No bookings yet. When couples or planners connect with you, they\'ll appear here.'
                   : 'Set up your listing first to start receiving bookings.'}
@@ -1009,6 +1752,12 @@ export default function VendorDashboard() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline">{selectedBooking.category}</Badge>
                   <Badge className={statusColor(selectedBooking.status)}>{selectedBooking.status || 'unknown'}</Badge>
+                  {selectedWorkspaceInvite && (
+                    <Badge variant="secondary" className="gap-1">
+                      <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                      Workspace invite
+                    </Badge>
+                  )}
                   {selectedBooking.vendor_calendar_synced_at && (
                     <Badge variant="secondary" className="gap-1">
                       <CheckCheck className="h-3.5 w-3.5 text-primary" />
@@ -1020,7 +1769,9 @@ export default function VendorDashboard() {
                   {selectedProfile?.full_name || 'Couple account'}
                 </DialogTitle>
                 <DialogDescription>
-                  Review the full booking context, payment trail, vendor-linked tasks, and quick contact actions without leaving your dashboard.
+                  {selectedWorkspaceInvite
+                    ? 'Review the full workspace relationship, payment trail, vendor-linked tasks, and private delivery notes without leaving your dashboard.'
+                    : 'Review the full booking context, payment trail, vendor-linked tasks, and quick contact actions without leaving your dashboard.'}
                 </DialogDescription>
               </DialogHeader>
 
@@ -1116,9 +1867,75 @@ export default function VendorDashboard() {
                         <p className="text-xs text-muted-foreground">
                           Zania is prefixed in the event title so vendor bookings stay easy to spot in a busy calendar.
                         </p>
+                        <Button asChild variant="outline" className="w-full gap-2">
+                          <Link
+                            to="/vendor-documents"
+                            state={{
+                              createDocumentForVendorId: selectedBooking.id,
+                              createDocumentRecipientName: selectedProfile?.full_name || 'Couple account',
+                              createDocumentRecipientEmail: selectedBooking.email || null,
+                              createDocumentRecipientPhone: selectedBooking.phone || null,
+                              createDocumentWeddingName: selectedWorkspaceInvite?.weddingName || selectedProfile?.full_name || '',
+                              createDocumentBookingLabel: selectedProfile?.full_name || selectedBooking.name,
+                            }}
+                          >
+                            <FilePlus2 className="h-4 w-4" />
+                            Create quote or invoice
+                          </Link>
+                        </Button>
                       </CardContent>
                     </Card>
                   </div>
+
+                  <Card className="shadow-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="font-display text-xl">Relationship Controls</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 lg:grid-cols-2">
+                      <div className="space-y-3">
+                        <Label htmlFor={`vendor-status-${selectedBooking.id}`}>Workspace status</Label>
+                        <Select
+                          value={(statusDrafts[selectedBooking.id] ?? (selectedBooking.status as VendorWorkspaceStatus) ?? 'considering') as string}
+                          onValueChange={(value) =>
+                            setStatusDrafts((prev) => ({
+                              ...prev,
+                              [selectedBooking.id]: value as VendorWorkspaceStatus,
+                            }))
+                          }
+                        >
+                          <SelectTrigger id={`vendor-status-${selectedBooking.id}`}>
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {vendorStatusOptions.map((status) => (
+                              <SelectItem key={status} value={status}>
+                                {vendorStatusLabel(status)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          onClick={() => handleSaveStatus(selectedBooking)}
+                          disabled={savingStatusId === selectedBooking.id}
+                          className="gap-2"
+                        >
+                          {savingStatusId === selectedBooking.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                          Save Status
+                        </Button>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                        <p className="font-medium text-foreground">What this controls</p>
+                        <p className="mt-2">
+                          Use this to keep the couple-facing vendor relationship accurate as you move from first contact to booked and completed delivery.
+                        </p>
+                        <p className="mt-2">
+                          For couple-first private vendor records, this is the main operational state vendors can push back into the shared workspace before any public profile setup happens.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   <Card className="shadow-card">
                     <CardHeader className="pb-3">
@@ -1136,6 +1953,110 @@ export default function VendorDashboard() {
                       )}
                     </CardContent>
                   </Card>
+
+                  {selectedWorkspaceInvite && (
+                    <Card className="shadow-card">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="font-display flex items-center gap-2 text-xl">
+                          <MessageSquareText className="h-5 w-5 text-primary" />
+                          Vendor Updates
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                          Post a clearly labeled vendor update without changing the wedding plan directly. This stays separate from notes and tasks so the couple can review it in context.
+                        </div>
+                        <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+                          <div className="space-y-2">
+                            <Label htmlFor={`vendor-update-type-${selectedBooking.id}`}>Update type</Label>
+                            <Select
+                              value={workspaceUpdateDrafts[selectedBooking.id]?.updateType ?? 'on_track'}
+                              onValueChange={(value) =>
+                                setWorkspaceUpdateDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? { updateType: 'on_track', noteMessage: '' }),
+                                    updateType: value as VendorWorkspaceUpdateType,
+                                  },
+                                }))
+                              }
+                            >
+                              <SelectTrigger id={`vendor-update-type-${selectedBooking.id}`}>
+                                <SelectValue placeholder="Select update type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="waiting_on_couple">Waiting on couple</SelectItem>
+                                <SelectItem value="need_approval">Need approval</SelectItem>
+                                <SelectItem value="on_track">On track</SelectItem>
+                                <SelectItem value="delivered">Delivered</SelectItem>
+                                <SelectItem value="freeform">Freeform note</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`vendor-update-note-${selectedBooking.id}`}>Note</Label>
+                            <Textarea
+                              id={`vendor-update-note-${selectedBooking.id}`}
+                              value={workspaceUpdateDrafts[selectedBooking.id]?.noteMessage ?? ''}
+                              onChange={(event) =>
+                                setWorkspaceUpdateDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? { updateType: 'on_track', noteMessage: '' }),
+                                    noteMessage: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="Add optional delivery context, what you need next, or what changed..."
+                              rows={4}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end">
+                          <Button
+                            type="button"
+                            className="gap-2"
+                            onClick={() => handleCreateWorkspaceUpdate(selectedBooking.id)}
+                            disabled={savingWorkspaceUpdateId === selectedBooking.id}
+                          >
+                            {savingWorkspaceUpdateId === selectedBooking.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquareText className="h-4 w-4" />}
+                            Post Vendor Update
+                          </Button>
+                        </div>
+                        <div className="space-y-3">
+                          {loadingWorkspaceUpdatesId === selectedBooking.id ? (
+                            <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Loading vendor updates...
+                            </div>
+                          ) : selectedWorkspaceUpdates.length === 0 ? (
+                            <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                              No vendor updates posted yet for this workspace relationship.
+                            </div>
+                          ) : (
+                            selectedWorkspaceUpdates.map((update) => (
+                              <div key={update.id} className="rounded-xl border border-border/70 bg-background p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="outline">Vendor update</Badge>
+                                    <Badge variant={vendorUpdateTone(update.update_type)}>
+                                      {vendorWorkspaceUpdateLabel(update.update_type)}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    {formatShortDate(update.created_at)}
+                                  </p>
+                                </div>
+                                <p className="mt-3 text-sm leading-6 text-foreground">
+                                  {update.note_message?.trim() || 'No extra note added.'}
+                                </p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   <Card className="shadow-card">
                     <CardHeader className="pb-3">
@@ -1182,6 +2103,140 @@ export default function VendorDashboard() {
                 </TabsContent>
 
                 <TabsContent value="payments" className="space-y-4">
+                  <Card className="shadow-card">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="font-display text-xl">Update Payment State</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 lg:grid-cols-2">
+                      <div className="space-y-4">
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor={`contract-amount-${selectedBooking.id}`}>Quoted amount (KES)</Label>
+                            <Input
+                              id={`contract-amount-${selectedBooking.id}`}
+                              inputMode="decimal"
+                              value={paymentStateDrafts[selectedBooking.id]?.contractAmount ?? ''}
+                              onChange={(event) =>
+                                setPaymentStateDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? {
+                                      contractAmount: '',
+                                      amountPaid: '',
+                                      paymentStatus: 'unpaid' as VendorPaymentStatus,
+                                      paymentDueDate: '',
+                                    }),
+                                    contractAmount: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="0"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`amount-paid-${selectedBooking.id}`}>Amount paid (KES)</Label>
+                            <Input
+                              id={`amount-paid-${selectedBooking.id}`}
+                              inputMode="decimal"
+                              value={paymentStateDrafts[selectedBooking.id]?.amountPaid ?? ''}
+                              onChange={(event) =>
+                                setPaymentStateDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? {
+                                      contractAmount: '',
+                                      amountPaid: '',
+                                      paymentStatus: 'unpaid' as VendorPaymentStatus,
+                                      paymentDueDate: '',
+                                    }),
+                                    amountPaid: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor={`payment-status-${selectedBooking.id}`}>Payment status</Label>
+                            <Select
+                              value={paymentStateDrafts[selectedBooking.id]?.paymentStatus ?? 'unpaid'}
+                              onValueChange={(value) =>
+                                setPaymentStateDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? {
+                                      contractAmount: '',
+                                      amountPaid: '',
+                                      paymentStatus: 'unpaid' as VendorPaymentStatus,
+                                      paymentDueDate: '',
+                                    }),
+                                    paymentStatus: value as VendorPaymentStatus,
+                                  },
+                                }))
+                              }
+                            >
+                              <SelectTrigger id={`payment-status-${selectedBooking.id}`}>
+                                <SelectValue placeholder="Select payment status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {vendorPaymentStatuses.map((status) => (
+                                  <SelectItem key={status} value={status}>
+                                    {vendorPaymentStatusLabel(status)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`payment-due-date-${selectedBooking.id}`}>Payment due date</Label>
+                            <Input
+                              id={`payment-due-date-${selectedBooking.id}`}
+                              type="date"
+                              value={paymentStateDrafts[selectedBooking.id]?.paymentDueDate ?? ''}
+                              onChange={(event) =>
+                                setPaymentStateDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? {
+                                      contractAmount: '',
+                                      amountPaid: '',
+                                      paymentStatus: 'unpaid' as VendorPaymentStatus,
+                                      paymentDueDate: '',
+                                    }),
+                                    paymentDueDate: event.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <Button
+                          type="button"
+                          onClick={() => handleSavePaymentState(selectedBooking)}
+                          disabled={savingPaymentStateId === selectedBooking.id}
+                          className="gap-2"
+                        >
+                          {savingPaymentStateId === selectedBooking.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+                          Save Payment State
+                        </Button>
+                      </div>
+
+                      <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                        <p className="font-medium text-foreground">Why this matters</p>
+                        <p className="mt-2">
+                          This updates the vendor relationship state directly, even when the couple created you privately first and there is no public listing workflow yet.
+                        </p>
+                        <p className="mt-2">
+                          It does not create a new ledger entry. It keeps the shared workspace totals and payment status aligned from the vendor side.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
                   <Card className="shadow-card">
                     <CardHeader className="pb-3">
                       <CardTitle className="font-display text-xl">Full Payment History</CardTitle>
@@ -1253,6 +2308,25 @@ export default function VendorDashboard() {
                                 {task.description && (
                                   <p className="text-sm leading-6 text-muted-foreground">{task.description}</p>
                                 )}
+                                <div className="pt-1">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={task.completed ? 'outline' : 'default'}
+                                    className="gap-2"
+                                    onClick={() => handleToggleTaskCompletion(selectedBooking.id, task)}
+                                    disabled={savingTaskId === task.id}
+                                  >
+                                    {savingTaskId === task.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : task.completed ? (
+                                      <NotebookPen className="h-4 w-4" />
+                                    ) : (
+                                      <CheckCircle2 className="h-4 w-4" />
+                                    )}
+                                    {task.completed ? 'Reopen task' : 'Mark complete'}
+                                  </Button>
+                                </div>
                               </div>
                               <div className="space-y-1 text-sm text-muted-foreground sm:text-right">
                                 <p>{task.due_date ? `Due ${formatShortDate(task.due_date)}` : 'No due date set'}</p>
