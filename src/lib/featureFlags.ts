@@ -3,7 +3,7 @@ export function isProfessionalNetworkEnabled() {
 }
 
 export function isSpaceTablePlanEnabled() {
-  return true;
+  return import.meta.env.VITE_ENABLE_SPACE_TABLE_PLAN === 'true';
 }
 
 export function isAppleAuthEnabled() {

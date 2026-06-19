@@ -10,6 +10,17 @@
       ],
       "destination": "https://www.zaniaweddings.com/:path*",
       "permanent": true
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "labs.zaniaweddings.com"
+        }
+      ],
+      "destination": "/labs",
+      "permanent": false
     }
   ],
   "rewrites": [
