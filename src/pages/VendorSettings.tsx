@@ -11,11 +11,13 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole, Eye, Globe, Mail, MapPin, Phone, ExternalLink } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2, Building2, Ruler, Users2 } from 'lucide-react';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { vendorAccessMessage, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
+import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -52,6 +54,54 @@ interface VendorListing {
   maximum_budget_kes: number | null;
 }
 
+interface VenueSpaceDraft {
+  id: string;
+  space_name: string;
+  space_type: string;
+  width_meters: string;
+  length_meters: string;
+  max_seated_capacity: string;
+  max_standing_capacity: string;
+  recommended_guest_count: string;
+  location_notes: string;
+  setup_notes: string;
+  is_featured: boolean;
+  is_active: boolean;
+  sort_order: number;
+}
+
+const venueSpaceTypeOptions = [
+  'Reception hall',
+  'Garden lawn',
+  'Ballroom',
+  'Ceremony chapel',
+  'Terrace',
+  'Poolside',
+  'Tent pad',
+  'Courtyard',
+  'Rooftop',
+  'Beachfront',
+] as const;
+
+function createVenueSpaceDraft(overrides: Partial<VenueSpaceDraft> = {}): VenueSpaceDraft {
+  return {
+    id: crypto.randomUUID(),
+    space_name: '',
+    space_type: 'Reception hall',
+    width_meters: '',
+    length_meters: '',
+    max_seated_capacity: '',
+    max_standing_capacity: '',
+    recommended_guest_count: '',
+    location_notes: '',
+    setup_notes: '',
+    is_featured: false,
+    is_active: true,
+    sort_order: 0,
+    ...overrides,
+  };
+}
+
 function normalizeExternalUrl(value: string) {
   if (!value.trim()) return '';
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
@@ -80,8 +130,21 @@ function TikTokSocialIcon({ className }: { className?: string }) {
 export default function VendorSettings() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
+  const db = supabase as any;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [formErrors, setFormErrors] = useState<{
+    business_name?: string;
+    category?: string;
+    description?: string;
+    email?: string;
+    location_county?: string;
+    service_areas?: string;
+    venue_spaces?: string;
+    minimum_budget_kes?: string;
+    maximum_budget_kes?: string;
+  }>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [listing, setListing] = useState<VendorListing | null>(null);
   const [form, setForm] = useState({
     business_name: '',
@@ -109,8 +172,11 @@ export default function VendorSettings() {
   const [reputationOverview, setReputationOverview] = useState<VendorReputationOverview | null>(null);
   const [requestingVerification, setRequestingVerification] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [venueSpaces, setVenueSpaces] = useState<VenueSpaceDraft[]>([]);
+  const [venueSpacesLoading, setVenueSpacesLoading] = useState(false);
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
+  const isVenueCategory = form.category === 'Venue';
   const effectiveListing = listing
     ? {
         ...listing,
@@ -213,9 +279,100 @@ export default function VendorSettings() {
     };
   }, [listing?.id]);
 
+  useEffect(() => {
+    if (!listing?.id) {
+      setVenueSpaces([]);
+      return;
+    }
+
+    let active = true;
+
+    const loadVenueSpaces = async () => {
+      setVenueSpacesLoading(true);
+
+      const { data, error } = await db
+        .from('vendor_listing_spaces')
+        .select('*')
+        .eq('vendor_listing_id', listing.id)
+        .order('is_featured', { ascending: false })
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+
+      if (!active) return;
+
+      if (error) {
+        toast({
+          title: 'Could not load venue spaces',
+          description: error.message,
+          variant: 'destructive',
+        });
+        setVenueSpaces([]);
+      } else {
+        setVenueSpaces(
+          ((data as any[] | null) ?? []).map((space, index) =>
+            createVenueSpaceDraft({
+              id: String(space.id),
+              space_name: String(space.space_name ?? ''),
+              space_type: String(space.space_type ?? 'Reception hall'),
+              width_meters: space.width_meters != null ? String(space.width_meters) : '',
+              length_meters: space.length_meters != null ? String(space.length_meters) : '',
+              max_seated_capacity: space.max_seated_capacity != null ? String(space.max_seated_capacity) : '',
+              max_standing_capacity: space.max_standing_capacity != null ? String(space.max_standing_capacity) : '',
+              recommended_guest_count: space.recommended_guest_count != null ? String(space.recommended_guest_count) : '',
+              location_notes: String(space.location_notes ?? ''),
+              setup_notes: String(space.setup_notes ?? ''),
+              is_featured: Boolean(space.is_featured),
+              is_active: Boolean(space.is_active ?? true),
+              sort_order: Number(space.sort_order ?? index),
+            }),
+          ),
+        );
+      }
+
+      setVenueSpacesLoading(false);
+    };
+
+    void loadVenueSpaces();
+
+    return () => {
+      active = false;
+    };
+  }, [listing?.id, toast]);
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    const nextErrors: typeof formErrors = {};
+    const minimumBudget = form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null;
+    const maximumBudget = form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null;
+
+    if (!form.business_name.trim()) nextErrors.business_name = 'Enter your business name.';
+    if (!form.category.trim()) nextErrors.category = 'Choose your vendor category.';
+    if (!form.description.trim()) nextErrors.description = 'Add a short description so couples understand your services.';
+    if (form.email.trim() && !/\S+@\S+\.\S+/.test(form.email.trim())) nextErrors.email = 'Enter a valid public business email.';
+    if (!form.location_county.trim()) nextErrors.location_county = 'Choose your primary county.';
+    if (form.service_areas.length === 0) nextErrors.service_areas = 'Add at least one service area.';
+    if (minimumBudget !== null && Number.isNaN(minimumBudget)) nextErrors.minimum_budget_kes = 'Enter a valid minimum job budget.';
+    if (maximumBudget !== null && Number.isNaN(maximumBudget)) nextErrors.maximum_budget_kes = 'Enter a valid maximum job budget.';
+    if (minimumBudget !== null && maximumBudget !== null && maximumBudget < minimumBudget) {
+      nextErrors.maximum_budget_kes = 'Maximum job budget must be greater than or equal to minimum job budget.';
+    }
+    if (isVenueCategory) {
+      const hasInvalidSpace = venueSpaces.some((space) => {
+        const width = Number(space.width_meters);
+        const length = Number(space.length_meters);
+        return !space.space_name.trim() || Number.isNaN(width) || width <= 0 || Number.isNaN(length) || length <= 0;
+      });
+
+      if (hasInvalidSpace) {
+        nextErrors.venue_spaces = 'Every venue space needs a name plus valid width and length in meters.';
+      }
+    }
+
+    setFormErrors(nextErrors);
+    setSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
     setSaving(true);
 
     const payload = {
@@ -236,20 +393,113 @@ export default function VendorSettings() {
       social_twitter: form.social_twitter || null,
       service_areas: form.service_areas,
       travel_scope: form.travel_scope,
-      minimum_budget_kes: form.minimum_budget_kes ? Number(form.minimum_budget_kes) : null,
-      maximum_budget_kes: form.maximum_budget_kes ? Number(form.maximum_budget_kes) : null,
+      minimum_budget_kes: minimumBudget,
+      maximum_budget_kes: maximumBudget,
     };
 
     let error;
+    let listingId = listing?.id ?? null;
     if (listing) {
       ({ error } = await supabase.from('vendor_listings').update(payload).eq('id', listing.id));
     } else {
-      ({ error } = await supabase.from('vendor_listings').insert(payload));
+      const response = await supabase.from('vendor_listings').insert(payload).select('id').single();
+      error = response.error;
+      listingId = response.data?.id ?? null;
     }
 
     if (error) {
+      setSubmitError(error.message || 'We could not save your vendor listing right now.');
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
+      if (listingId && isVenueCategory) {
+        const { data: existingSpaces, error: existingSpacesError } = await db
+          .from('vendor_listing_spaces')
+          .select('id')
+          .eq('vendor_listing_id', listingId);
+
+        if (existingSpacesError) {
+          setSubmitError(existingSpacesError.message || 'We saved the listing, but venue spaces could not be loaded.');
+          toast({ title: 'Venue spaces not saved', description: existingSpacesError.message, variant: 'destructive' });
+          setSaving(false);
+          return;
+        }
+
+        const persistedSpaceIds = new Set(
+          venueSpaces.filter((space) => existingSpaces?.some((row) => row.id === space.id)).map((space) => space.id),
+        );
+
+        const deletableIds = ((existingSpaces as Array<{ id: string }> | null) ?? [])
+          .map((row) => row.id)
+          .filter((id) => !persistedSpaceIds.has(id));
+
+        if (deletableIds.length) {
+          const { error: deleteError } = await db.from('vendor_listing_spaces').delete().in('id', deletableIds);
+          if (deleteError) {
+            setSubmitError(deleteError.message || 'We saved the listing, but old venue spaces could not be removed.');
+            toast({ title: 'Venue spaces not saved', description: deleteError.message, variant: 'destructive' });
+            setSaving(false);
+            return;
+          }
+        }
+
+        const existingPayload = venueSpaces
+          .filter((space) => existingSpaces?.some((row) => row.id === space.id))
+          .map((space, index) => ({
+            id: space.id,
+            vendor_listing_id: listingId,
+            space_name: space.space_name.trim(),
+            space_type: space.space_type.trim(),
+            width_meters: Number(space.width_meters),
+            length_meters: Number(space.length_meters),
+            max_seated_capacity: space.max_seated_capacity ? Number(space.max_seated_capacity) : null,
+            max_standing_capacity: space.max_standing_capacity ? Number(space.max_standing_capacity) : null,
+            recommended_guest_count: space.recommended_guest_count ? Number(space.recommended_guest_count) : null,
+            location_notes: space.location_notes.trim() || null,
+            setup_notes: space.setup_notes.trim() || null,
+            is_featured: space.is_featured,
+            is_active: space.is_active,
+            sort_order: index,
+          }));
+
+        if (existingPayload.length) {
+          const { error: upsertError } = await db.from('vendor_listing_spaces').upsert(existingPayload, { onConflict: 'id' });
+          if (upsertError) {
+            setSubmitError(upsertError.message || 'We saved the listing, but venue spaces could not be updated.');
+            toast({ title: 'Venue spaces not saved', description: upsertError.message, variant: 'destructive' });
+            setSaving(false);
+            return;
+          }
+        }
+
+        const newPayload = venueSpaces
+          .filter((space) => !existingSpaces?.some((row) => row.id === space.id))
+          .map((space, index) => ({
+            vendor_listing_id: listingId,
+            space_name: space.space_name.trim(),
+            space_type: space.space_type.trim(),
+            width_meters: Number(space.width_meters),
+            length_meters: Number(space.length_meters),
+            max_seated_capacity: space.max_seated_capacity ? Number(space.max_seated_capacity) : null,
+            max_standing_capacity: space.max_standing_capacity ? Number(space.max_standing_capacity) : null,
+            recommended_guest_count: space.recommended_guest_count ? Number(space.recommended_guest_count) : null,
+            location_notes: space.location_notes.trim() || null,
+            setup_notes: space.setup_notes.trim() || null,
+            is_featured: space.is_featured,
+            is_active: space.is_active,
+            sort_order: existingPayload.length + index,
+          }));
+
+        if (newPayload.length) {
+          const { error: insertError } = await db.from('vendor_listing_spaces').insert(newPayload);
+          if (insertError) {
+            setSubmitError(insertError.message || 'We saved the listing, but new venue spaces could not be created.');
+            toast({ title: 'Venue spaces not saved', description: insertError.message, variant: 'destructive' });
+            setSaving(false);
+            return;
+          }
+        }
+      }
+
       toast({ title: 'Saved!', description: listing ? 'Listing updated.' : 'Listing submitted for review.' });
       // Reload
       const { data } = await supabase.from('vendor_listings').select('*').eq('user_id', user.id).maybeSingle();
@@ -278,6 +528,43 @@ export default function VendorSettings() {
 
   const removeServiceArea = (county: string) => {
     setForm((prev) => ({ ...prev, service_areas: prev.service_areas.filter((item) => item !== county) }));
+  };
+
+  const addVenueSpace = () => {
+    setVenueSpaces((current) => [
+      ...current,
+      createVenueSpaceDraft({ sort_order: current.length, is_featured: current.length === 0 }),
+    ]);
+    setFormErrors((current) => ({ ...current, venue_spaces: undefined }));
+    setSubmitError(null);
+  };
+
+  const updateVenueSpace = (spaceId: string, patch: Partial<VenueSpaceDraft>) => {
+    setVenueSpaces((current) =>
+      current.map((space) => {
+        if (space.id !== spaceId) return space;
+        return { ...space, ...patch };
+      }),
+    );
+    setFormErrors((current) => ({ ...current, venue_spaces: undefined }));
+    setSubmitError(null);
+  };
+
+  const removeVenueSpace = (spaceId: string) => {
+    setVenueSpaces((current) =>
+      current
+        .filter((space) => space.id !== spaceId)
+        .map((space, index) => ({ ...space, sort_order: index })),
+    );
+    setFormErrors((current) => ({ ...current, venue_spaces: undefined }));
+    setSubmitError(null);
+  };
+
+  const featureVenueSpace = (spaceId: string) => {
+    setVenueSpaces((current) =>
+      current.map((space) => ({ ...space, is_featured: space.id === spaceId })),
+    );
+    setSubmitError(null);
   };
 
   const handleRequestVerification = async () => {
@@ -328,11 +615,7 @@ export default function VendorSettings() {
   );
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <WorkspacePageSkeleton compact />;
   }
 
   return (
@@ -532,6 +815,7 @@ export default function VendorSettings() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSave} className="space-y-4">
+            <FormSubmitError message={submitError} />
             <div className="space-y-2">
               <Label>Sign-in Email</Label>
               <Input type="email" value={user?.email || ''} readOnly />
@@ -545,20 +829,30 @@ export default function VendorSettings() {
                 <Label>Business Name *</Label>
                 <Input
                   value={form.business_name}
-                  onChange={(e) => setForm((f) => ({ ...f, business_name: e.target.value }))}
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, business_name: e.target.value }));
+                    setFormErrors((current) => ({ ...current, business_name: undefined }));
+                    setSubmitError(null);
+                  }}
                   placeholder="Your business name"
                   required
                   maxLength={100}
                 />
+                <FormFieldError message={formErrors.business_name} />
               </div>
               <div className="space-y-2">
                 <Label>Category *</Label>
-                <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}>
+                <Select value={form.category} onValueChange={(v) => {
+                  setForm((f) => ({ ...f, category: v }));
+                  setFormErrors((current) => ({ ...current, category: undefined }));
+                  setSubmitError(null);
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {vendorCategories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                <FormFieldError message={formErrors.category} />
               </div>
             </div>
 
@@ -566,11 +860,16 @@ export default function VendorSettings() {
               <Label>Description</Label>
               <Textarea
                 value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, description: e.target.value }));
+                  setFormErrors((current) => ({ ...current, description: undefined }));
+                  setSubmitError(null);
+                }}
                 placeholder="Tell couples and planners about your services…"
                 rows={3}
                 maxLength={500}
               />
+              <FormFieldError message={formErrors.description} />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -580,7 +879,12 @@ export default function VendorSettings() {
               </div>
               <div className="space-y-2">
                 <Label>Public Business Email</Label>
-                <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="business@example.com" />
+                <Input type="email" value={form.email} onChange={(e) => {
+                  setForm((f) => ({ ...f, email: e.target.value }));
+                  setFormErrors((current) => ({ ...current, email: undefined }));
+                  setSubmitError(null);
+                }} placeholder="business@example.com" />
+                <FormFieldError message={formErrors.email} />
               </div>
             </div>
 
@@ -598,11 +902,19 @@ export default function VendorSettings() {
             <KenyaLocationFields
               county={form.location_county}
               town={form.location_town}
-              onCountyChange={(value) => setForm((f) => ({ ...f, location_county: value }))}
-              onTownChange={(value) => setForm((f) => ({ ...f, location_town: value }))}
+              onCountyChange={(value) => {
+                setForm((f) => ({ ...f, location_county: value }));
+                setFormErrors((current) => ({ ...current, location_county: undefined }));
+                setSubmitError(null);
+              }}
+              onTownChange={(value) => {
+                setForm((f) => ({ ...f, location_town: value }));
+                setSubmitError(null);
+              }}
               countyLabel="Primary county"
               townLabel="Town / area"
             />
+            <FormFieldError message={formErrors.location_county} />
 
             <div className="space-y-2">
               <Label>Services / Tags</Label>
@@ -649,10 +961,17 @@ export default function VendorSettings() {
                       <option key={county} value={county}>{county}</option>
                     ))}
                 </select>
-                <Button type="button" variant="outline" onClick={addServiceArea} disabled={!serviceAreaDraft}>
+                <Button type="button" variant="outline" onClick={() => {
+                  addServiceArea();
+                  if (serviceAreaDraft) {
+                    setFormErrors((current) => ({ ...current, service_areas: undefined }));
+                    setSubmitError(null);
+                  }
+                }} disabled={!serviceAreaDraft}>
                   Add
                 </Button>
               </div>
+              <FormFieldError message={formErrors.service_areas} />
               {form.service_areas.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {form.service_areas.map((county) => (
@@ -685,9 +1004,14 @@ export default function VendorSettings() {
                     type="number"
                     min="0"
                     value={form.minimum_budget_kes}
-                    onChange={(e) => setForm((prev) => ({ ...prev, minimum_budget_kes: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, minimum_budget_kes: e.target.value }));
+                      setFormErrors((current) => ({ ...current, minimum_budget_kes: undefined }));
+                      setSubmitError(null);
+                    }}
                     placeholder="e.g. 60000"
                   />
+                  <FormFieldError message={formErrors.minimum_budget_kes} />
                 </div>
                 <div className="space-y-2">
                   <Label>Maximum Job Budget (KES)</Label>
@@ -695,9 +1019,14 @@ export default function VendorSettings() {
                     type="number"
                     min="0"
                     value={form.maximum_budget_kes}
-                    onChange={(e) => setForm((prev) => ({ ...prev, maximum_budget_kes: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, maximum_budget_kes: e.target.value }));
+                      setFormErrors((current) => ({ ...current, maximum_budget_kes: undefined }));
+                      setSubmitError(null);
+                    }}
                     placeholder="e.g. 300000"
                   />
+                  <FormFieldError message={formErrors.maximum_budget_kes} />
                 </div>
               </div>
               {formatBudgetBand(
@@ -712,6 +1041,140 @@ export default function VendorSettings() {
                 </p>
               )}
             </div>
+
+            {isVenueCategory && (
+              <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4 space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <Label className="flex items-center gap-2 text-base text-foreground">
+                      <Building2 className="h-4 w-4 text-primary" />
+                      Venue spaces
+                    </Label>
+                    <p className="text-xs leading-6 text-muted-foreground">
+                      Add each wedding-ready space you want couples and planners to plan against. These presets will appear inside Space Plan so users can pick a real venue footprint instead of starting from a blank room.
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" onClick={addVenueSpace}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add space
+                  </Button>
+                </div>
+
+                <FormFieldError message={formErrors.venue_spaces} />
+
+                {!listing && venueSpaces.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-border/70 bg-background/80 p-4 text-sm text-muted-foreground">
+                    Save the vendor listing once, then add your spaces here. After that, every hall, lawn, ballroom, or chapel can have its own real dimensions and planning notes.
+                  </div>
+                )}
+
+                {venueSpacesLoading ? (
+                  <div className="rounded-xl border border-border/60 bg-background/80 p-4 text-sm text-muted-foreground">
+                    Loading saved venue spaces...
+                  </div>
+                ) : venueSpaces.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border/70 bg-background/80 p-4 text-sm text-muted-foreground">
+                    No spaces added yet. Start with the main reception hall or garden so planners can immediately use a realistic venue preset.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {venueSpaces.map((space, index) => (
+                      <div key={space.id} className="rounded-2xl border border-border/70 bg-background/90 p-4 shadow-sm">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">
+                              {space.space_name || `Venue space ${index + 1}`}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Give this space a clear identity, dimensions, and planner notes so the preset is genuinely useful on event day.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {space.is_featured && <Badge variant="outline">Featured preset</Badge>}
+                            <Button type="button" variant="ghost" size="sm" onClick={() => featureVenueSpace(space.id)}>
+                              Make featured
+                            </Button>
+                            <Button type="button" variant="ghost" size="icon" onClick={() => removeVenueSpace(space.id)} aria-label="Remove venue space">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Space name</Label>
+                            <Input
+                              value={space.space_name}
+                              onChange={(e) => updateVenueSpace(space.id, { space_name: e.target.value })}
+                              placeholder="e.g. Acacia Garden Reception Lawn"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Space type</Label>
+                            <Select value={space.space_type} onValueChange={(value) => updateVenueSpace(space.id, { space_type: value })}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {venueSpaceTypeOptions.map((option) => (
+                                  <SelectItem key={option} value={option}>
+                                    {option}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                          <div className="space-y-2">
+                            <Label className="flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5" /> Width (m)</Label>
+                            <Input type="number" min="1" step="0.1" value={space.width_meters} onChange={(e) => updateVenueSpace(space.id, { width_meters: e.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5" /> Length (m)</Label>
+                            <Input type="number" min="1" step="0.1" value={space.length_meters} onChange={(e) => updateVenueSpace(space.id, { length_meters: e.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="flex items-center gap-1.5"><Users2 className="h-3.5 w-3.5" /> Seated cap</Label>
+                            <Input type="number" min="1" value={space.max_seated_capacity} onChange={(e) => updateVenueSpace(space.id, { max_seated_capacity: e.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Standing cap</Label>
+                            <Input type="number" min="1" value={space.max_standing_capacity} onChange={(e) => updateVenueSpace(space.id, { max_standing_capacity: e.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Recommended guests</Label>
+                            <Input type="number" min="1" value={space.recommended_guest_count} onChange={(e) => updateVenueSpace(space.id, { recommended_guest_count: e.target.value })} />
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Location notes</Label>
+                            <Textarea
+                              value={space.location_notes}
+                              onChange={(e) => updateVenueSpace(space.id, { location_notes: e.target.value })}
+                              placeholder="e.g. Best for evening receptions, access through lower garden gate, power on east wall."
+                              rows={3}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Setup notes</Label>
+                            <Textarea
+                              value={space.setup_notes}
+                              onChange={(e) => updateVenueSpace(space.id, { setup_notes: e.target.value })}
+                              placeholder="e.g. Works best with 10-seater rounds, central aisle, buffet along the back wall."
+                              rows={3}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Social Media */}
             <div className="border-t border-border pt-4 space-y-4">
@@ -898,6 +1361,31 @@ export default function VendorSettings() {
                               <div className="mt-3 flex flex-wrap gap-2">
                                 {form.services.map((service) => (
                                   <Badge key={service} variant="secondary">{service}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {isVenueCategory && venueSpaces.length > 0 && (
+                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Venue spaces</p>
+                              <div className="mt-3 space-y-3">
+                                {venueSpaces.map((space) => (
+                                  <div key={space.id} className="rounded-xl border border-border/60 bg-background/80 p-4">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="font-medium text-foreground">{space.space_name || 'Untitled venue space'}</p>
+                                      <Badge variant="outline">{space.space_type}</Badge>
+                                      {space.is_featured && <Badge>Featured</Badge>}
+                                    </div>
+                                    <p className="mt-2 text-sm text-muted-foreground">
+                                      {space.width_meters || '0'}m x {space.length_meters || '0'}m
+                                      {space.max_seated_capacity ? ` · seats ${space.max_seated_capacity}` : ''}
+                                      {space.max_standing_capacity ? ` · standing ${space.max_standing_capacity}` : ''}
+                                    </p>
+                                    {space.location_notes && (
+                                      <p className="mt-2 text-sm text-foreground/80">{space.location_notes}</p>
+                                    )}
+                                  </div>
                                 ))}
                               </div>
                             </div>
