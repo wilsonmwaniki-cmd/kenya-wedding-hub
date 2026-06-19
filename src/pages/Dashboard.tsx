@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,6 +11,7 @@ import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
 import MyConnections from '@/components/MyConnections';
+import PlannerChangeRequestsCard from '@/components/PlannerChangeRequestsCard';
 import InfoTip from '@/components/InfoTip';
 import { useToast } from '@/hooks/use-toast';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
@@ -20,6 +22,8 @@ import type { EntitlementFeature } from '@/lib/entitlements';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { getMyWeddingOwnershipSummary, type MyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
 import { summarizeContributions, type ContributionSummaryRow } from '@/lib/contributions';
+import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
+import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 
 interface DashboardStats {
   totalBudget: number;
@@ -90,6 +94,150 @@ interface ContributionDigestRow extends ContributionSummaryRow {
   id: string;
 }
 
+interface DashboardWorkspaceData {
+  stats: DashboardStats;
+  upcomingEvents: UpcomingTimelineEvent[];
+  finalVendors: FinalVendor[];
+  vendorLinkedTasks: VendorLinkedTask[];
+  budgetDigestRows: BudgetDigestRow[];
+  vendorDigestRows: VendorDigestRow[];
+  taskDigestRows: TaskDigestRow[];
+  contributionRows: ContributionDigestRow[];
+}
+
+const EMPTY_DASHBOARD_WORKSPACE_DATA: DashboardWorkspaceData = {
+  stats: {
+    totalBudget: 0,
+    totalSpent: 0,
+    totalTasks: 0,
+    completedTasks: 0,
+    totalGuests: 0,
+    confirmedGuests: 0,
+    totalVendors: 0,
+  },
+  upcomingEvents: [],
+  finalVendors: [],
+  vendorLinkedTasks: [],
+  budgetDigestRows: [],
+  vendorDigestRows: [],
+  taskDigestRows: [],
+  contributionRows: [],
+};
+
+async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWorkspaceData> {
+  const today = new Date().toISOString().slice(0, 10);
+  const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows, contributions, timelines] = await Promise.all([
+    supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope, visibility').or(dataOrFilter),
+    supabase.from('tasks').select('id, title, due_date, completed, visibility, phase').or(dataOrFilter),
+    supabase.from('guests').select('rsvp_status').or(dataOrFilter),
+    supabase.from('vendors').select('id, name, category, selection_status, payment_due_date, payment_status').or(dataOrFilter),
+    supabase
+      .from('vendors')
+      .select('id, name, category, price, amount_paid, payment_status, payment_due_date')
+      .or(dataOrFilter)
+      .eq('selection_status', 'final')
+      .order('category'),
+    supabase
+      .from('tasks')
+      .select('id, title, due_date, completed, source_vendor_id')
+      .or(dataOrFilter)
+      .not('source_vendor_id', 'is', null)
+      .order('due_date', { ascending: true, nullsFirst: false }),
+    (supabase as any)
+      .from('wedding_contributions')
+      .select('id, contributor_name, contribution_type, status, pledged_amount, paid_amount, in_kind_value')
+      .or(dataOrFilter),
+    supabase
+      .from('timelines')
+      .select('id, title, timeline_date')
+      .or(dataOrFilter)
+      .eq('is_template', false)
+      .gte('timeline_date', today)
+      .order('timeline_date', { ascending: true })
+      .limit(1),
+  ]);
+
+  if (budget.error) throw budget.error;
+  if (tasks.error) throw tasks.error;
+  if (guests.error) throw guests.error;
+  if (vendors.error) throw vendors.error;
+  if (finalVendorRows.error) throw finalVendorRows.error;
+  if (vendorTaskRows.error) throw vendorTaskRows.error;
+  if (contributions.error) throw contributions.error;
+  if (timelines.error) throw timelines.error;
+
+  let upcomingEvents: UpcomingTimelineEvent[] = [];
+
+  if (timelines.data?.length) {
+    const timeline = timelines.data[0] as any;
+    const { data: eventRows, error: timelineEventsError } = await supabase
+      .from('timeline_events')
+      .select('id, event_time, title, category, assigned_people')
+      .eq('timeline_id', timeline.id)
+      .order('event_time', { ascending: true })
+      .limit(5);
+
+    if (timelineEventsError) throw timelineEventsError;
+
+    upcomingEvents = (eventRows ?? []).map((event: any) => ({
+      ...event,
+      timeline_title: timeline.title,
+      timeline_date: timeline.timeline_date,
+    }));
+  }
+
+  const budgetRows = (budget.data ?? []) as any[];
+  const taskRows = (tasks.data ?? []) as any[];
+  const guestRows = (guests.data ?? []) as any[];
+  const vendorRows = (vendors.data ?? []) as any[];
+  const contributionDataRows = (contributions.data ?? []) as any[];
+
+  return {
+    stats: {
+      totalBudget: budgetRows.reduce((sum, row) => sum + Number(row.allocated), 0),
+      totalSpent: budgetRows.reduce((sum, row) => sum + Number(row.spent), 0),
+      totalTasks: taskRows.length,
+      completedTasks: taskRows.filter((task) => task.completed).length,
+      totalGuests: guestRows.length,
+      confirmedGuests: guestRows.filter((guest) => guest.rsvp_status === 'confirmed').length,
+      totalVendors: vendorRows.length,
+    },
+    budgetDigestRows: budgetRows.map((row) => ({
+      ...row,
+      allocated: Number(row.allocated ?? 0),
+      spent: Number(row.spent ?? 0),
+      budget_scope: (row.budget_scope ?? 'wedding') as 'wedding' | 'personal',
+      visibility: (row.visibility ?? 'public') as 'public' | 'private',
+    })),
+    vendorDigestRows: vendorRows.map((row) => ({
+      ...row,
+      selection_status: row.selection_status ?? 'shortlisted',
+      payment_due_date: row.payment_due_date ?? null,
+      payment_status: row.payment_status ?? 'not_started',
+    })),
+    taskDigestRows: taskRows.map((row) => ({
+      ...row,
+      visibility: row.visibility ?? 'public',
+    })),
+    contributionRows: contributionDataRows.map((row) => ({
+      id: row.id,
+      contributor_name: row.contributor_name ?? null,
+      contribution_type: row.contribution_type ?? 'cash',
+      status: row.status ?? 'pledged',
+      pledged_amount: Number(row.pledged_amount ?? 0),
+      paid_amount: Number(row.paid_amount ?? 0),
+      in_kind_value: Number(row.in_kind_value ?? 0),
+    })),
+    finalVendors: ((finalVendorRows.data ?? []) as any[]).map((vendor) => ({
+      ...vendor,
+      amount_paid: Number(vendor.amount_paid ?? 0),
+      price: vendor.price != null ? Number(vendor.price) : null,
+    })),
+    vendorLinkedTasks: (vendorTaskRows.data ?? []) as VendorLinkedTask[],
+    upcomingEvents,
+  };
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   prep: 'bg-primary/10 text-primary border-primary/20',
   ceremony: 'bg-accent/20 text-foreground border-accent/40',
@@ -113,162 +261,74 @@ function getDashboardAssistantFeature(role?: string | null, plannerType?: string
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
-  const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner, plannerClientHydrating } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
   const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
   const showPlanningDigest = profile?.role === 'couple' || isCommittee;
-  const [stats, setStats] = useState<DashboardStats>({
-    totalBudget: 0, totalSpent: 0, totalTasks: 0, completedTasks: 0,
-    totalGuests: 0, confirmedGuests: 0, totalVendors: 0,
+  const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
+  const labsEnabled = isLabsEnabled();
+  const [dashboardNudgeDismissed, setDashboardNudgeDismissed] = useState(false);
+
+  const dashboardQuery = useQuery({
+    queryKey: ['dashboard', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null],
+    queryFn: () => loadDashboardWorkspace(dataOrFilter!),
+    enabled: Boolean(user && dataOrFilter),
+    staleTime: 45_000,
   });
-  const [upcomingEvents, setUpcomingEvents] = useState<UpcomingTimelineEvent[]>([]);
-  const [finalVendors, setFinalVendors] = useState<FinalVendor[]>([]);
-  const [vendorLinkedTasks, setVendorLinkedTasks] = useState<VendorLinkedTask[]>([]);
-  const [budgetDigestRows, setBudgetDigestRows] = useState<BudgetDigestRow[]>([]);
-  const [vendorDigestRows, setVendorDigestRows] = useState<VendorDigestRow[]>([]);
-  const [taskDigestRows, setTaskDigestRows] = useState<TaskDigestRow[]>([]);
-  const [contributionRows, setContributionRows] = useState<ContributionDigestRow[]>([]);
-  const [ownedWeddingSummary, setOwnedWeddingSummary] = useState<MyWeddingOwnershipSummary | null>(null);
+
+  const ownershipSummaryQuery = useQuery({
+    queryKey: ['dashboard-ownership-summary', user?.id ?? null],
+    queryFn: getMyWeddingOwnershipSummary,
+    enabled: Boolean(user && !isPlanner && profile?.role === 'couple'),
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
-    if (isPlanner && !selectedClient) {
+    if (isPlanner && !plannerClientHydrating && !selectedClient) {
       navigate('/clients');
     }
-  }, [isPlanner, selectedClient, navigate]);
+  }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
 
   useEffect(() => {
-    if (!user || !dataOrFilter) return;
+    if (!dashboardQuery.error) return;
 
-    const load = async () => {
-      const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows, contributions] = await Promise.all([
-        supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope, visibility').or(dataOrFilter),
-        supabase.from('tasks').select('id, title, due_date, completed, visibility, phase').or(dataOrFilter),
-        supabase.from('guests').select('rsvp_status').or(dataOrFilter),
-        supabase.from('vendors').select('id, name, category, selection_status, payment_due_date, payment_status').or(dataOrFilter),
-        supabase
-          .from('vendors')
-          .select('id, name, category, price, amount_paid, payment_status, payment_due_date')
-          .or(dataOrFilter)
-          .eq('selection_status', 'final')
-          .order('category'),
-        supabase
-          .from('tasks')
-          .select('id, title, due_date, completed, source_vendor_id')
-          .or(dataOrFilter)
-          .not('source_vendor_id', 'is', null)
-          .order('due_date', { ascending: true, nullsFirst: false }),
-        (supabase as any)
-          .from('wedding_contributions')
-          .select('id, contributor_name, contribution_type, status, pledged_amount, paid_amount, in_kind_value')
-          .or(dataOrFilter),
-      ]);
-      setStats({
-        totalBudget: budget.data?.reduce((s, b) => s + Number(b.allocated), 0) ?? 0,
-        totalSpent: budget.data?.reduce((s, b) => s + Number(b.spent), 0) ?? 0,
-        totalTasks: tasks.data?.length ?? 0,
-        completedTasks: tasks.data?.filter(t => t.completed).length ?? 0,
-        totalGuests: guests.data?.length ?? 0,
-        confirmedGuests: guests.data?.filter(g => g.rsvp_status === 'confirmed').length ?? 0,
-        totalVendors: vendors.data?.length ?? 0,
-      });
-      setBudgetDigestRows(((budget.data ?? []) as any[]).map((row) => ({
-        ...row,
-        allocated: Number(row.allocated ?? 0),
-        spent: Number(row.spent ?? 0),
-        budget_scope: (row.budget_scope ?? 'wedding') as 'wedding' | 'personal',
-        visibility: (row.visibility ?? 'public') as 'public' | 'private',
-      })));
-      setVendorDigestRows(((vendors.data ?? []) as any[]).map((row) => ({
-        ...row,
-        selection_status: row.selection_status ?? 'shortlisted',
-        payment_due_date: row.payment_due_date ?? null,
-        payment_status: row.payment_status ?? 'not_started',
-      })));
-      setTaskDigestRows(((tasks.data ?? []) as any[]).map((row) => ({
-        ...row,
-        visibility: row.visibility ?? 'public',
-      })));
-      setContributionRows(((contributions.data ?? []) as any[]).map((row) => ({
-        id: row.id,
-        contributor_name: row.contributor_name ?? null,
-        contribution_type: row.contribution_type ?? 'cash',
-        status: row.status ?? 'pledged',
-        pledged_amount: Number(row.pledged_amount ?? 0),
-        paid_amount: Number(row.paid_amount ?? 0),
-        in_kind_value: Number(row.in_kind_value ?? 0),
-      })));
-      setFinalVendors(((finalVendorRows.data ?? []) as any[]).map((vendor) => ({
-        ...vendor,
-        amount_paid: Number(vendor.amount_paid ?? 0),
-        price: vendor.price != null ? Number(vendor.price) : null,
-      })));
-      setVendorLinkedTasks((vendorTaskRows.data ?? []) as VendorLinkedTask[]);
-    };
-    load();
-
-    // Load upcoming timeline events
-    const loadTimeline = async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const { data: timelines } = await supabase
-        .from('timelines')
-        .select('id, title, timeline_date')
-        .or(dataOrFilter)
-        .eq('is_template', false)
-        .gte('timeline_date', today)
-        .order('timeline_date', { ascending: true })
-        .limit(1);
-      if (timelines?.length) {
-        const tl = timelines[0] as any;
-        const { data: evts } = await supabase
-          .from('timeline_events')
-          .select('id, event_time, title, category, assigned_people')
-          .eq('timeline_id', tl.id)
-          .order('event_time', { ascending: true })
-          .limit(5);
-        if (evts) {
-          setUpcomingEvents(evts.map((e: any) => ({
-            ...e,
-            timeline_title: tl.title,
-            timeline_date: tl.timeline_date,
-          })));
-        }
-      } else {
-        setUpcomingEvents([]);
-      }
-    };
-    loadTimeline();
-  }, [user, selectedClient, dataOrFilter]);
+    toast({
+      title: 'Dashboard unavailable',
+      description: 'Zania could not refresh this workspace summary right now. Try again in a moment.',
+      variant: 'destructive',
+    });
+  }, [dashboardQuery.error, toast]);
 
   useEffect(() => {
-    if (!user || isPlanner || profile?.role !== 'couple') {
-      setOwnedWeddingSummary(null);
+    if (!ownershipSummaryQuery.error) return;
+
+    console.error('Could not load owned wedding summary for dashboard:', ownershipSummaryQuery.error);
+  }, [ownershipSummaryQuery.error]);
+
+  const {
+    stats,
+    upcomingEvents,
+    finalVendors,
+    vendorLinkedTasks,
+    budgetDigestRows,
+    vendorDigestRows,
+    taskDigestRows,
+    contributionRows,
+  } = dashboardQuery.data ?? EMPTY_DASHBOARD_WORKSPACE_DATA;
+
+  const ownedWeddingSummary = ownershipSummaryQuery.data ?? null;
+  const pageLoading = dashboardQuery.isLoading || ownershipSummaryQuery.isLoading;
+  const dashboardRefreshing = dashboardQuery.isFetching && !dashboardQuery.isLoading;
+
+  useEffect(() => {
+    if (!dashboardRefreshing) {
       return;
     }
 
-    let active = true;
-
-    const loadOwnedWeddingSummary = async () => {
-      try {
-        const summary = await getMyWeddingOwnershipSummary();
-        if (active) {
-          setOwnedWeddingSummary(summary);
-        }
-      } catch (error) {
-        console.error('Could not load owned wedding summary for dashboard:', error);
-        if (active) {
-          setOwnedWeddingSummary(null);
-        }
-      }
-    };
-
-    void loadOwnedWeddingSummary();
-
-    return () => {
-      active = false;
-    };
-  }, [user?.id, isPlanner, profile?.role]);
+    setDashboardNudgeDismissed(false);
+  }, [dashboardRefreshing]);
 
   const weddingDate = isPlanner && selectedClient
     ? (selectedClient.wedding_date ? new Date(selectedClient.wedding_date) : null)
@@ -513,8 +573,6 @@ export default function Dashboard() {
     page: 'dashboard',
     surface: 'weekly_focus_card',
   });
-  const [dashboardNudgeDismissed, setDashboardNudgeDismissed] = useState(false);
-
   const dashboardNudge = useMemo(() => {
     if (pendingTasks.length >= 3) {
       return {
@@ -718,7 +776,8 @@ export default function Dashboard() {
     },
   ];
 
-  if (isPlanner && !selectedClient) return null;
+  if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton />;
+  if (pageLoading) return <WorkspacePageSkeleton />;
 
   return (
     <div className="space-y-8">
@@ -796,6 +855,35 @@ export default function Dashboard() {
                 </a>
               )}
             </div>
+
+            {spaceTablePlanEnabled ? (
+              <div className="rounded-[26px] border border-primary/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(248,239,229,0.88))] p-4 shadow-[0_12px_32px_rgba(28,22,18,0.05)]">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-primary">
+                        Live
+                      </Badge>
+                      <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary/70">Workspace tool</p>
+                    </div>
+                    <h2 className="font-display text-2xl text-foreground">Open the Space &amp; Table Plan</h2>
+                    <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                      Map tables, stage flow, guest seating, and ceremony zones directly inside the main wedding workspace.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <Button asChild>
+                      <Link to={getSpaceTablePlanPath()}>Open Space Plan</Link>
+                    </Button>
+                    {labsEnabled ? (
+                    <Button asChild variant="outline">
+                      <Link to={getLabsPath()}>Open Labs</Link>
+                    </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-3xl border border-[#ead9c6] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(249,242,234,0.86))] p-5 shadow-[0_18px_40px_rgba(28,22,18,0.05)] backdrop-blur-sm">
@@ -987,7 +1075,7 @@ export default function Dashboard() {
               <p className="font-medium text-card-foreground text-sm">
                 Linked with {linkedPlanner.plannerName || 'your planner'}
               </p>
-              <p className="text-xs text-muted-foreground">Your progress is shared — both of you can add and track items.</p>
+              <p className="text-xs text-muted-foreground">Your progress is shared, and planner edits on sensitive areas now wait for your approval.</p>
             </div>
             <Button
               variant="ghost"
@@ -1003,6 +1091,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      {linkedPlanner && !isPlanner && <PlannerChangeRequestsCard />}
 
       <div className="space-y-3">
         <div>
