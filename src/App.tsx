@@ -49,6 +49,7 @@ const TimelineShare = lazy(() => import("./pages/TimelineShare"));
 const GuestRsvp = lazy(() => import("./pages/GuestRsvp"));
 const WeddingPortfolio = lazy(() => import("./pages/WeddingPortfolio"));
 const ManagePortfolio = lazy(() => import("./pages/ManagePortfolio"));
+const SpaceTablePlan = lazy(() => import("./pages/SpaceTablePlan"));
 const LabsIndex = lazy(() => import("./pages/LabsIndex"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
@@ -144,6 +145,7 @@ const App = () => (
                 <Route path="/contributions" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Contributions /></ProtectedPage>} />
                 <Route path="/gift-registry" element={<ProtectedPage allowedRoles={['couple', 'planner']}><GiftRegistry /></ProtectedPage>} />
                 <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
+                <Route path="/space-plan" element={<ProtectedPage allowedRoles={['couple', 'planner']}><SpaceTablePlan /></ProtectedPage>} />
                 <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
                 <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
                 <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
