@@ -5,11 +5,7 @@ import {
   assertRecentFunctionEventLimit,
 } from '../_shared/abuseProtection.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -78,14 +74,14 @@ async function resolveGuestWeddingId(
   return (createdWeddingData?.id as string | undefined) ?? null;
 }
 
-function jsonResponse(payload: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
-
 serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
+  const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }

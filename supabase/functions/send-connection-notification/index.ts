@@ -7,11 +7,7 @@ import {
   assertRecentFunctionEventLimit,
 } from "../_shared/abuseProtection.ts";
 import { logFunctionEvent } from "../_shared/runtimeLogger.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { createCorsHeaders } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -36,17 +32,6 @@ interface VendorConnectionRequestRow {
   status: string;
 }
 
-function jsonResponse(status: number, payload: Record<string, unknown>, headers?: HeadersInit) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      ...corsHeaders,
-      'Content-Type': 'application/json',
-      ...(headers ?? {}),
-    },
-  });
-}
-
 function htmlEscape(value: string) {
   return value
     .replaceAll('&', '&amp;')
@@ -57,6 +42,17 @@ function htmlEscape(value: string) {
 }
 
 serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
+  const jsonResponse = (status: number, payload: Record<string, unknown>, headers?: HeadersInit) =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        ...(headers ?? {}),
+      },
+    });
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }

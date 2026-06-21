@@ -6,12 +6,7 @@ import {
   getRetryAfterSeconds,
 } from '../_shared/abuseProtection.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type InviteRow = {
   id: string;
@@ -95,6 +90,8 @@ const formatWeddingDate = (dateValue: string | null) => {
 };
 
 serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
