@@ -11,6 +11,7 @@ import {
   getSharedCommercialDocument,
   type SharedCommercialDocument,
 } from '@/lib/commercialDocuments';
+import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl } from '@/lib/security';
 
 function formatCurrency(amount: number) {
   return `KES ${amount.toLocaleString()}`;
@@ -55,6 +56,8 @@ export default function CommercialDocumentShare() {
     if (!document?.totalAmount) return 0;
     return Math.min(100, Math.round((document.amountPaid / document.totalAmount) * 100));
   }, [document]);
+  const issuerEmailHref = normalizeEmailHref(document?.issuerEmail);
+  const issuerWebsiteHref = normalizeExternalUrl(document?.issuerWebsite);
 
   if (loading) {
     return (
@@ -121,8 +124,8 @@ export default function CommercialDocumentShare() {
                   <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Issued by</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">{document.issuerName}</p>
                   <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    {document.issuerEmail && (
-                      <a className="flex items-center gap-2 hover:text-foreground" href={`mailto:${document.issuerEmail}`}>
+                    {document.issuerEmail && issuerEmailHref && (
+                      <a className="flex items-center gap-2 hover:text-foreground" href={issuerEmailHref}>
                         <Mail className="h-4 w-4 text-primary" />
                         {document.issuerEmail}
                       </a>
@@ -133,10 +136,10 @@ export default function CommercialDocumentShare() {
                         {document.issuerPhone}
                       </p>
                     )}
-                    {document.issuerWebsite && (
-                      <a className="flex items-center gap-2 hover:text-foreground" href={document.issuerWebsite} target="_blank" rel="noreferrer">
+                    {document.issuerWebsite && issuerWebsiteHref && (
+                      <a className="flex items-center gap-2 hover:text-foreground" href={issuerWebsiteHref} target="_blank" rel="noopener noreferrer">
                         <Globe className="h-4 w-4 text-primary" />
-                        {document.issuerWebsite.replace(/^https?:\/\//, '')}
+                        {displaySafeUrl(document.issuerWebsite)}
                         <ExternalLink className="h-3.5 w-3.5" />
                       </a>
                     )}

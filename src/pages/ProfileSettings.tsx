@@ -19,6 +19,7 @@ import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import InfoTip from '@/components/InfoTip';
+import { normalizeExternalUrl } from '@/lib/security';
 import {
   completePendingWeddingSetup,
   getMyWeddingOwnershipSummary,
@@ -463,7 +464,7 @@ export default function ProfileSettings() {
         updates.company_name = form.company_name;
         updates.company_email = form.company_email;
         updates.company_phone = form.company_phone;
-        updates.company_website = form.company_website;
+        updates.company_website = normalizeExternalUrl(form.company_website);
         updates.bio = form.bio;
         updates.specialties = form.specialties;
         updates.primary_county = form.primary_county || null;

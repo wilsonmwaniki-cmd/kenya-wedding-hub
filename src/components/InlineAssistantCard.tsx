@@ -1,6 +1,6 @@
-import ReactMarkdown from 'react-markdown';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Loader2, X } from 'lucide-react';
+import SafeMarkdown from '@/components/SafeMarkdown';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -90,7 +90,7 @@ export default function InlineAssistantCard({
                 </div>
               ) : response ? (
                 <div className="prose prose-sm max-w-none text-foreground prose-p:my-2 prose-ul:my-2 prose-li:my-1">
-                  <ReactMarkdown>{response}</ReactMarkdown>
+                  <SafeMarkdown>{response}</SafeMarkdown>
                 </div>
               ) : (
                 <div className="space-y-1">

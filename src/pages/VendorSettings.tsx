@@ -18,6 +18,7 @@ import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
+import { displaySafeUrl, normalizeExternalUrl as normalizeSafeExternalUrl } from '@/lib/security';
 
 const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -103,12 +104,11 @@ function createVenueSpaceDraft(overrides: Partial<VenueSpaceDraft> = {}): VenueS
 }
 
 function normalizeExternalUrl(value: string) {
-  if (!value.trim()) return '';
-  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  return normalizeSafeExternalUrl(value) ?? '';
 }
 
 function displayUrl(value: string) {
-  return value.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  return displaySafeUrl(value);
 }
 
 function XSocialIcon({ className }: { className?: string }) {
@@ -382,15 +382,15 @@ export default function VendorSettings() {
       description: form.description || null,
       phone: form.phone || null,
       email: form.email || null,
-      website: form.website || null,
+      website: normalizeSafeExternalUrl(form.website),
       location: buildKenyaLocationLabel(form.location_county, form.location_town),
       location_county: form.location_county || null,
       location_town: form.location_town || null,
       services: form.services,
-      social_instagram: form.social_instagram || null,
-      social_facebook: form.social_facebook || null,
-      social_tiktok: form.social_tiktok || null,
-      social_twitter: form.social_twitter || null,
+      social_instagram: normalizeSafeExternalUrl(form.social_instagram),
+      social_facebook: normalizeSafeExternalUrl(form.social_facebook),
+      social_tiktok: normalizeSafeExternalUrl(form.social_tiktok),
+      social_twitter: normalizeSafeExternalUrl(form.social_twitter),
       service_areas: form.service_areas,
       travel_scope: form.travel_scope,
       minimum_budget_kes: minimumBudget,

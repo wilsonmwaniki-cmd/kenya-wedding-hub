@@ -2,6 +2,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { Building2, Mail, Phone, Globe } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl } from '@/lib/security';
 
 export default function PlannerBrandingBanner() {
   const { profile } = useAuth();
@@ -11,6 +12,9 @@ export default function PlannerBrandingBanner() {
 
   const hasCompanyInfo = profile?.company_name || profile?.company_email || profile?.company_phone;
   if (!hasCompanyInfo) return null;
+
+  const emailHref = normalizeEmailHref(profile.company_email);
+  const websiteHref = normalizeExternalUrl(profile.company_website);
 
   return (
     <div className="mb-6 overflow-hidden rounded-[26px] border border-[#ead8c4] bg-[radial-gradient(circle_at_top_left,rgba(227,144,100,0.14),transparent_24%),linear-gradient(180deg,rgba(255,250,245,0.94),rgba(249,242,233,0.92))] px-5 py-4 shadow-[0_18px_40px_rgba(28,22,18,0.05)]">
@@ -27,8 +31,8 @@ export default function PlannerBrandingBanner() {
           <span className="font-editorial text-2xl font-semibold leading-none text-foreground">{profile.company_name || profile.full_name}</span>
         </div>
       </div>
-      {profile.company_email && (
-        <a href={`mailto:${profile.company_email}`} className="flex items-center gap-1.5 rounded-full border border-[#ebdccb] bg-white/70 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground">
+      {profile.company_email && emailHref && (
+        <a href={emailHref} className="flex items-center gap-1.5 rounded-full border border-[#ebdccb] bg-white/70 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground">
           <Mail className="h-3.5 w-3.5" />{profile.company_email}
         </a>
       )}
@@ -37,9 +41,9 @@ export default function PlannerBrandingBanner() {
           <Phone className="h-3.5 w-3.5" />{profile.company_phone}
         </span>
       )}
-      {profile.company_website && (
-        <a href={profile.company_website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 rounded-full border border-[#ebdccb] bg-white/70 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground">
-          <Globe className="h-3.5 w-3.5" />{profile.company_website.replace(/^https?:\/\//, '')}
+      {profile.company_website && websiteHref && (
+        <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 rounded-full border border-[#ebdccb] bg-white/70 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground">
+          <Globe className="h-3.5 w-3.5" />{displaySafeUrl(profile.company_website)}
         </a>
       )}
       </div>

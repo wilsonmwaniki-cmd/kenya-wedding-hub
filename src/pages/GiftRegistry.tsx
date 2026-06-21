@@ -17,6 +17,7 @@ import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { normalizeExternalUrl } from '@/lib/security';
 
 type RegistryItem = {
   id: string;
@@ -54,10 +55,7 @@ const emptyForm: RegistryFormState = {
 };
 
 function normalizePurchaseUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
+  return normalizeExternalUrl(value);
 }
 
 function sortRegistryItems(items: RegistryItem[]) {
@@ -647,11 +645,11 @@ export default function GiftRegistry() {
                             {item.estimated_price_kes != null ? (
                               <span>{formatKes(item.estimated_price_kes)}</span>
                             ) : null}
-                            {item.purchase_url ? (
+                            {normalizeExternalUrl(item.purchase_url) ? (
                               <a
-                                href={item.purchase_url}
+                                href={normalizeExternalUrl(item.purchase_url) ?? undefined}
                                 target="_blank"
-                                rel="noreferrer"
+                                rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-primary hover:underline"
                               >
                                 Open link

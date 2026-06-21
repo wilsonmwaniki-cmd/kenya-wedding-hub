@@ -30,6 +30,7 @@ import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { sanitizeHtml } from '@/lib/security';
 
 const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
 
@@ -1369,7 +1370,7 @@ export default function Guests() {
                   </h3>
                   <div className="mt-3 border-t border-border pt-4">
                     {composeMode === 'html' && contentHtml.trim() ? (
-                      <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: contentHtml }} />
+                      <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: sanitizeHtml(contentHtml) }} />
                     ) : (
                       <div className="space-y-3 text-sm text-foreground">
                         <p>Dear <strong>{composeGuest?.name || '{Guest Name}'}</strong>,</p>

@@ -9,6 +9,7 @@ import {
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
 import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
+import { escapeHtml, sanitizeBasicHtml } from '../_shared/htmlSanitizer.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -229,22 +230,28 @@ serve(async (req) => {
     let htmlBody: string;
 
     if (contentHtml?.trim()) {
-      htmlBody = contentHtml;
+      htmlBody = sanitizeBasicHtml(contentHtml);
     } else {
       const personalMessage = contentText?.trim() || '';
+      const safeGuestName = escapeHtml(guest.name);
+      const safeCoupleName = escapeHtml(coupleName);
+      const safeDate = escapeHtml(dateStr);
+      const safeLocation = escapeHtml(weddingLocation);
+      const safePersonalMessage = escapeHtml(personalMessage);
+      const safeRsvpLink = escapeHtml(rsvpLink);
       htmlBody = `
         <div style="font-family: 'Georgia', serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e8e0d8;">
           <div style="background: linear-gradient(135deg, #8B7355 0%, #A0926B 100%); padding: 40px 30px; text-align: center;">
             <h1 style="color: #ffffff; font-size: 28px; margin: 0; letter-spacing: 2px;">You're Invited!</h1>
           </div>
           <div style="padding: 40px 30px; color: #4a4a4a; line-height: 1.8;">
-            <p style="font-size: 18px;">Dear <strong>${guest.name}</strong>,</p>
-            <p>We are delighted to invite you to celebrate our wedding${coupleName ? ` — <strong>${coupleName}</strong>` : ''}.</p>
-            ${weddingDate ? `<p>📅 <strong>Date:</strong> ${dateStr}</p>` : ''}
-            ${weddingLocation ? `<p>📍 <strong>Venue:</strong> ${weddingLocation}</p>` : ''}
-            ${personalMessage ? `<p style="margin-top: 20px; padding: 15px; background: #f9f6f2; border-left: 3px solid #8B7355; font-style: italic;">${personalMessage}</p>` : ''}
+            <p style="font-size: 18px;">Dear <strong>${safeGuestName}</strong>,</p>
+            <p>We are delighted to invite you to celebrate our wedding${safeCoupleName ? ` — <strong>${safeCoupleName}</strong>` : ''}.</p>
+            ${weddingDate ? `<p>📅 <strong>Date:</strong> ${safeDate}</p>` : ''}
+            ${safeLocation ? `<p>📍 <strong>Venue:</strong> ${safeLocation}</p>` : ''}
+            ${safePersonalMessage ? `<p style="margin-top: 20px; padding: 15px; background: #f9f6f2; border-left: 3px solid #8B7355; font-style: italic;">${safePersonalMessage}</p>` : ''}
             <p style="margin-top: 30px;">We would be honoured to have you join us on our special day. Please let us know if you can attend.</p>
-            <p style="margin-top: 20px;"><a href="${rsvpLink}" style="display: inline-block; padding: 12px 18px; background: #8B7355; color: white; text-decoration: none; border-radius: 999px;">Open your RSVP link</a></p>
+            <p style="margin-top: 20px;"><a href="${safeRsvpLink}" style="display: inline-block; padding: 12px 18px; background: #8B7355; color: white; text-decoration: none; border-radius: 999px;">Open your RSVP link</a></p>
             <p style="margin-top: 30px;">With love and warm regards ❤️</p>
           </div>
           <div style="background: #f9f6f2; padding: 20px 30px; text-align: center; font-size: 12px; color: #999;">

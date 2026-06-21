@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import ReactMarkdown from 'react-markdown';
 import { Loader2, Send, Wand2, Wallet, CalendarClock, Users, Store, BriefcaseBusiness, CheckSquare2, BellRing, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import SafeMarkdown from '@/components/SafeMarkdown';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -867,7 +867,7 @@ export default function AiChat() {
                   >
                     {message.role === 'assistant' ? (
                       <div className="max-w-none text-inherit">
-                        <ReactMarkdown
+                        <SafeMarkdown
                           components={{
                             h1: ({ children }) => <h1 className="mb-3 text-lg font-semibold">{children}</h1>,
                             h2: ({ children }) => <h2 className="mb-2 text-base font-semibold">{children}</h2>,
@@ -881,7 +881,7 @@ export default function AiChat() {
                           }}
                         >
                           {formatAssistantContent(message.content)}
-                        </ReactMarkdown>
+                        </SafeMarkdown>
                       </div>
                     ) : (
                       message.content

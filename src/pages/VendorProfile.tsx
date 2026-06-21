@@ -14,6 +14,7 @@ import { formatBudgetBand } from '@/lib/kenyaLocations';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { getProfessionalNetworkPath, isProfessionalNetworkEnabled } from '@/lib/featureFlags';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
+import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl, normalizePhoneHref } from '@/lib/security';
 
 interface VendorProfileData {
   id: string;
@@ -161,6 +162,9 @@ export default function VendorProfile() {
   }
 
   const profileBadge = vendorProfileBadge(vendor);
+  const vendorEmailHref = normalizeEmailHref(vendor.email);
+  const vendorPhoneHref = normalizePhoneHref(vendor.phone);
+  const vendorWebsiteHref = normalizeExternalUrl(vendor.website);
 
   return (
     <div className="min-h-screen bg-background">
@@ -275,22 +279,22 @@ export default function VendorProfile() {
               <CardTitle className="font-display text-base">Contact</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {vendor.email && (
-                <a href={`mailto:${vendor.email}`} className="flex items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground">
+              {vendor.email && vendorEmailHref && (
+                <a href={vendorEmailHref} className="flex items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground">
                   <Mail className="h-4 w-4 text-primary" />
                   {vendor.email}
                 </a>
               )}
-              {vendor.phone && (
-                <a href={`tel:${vendor.phone}`} className="flex items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground">
+              {vendor.phone && vendorPhoneHref && (
+                <a href={vendorPhoneHref} className="flex items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground">
                   <Phone className="h-4 w-4 text-primary" />
                   {vendor.phone}
                 </a>
               )}
-              {vendor.website && (
-                <a href={vendor.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground">
+              {vendor.website && vendorWebsiteHref && (
+                <a href={vendorWebsiteHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-muted-foreground transition-colors hover:text-foreground">
                   <Globe className="h-4 w-4 text-primary" />
-                  {vendor.website.replace(/^https?:\/\//, '')}
+                  {displaySafeUrl(vendor.website)}
                 </a>
               )}
             </CardContent>

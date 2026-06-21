@@ -17,6 +17,7 @@ import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import BrandWordmark from '@/components/BrandWordmark';
 import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
+import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl, normalizePhoneHref } from '@/lib/security';
 
 interface PlannerData {
   id: string;
@@ -153,6 +154,10 @@ export default function PlannerProfile() {
     );
   }
 
+  const plannerEmailHref = normalizeEmailHref(planner.company_email);
+  const plannerPhoneHref = normalizePhoneHref(planner.company_phone);
+  const plannerWebsiteHref = normalizeExternalUrl(planner.company_website);
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
@@ -284,22 +289,22 @@ export default function PlannerProfile() {
               <CardTitle className="font-display text-base">Contact</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {planner.company_email && (
-                <a href={`mailto:${planner.company_email}`} className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              {planner.company_email && plannerEmailHref && (
+                <a href={plannerEmailHref} className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
                   <Mail className="h-4 w-4 text-primary" />
                   {planner.company_email}
                 </a>
               )}
-              {planner.company_phone && (
-                <a href={`tel:${planner.company_phone}`} className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              {planner.company_phone && plannerPhoneHref && (
+                <a href={plannerPhoneHref} className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
                   <Phone className="h-4 w-4 text-primary" />
                   {planner.company_phone}
                 </a>
               )}
-              {planner.company_website && (
-                <a href={planner.company_website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              {planner.company_website && plannerWebsiteHref && (
+                <a href={plannerWebsiteHref} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
                   <Globe className="h-4 w-4 text-primary" />
-                  {planner.company_website.replace(/^https?:\/\//, '')}
+                  {displaySafeUrl(planner.company_website)}
                 </a>
               )}
             </CardContent>

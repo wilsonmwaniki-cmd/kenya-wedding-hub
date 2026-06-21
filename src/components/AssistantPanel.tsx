@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import ReactMarkdown from 'react-markdown';
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowRight, Loader2, Send, X } from 'lucide-react';
+import SafeMarkdown from '@/components/SafeMarkdown';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -476,7 +476,7 @@ export default function AssistantPanel({
                         >
                           {message.role === 'assistant' ? (
                             <div className="prose prose-sm max-w-none text-[#241f1a] prose-p:my-2 prose-ul:my-2 prose-li:my-1">
-                              <ReactMarkdown>{message.content}</ReactMarkdown>
+                              <SafeMarkdown>{message.content}</SafeMarkdown>
                             </div>
                           ) : (
                             message.content
