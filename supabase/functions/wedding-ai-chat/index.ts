@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { createCorsHeaders } from "../_shared/cors.ts";
+import { assertActiveAuthSession, isAuthSessionError } from "../_shared/sessionGuard.ts";
 import {
   AbuseProtectionError,
   assertMaxLength,
@@ -1012,6 +1013,8 @@ serve(async (req) => {
     });
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
+    await assertActiveAuthSession(adminClient, authHeader, user.id);
+
     const { messages, selectedClientId, allowWriteActions = false, confirmedActions = [] } = await req.json();
     assertMessageCount(messages, 24);
     for (const message of messages) {
@@ -1641,6 +1644,13 @@ Operating rules:
           "Content-Type": "application/json",
           ...(error.retryAfterSeconds ? { "Retry-After": String(error.retryAfterSeconds) } : {}),
         },
+      });
+    }
+
+    if (isAuthSessionError(error)) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 

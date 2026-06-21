@@ -4,6 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { loadPricingCheckoutConfig } from '../_shared/pricingCatalog.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
+import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
 
 function toIsoOrNull(timestamp?: number | null) {
   if (!timestamp) return null;
@@ -90,6 +91,8 @@ serve(async (req) => {
     if (userError || !user) {
       return await respondWithError(401, 'You must be signed in before checkout sync can run.', 'user_missing');
     }
+
+    await assertActiveAuthSession(serviceClient, authHeader, user.id);
 
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     const entitlementCode = session.metadata?.entitlement_code;
@@ -312,6 +315,13 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error('sync-couple-checkout error:', error);
+    if (isAuthSessionError(error)) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     await logFunctionEvent({
       functionName: 'sync-couple-checkout',
       severity: 'error',

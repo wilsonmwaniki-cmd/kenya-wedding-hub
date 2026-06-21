@@ -7,6 +7,7 @@ import {
 } from '../_shared/abuseProtection.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
+import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
 
 type InviteRow = {
   id: string;
@@ -153,6 +154,8 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    await assertActiveAuthSession(serviceClient, authHeader, user.id);
 
     const { data: inviteData, error: inviteError } = await authClient
       .from('wedding_invites')
@@ -441,6 +444,13 @@ serve(async (req) => {
           'Content-Type': 'application/json',
           ...(error.retryAfterSeconds ? { 'Retry-After': String(error.retryAfterSeconds) } : {}),
         },
+      });
+    }
+
+    if (isAuthSessionError(error)) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 

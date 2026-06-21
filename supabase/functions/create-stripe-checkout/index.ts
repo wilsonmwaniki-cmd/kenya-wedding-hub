@@ -5,6 +5,7 @@ import { AbuseProtectionError, assertRecentFunctionEventLimit } from '../_shared
 import { loadPricingCheckoutConfig } from '../_shared/pricingCatalog.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
+import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
 
 function mergeAllowedLookupKeys(baseLookupKeys: string[]) {
   const envValue = Deno.env.get('STRIPE_ALLOWED_LOOKUP_KEYS')?.trim();
@@ -61,6 +62,13 @@ serve(async (req) => {
       });
     }
 
+    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const pricingCheckoutConfig = await loadPricingCheckoutConfig(serviceClient);
+    const allowedLookupKeys = mergeAllowedLookupKeys(pricingCheckoutConfig.allowedLookupKeys);
+
     const {
       audience,
       feature,
@@ -85,13 +93,6 @@ serve(async (req) => {
       });
     }
 
-    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const pricingCheckoutConfig = await loadPricingCheckoutConfig(serviceClient);
-    const allowedLookupKeys = mergeAllowedLookupKeys(pricingCheckoutConfig.allowedLookupKeys);
-
     const {
       data: { user },
       error: userError,
@@ -103,6 +104,8 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    await assertActiveAuthSession(serviceClient, authHeader, user.id);
 
     await assertRecentFunctionEventLimit(serviceClient, {
       functionName: 'create-stripe-checkout',
@@ -282,6 +285,13 @@ serve(async (req) => {
           'Content-Type': 'application/json',
           ...(error.retryAfterSeconds ? { 'Retry-After': String(error.retryAfterSeconds) } : {}),
         },
+      });
+    }
+
+    if (isAuthSessionError(error)) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 

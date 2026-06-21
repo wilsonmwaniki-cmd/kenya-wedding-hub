@@ -8,6 +8,7 @@ import {
 } from "../_shared/abuseProtection.ts";
 import { logFunctionEvent } from "../_shared/runtimeLogger.ts";
 import { createCorsHeaders } from "../_shared/cors.ts";
+import { assertActiveAuthSession, isAuthSessionError } from "../_shared/sessionGuard.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -82,6 +83,16 @@ serve(async (req) => {
   }
 
   const user = authData.user;
+
+  try {
+    await assertActiveAuthSession(serviceClient, authHeader, user.id);
+  } catch (error) {
+    if (isAuthSessionError(error)) {
+      return jsonResponse(error.status, { error: error.message });
+    }
+    throw error;
+  }
+
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
   const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Kenya Bliss Planner <onboarding@resend.dev>';
 

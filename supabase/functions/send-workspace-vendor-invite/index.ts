@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createCorsHeaders } from "../_shared/cors.ts";
+import { assertActiveAuthSession, isAuthSessionError } from "../_shared/sessionGuard.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -56,6 +57,15 @@ serve(async (req) => {
 
   if (authError || !authData.user) {
     return jsonResponse(401, { error: 'Unauthorized' });
+  }
+
+  try {
+    await assertActiveAuthSession(serviceClient, authHeader, authData.user.id);
+  } catch (error) {
+    if (isAuthSessionError(error)) {
+      return jsonResponse(error.status, { error: error.message });
+    }
+    throw error;
   }
 
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
@@ -181,6 +191,10 @@ serve(async (req) => {
 
     return jsonResponse(200, { success: true });
   } catch (error) {
+    if (isAuthSessionError(error)) {
+      return jsonResponse(error.status, { error: error.message });
+    }
+
     console.error('send-workspace-vendor-invite error:', error);
     return jsonResponse(500, { error: error instanceof Error ? error.message : 'Unexpected error' });
   }

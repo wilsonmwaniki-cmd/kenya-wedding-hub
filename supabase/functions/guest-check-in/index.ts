@@ -6,6 +6,7 @@ import {
 } from '../_shared/abuseProtection.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
+import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -113,6 +114,15 @@ serve(async (req) => {
   }
 
   const user = authData.user;
+
+  try {
+    await assertActiveAuthSession(adminClient, authHeader, user.id);
+  } catch (error) {
+    if (isAuthSessionError(error)) {
+      return jsonResponse({ error: error.message }, error.status);
+    }
+    throw error;
+  }
 
   try {
     const { guestId, weddingId, action, idempotencyKey, deviceId } = await req.json();
