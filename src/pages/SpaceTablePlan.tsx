@@ -33,6 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/contexts/AuthContext';
@@ -361,6 +362,8 @@ const MIN_OBJECT_SIZE = 40;
 const GRID_SIZE = 20;
 const ALIGNMENT_THRESHOLD = 10;
 const zoomLevels = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const MIN_ZOOM = zoomLevels[0];
+const MAX_ZOOM = zoomLevels[zoomLevels.length - 1];
 const PIXELS_PER_METER = 40;
 const CANVAS_PADDING = 280;
 
@@ -1255,7 +1258,7 @@ export default function SpaceTablePlan() {
 
           return {
             ...object,
-            rotation: Math.round(angle),
+            rotation: Number(angle.toFixed(1)),
           };
         }
 
@@ -1294,11 +1297,13 @@ export default function SpaceTablePlan() {
 
   const setZoomByDirection = (direction: 'in' | 'out') => {
     setZoom((current) => {
-      const currentIndex = zoomLevels.findIndex((value) => value === current);
+      const currentIndex = direction === 'in'
+        ? zoomLevels.findIndex((value) => value > current + 0.001)
+        : [...zoomLevels].reverse().findIndex((value) => value < current - 0.001);
       if (currentIndex === -1) return current;
       const nextIndex = direction === 'in'
-        ? Math.min(zoomLevels.length - 1, currentIndex + 1)
-        : Math.max(0, currentIndex - 1);
+        ? currentIndex
+        : zoomLevels.length - 1 - currentIndex;
       return zoomLevels[nextIndex];
     });
   };
@@ -1330,7 +1335,7 @@ export default function SpaceTablePlan() {
     event.preventDefault();
 
     const delta = event.deltaY > 0 ? -0.12 : 0.12;
-    const nextZoom = Math.max(zoomLevels[0], Math.min(zoomLevels[zoomLevels.length - 1], Number((zoom + delta).toFixed(2))));
+    const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Number((zoom + delta).toFixed(2))));
     if (nextZoom === zoom) return;
 
     setZoomAroundPoint(nextZoom, event.clientX, event.clientY);
@@ -2038,13 +2043,13 @@ export default function SpaceTablePlan() {
           </Card>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_340px]">
-          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_380px]">
+          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur xl:col-span-2 xl:col-start-1 xl:row-start-1">
             <CardHeader>
               <CardTitle className="font-display text-2xl">Object palette</CardTitle>
-              <CardDescription>Add the core pieces first. This is enough to test whether the layout workflow feels useful.</CardDescription>
+              <CardDescription>Add the pieces you need, then use the canvas below as the main design surface.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3">
+            <CardContent className="grid max-h-[360px] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {paletteItems.map((item) => {
                 const Icon = item.icon;
 
@@ -2053,7 +2058,7 @@ export default function SpaceTablePlan() {
                     key={item.type}
                     type="button"
                     onClick={() => handleAddObject(item)}
-                    className="flex items-center justify-between rounded-2xl border border-border/70 bg-white px-4 py-3 text-left transition hover:border-primary/40 hover:bg-primary/5"
+                    className="group flex min-h-20 items-center justify-between rounded-2xl border border-border/70 bg-white px-4 py-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-md"
                   >
                     <div className="flex items-center gap-3">
                       <div className={cn('flex h-10 w-10 items-center justify-center rounded-2xl border', item.toneClassName)}>
@@ -2066,31 +2071,31 @@ export default function SpaceTablePlan() {
                         </p>
                       </div>
                     </div>
-                    <Plus className="h-4 w-4 text-muted-foreground" />
+                    <Plus className="h-4 w-4 text-muted-foreground transition group-hover:rotate-90 group-hover:text-primary" />
                   </button>
                 );
               })}
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
+          <Card className="overflow-hidden border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur xl:col-span-3 xl:row-start-2">
             <CardHeader className="border-b border-border/60">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <CardTitle className="font-display text-2xl">Canvas</CardTitle>
-                  <CardDescription>Zoom in, stretch the room, and place real service flow, seating, and decor zones the way a decorator would think about the day.</CardDescription>
+                  <CardDescription>A full-width planning surface for seating, service flow, decor, and room movement.</CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-2 rounded-full border border-border/70 bg-white/90 px-3 py-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
                     <Move className="h-3.5 w-3.5" />
                     Drag to arrange
                   </div>
-                  <div className="flex items-center gap-2 rounded-full border border-border/70 bg-white/90 px-2 py-1.5">
-                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full" onClick={() => setZoomByDirection('out')} disabled={zoom <= zoomLevels[0]}>
+                  <div className="flex items-center gap-2 rounded-full border border-border/70 bg-white/90 px-2 py-1.5 shadow-sm">
+                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full" onClick={() => setZoomByDirection('out')} disabled={zoom <= MIN_ZOOM}>
                       <ZoomOut className="h-4 w-4" />
                     </Button>
-                    <span className="min-w-12 text-center text-xs font-semibold text-foreground">{Math.round(zoom * 100)}%</span>
-                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full" onClick={() => setZoomByDirection('in')} disabled={zoom >= zoomLevels[zoomLevels.length - 1]}>
+                    <span className="min-w-14 text-center text-xs font-semibold text-foreground tabular-nums">{Math.round(zoom * 100)}%</span>
+                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full" onClick={() => setZoomByDirection('in')} disabled={zoom >= MAX_ZOOM}>
                       <ZoomIn className="h-4 w-4" />
                     </Button>
                   </div>
@@ -2101,7 +2106,7 @@ export default function SpaceTablePlan() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4 p-4">
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 lg:grid-cols-[180px_180px_minmax(220px,1fr)_minmax(260px,0.9fr)]">
                 <div className="space-y-2">
                   <Label>Canvas width</Label>
                   <Input
@@ -2117,6 +2122,21 @@ export default function SpaceTablePlan() {
                     value={canvasSize.height}
                     onChange={(event) => setCanvasSize((current) => ({ ...current, height: Math.max(MIN_CANVAS_HEIGHT, Number(event.target.value) || MIN_CANVAS_HEIGHT) }))}
                   />
+                </div>
+                <div className="space-y-3 rounded-3xl border border-border/70 bg-white/85 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Zoom</Label>
+                    <span className="text-xs font-semibold tabular-nums text-foreground">{Math.round(zoom * 100)}%</span>
+                  </div>
+                  <Slider
+                    value={[zoom]}
+                    min={MIN_ZOOM}
+                    max={MAX_ZOOM}
+                    step={0.05}
+                    onValueChange={([value]) => setZoom(Number(value.toFixed(2)))}
+                    aria-label="Canvas zoom"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Use the wheel over the canvas for pointer-centered zoom.</p>
                 </div>
                 <div className="rounded-3xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
                   <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Decorator note</p>
@@ -2135,10 +2155,14 @@ export default function SpaceTablePlan() {
 
               <div
                 ref={viewportRef}
-                className="overflow-auto rounded-[28px] border border-border/60 bg-[#faf4ec]"
+                className={cn(
+                  'min-h-[72vh] overflow-auto rounded-[32px] border border-border/60 bg-[#faf4ec] shadow-inner transition-colors duration-300',
+                  panningCanvas ? 'ring-2 ring-primary/20' : '',
+                )}
                 onWheel={handleCanvasWheel}
               >
                 <div
+                  className="transition-[width,height] duration-200 ease-out"
                   style={{
                     width: canvasSize.width * zoom,
                     height: canvasSize.height * zoom,
@@ -2147,7 +2171,7 @@ export default function SpaceTablePlan() {
                   <div
                     ref={canvasRef}
                     className={cn(
-                      'relative origin-top-left overflow-hidden bg-[linear-gradient(rgba(115,80,50,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(115,80,50,0.08)_1px,transparent_1px)] bg-[size:40px_40px]',
+                      'relative origin-top-left overflow-hidden bg-[linear-gradient(rgba(115,80,50,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(115,80,50,0.08)_1px,transparent_1px)] bg-[size:40px_40px] transition-transform duration-200 ease-out',
                       panningCanvas ? 'cursor-grabbing' : 'cursor-grab',
                     )}
                     style={{
@@ -2212,11 +2236,11 @@ export default function SpaceTablePlan() {
                           setSelectedSeatLabel(null);
                         }}
                         className={cn(
-                          'absolute border-2 px-4 py-3 text-left shadow-[0_18px_40px_rgba(67,36,20,0.12)] transition focus:outline-none',
+                          'absolute border-2 px-4 py-3 text-left shadow-[0_18px_40px_rgba(67,36,20,0.12)] transition-[border-color,box-shadow,opacity,transform] duration-200 ease-out focus:outline-none',
                           getShapeClasses(object),
                           buildObjectTone(object.objectType),
                           selectedObjectId === object.id ? 'ring-2 ring-primary/40' : 'opacity-95 hover:opacity-100',
-                          object.locked ? 'cursor-default' : '',
+                          object.locked ? 'cursor-default' : draggingObjectId === object.id ? 'cursor-grabbing duration-75' : 'cursor-grab',
                         )}
                         style={{
                           left: object.x,
@@ -2256,7 +2280,7 @@ export default function SpaceTablePlan() {
                             ))}
                             <button
                               type="button"
-                              className="absolute left-1/2 top-0 h-5 w-5 -translate-x-1/2 -translate-y-[150%] rounded-full border-2 border-primary bg-white shadow-sm"
+                              className="absolute left-1/2 top-0 h-6 w-6 -translate-x-1/2 -translate-y-[150%] rounded-full border-2 border-primary bg-white shadow-sm transition hover:scale-110 hover:bg-primary hover:text-primary-foreground"
                               onPointerDown={(event) => {
                                 event.stopPropagation();
                                 beginInteraction(event, object.id, 'rotate');
@@ -2350,7 +2374,7 @@ export default function SpaceTablePlan() {
             </CardContent>
           </Card>
 
-          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
+          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur xl:col-start-3 xl:row-start-1">
             <CardHeader className="pb-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -2473,6 +2497,19 @@ export default function SpaceTablePlan() {
                             rotation: Math.max(-180, Math.min(180, Number(event.target.value) || 0)),
                           }))
                         }
+                      />
+                      <Slider
+                        value={[selectedObject.rotation]}
+                        min={-180}
+                        max={180}
+                        step={1}
+                        onValueChange={([value]) =>
+                          updateSelectedObject((object) => ({
+                            ...object,
+                            rotation: value,
+                          }))
+                        }
+                        aria-label="Object rotation"
                       />
                     </div>
                   </div>
