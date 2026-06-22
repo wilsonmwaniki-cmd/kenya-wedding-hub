@@ -456,6 +456,15 @@ function formatPaletteDimension(value: number) {
   return `${(value / PIXELS_PER_METER).toFixed(1)}m`;
 }
 
+function escapePrintHtml(value: string | number | null | undefined) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 function buildSeatSlots(object: LocalSpaceObject & { tableDetails: LocalTableDetails }): SeatSlot[] {
   const capacity = Math.max(1, object.tableDetails.capacity);
   const centerX = object.width / 2;
@@ -1411,7 +1420,7 @@ export default function SpaceTablePlan() {
   };
 
   const openPrintLayoutView = () => {
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1400,height=1000');
+    const printWindow = window.open('', '_blank', 'width=1400,height=1000');
     if (!printWindow) {
       toast({
         title: 'Could not open print view',
@@ -1427,7 +1436,7 @@ export default function SpaceTablePlan() {
         ? seatSlots.map((seat) => {
             const assignment = object.tableDetails.assignments.find((item) => item.seatLabel === seat.label);
             const guest = assignment ? guestLookup.get(assignment.guestId) : null;
-            return `<div class="seat" style="left:${seat.x - 12}px; top:${seat.y - 12}px;">${guest ? guest.name.slice(0, 1).toUpperCase() : ''}</div>`;
+            return `<div class="seat" style="left:${seat.x - 12}px; top:${seat.y - 12}px;">${escapePrintHtml(guest ? guest.name.slice(0, 1).toUpperCase() : '')}</div>`;
           }).join('')
         : '';
       const extraClass = isTableObject(object)
@@ -1444,8 +1453,8 @@ export default function SpaceTablePlan() {
 
       return `
         <div class="object ${extraClass}" style="left:${object.x}px; top:${object.y}px; width:${object.width}px; height:${object.height}px; transform:rotate(${object.rotation}deg); z-index:${object.zIndex};">
-          <div class="label">${object.label}</div>
-          ${isTableObject(object) ? `<div class="sub">${object.tableDetails.tableName}</div>` : ''}
+          <div class="label">${escapePrintHtml(object.label)}</div>
+          ${isTableObject(object) ? `<div class="sub">${escapePrintHtml(object.tableDetails.tableName)}</div>` : ''}
           ${seatMarkup}
         </div>
       `;
@@ -1461,7 +1470,7 @@ export default function SpaceTablePlan() {
         isTableObject(object) ? object.tableDetails.serviceNotes : '',
       ].filter(Boolean).join(' | ');
 
-      return `<tr><td>${object.label}</td><td>${seatSummary}</td><td>${notes || '-'}</td></tr>`;
+      return `<tr><td>${escapePrintHtml(object.label)}</td><td>${escapePrintHtml(seatSummary)}</td><td>${escapePrintHtml(notes || '-')}</td></tr>`;
     }).join('');
 
     printWindow.document.write(`
@@ -1491,13 +1500,13 @@ export default function SpaceTablePlan() {
           </style>
         </head>
         <body>
-          <h1>${planName}</h1>
-          <p class="meta">${weddingContext?.weddingName ?? ''} · ${spaceType} · ${eventLabel || 'No event label'}${selectedVenuePreset ? ` · ${buildVenuePresetLabel(selectedVenuePreset)}` : ''}</p>
+          <h1>${escapePrintHtml(planName)}</h1>
+          <p class="meta">${escapePrintHtml(weddingContext?.weddingName ?? '')} · ${escapePrintHtml(spaceType)} · ${escapePrintHtml(eventLabel || 'No event label')}${selectedVenuePreset ? ` · ${escapePrintHtml(buildVenuePresetLabel(selectedVenuePreset))}` : ''}</p>
           <div class="canvas-shell">
             <div class="canvas">${objectMarkup}</div>
           </div>
           <h2>Decorator and venue notes</h2>
-          <p class="meta">${planNotes || 'No overall layout notes added yet.'}</p>
+          <p class="meta">${escapePrintHtml(planNotes || 'No overall layout notes added yet.')}</p>
           <table>
             <thead><tr><th>Zone</th><th>Readiness</th><th>Notes</th></tr></thead>
             <tbody>${teamRows}</tbody>
@@ -1506,8 +1515,10 @@ export default function SpaceTablePlan() {
       </html>
     `);
     printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    window.setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 100);
   };
 
   const savePlan = async () => {
