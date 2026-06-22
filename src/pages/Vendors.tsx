@@ -2544,28 +2544,28 @@ export default function Vendors() {
                     <InfoTip content="Shortlist vendors, compare options, lock final choices, and stay on top of contracts, payments, and follow-up tasks." />
                   </div>
                   <h1 className="mt-4 font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-                    Keep every vendor decision in one workspace
+                    Decide who to book next
                   </h1>
                   <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-                    Start with the vendors you already have. Track private notes, quotes, deposits, tasks, and due dates here, then link or invite vendors later when the relationship is ready.
+                    Start with the vendors you already know. Zania keeps the shortlist, final choices, payments, and follow-ups in one calmer flow.
                   </p>
                   <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                    <div className="rounded-[1.4rem] border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4 shadow-sm">
                       <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Tracked</p>
                       <p className="mt-2 text-3xl font-semibold text-foreground">{vendors.length}</p>
                       <p className="mt-1 text-sm text-muted-foreground">vendors in your wedding lineup</p>
                     </div>
-                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                    <div className="rounded-[1.4rem] border border-[#d9ead7] bg-[#f4fbf3]/90 p-4 shadow-sm">
                       <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Final Choices</p>
                       <p className="mt-2 text-3xl font-semibold text-foreground">{finalVendorEntries.length}</p>
                       <p className="mt-1 text-sm text-muted-foreground">categories already locked in</p>
                     </div>
-                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                    <div className="rounded-[1.4rem] border border-[#f0dfc5] bg-[#fff8ec]/95 p-4 shadow-sm">
                       <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Private Records</p>
                       <p className="mt-2 text-3xl font-semibold text-foreground">{vendors.filter((vendor) => !vendor.vendor_listing_id).length}</p>
                       <p className="mt-1 text-sm text-muted-foreground">vendors not linked to a Zania listing yet</p>
                     </div>
-                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                    <div className="rounded-[1.4rem] border border-[#f1d6d3] bg-[#fff4f2]/90 p-4 shadow-sm">
                       <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Open Follow-ups</p>
                       <p className="mt-2 text-3xl font-semibold text-foreground">{vendorTaskSummary.openTasks}</p>
                       <p className="mt-1 text-sm text-muted-foreground">vendor tasks still waiting on action</p>
@@ -2624,7 +2624,11 @@ export default function Vendors() {
                     className="pl-9"
                   />
                 </div>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <details className="w-full rounded-2xl border border-border/70 bg-background/70 p-3 sm:w-auto">
+                  <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    Vendor view controls
+                  </summary>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
                   <div className="grid w-full grid-cols-2 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
                     <Button
                       type="button"
@@ -2663,8 +2667,9 @@ export default function Vendors() {
                     <Download className="h-4 w-4" />
                     Export Vendors
                   </Button>
-                  {addVendorDialog}
                 </div>
+                </details>
+                {addVendorDialog}
               </CardContent>
             </Card>
 

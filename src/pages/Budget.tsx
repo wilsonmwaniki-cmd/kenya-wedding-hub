@@ -1264,14 +1264,14 @@ export default function Budget() {
                 <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Budget Workspace</p>
                 <InfoTip content="Track shared wedding spending separately from private couple-only costs, then record real payments against each budget line." />
               </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Keep the money visible</h1>
+              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Know what to update next</h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Shared and private spend, clearly separated.
+                Zania keeps the money view simple: what is planned, what has been paid, and the next budget line that needs attention.
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Budget used</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
                   {visibleCategories.length > 0 ? `${visibleSpentPercentage}%` : 'Not started'}
@@ -1280,7 +1280,7 @@ export default function Budget() {
                   KES {visibleSpent.toLocaleString()} spent of KES {visibleAllocated.toLocaleString()}
                 </p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Payments logged</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
                   {currentScopePayments.length > 0 ? `${paymentCoveragePercentage}%` : 'No payments yet'}
@@ -1291,14 +1291,18 @@ export default function Budget() {
                     : 'Start a payment trail for this budget scope'}
                 </p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
                 <p className="mt-2 text-sm font-medium text-foreground">{budgetPrimaryAction.label}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
               </div>
             </div>
 
-            <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <details className="rounded-2xl border border-border/70 bg-background/70 p-3">
+              <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Budget view controls
+              </summary>
+              <div className="mt-3 flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
                 <Button
                   type="button"
@@ -1337,7 +1341,8 @@ export default function Budget() {
                   By Category
                 </Button>
               </div>
-            </div>
+              </div>
+            </details>
           </div>
 
           <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">

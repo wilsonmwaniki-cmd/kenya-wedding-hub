@@ -853,24 +853,24 @@ export default function Tasks() {
           <div className="space-y-5">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Task Workspace</p>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Keep the wedding moving</h1>
+              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Choose the next task with confidence</h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Use this space to decide what happens next, what stays private, and what needs vendor follow-up before the week gets away from you.
+                Zania separates urgent work, private work, and vendor-linked follow-up so the checklist feels like a path instead of a pile.
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Open tasks</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{pending.length}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Still active in the wedding queue</p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#f1d6d3] bg-[#fff4f2]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Urgent now</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{urgentPending.length}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Critical or due in the next three days</p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Completed</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{done.length}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Already moved out of the active queue</p>
@@ -919,8 +919,10 @@ export default function Tasks() {
       </Card>
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Workspace Controls</p>
+        <details className="w-full rounded-2xl border border-border/70 bg-background/70 p-3 lg:w-auto">
+          <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            Task view controls
+          </summary>
           <div className="flex w-full items-center rounded-full border border-border bg-background p-1 shadow-sm sm:w-auto">
             <Button
               type="button"
@@ -956,7 +958,7 @@ export default function Tasks() {
               Completed
             </Button>
           </div>
-        </div>
+        </details>
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
           <UpgradePromptDialog
             open={upgradeOpen}

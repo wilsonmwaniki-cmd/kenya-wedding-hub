@@ -769,29 +769,29 @@ export default function Guests() {
                 <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Guest Workspace</p>
                 <InfoTip content="Manage your guest list, RSVP replies, contact details, groups, and invite follow-up in one place." />
               </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Keep the guest list moving</h1>
+              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Build the guest list one step at a time</h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Guests, RSVPs, and invites in one flow.
+                Start with names, then add contact details, send invites, and use RSVP/check-in tools when the list is ready.
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-4">
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Total guests</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{guests.length}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Everyone currently on the list</p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Confirmed</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{confirmed}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Guests who have said yes</p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#f1d6d3] bg-[#fff4f2]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Pending</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{pendingGuests}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Still waiting on RSVP replies</p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
                 <p className="mt-2 text-sm font-medium text-foreground">{guestPrimaryAction}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
@@ -804,7 +804,11 @@ export default function Guests() {
               <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest actions</p>
               <InfoTip content="Use quick actions here to import guests, export a template, start check-in, or send invites in bulk." />
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <details className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-3">
+              <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Import, export, and check-in tools
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-2">
               <input type="file" ref={fileInputRef} accept=".csv" onChange={handleFileUpload} className="hidden" />
               <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
                 <Download className="h-4 w-4" /> CSV Template
@@ -820,7 +824,8 @@ export default function Guests() {
                   <Send className="h-4 w-4" /> Invite All ({pendingWithEmail.length})
                 </Button>
               )}
-            </div>
+              </div>
+            </details>
 
             <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
               <p className="text-sm font-medium text-foreground">
