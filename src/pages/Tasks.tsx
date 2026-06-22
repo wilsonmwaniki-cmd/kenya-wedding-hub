@@ -207,6 +207,7 @@ export default function Tasks() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
+  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -614,6 +615,11 @@ export default function Tasks() {
     taskViewMode,
     urgentPending.length,
   ]);
+
+  useEffect(() => {
+    setAssistantConciergeContext?.(tasksConciergeContext);
+    return () => setAssistantConciergeContext?.(null);
+  }, [setAssistantConciergeContext, tasksConciergeContext]);
 
   const tasksAssistant = useInlineAssistant({
     feature: tasksAssistantFeature,

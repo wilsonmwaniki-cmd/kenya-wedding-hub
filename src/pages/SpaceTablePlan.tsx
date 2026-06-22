@@ -36,10 +36,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
+import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { getMyWeddingOwnershipSummaryFromTables } from '@/lib/weddingWorkspace';
 import { supabase } from '@/integrations/supabase/client';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 type SpacePlanStatus = 'draft' | 'review' | 'final';
 type SpaceObjectType =
@@ -725,6 +727,8 @@ export default function SpaceTablePlan() {
   const { user, profile } = useAuth();
   const { selectedClient } = usePlanner();
   const { toast } = useToast();
+  const assistantPanel = useAssistantPanel();
+  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const db = supabase as any;
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -813,6 +817,93 @@ export default function SpaceTablePlan() {
       ),
     };
   }, [guests, objects]);
+  const spacePlanPrimaryAction = objects.length === 0
+    ? 'Place the first room essentials'
+    : planHealth.tableCount === 0
+      ? 'Add the first guest table'
+      : planHealth.unassignedGuests.length > 0
+        ? `Seat ${planHealth.unassignedGuests.length} unassigned guest${planHealth.unassignedGuests.length === 1 ? '' : 's'}`
+        : planHealth.overCapacityTables.length > 0
+          ? 'Fix over-capacity tables'
+          : 'Save or export the layout';
+  const spacePlanConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'space_plan',
+    role: profile?.role === 'planner' ? 'planner' : 'couple',
+    weddingName: weddingContext?.weddingName || exportCoupleName,
+    primaryGoal: 'Help the user create an operational room layout with table assignments, room flow, and vendor-ready exports.',
+    recommendedNextAction: spacePlanPrimaryAction,
+    facts: [
+      `Plan name: ${planName}`,
+      `Plan status: ${planStatus}`,
+      `Space type: ${spaceType}`,
+      `Event label: ${eventLabel || 'not set'}`,
+      `Saved plans: ${plans.length}`,
+      `Objects placed: ${planHealth.objectCount}`,
+      `Tables placed: ${planHealth.tableCount}`,
+      `VIP tables: ${planHealth.vipTables.length}`,
+      `Guests loaded: ${guests.length}`,
+      `Guests assigned: ${planHealth.assignedGuests}`,
+      `Guests unassigned: ${planHealth.unassignedGuests.length}`,
+      `Over-capacity tables: ${planHealth.overCapacityTables.length}`,
+      `Canvas size: ${formatDimension(canvasSize.width, dimensionUnit)} x ${formatDimension(canvasSize.height, dimensionUnit)} ${dimensionUnit === 'meters' ? 'm' : 'ft'}`,
+      `Zoom: ${Math.round(zoom * 100)}%`,
+      `Venue preset selected: ${selectedVenuePreset ? buildVenuePresetLabel(selectedVenuePreset) : 'none'}`,
+      `Selected object: ${selectedObject?.label || 'none'}`,
+    ],
+    risks: [
+      contextError ? `Workspace context error: ${contextError}` : null,
+      objects.length === 0 ? 'The canvas is blank.' : null,
+      planHealth.tableCount === 0 ? 'No guest tables are placed yet.' : null,
+      planHealth.unassignedGuests.length > 0 ? `${planHealth.unassignedGuests.length} guests are not assigned to tables.` : null,
+      planHealth.overCapacityTables.length > 0 ? `${planHealth.overCapacityTables.length} tables are over capacity.` : null,
+      !planNotes.trim() ? 'There are no overall layout notes for decorators, ushers, or caterers.' : null,
+    ],
+    sections: selectedObject ? [
+      {
+        title: 'Selected layout object',
+        lines: [
+          `Label: ${selectedObject.label}`,
+          `Type: ${selectedObject.objectType}`,
+          `Size: ${formatDimension(selectedObject.width, dimensionUnit)} x ${formatDimension(selectedObject.height, dimensionUnit)} ${dimensionUnit === 'meters' ? 'm' : 'ft'}`,
+          `Rotation: ${selectedObject.rotation} degrees`,
+          `Locked: ${selectedObject.locked ? 'yes' : 'no'}`,
+          isTableObject(selectedObject) ? `Capacity: ${selectedObject.tableDetails.capacity}` : null,
+          isTableObject(selectedObject) ? `Assigned seats: ${selectedObject.tableDetails.assignments.length}` : null,
+        ],
+      },
+    ] : [],
+  }), [
+    canvasSize.height,
+    canvasSize.width,
+    contextError,
+    dimensionUnit,
+    eventLabel,
+    exportCoupleName,
+    guests.length,
+    objects.length,
+    planHealth.assignedGuests,
+    planHealth.objectCount,
+    planHealth.overCapacityTables.length,
+    planHealth.tableCount,
+    planHealth.unassignedGuests.length,
+    planHealth.vipTables.length,
+    planName,
+    planNotes,
+    planStatus,
+    plans.length,
+    profile?.role,
+    selectedObject,
+    selectedVenuePreset,
+    spacePlanPrimaryAction,
+    spaceType,
+    weddingContext?.weddingName,
+    zoom,
+  ]);
+
+  useEffect(() => {
+    setAssistantConciergeContext?.(spacePlanConciergeContext);
+    return () => setAssistantConciergeContext?.(null);
+  }, [setAssistantConciergeContext, spacePlanConciergeContext]);
 
   useEffect(() => {
     if (!user || !profile) return;

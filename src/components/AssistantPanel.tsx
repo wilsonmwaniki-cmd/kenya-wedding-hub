@@ -189,6 +189,9 @@ export default function AssistantPanel({
   const feature = useMemo(() => getAssistantFeature(role, plannerType), [plannerType, role]);
   const surface = useMemo(() => getAssistantSurface(location.pathname, role), [location.pathname, role]);
   const compactDesktopLauncher = surface.page === 'settings';
+  const activeConciergeContext = assistantPanel?.conciergeContext
+    ?? assistantPanel?.launchRequest?.conciergeContext
+    ?? null;
 
   const assistant = useInlineAssistant({
     feature: feature ?? 'couple.ai_assistant',
@@ -196,6 +199,7 @@ export default function AssistantPanel({
     surface: 'assistant_panel',
     contextSource: surface.contextSource,
     initialMessages: conversation,
+    conciergeContext: activeConciergeContext,
   });
   const starterPrompt = surface.prompts[0] ?? '';
   const activePrompt = surface.prompts[promptIndex % Math.max(surface.prompts.length, 1)] ?? starterPrompt;
@@ -306,6 +310,7 @@ export default function AssistantPanel({
     const result = await assistant.runPrompt(prompt, {
       contextSource: surface.contextSource,
       surface: surfaceName,
+      conciergeContext: activeConciergeContext,
     });
     if (result) {
       setConversation((current) => [

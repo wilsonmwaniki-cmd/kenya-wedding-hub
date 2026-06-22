@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState, useRef, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
+import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { supabase } from '@/integrations/supabase/client';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,6 +32,7 @@ import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { sanitizeHtml } from '@/lib/security';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
 
@@ -152,6 +154,8 @@ export default function Guests() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const assistantPanel = useAssistantPanel();
+  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
   const [open, setOpen] = useState(false);
@@ -678,6 +682,16 @@ export default function Guests() {
   const pendingGuests = guests.filter(g => g.rsvp_status === 'pending').length;
   const declinedGuests = guests.filter(g => g.rsvp_status === 'declined').length;
   const guestsWithEmail = guests.filter(g => Boolean(g.email)).length;
+  const confirmed = guests.filter(g => g.rsvp_status === 'confirmed').length;
+  const guestsMissingContact = guests.filter(g => !g.email && !g.phone).length;
+  const guestsWithoutTables = guests.filter(g => !g.table_number && g.rsvp_status !== 'declined').length;
+  const guestPrimaryAction = guests.length === 0
+    ? 'Add the first guest'
+    : pendingWithEmail.length > 0
+      ? `Send ${pendingWithEmail.length} pending invite${pendingWithEmail.length === 1 ? '' : 's'}`
+      : pendingGuests > 0
+        ? 'Follow up missing contact details'
+        : 'Review confirmed seating and VIP groups';
 
   const selectedGuest = useMemo(
     () => visibleGuests.find((guest) => guest.id === selectedGuestId) ?? null,
@@ -689,6 +703,72 @@ export default function Guests() {
   const selectedGuestRsvpActive = selectedGuest
     ? isTokenActive(selectedGuest.rsvp_token_expires_at, selectedGuest.rsvp_token_revoked_at)
     : false;
+
+  const guestConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'guests',
+    role: isPlanner ? 'planner' : 'couple',
+    weddingName: selectedClient?.client_name || coupleName || 'Current wedding',
+    primaryGoal: 'Help the user turn the guest list into a clean RSVP, seating, and check-in workflow.',
+    recommendedNextAction: guestPrimaryAction,
+    facts: [
+      `Guests tracked: ${guests.length}`,
+      `Confirmed RSVPs: ${confirmed}`,
+      `Pending RSVPs: ${pendingGuests}`,
+      `Declined guests: ${declinedGuests}`,
+      `Guests with email: ${guestsWithEmail}`,
+      `Guests missing all contact details: ${guestsMissingContact}`,
+      `Guests without table assignments: ${guestsWithoutTables}`,
+      `Visible guests after filters: ${visibleGuests.length}`,
+      `Guest groups: ${uniqueGroups.length}`,
+      `Active tab: ${activeTab}`,
+    ],
+    risks: [
+      guests.length === 0 ? 'The guest list has not been started.' : null,
+      pendingWithEmail.length > 0 ? `${pendingWithEmail.length} pending guest invites can be sent now.` : null,
+      guestsMissingContact > 0 ? `${guestsMissingContact} guests have no email or phone, so RSVP follow-up will be hard.` : null,
+      guestsWithoutTables > 0 ? `${guestsWithoutTables} active guests do not have table assignments yet.` : null,
+      !guestRsvpDecision.allowed ? 'RSVP management is locked behind the guest add-on for this wedding.' : null,
+      plannerNeedsApproval ? 'This planner is working on a linked wedding and some guest changes require couple approval.' : null,
+    ],
+    sections: selectedGuest ? [
+      {
+        title: 'Selected guest',
+        lines: [
+          `Name: ${selectedGuest.name}`,
+          `RSVP: ${selectedGuest.rsvp_status || 'pending'}`,
+          `Group: ${selectedGuest.group_name || 'none'}`,
+          `Category: ${selectedGuest.category || 'general'}`,
+          `Has email: ${selectedGuest.email ? 'yes' : 'no'}`,
+          `RSVP link active: ${selectedGuestRsvpActive ? 'yes' : 'no'}`,
+        ],
+      },
+    ] : [],
+  }), [
+    activeTab,
+    confirmed,
+    coupleName,
+    declinedGuests,
+    guestPrimaryAction,
+    guestRsvpDecision.allowed,
+    guests.length,
+    guestsMissingContact,
+    guestsWithEmail,
+    guestsWithoutTables,
+    isPlanner,
+    pendingGuests,
+    pendingWithEmail.length,
+    plannerNeedsApproval,
+    selectedClient?.client_name,
+    selectedGuest,
+    selectedGuestRsvpActive,
+    uniqueGroups.length,
+    visibleGuests.length,
+  ]);
+
+  useEffect(() => {
+    setAssistantConciergeContext?.(guestConciergeContext);
+    return () => setAssistantConciergeContext?.(null);
+  }, [guestConciergeContext, setAssistantConciergeContext]);
 
   useEffect(() => {
     setSelectedGuestDraft(selectedGuest ? { ...selectedGuest } : null);
@@ -720,15 +800,6 @@ export default function Guests() {
       </Suspense>
     );
   }
-
-  const confirmed = guests.filter(g => g.rsvp_status === 'confirmed').length;
-  const guestPrimaryAction = guests.length === 0
-    ? 'Add the first guest'
-    : pendingWithEmail.length > 0
-      ? `Send ${pendingWithEmail.length} pending invite${pendingWithEmail.length === 1 ? '' : 's'}`
-      : pendingGuests > 0
-        ? 'Follow up missing contact details'
-        : 'Review confirmed seating and VIP groups';
 
   return (
     <div className="space-y-6">

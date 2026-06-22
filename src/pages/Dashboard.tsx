@@ -267,6 +267,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
+  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
   const showPlanningDigest = profile?.role === 'couple' || isCommittee;
   const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
@@ -618,6 +619,11 @@ export default function Dashboard() {
     weddingLocation,
     weddingTitle,
   ]);
+
+  useEffect(() => {
+    setAssistantConciergeContext?.(dashboardConciergeContext);
+    return () => setAssistantConciergeContext?.(null);
+  }, [dashboardConciergeContext, setAssistantConciergeContext]);
 
   const dashboardAssistant = useInlineAssistant({
     feature: dashboardAssistantFeature,
