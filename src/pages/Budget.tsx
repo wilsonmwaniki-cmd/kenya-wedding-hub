@@ -196,6 +196,7 @@ export default function Budget() {
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
+  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -924,6 +925,11 @@ export default function Budget() {
     visibleSpent,
     visibleSpentPercentage,
   ]);
+
+  useEffect(() => {
+    setAssistantConciergeContext?.(budgetConciergeContext);
+    return () => setAssistantConciergeContext?.(null);
+  }, [budgetConciergeContext, setAssistantConciergeContext]);
 
   const budgetAssistant = useInlineAssistant({
     feature: budgetAssistantFeature,

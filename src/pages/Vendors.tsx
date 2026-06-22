@@ -394,6 +394,7 @@ export default function Vendors() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const assistantPanel = useAssistantPanel();
+  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'directory' | 'custom'>('custom');
@@ -1930,6 +1931,11 @@ export default function Vendors() {
     vendorWorkspaceVendors.length,
     vendors,
   ]);
+
+  useEffect(() => {
+    setAssistantConciergeContext?.(vendorsConciergeContext);
+    return () => setAssistantConciergeContext?.(null);
+  }, [setAssistantConciergeContext, vendorsConciergeContext]);
 
   const vendorsAssistant = useInlineAssistant({
     feature: vendorsAssistantFeature,

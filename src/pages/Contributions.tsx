@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
+import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
   buildContributionReminderMessage,
@@ -30,6 +31,7 @@ import { ArrowUpRight, Banknote, CalendarDays, Copy, Download, ExternalLink, Gif
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 type ContributionRound = {
   id: string;
@@ -153,6 +155,8 @@ export default function Contributions() {
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const assistantPanel = useAssistantPanel();
+  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const db = supabase as any;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
@@ -299,6 +303,67 @@ export default function Contributions() {
   );
   const latestShareUrl = shareLink || '';
   const shareIsActive = isTokenActive(shareState?.expiresAt, shareState?.revokedAt);
+  const contributionPrimaryAction = rows.length === 0
+    ? 'Record the first pledge or contribution'
+    : pendingRows.length > 0
+      ? `Follow up ${pendingRows.length} pending pledge${pendingRows.length === 1 ? '' : 's'}`
+      : fundingGap > 0
+        ? 'Review the remaining funding gap'
+        : 'Share the contribution summary';
+
+  const contributionsConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'contributions',
+    role: isPlanner ? 'planner' : 'couple',
+    weddingName: workspaceName,
+    primaryGoal: 'Help the user manage family, committee, cash, and in-kind support without losing track of pledges.',
+    recommendedNextAction: contributionPrimaryAction,
+    facts: [
+      `Current view: ${selectedRoundLabel}`,
+      `Contribution records in view: ${filteredRows.length}`,
+      `All contribution records: ${rows.length}`,
+      `Active rounds: ${activeRounds}`,
+      `Funding target: ${formatCurrency(fundingTarget)}`,
+      `Total support: ${formatCurrency(summary.totalSupport)}`,
+      `Collected cash: ${formatCurrency(summary.collectedCash)}`,
+      `Outstanding pledges: ${formatCurrency(summary.outstandingPledges)}`,
+      `In-kind value: ${formatCurrency(summary.inKindValue)}`,
+      `Contributors tracked: ${summary.contributorCount}`,
+      `Coverage: ${Math.round(coveragePercentage)}%`,
+      `Public share link active: ${shareIsActive ? 'yes' : 'no'}`,
+    ],
+    risks: [
+      rows.length === 0 ? 'No contributions or pledges have been recorded yet.' : null,
+      pendingRows.length > 0 ? `${pendingRows.length} pending pledge follow-ups need attention.` : null,
+      fundingGap > 0 ? `There is still a ${formatCurrency(fundingGap)} funding gap.` : null,
+      activeRounds === 0 ? 'There are no active contribution rounds.' : null,
+      !shareIsActive ? 'The public contribution summary link is not active.' : null,
+      plannerNeedsApproval ? 'This planner is working on a linked wedding and contribution edits may need couple approval.' : null,
+    ],
+  }), [
+    activeRounds,
+    contributionPrimaryAction,
+    coveragePercentage,
+    filteredRows.length,
+    fundingGap,
+    fundingTarget,
+    isPlanner,
+    pendingRows.length,
+    plannerNeedsApproval,
+    rows.length,
+    selectedRoundLabel,
+    shareIsActive,
+    summary.collectedCash,
+    summary.contributorCount,
+    summary.inKindValue,
+    summary.outstandingPledges,
+    summary.totalSupport,
+    workspaceName,
+  ]);
+
+  useEffect(() => {
+    setAssistantConciergeContext?.(contributionsConciergeContext);
+    return () => setAssistantConciergeContext?.(null);
+  }, [contributionsConciergeContext, setAssistantConciergeContext]);
 
   const copyText = async (value: string, successTitle: string, successDescription?: string) => {
     try {
