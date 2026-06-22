@@ -8,19 +8,23 @@ type BoundaryScope = 'public' | 'workspace';
 
 type ErrorBoundaryInnerProps = {
   children: React.ReactNode;
-  fallback: (errorId: string) => React.ReactNode;
+  fallback: (errorId: string, errorMessage?: string, componentStack?: string) => React.ReactNode;
   scope: BoundaryScope;
 };
 
 type ErrorBoundaryInnerState = {
   hasError: boolean;
   errorId: string;
+  errorMessage: string;
+  componentStack: string;
 };
 
 class ErrorBoundaryInner extends React.Component<ErrorBoundaryInnerProps, ErrorBoundaryInnerState> {
   state: ErrorBoundaryInnerState = {
     hasError: false,
     errorId: '',
+    errorMessage: '',
+    componentStack: '',
   };
 
   static getDerivedStateFromError() {
@@ -31,6 +35,11 @@ class ErrorBoundaryInner extends React.Component<ErrorBoundaryInnerProps, ErrorB
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    this.setState({
+      errorMessage: error?.message || 'Unknown render error',
+      componentStack: errorInfo.componentStack || '',
+    });
+
     const eventId = Sentry.captureException(error, {
       tags: {
         boundary_scope: this.props.scope,
@@ -49,16 +58,33 @@ class ErrorBoundaryInner extends React.Component<ErrorBoundaryInnerProps, ErrorB
 
   render() {
     if (this.state.hasError) {
-      return this.props.fallback(this.state.errorId);
+      return this.props.fallback(
+        this.state.errorId,
+        this.state.errorMessage,
+        this.state.componentStack,
+      );
     }
 
     return this.props.children;
   }
 }
 
-function ErrorFallback({ scope, errorId }: { scope: BoundaryScope; errorId: string }) {
+function ErrorFallback({
+  scope,
+  errorId,
+  errorMessage,
+  componentStack,
+}: {
+  scope: BoundaryScope;
+  errorId: string;
+  errorMessage?: string;
+  componentStack?: string;
+}) {
   const navigate = useNavigate();
   const location = useLocation();
+  const showPreviewDiagnostics =
+    window.location.hostname === 'localhost'
+    || window.location.hostname.endsWith('.vercel.app');
 
   const primaryTarget = (() => {
     if (scope === 'public') return '/';
@@ -103,6 +129,23 @@ function ErrorFallback({ scope, errorId }: { scope: BoundaryScope; errorId: stri
               Reference {errorId}
             </p>
           ) : null}
+          {showPreviewDiagnostics && (errorMessage || componentStack) ? (
+            <div className="mt-6 rounded-2xl border border-destructive/20 bg-destructive/5 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-destructive">
+                Preview diagnostics
+              </p>
+              {errorMessage ? (
+                <p className="mt-2 break-words text-sm font-medium text-foreground">
+                  {errorMessage}
+                </p>
+              ) : null}
+              {componentStack ? (
+                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-xl bg-background/80 p-3 text-xs leading-5 text-muted-foreground">
+                  {componentStack}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -116,7 +159,14 @@ export function PublicErrorBoundary({ children }: { children: React.ReactNode })
     <ErrorBoundaryInner
       key={`public:${location.pathname}${location.search}${location.hash}`}
       scope="public"
-      fallback={(errorId) => <ErrorFallback scope="public" errorId={errorId} />}
+      fallback={(errorId, errorMessage, componentStack) => (
+        <ErrorFallback
+          scope="public"
+          errorId={errorId}
+          errorMessage={errorMessage}
+          componentStack={componentStack}
+        />
+      )}
     >
       {children}
     </ErrorBoundaryInner>
@@ -130,7 +180,14 @@ export function WorkspaceErrorBoundary({ children }: { children: React.ReactNode
     <ErrorBoundaryInner
       key={`workspace:${location.pathname}${location.search}${location.hash}`}
       scope="workspace"
-      fallback={(errorId) => <ErrorFallback scope="workspace" errorId={errorId} />}
+      fallback={(errorId, errorMessage, componentStack) => (
+        <ErrorFallback
+          scope="workspace"
+          errorId={errorId}
+          errorMessage={errorMessage}
+          componentStack={componentStack}
+        />
+      )}
     >
       {children}
     </ErrorBoundaryInner>
