@@ -1097,28 +1097,28 @@ export default function Timeline() {
                 <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Timeline Workspace</p>
                 <InfoTip content="Build the wedding-day flow, keep timings clear, and share either the full schedule or role-specific views with the right people." />
               </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Plan the wedding day clearly</h1>
+              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Build the day-of flow without overwhelm</h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                A clear wedding-day flow everyone can follow.
+                Start with one schedule, then refine timings, roles, and share links once the shape of the day is clear.
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Live timelines</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{instances.length}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {instances.length === 0 ? 'No wedding schedule built yet' : 'Working versions ready to open'}
                 </p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Templates</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{templates.length}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {templates.length === 0 ? 'No reusable wedding flow yet' : 'Reusable starting points available'}
                 </p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+              <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
                 <p className="mt-2 text-sm font-medium text-foreground">{timelineHeroAction}</p>
                 <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
@@ -1139,6 +1139,11 @@ export default function Timeline() {
                 <Plus className="h-4 w-4" />
                 Create manually
               </Button>
+              <details className="rounded-2xl border border-border/70 bg-background/70 p-3">
+                <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Template and AI tools
+                </summary>
+                <div className="mt-3 space-y-3">
               <Button
                 variant="outline"
                 className="w-full justify-start gap-2"
@@ -1155,7 +1160,7 @@ export default function Timeline() {
                 }}
               >
                 <FileText className="h-4 w-4" />
-                {templates.length > 0 ? 'Start from template' : 'Create your first template'}
+                  {templates.length > 0 ? 'Start from template' : 'Create your first template'}
               </Button>
               {assistantPanel && (
                 <Button
@@ -1170,6 +1175,8 @@ export default function Timeline() {
                   Plan with AI
                 </Button>
               )}
+                </div>
+              </details>
               <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
                 <p className="text-sm font-medium text-foreground">
                   {templates.length > 0 ? 'Templates make repeat planning faster' : 'A clean first draft is enough to get moving'}

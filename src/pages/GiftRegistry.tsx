@@ -420,9 +420,9 @@ export default function GiftRegistry() {
             <Gift className="h-5 w-5 text-primary" />
             <Badge variant="secondary">Add-on</Badge>
           </div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Gift Registry</h1>
+          <h1 className="font-display text-3xl font-bold text-foreground">Make gifting easy for guests</h1>
           <p className="max-w-2xl text-muted-foreground">
-            Keep one clear list of gifts you want, with links, price notes, and a simple bought or still-needed status.
+            Add the essentials first, then use status and links to show what is still needed without overloading guests.
           </p>
         </div>
       </div>
@@ -481,19 +481,19 @@ export default function GiftRegistry() {
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-3">
-            <Card className="border-border/70 shadow-card">
+            <Card className="border-[#d9e5f4] bg-[#f4f8fd]/90 shadow-card">
               <CardContent className="px-5 py-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Registry items</p>
                 <p className="mt-2 font-display text-3xl font-semibold">{stats.totalItems}</p>
               </CardContent>
             </Card>
-            <Card className="border-border/70 shadow-card">
+            <Card className="border-[#f0dfc5] bg-[#fff8ec]/95 shadow-card">
               <CardContent className="px-5 py-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Still needed</p>
                 <p className="mt-2 font-display text-3xl font-semibold">{stats.activeItems}</p>
               </CardContent>
             </Card>
-            <Card className="border-border/70 shadow-card">
+            <Card className="border-[#d9ead7] bg-[#f4fbf3]/90 shadow-card">
               <CardContent className="px-5 py-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Estimated value</p>
                 <p className="mt-2 font-display text-3xl font-semibold">{formatKes(stats.totalEstimatedValue) ?? 'KES 0'}</p>

@@ -720,21 +720,21 @@ export default function Contributions() {
           <div className="space-y-5">
             <div>
             <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Committee Contributions</p>
-            <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Wedding Contributions</h1>
+            <h1 className="mt-2 font-display text-3xl font-bold text-foreground">See what support still needs follow-up</h1>
             <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
-              Track harambee pledges, contributions received, in-kind support, and the remaining funding gap without leaving the wedding workspace.
+              Track pledges, paid support, in-kind help, and the remaining funding gap without turning the page into a committee spreadsheet.
             </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-primary/15 bg-white/85 p-4">
+              <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Track promises</p>
                 <p className="mt-2 text-sm text-foreground">Log who pledged, how much, and which round or meeting it came from.</p>
               </div>
-              <div className="rounded-2xl border border-primary/15 bg-white/85 p-4">
+              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Record support</p>
                 <p className="mt-2 text-sm text-foreground">Capture paid cash and in-kind help like chairs, food, transport, or cake support.</p>
               </div>
-              <div className="rounded-2xl border border-primary/15 bg-white/85 p-4">
+              <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">See the gap</p>
                 <p className="mt-2 text-sm text-foreground">Compare real support against the wedding budget so the committee knows what is still uncovered.</p>
               </div>
@@ -748,6 +748,11 @@ export default function Contributions() {
                 <CalendarDays className="h-4 w-4" />
                 {plannerNeedsApproval ? 'Request round' : 'Add round'}
               </Button>
+              <details className="w-full rounded-2xl border border-border/70 bg-background/70 p-3 sm:w-auto">
+                <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Export and sharing tools
+                </summary>
+                <div className="mt-3 flex flex-wrap gap-3">
               <Button variant="outline" onClick={exportContributions} disabled={filteredRows.length === 0} className="gap-2">
                 <Download className="h-4 w-4" />
                 Export summary
@@ -762,6 +767,8 @@ export default function Contributions() {
                   Share summary
                 </Button>
               )}
+                </div>
+              </details>
             </div>
           </div>
           <div className="space-y-4 rounded-2xl border border-border/70 bg-background/90 p-5">
@@ -806,7 +813,11 @@ export default function Contributions() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 print:hidden md:grid-cols-2 xl:grid-cols-5">
+      <details className="print:hidden rounded-[28px] border border-border/70 bg-background/70 p-4 shadow-card">
+        <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          Show contribution detail cards
+        </summary>
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card className="shadow-card">
           <CardHeader className="pb-2">
             <CardDescription>Wedding target</CardDescription>
@@ -858,6 +869,7 @@ export default function Contributions() {
           </CardHeader>
         </Card>
       </div>
+      </details>
 
       <Card className="shadow-card print:hidden">
         <CardHeader>

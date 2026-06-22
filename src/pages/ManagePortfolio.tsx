@@ -273,24 +273,24 @@ export default function ManagePortfolio() {
               </Badge>
               <div className="space-y-2">
                 <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-                  Turn your wedding workspace into a beautiful public story
+                  Create the public story when the wedding is ready
                 </h1>
                 <p className="max-w-3xl text-sm leading-7 text-muted-foreground sm:text-base">
-                  Pull together your wedding details, style, vendor credits, and trusted reviews into one page you can publish and share when you are ready.
+                  Zania starts from your workspace so you can polish the story, credit the team, and publish only when it feels ready.
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                <div className="rounded-[1.3rem] border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4 shadow-sm">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Story</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">Wedding details</p>
                   <p className="mt-1 text-sm text-muted-foreground">Date, place, style, and story.</p>
                 </div>
-                <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                <div className="rounded-[1.3rem] border border-[#d9ead7] bg-[#f4fbf3]/90 p-4 shadow-sm">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Credits</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">Wedding team</p>
                   <p className="mt-1 text-sm text-muted-foreground">Show the vendors behind the day.</p>
                 </div>
-                <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+                <div className="rounded-[1.3rem] border border-[#f0dfc5] bg-[#fff8ec]/95 p-4 shadow-sm">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Social proof</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">Trusted reviews</p>
                   <p className="mt-1 text-sm text-muted-foreground">Add reviews that build trust.</p>
@@ -329,28 +329,28 @@ export default function ManagePortfolio() {
               </Badge>
               <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">{title || 'Wedding story'}</h1>
               <p className="max-w-3xl text-sm leading-7 text-muted-foreground sm:text-base">
-                Shape the public version of your wedding story.
+                Keep the public page simple: story first, vendor credits second, reviews when they add trust.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+              <div className="rounded-[1.3rem] border border-[#f0dfc5] bg-[#fff8ec]/95 p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Status</p>
                 <p className="mt-2 text-lg font-semibold text-foreground">{isPublished ? 'Published' : 'Draft'}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{isPublished ? 'Visible by link' : 'Visible inside your workspace'}</p>
               </div>
-              <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+              <div className="rounded-[1.3rem] border border-[#d9ead7] bg-[#f4fbf3]/90 p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Vendors</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{vendors.length}</p>
                 <p className="mt-1 text-sm text-muted-foreground">credited team members</p>
               </div>
-              <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+              <div className="rounded-[1.3rem] border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Reviews</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{reviews.length}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {reviews.length > 0 ? `${averageRating.toFixed(1)} average rating` : 'No review signals yet'}
                 </p>
               </div>
-              <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
+              <div className="rounded-[1.3rem] border border-[#eadcf3] bg-[#f8f4fd]/90 p-4 shadow-sm">
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Style Tags</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{styleTags.length}</p>
                 <p className="mt-1 text-sm text-muted-foreground">story cues for the page</p>
@@ -394,9 +394,14 @@ export default function ManagePortfolio() {
                 {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
                 Save Changes
               </Button>
-              <div className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground break-all">
+              <details className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground">
+                <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Show share URL
+                </summary>
+              <div className="mt-3 break-all">
                 {shareUrl}
               </div>
+              </details>
             </div>
           </div>
         </CardContent>
