@@ -156,7 +156,6 @@ export default function Contributions() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
-  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const db = supabase as any;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
@@ -359,11 +358,6 @@ export default function Contributions() {
     summary.totalSupport,
     workspaceName,
   ]);
-
-  useEffect(() => {
-    setAssistantConciergeContext?.(contributionsConciergeContext);
-    return () => setAssistantConciergeContext?.(null);
-  }, [contributionsConciergeContext, setAssistantConciergeContext]);
 
   const copyText = async (value: string, successTitle: string, successDescription?: string) => {
     try {

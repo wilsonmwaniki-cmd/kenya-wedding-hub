@@ -85,7 +85,6 @@ export default function GiftRegistry() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
-  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const { profile, isSuperAdmin, rolePreview } = useAuth();
   const { weddingId, entitlements, couplePlanTier, loading, refresh } = useWeddingEntitlements();
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -273,11 +272,6 @@ export default function GiftRegistry() {
     stats.totalItems,
     weddingId,
   ]);
-
-  useEffect(() => {
-    setAssistantConciergeContext?.(registryConciergeContext);
-    return () => setAssistantConciergeContext?.(null);
-  }, [registryConciergeContext, setAssistantConciergeContext]);
 
   const handleCheckout = async () => {
     if (!profile) return;

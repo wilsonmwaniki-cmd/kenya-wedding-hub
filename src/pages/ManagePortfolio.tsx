@@ -55,7 +55,6 @@ export default function ManagePortfolio() {
   const { selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
-  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [vendors, setVendors] = useState<PortfolioVendor[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -314,11 +313,6 @@ export default function ManagePortfolio() {
     weddingDate,
     weddingVendors.length,
   ]);
-
-  useEffect(() => {
-    setAssistantConciergeContext?.(portfolioConciergeContext);
-    return () => setAssistantConciergeContext?.(null);
-  }, [portfolioConciergeContext, setAssistantConciergeContext]);
 
   if (loading) {
     return <WorkspacePageSkeleton compact />;

@@ -114,7 +114,6 @@ export default function Timeline() {
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
-  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
   const [timelines, setTimelines] = useState<Timeline[]>([]);
@@ -573,11 +572,6 @@ export default function Timeline() {
     templates.length,
     timelineHeroAction,
   ]);
-
-  useEffect(() => {
-    setAssistantConciergeContext?.(timelineConciergeContext);
-    return () => setAssistantConciergeContext?.(null);
-  }, [setAssistantConciergeContext, timelineConciergeContext]);
 
   if (loading) return <WorkspacePageSkeleton compact />;
 

@@ -189,9 +189,7 @@ export default function AssistantPanel({
   const feature = useMemo(() => getAssistantFeature(role, plannerType), [plannerType, role]);
   const surface = useMemo(() => getAssistantSurface(location.pathname, role), [location.pathname, role]);
   const compactDesktopLauncher = surface.page === 'settings';
-  const activeConciergeContext = assistantPanel?.launchRequest?.conciergeContext
-    ?? assistantPanel?.getConciergeContext()
-    ?? null;
+  const activeConciergeContext = assistantPanel?.launchRequest?.conciergeContext ?? null;
 
   const assistant = useInlineAssistant({
     feature: feature ?? 'couple.ai_assistant',

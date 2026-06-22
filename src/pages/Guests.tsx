@@ -155,7 +155,6 @@ export default function Guests() {
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
-  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
   const [open, setOpen] = useState(false);
@@ -764,11 +763,6 @@ export default function Guests() {
     uniqueGroups.length,
     visibleGuests.length,
   ]);
-
-  useEffect(() => {
-    setAssistantConciergeContext?.(guestConciergeContext);
-    return () => setAssistantConciergeContext?.(null);
-  }, [guestConciergeContext, setAssistantConciergeContext]);
 
   useEffect(() => {
     setSelectedGuestDraft(selectedGuest ? { ...selectedGuest } : null);

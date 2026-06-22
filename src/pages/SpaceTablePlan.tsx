@@ -728,7 +728,6 @@ export default function SpaceTablePlan() {
   const { selectedClient } = usePlanner();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
-  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const db = supabase as any;
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -899,11 +898,6 @@ export default function SpaceTablePlan() {
     weddingContext?.weddingName,
     zoom,
   ]);
-
-  useEffect(() => {
-    setAssistantConciergeContext?.(spacePlanConciergeContext);
-    return () => setAssistantConciergeContext?.(null);
-  }, [setAssistantConciergeContext, spacePlanConciergeContext]);
 
   useEffect(() => {
     if (!user || !profile) return;
