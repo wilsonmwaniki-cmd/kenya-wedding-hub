@@ -24,6 +24,7 @@ import { getMyWeddingOwnershipSummary, type MyWeddingOwnershipSummary } from '@/
 import { summarizeContributions, type ContributionSummaryRow } from '@/lib/contributions';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
+import { cn } from '@/lib/utils';
 
 interface DashboardStats {
   totalBudget: number;
@@ -712,6 +713,7 @@ export default function Dashboard() {
       href: '/tasks',
       cta: stats.totalTasks > 0 ? 'Open tasks' : 'Create first task',
       icon: CheckSquare,
+      tone: 'border-[#d9ead7] bg-[#f4fbf3] text-[#2f6f3c]',
     },
     {
       title: vendorDecisionsPending[0]
@@ -725,6 +727,7 @@ export default function Dashboard() {
       href: '/vendors',
       cta: vendorDecisionsPending[0] ? 'Review vendors' : 'Open vendor hub',
       icon: Store,
+      tone: 'border-[#d9e5f4] bg-[#f4f8fd] text-[#315f8f]',
     },
     {
       title: upcomingEvents[0]?.title ?? (stats.totalBudget > 0 ? 'Check the funding gap' : 'Start your wedding timeline'),
@@ -736,6 +739,7 @@ export default function Dashboard() {
       href: upcomingEvents[0] ? '/timeline' : (stats.totalBudget > 0 ? '/contributions' : '/timeline'),
       cta: upcomingEvents[0] ? 'Open timeline' : (stats.totalBudget > 0 ? 'Open contributions' : 'Create timeline'),
       icon: upcomingEvents[0] ? Clock : HandCoins,
+      tone: 'border-[#f0dfc5] bg-[#fff8ec] text-[#9a5d1c]',
     },
   ];
 
@@ -794,7 +798,7 @@ export default function Dashboard() {
                 {weddingTitle}
               </h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-lg">
-                Your planning command center.
+                Start with the one action Zania needs from you next. The deeper reports stay tucked away until you need them.
               </p>
             </div>
 
@@ -811,19 +815,19 @@ export default function Dashboard() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-[24px] border border-[#ebdccb] bg-white/72 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
+              <div className="rounded-[24px] border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Countdown</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
                   {daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : `${daysUntil} days`}
                 </p>
               </div>
-              <div className="rounded-[24px] border border-[#ebdccb] bg-white/72 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
+              <div className="rounded-[24px] border border-[#d9ead7] bg-[#f4fbf3]/90 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Funding gap</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
                   KES {contributionGap.toLocaleString()}
                 </p>
               </div>
-              <div className="rounded-[24px] border border-[#ebdccb] bg-white/72 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
+              <div className="rounded-[24px] border border-[#f0dfc5] bg-[#fff8ec]/95 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
                 <p className="mt-2 text-sm font-medium text-foreground">
                   {homePrimaryAction.label}
@@ -915,7 +919,7 @@ export default function Dashboard() {
             </div>
 
             <div className="mt-5 space-y-3">
-              {homeSetupChecklist.slice(0, 4).map((item) => (
+              {homeSetupChecklist.filter((item) => !item.complete).slice(0, 3).map((item) => (
                 <div key={item.label} className="rounded-2xl border border-[#ebdccb] bg-white/72 p-3 shadow-[0_8px_20px_rgba(28,22,18,0.03)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -931,6 +935,11 @@ export default function Dashboard() {
                   </div>
                 </div>
               ))}
+              {homeSetupChecklist.every((item) => item.complete) && (
+                <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-3 text-sm text-[#2f6f3c] shadow-[0_8px_20px_rgba(28,22,18,0.03)]">
+                  The foundations are in place. Use the next move below to keep momentum.
+                </div>
+              )}
             </div>
 
             <div className="mt-4 rounded-2xl border border-primary/15 bg-[linear-gradient(180deg,rgba(255,249,242,0.98),rgba(250,239,228,0.9))] p-4">
@@ -960,8 +969,8 @@ export default function Dashboard() {
               <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.88))] shadow-[0_18px_40px_rgba(28,22,18,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(28,22,18,0.07)]">
                 <CardContent className="flex h-full flex-col gap-4 p-5">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
-                      <action.icon className="h-5 w-5 text-primary" />
+                    <div className={cn('rounded-2xl border p-3', action.tone)}>
+                      <action.icon className="h-5 w-5 text-current" />
                     </div>
                     <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground" />
                   </div>
@@ -1028,6 +1037,23 @@ export default function Dashboard() {
         />
       )}
 
+      <details className="group rounded-[32px] border border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(250,244,237,0.76))] shadow-[0_18px_44px_rgba(28,22,18,0.05)]">
+        <summary className="flex cursor-pointer list-none flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">More detail</p>
+              <InfoTip content="Open this when you want the full operational dashboard: pulse metrics, workspace links, vendor payments, timeline support, and planning digest." />
+            </div>
+            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Show full planning dashboard</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Hidden by default so the home screen stays focused. Nothing has been removed.
+            </p>
+          </div>
+          <Badge variant="outline" className="w-fit rounded-full border-primary/20 bg-white/80 px-3 py-1 text-primary">
+            Open reports
+          </Badge>
+        </summary>
+        <div className="space-y-8 border-t border-[#ead8c7] p-5 pt-6">
       <div className="space-y-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.28em] text-primary">Wedding Pulse</p>
@@ -1538,6 +1564,8 @@ export default function Dashboard() {
           </Card>
         </div>
       )}
+        </div>
+      </details>
 
       {/* My Connections — couples only */}
       {!isPlanner && <MyConnections />}
