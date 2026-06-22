@@ -30,7 +30,6 @@ import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -367,14 +366,6 @@ const MAX_ZOOM = zoomLevels[zoomLevels.length - 1];
 const PIXELS_PER_METER = 40;
 const CANVAS_PADDING = 280;
 const FEET_PER_METER = 3.28084;
-
-const seatingPresetOptions: Array<{ value: SeatingPreset; label: string; description: string }> = [
-  { value: 'banquet', label: 'Banquet', description: 'Classic wedding seating around the table.' },
-  { value: 'classroom', label: 'Classroom', description: 'All chairs face one direction for presentations.' },
-  { value: 'boardroom', label: 'Boardroom', description: 'Balanced seating on both long sides and ends.' },
-  { value: 'ceremony_rows', label: 'Ceremony rows', description: 'Straight row-style seating facing the aisle.' },
-  { value: 'sweetheart', label: 'Sweetheart', description: 'Two-seat head table for the couple.' },
-];
 
 function makeId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -746,17 +737,6 @@ export default function SpaceTablePlan() {
     [objects, selectedObjectId],
   );
   const renderedObjects = useMemo(() => normalizeObjectOrder(objects), [objects]);
-  const selectedSeatSlots = useMemo(
-    () => (isTableObject(selectedObject) ? buildSeatSlots(selectedObject) : []),
-    [selectedObject],
-  );
-  const selectedSeatAssignment = useMemo(
-    () =>
-      isTableObject(selectedObject) && selectedSeatLabel
-        ? selectedObject.tableDetails.assignments.find((assignment) => assignment.seatLabel === selectedSeatLabel) ?? null
-        : null,
-    [selectedObject, selectedSeatLabel],
-  );
 
   const guestLookup = useMemo(() => {
     return new Map(guests.map((guest) => [guest.id, guest]));
@@ -766,20 +746,6 @@ export default function SpaceTablePlan() {
     () => venuePresets.find((space) => space.id === selectedVenueSpaceId) ?? null,
     [selectedVenueSpaceId, venuePresets],
   );
-
-  const availableGuestsForSelectedTable = useMemo(() => {
-    if (!isTableObject(selectedObject)) return [];
-
-    const assignedElsewhereIds = new Set(
-      objects
-        .filter(isTableObject)
-        .flatMap((object) => object.tableDetails.assignments)
-        .filter((assignment) => assignment.seatLabel !== selectedSeatLabel)
-        .map((assignment) => assignment.guestId),
-    );
-
-    return guests.filter((guest) => !assignedElsewhereIds.has(guest.id));
-  }, [guests, objects, selectedObject, selectedSeatLabel]);
 
   const planHealth = useMemo(() => {
     const tableObjects = objects.filter(isTableObject);
@@ -1411,95 +1377,6 @@ export default function SpaceTablePlan() {
     });
   };
 
-  const assignGuestToSeat = (guestId: string, seatLabel = selectedSeatLabel) => {
-    if (!isTableObject(selectedObject) || !seatLabel) return;
-
-    const guest = guestLookup.get(guestId);
-    if (!guest) return;
-
-    setObjects((current) =>
-      current.map((object) => {
-        if (!isTableObject(object)) return object;
-
-        const assignmentsWithoutGuest = object.tableDetails.assignments.filter((assignment) => assignment.guestId !== guestId);
-
-        if (object.id !== selectedObject.id) {
-          return {
-            ...object,
-            tableDetails: {
-              ...object.tableDetails,
-              assignments: assignmentsWithoutGuest,
-            },
-          };
-        }
-
-        const existingForSeat = assignmentsWithoutGuest.find((assignment) => assignment.seatLabel === seatLabel);
-
-        return {
-          ...object,
-          tableDetails: {
-            ...object.tableDetails,
-            assignments: [
-              ...assignmentsWithoutGuest.filter((assignment) => assignment.seatLabel !== seatLabel),
-              {
-                id: existingForSeat?.id ?? makeId(),
-                guestId,
-                seatLabel,
-                notes: existingForSeat?.notes || guest.meal_preference || '',
-              },
-            ],
-          },
-        };
-      }),
-    );
-  };
-
-  const clearSeatAssignment = (seatLabel = selectedSeatLabel) => {
-    if (!seatLabel) return;
-
-    updateSelectedObject((object) => {
-      if (!isTableObject(object)) return object;
-
-      return {
-        ...object,
-        tableDetails: {
-          ...object.tableDetails,
-          assignments: object.tableDetails.assignments.filter((assignment) => assignment.seatLabel !== seatLabel),
-        },
-      };
-    });
-  };
-
-  const removeAssignment = (assignmentId: string) => {
-    updateSelectedObject((object) => {
-      if (!isTableObject(object)) return object;
-
-      return {
-        ...object,
-        tableDetails: {
-          ...object.tableDetails,
-          assignments: object.tableDetails.assignments.filter((assignment) => assignment.id !== assignmentId),
-        },
-      };
-    });
-  };
-
-  const updateAssignment = (assignmentId: string, field: 'seatLabel' | 'notes', value: string) => {
-    updateSelectedObject((object) => {
-      if (!isTableObject(object)) return object;
-
-      return {
-        ...object,
-        tableDetails: {
-          ...object.tableDetails,
-          assignments: object.tableDetails.assignments.map((assignment) =>
-            assignment.id === assignmentId ? { ...assignment, [field]: value } : assignment,
-          ),
-        },
-      };
-    });
-  };
-
   const exportAssignmentsCsv = () => {
     const rows = objects
       .filter(isTableObject)
@@ -1854,15 +1731,27 @@ export default function SpaceTablePlan() {
           </div>
         </div>
 
-        <div className="mb-6 grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
+        <div className="mb-6">
           <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
             <CardHeader className="pb-4">
-              <CardTitle className="font-display text-2xl">{weddingContext.weddingName}</CardTitle>
-              <CardDescription>
-                Choose a plan, set the event context, and keep this layout grounded in one real wedding workspace.
-              </CardDescription>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <CardTitle className="font-display text-2xl">{weddingContext.weddingName}</CardTitle>
+                  <CardDescription>Plan setup and readiness at a glance.</CardDescription>
+                </div>
+                <div className={cn(
+                  'w-fit rounded-full border px-3 py-1.5 text-xs font-medium',
+                  planHealth.overCapacityTables.length > 0
+                    ? 'border-destructive/20 bg-destructive/5 text-destructive'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-800',
+                )}>
+                  {planHealth.overCapacityTables.length > 0
+                    ? `${planHealth.overCapacityTables.length} capacity issue${planHealth.overCapacityTables.length === 1 ? '' : 's'}`
+                    : 'Capacity healthy'}
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
               <div className="space-y-2 xl:col-span-2">
                 <Label>Saved plans</Label>
                 <Select value={selectedPlanId ?? 'new'} onValueChange={(value) => setSelectedPlanId(value === 'new' ? null : value)}>
@@ -1920,7 +1809,7 @@ export default function SpaceTablePlan() {
                 <Input value={eventLabel} onChange={(event) => setEventLabel(event.target.value)} placeholder="Main reception" />
               </div>
 
-              <div className="space-y-2 xl:col-span-3">
+              <div className="space-y-2 xl:col-span-4">
                 <Label>Venue space preset</Label>
                 <div className="flex flex-col gap-3 lg:flex-row">
                   <Select value={selectedVenueSpaceId ?? 'none'} onValueChange={(value) => setSelectedVenueSpaceId(value === 'none' ? null : value)}>
@@ -1957,7 +1846,7 @@ export default function SpaceTablePlan() {
                 )}
               </div>
 
-              <div className="space-y-2 xl:col-span-2">
+              <div className="space-y-2 xl:col-span-4">
                 <Label>Plan notes</Label>
                 <Textarea
                   value={planNotes}
@@ -1966,15 +1855,7 @@ export default function SpaceTablePlan() {
                   className="min-h-[90px]"
                 />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
-            <CardHeader className="pb-3">
-              <CardTitle className="font-display text-xl">Readiness</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-2 md:grid-cols-4 xl:col-span-8">
                 {[
                   ['Objects', planHealth.objectCount],
                   ['Tables', planHealth.tableCount],
@@ -1987,21 +1868,11 @@ export default function SpaceTablePlan() {
                   </div>
                 ))}
               </div>
-              <div className={cn(
-                'rounded-2xl border px-3 py-3 text-xs font-medium',
-                planHealth.overCapacityTables.length > 0
-                  ? 'border-destructive/20 bg-destructive/5 text-destructive'
-                  : 'border-emerald-200 bg-emerald-50 text-emerald-800',
-              )}>
-                {planHealth.overCapacityTables.length > 0
-                  ? `${planHealth.overCapacityTables.length} table capacity issue${planHealth.overCapacityTables.length === 1 ? '' : 's'}`
-                  : 'Capacity looks healthy'}
-              </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-6">
           <Card className="overflow-hidden border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
             <CardHeader className="border-b border-border/60">
               <div className="flex items-center justify-between gap-3">
@@ -2111,6 +1982,121 @@ export default function SpaceTablePlan() {
                 <p className="text-xs text-muted-foreground">
                   Click an object to edit it. Drag empty canvas space to pan.
                 </p>
+              </div>
+
+              <div className="rounded-[28px] border border-border/60 bg-white/85 p-3 shadow-sm">
+                {!selectedObject ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+                    <span>Select an object to edit label, size, rotation, layer, lock, and notes.</span>
+                    <Badge variant="outline" className="rounded-full">Inspector</Badge>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 xl:grid-cols-[1.2fr_0.9fr_1fr_auto]">
+                    <div className="grid gap-2 sm:grid-cols-[minmax(160px,1fr)_120px]">
+                      <div className="space-y-1">
+                        <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Selected</Label>
+                        <Input value={selectedObject.label} onChange={(event) => updateSelectedObject((object) => ({ ...object, label: event.target.value }))} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Rotation</Label>
+                        <Input
+                          type="number"
+                          value={selectedObject.rotation}
+                          onChange={(event) =>
+                            updateSelectedObject((object) => ({
+                              ...object,
+                              rotation: Math.max(-180, Math.min(180, Number(event.target.value) || 0)),
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Width</Label>
+                        <Input
+                          type="number"
+                          value={selectedObject.width}
+                          onChange={(event) =>
+                            updateSelectedObject((object) => ({
+                              ...object,
+                              width: Math.max(MIN_OBJECT_SIZE, Number(event.target.value) || MIN_OBJECT_SIZE),
+                              x: Math.min(object.x, canvasSize.width - Math.max(MIN_OBJECT_SIZE, Number(event.target.value) || MIN_OBJECT_SIZE)),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Height</Label>
+                        <Input
+                          type="number"
+                          value={selectedObject.height}
+                          onChange={(event) =>
+                            updateSelectedObject((object) => ({
+                              ...object,
+                              height: Math.max(MIN_OBJECT_SIZE, Number(event.target.value) || MIN_OBJECT_SIZE),
+                              y: Math.min(object.y, canvasSize.height - Math.max(MIN_OBJECT_SIZE, Number(event.target.value) || MIN_OBJECT_SIZE)),
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Angle</Label>
+                        <span className="text-xs font-semibold tabular-nums text-foreground">{selectedObject.rotation}°</span>
+                      </div>
+                      <Slider
+                        value={[selectedObject.rotation]}
+                        min={-180}
+                        max={180}
+                        step={1}
+                        onValueChange={([value]) =>
+                          updateSelectedObject((object) => ({
+                            ...object,
+                            rotation: value,
+                          }))
+                        }
+                        aria-label="Object rotation"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-end gap-2 xl:justify-end">
+                      <Button
+                        type="button"
+                        variant={selectedObject.locked ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => updateSelectedObject((object) => ({ ...object, locked: !object.locked }))}
+                      >
+                        {selectedObject.locked ? <Lock className="mr-2 h-4 w-4" /> : <Unlock className="mr-2 h-4 w-4" />}
+                        {selectedObject.locked ? 'Locked' : 'Unlocked'}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => moveSelectedLayer('backward')}>
+                        Back
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => moveSelectedLayer('forward')}>
+                        Front
+                      </Button>
+                      <Button variant="outline" size="icon" onClick={duplicateSelectedObject} aria-label="Duplicate selected object">
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="icon" onClick={deleteSelectedObject} aria-label="Delete selected object">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    <div className="space-y-1 xl:col-span-4">
+                      <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Notes</Label>
+                      <Input
+                        value={selectedObject.notes}
+                        onChange={(event) => updateSelectedObject((object) => ({ ...object, notes: event.target.value }))}
+                        placeholder="Setup note for decorators, ushers, or vendors"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="relative">
@@ -2351,460 +2337,6 @@ export default function SpaceTablePlan() {
             </CardContent>
           </Card>
 
-          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur xl:sticky xl:top-4 xl:self-start">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle className="font-display text-xl">Inspector</CardTitle>
-                  <CardDescription>Selected object controls.</CardDescription>
-                </div>
-                {selectedObject ? (
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => moveSelectedLayer('backward')}>
-                      Back
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => moveSelectedLayer('forward')}>
-                      Front
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={duplicateSelectedObject} aria-label="Duplicate selected object">
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={deleteSelectedObject} aria-label="Delete selected object">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            </CardHeader>
-            <CardContent className="max-h-[calc(100vh-7rem)] overflow-y-auto">
-              {!selectedObject ? (
-                <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 px-4 py-5 text-sm leading-6 text-muted-foreground">
-                  Select an object to edit size, rotation, notes, and seats.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-border/70 bg-background/80 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">Object protection</p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant={selectedObject.locked ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => updateSelectedObject((object) => ({ ...object, locked: !object.locked }))}
-                      >
-                        {selectedObject.locked ? <Lock className="mr-2 h-4 w-4" /> : <Unlock className="mr-2 h-4 w-4" />}
-                        {selectedObject.locked ? 'Locked' : 'Unlocked'}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Label</Label>
-                    <Input value={selectedObject.label} onChange={(event) => updateSelectedObject((object) => ({ ...object, label: event.target.value }))} />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label>X position</Label>
-                      <Input
-                        type="number"
-                        value={Math.round(selectedObject.x)}
-                        onChange={(event) =>
-                          updateSelectedObject((object) => ({
-                            ...object,
-                            x: Math.max(0, Math.min(canvasSize.width - object.width, Number(event.target.value) || 0)),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Y position</Label>
-                      <Input
-                        type="number"
-                        value={Math.round(selectedObject.y)}
-                        onChange={(event) =>
-                          updateSelectedObject((object) => ({
-                            ...object,
-                            y: Math.max(0, Math.min(canvasSize.height - object.height, Number(event.target.value) || 0)),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Width</Label>
-                      <Input
-                        type="number"
-                        value={selectedObject.width}
-                        onChange={(event) =>
-                          updateSelectedObject((object) => ({
-                            ...object,
-                            width: Math.max(MIN_OBJECT_SIZE, Number(event.target.value) || MIN_OBJECT_SIZE),
-                            x: Math.min(object.x, canvasSize.width - Math.max(MIN_OBJECT_SIZE, Number(event.target.value) || MIN_OBJECT_SIZE)),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Height</Label>
-                      <Input
-                        type="number"
-                        value={selectedObject.height}
-                        onChange={(event) =>
-                          updateSelectedObject((object) => ({
-                            ...object,
-                            height: Math.max(MIN_OBJECT_SIZE, Number(event.target.value) || MIN_OBJECT_SIZE),
-                            y: Math.min(object.y, canvasSize.height - Math.max(MIN_OBJECT_SIZE, Number(event.target.value) || MIN_OBJECT_SIZE)),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Rotation</Label>
-                      <Input
-                        type="number"
-                        value={selectedObject.rotation}
-                        onChange={(event) =>
-                          updateSelectedObject((object) => ({
-                            ...object,
-                            rotation: Math.max(-180, Math.min(180, Number(event.target.value) || 0)),
-                          }))
-                        }
-                      />
-                      <Slider
-                        value={[selectedObject.rotation]}
-                        min={-180}
-                        max={180}
-                        step={1}
-                        onValueChange={([value]) =>
-                          updateSelectedObject((object) => ({
-                            ...object,
-                            rotation: value,
-                          }))
-                        }
-                        aria-label="Object rotation"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Notes</Label>
-                    <Textarea
-                      value={selectedObject.notes}
-                      onChange={(event) => updateSelectedObject((object) => ({ ...object, notes: event.target.value }))}
-                      placeholder="What should the team understand about this zone?"
-                    />
-                  </div>
-
-                  {isTableObject(selectedObject) ? (
-                    <div className="space-y-5 rounded-[28px] border border-primary/10 bg-primary/5 p-4">
-                      <div className="space-y-2">
-                        <Label>Table name</Label>
-                        <Input
-                          value={selectedObject.tableDetails.tableName}
-                          onChange={(event) =>
-                            updateSelectedObject((object) =>
-                              isTableObject(object)
-                                ? {
-                                    ...object,
-                                    tableDetails: {
-                                      ...object.tableDetails,
-                                      tableName: event.target.value,
-                                    },
-                                  }
-                                : object,
-                            )
-                          }
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-2">
-                          <Label>Seating style</Label>
-                          <Select
-                            value={selectedObject.tableDetails.seatingPreset}
-                            onValueChange={(value) =>
-                              updateSelectedObject((object) =>
-                                isTableObject(object)
-                                  ? {
-                                      ...object,
-                                      tableDetails: {
-                                        ...object.tableDetails,
-                                        seatingPreset: value as SeatingPreset,
-                                        capacity:
-                                          value === 'sweetheart'
-                                            ? 2
-                                            : object.tableDetails.capacity,
-                                      },
-                                    }
-                                  : object,
-                              )
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {seatingPresetOptions
-                                .filter((option) =>
-                                  selectedObject.tableDetails.shape === 'round' || selectedObject.tableDetails.shape === 'high_table'
-                                    ? option.value === 'banquet'
-                                    : selectedObject.tableDetails.shape === 'sweetheart'
-                                      ? option.value === 'sweetheart'
-                                      : option.value !== 'sweetheart',
-                                )
-                                .map((option) => (
-                                  <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-muted-foreground">
-                            {seatingPresetOptions.find((option) => option.value === selectedObject.tableDetails.seatingPreset)?.description}
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Capacity</Label>
-                          <Input
-                            type="number"
-                            value={selectedObject.tableDetails.capacity}
-                            onChange={(event) =>
-                              updateSelectedObject((object) =>
-                                isTableObject(object)
-                                  ? {
-                                      ...object,
-                                      tableDetails: {
-                                        ...object.tableDetails,
-                                        capacity: Math.max(1, Number(event.target.value) || 1),
-                                      },
-                                    }
-                                  : object,
-                              )
-                            }
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>VIP status</Label>
-                          <Select
-                            value={selectedObject.tableDetails.vip ? 'vip' : 'standard'}
-                            onValueChange={(value) =>
-                              updateSelectedObject((object) =>
-                                isTableObject(object)
-                                  ? {
-                                      ...object,
-                                      tableDetails: {
-                                        ...object.tableDetails,
-                                        vip: value === 'vip',
-                                      },
-                                    }
-                                  : object,
-                              )
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="standard">Standard</SelectItem>
-                              <SelectItem value="vip">VIP</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Decor notes</Label>
-                        <Textarea
-                          value={selectedObject.tableDetails.decorNotes}
-                          onChange={(event) =>
-                            updateSelectedObject((object) =>
-                              isTableObject(object)
-                                ? {
-                                    ...object,
-                                    tableDetails: {
-                                      ...object.tableDetails,
-                                      decorNotes: event.target.value,
-                                    },
-                                  }
-                                : object,
-                            )
-                          }
-                          placeholder="Floral style, linen, centerpieces, or rental notes"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Service notes</Label>
-                        <Textarea
-                          value={selectedObject.tableDetails.serviceNotes}
-                          onChange={(event) =>
-                            updateSelectedObject((object) =>
-                              isTableObject(object)
-                                ? {
-                                    ...object,
-                                    tableDetails: {
-                                      ...object.tableDetails,
-                                      serviceNotes: event.target.value,
-                                    },
-                                  }
-                                : object,
-                            )
-                          }
-                          placeholder="Buffet order, service access, usher flow, or setup details"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Dietary notes</Label>
-                        <Textarea
-                          value={selectedObject.tableDetails.dietaryNotes}
-                          onChange={(event) =>
-                            updateSelectedObject((object) =>
-                              isTableObject(object)
-                                ? {
-                                    ...object,
-                                    tableDetails: {
-                                      ...object.tableDetails,
-                                      dietaryNotes: event.target.value,
-                                    },
-                                  }
-                                : object,
-                            )
-                          }
-                          placeholder="Shared meal restrictions, accessibility, or family-specific notes"
-                        />
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label>Assigned guests</Label>
-                            <p className="mt-1 text-xs text-muted-foreground">Select a chair on the canvas or below, then assign the guest to that exact seat.</p>
-                          </div>
-                          <Badge variant="secondary" className="rounded-full">
-                            {selectedObject.tableDetails.assignments.length}/{selectedObject.tableDetails.capacity}
-                          </Badge>
-                        </div>
-
-                        <div className="rounded-2xl border border-border/70 bg-white p-3">
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Seat map</p>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {selectedSeatSlots.map((seat) => {
-                              const assignment = selectedObject.tableDetails.assignments.find((item) => item.seatLabel === seat.label);
-                              const guest = assignment ? guestLookup.get(assignment.guestId) : null;
-                              return (
-                                <button
-                                  key={seat.id}
-                                  type="button"
-                                  onClick={() => setSelectedSeatLabel(seat.label)}
-                                  className={cn(
-                                    'rounded-full border px-3 py-2 text-left text-xs transition',
-                                    selectedSeatLabel === seat.label
-                                      ? 'border-primary bg-primary/10 text-primary'
-                                      : 'border-border/70 bg-background hover:border-primary/30',
-                                  )}
-                                >
-                                  <span className="block font-semibold">{seat.label}</span>
-                                  <span className="mt-1 block text-muted-foreground">{guest?.name ?? 'Unassigned'}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {selectedSeatLabel ? (
-                          <div className="space-y-3 rounded-2xl border border-primary/15 bg-primary/5 p-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-foreground">{selectedSeatLabel}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {selectedSeatAssignment
-                                    ? guestLookup.get(selectedSeatAssignment.guestId)?.name ?? 'Assigned guest'
-                                    : 'No guest assigned to this seat yet.'}
-                                </p>
-                              </div>
-                              <Button type="button" variant="outline" size="sm" onClick={() => clearSeatAssignment(selectedSeatLabel)} disabled={!selectedSeatAssignment}>
-                                Clear seat
-                              </Button>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label>Assign guest to {selectedSeatLabel}</Label>
-                              <Select onValueChange={(value) => assignGuestToSeat(value, selectedSeatLabel)} value={selectedSeatAssignment?.guestId}>
-                                <SelectTrigger>
-                                  <SelectValue placeholder={availableGuestsForSelectedTable.length ? 'Choose a guest' : 'No unassigned guests available'} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {(selectedSeatAssignment ? [selectedSeatAssignment.guestId] : [])
-                                    .concat(availableGuestsForSelectedTable.map((guest) => guest.id))
-                                    .filter((value, index, array) => value && array.indexOf(value) === index)
-                                    .map((guestId) => {
-                                      const guest = guestLookup.get(guestId);
-                                      if (!guest) return null;
-                                      return (
-                                        <SelectItem key={guest.id} value={guest.id}>
-                                          {guest.name}
-                                        </SelectItem>
-                                      );
-                                    })}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                        ) : null}
-
-                        <ScrollArea className="h-44 rounded-2xl border border-border/70 bg-white">
-                          <div className="space-y-2 p-3">
-                            {selectedObject.tableDetails.assignments.length === 0 ? (
-                              <p className="text-sm text-muted-foreground">No guests assigned yet.</p>
-                            ) : (
-                              selectedObject.tableDetails.assignments.map((assignment) => {
-                                const guest = guestLookup.get(assignment.guestId);
-
-                                return (
-                                  <div key={assignment.id} className="space-y-3 rounded-2xl border border-border/60 px-3 py-3">
-                                    <div className="flex items-center justify-between gap-3">
-                                      <p className="text-sm font-medium text-foreground">{guest?.name ?? 'Unknown guest'}</p>
-                                      <Button variant="ghost" size="sm" onClick={() => removeAssignment(assignment.id)}>
-                                        Remove
-                                      </Button>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {guest?.group_name || guest?.meal_preference || 'No extra note'}
-                                    </p>
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                      <div className="space-y-1">
-                                        <Label className="text-xs">Seat label</Label>
-                                        <Input
-                                          value={assignment.seatLabel}
-                                          readOnly
-                                          placeholder="Seat label"
-                                        />
-                                      </div>
-                                      <div className="space-y-1">
-                                        <Label className="text-xs">Assignment note</Label>
-                                        <Input
-                                          value={assignment.notes}
-                                          onChange={(event) => updateAssignment(assignment.id, 'notes', event.target.value)}
-                                          placeholder="Meal, mobility, or family note"
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        </ScrollArea>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
