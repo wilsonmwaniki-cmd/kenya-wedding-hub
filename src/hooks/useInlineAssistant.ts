@@ -30,6 +30,7 @@ export interface InlineAssistantOptions {
   surface: string;
   entityId?: string | null;
   contextSource?: string | null;
+  conciergeContext?: string | null;
   initialMessages?: AiAssistantMessage[];
 }
 
@@ -38,6 +39,7 @@ export interface InlineAssistantRunOptions {
   entityId?: string | null;
   surface?: string | null;
   contextSource?: string | null;
+  conciergeContext?: string | null;
 }
 
 export interface InlineAssistantState {
@@ -175,8 +177,19 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
       setError(null);
 
       try {
+        const conciergeContext = runOptions?.conciergeContext ?? options.conciergeContext ?? null;
+        const contextMessages: AiAssistantMessage[] = conciergeContext?.trim()
+          ? [{
+              role: 'assistant',
+              content: `${conciergeContext.trim()}\n\nUse this brief silently to make your answer contextual and concierge-like.`,
+            }]
+          : [];
         const result = await invokeWeddingAiChat({
-          messages: [...(options.initialMessages ?? []), { role: 'user', content: trimmedPrompt }],
+          messages: [
+            ...contextMessages,
+            ...(options.initialMessages ?? []),
+            { role: 'user', content: trimmedPrompt },
+          ],
           selectedClientId: isPlanner ? selectedClient?.id ?? null : null,
           allowWriteActions: runOptions?.allowWriteActions ?? false,
           confirmedActions: [],
@@ -213,6 +226,7 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
       decision?.description,
       isPlanner,
       options.contextSource,
+      options.conciergeContext,
       options.entityId,
       options.initialMessages,
       options.page,

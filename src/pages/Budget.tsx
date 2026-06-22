@@ -32,6 +32,7 @@ import { syncCoupleCheckout } from '@/lib/billing';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 interface BudgetCategory {
   id: string;
@@ -877,11 +878,59 @@ export default function Budget() {
     visibleOverBudgetCategories,
   ]);
 
+  const budgetConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Budget',
+    role: profile?.role,
+    primaryGoal: 'Help the user understand budget pressure, missing categories, payment gaps, and the next money action.',
+    nextBestAction: visibleCategories.length === 0
+      ? (activeBudgetScope === 'personal' ? 'Add private budget lines' : 'Add wedding budget lines')
+      : visibleOverBudgetCategories[0]
+        ? `Rebalance ${visibleOverBudgetCategories[0].name}`
+        : paymentsDueSoon[0]
+          ? `Review payment for ${paymentsDueSoon[0].name}`
+          : 'Record the next real payment',
+    facts: [
+      ['Active budget scope', activeBudgetScope],
+      ['Visible categories', visibleCategories.length],
+      ['Allocated', formatCurrency(visibleAllocated)],
+      ['Spent', formatCurrency(visibleSpent)],
+      ['Budget used', visibleCategories.length > 0 ? `${visibleSpentPercentage}%` : 'not started'],
+      ['Payments logged', currentScopePayments.length],
+      ['Payment total', formatCurrency(currentScopePaymentTotal)],
+      ['Remaining budget', formatCurrency(remainingBudget)],
+      ['Outstanding balance', formatCurrency(totalBalance)],
+      ['Final vendor contract total', formatCurrency(totalFinalVendorContract)],
+    ],
+    risks: [
+      visibleCategories.length === 0 ? 'No budget categories exist for this scope.' : null,
+      visibleOverBudgetCategories[0] ? `${visibleOverBudgetCategories[0].name} is over budget.` : null,
+      visibleNearLimitCategories[0] ? `${visibleNearLimitCategories[0].name} is near its limit.` : null,
+      paymentsDueSoon.length > 0 ? `${paymentsDueSoon.length} vendor payment(s) are due soon.` : null,
+      currentScopePayments.length === 0 && visibleAllocated > 0 ? 'Budget is planned but no payments have been logged yet.' : null,
+    ].filter(Boolean) as string[],
+  }), [
+    activeBudgetScope,
+    currentScopePaymentTotal,
+    currentScopePayments.length,
+    paymentsDueSoon.length,
+    profile?.role,
+    remainingBudget,
+    totalBalance,
+    totalFinalVendorContract,
+    visibleAllocated,
+    visibleCategories.length,
+    visibleNearLimitCategories,
+    visibleOverBudgetCategories,
+    visibleSpent,
+    visibleSpentPercentage,
+  ]);
+
   const budgetAssistant = useInlineAssistant({
     feature: budgetAssistantFeature,
     page: 'budget',
     surface: 'budget_pressure_card',
     contextSource: activeBudgetScope === 'personal' ? 'personal_budget_summary' : 'wedding_budget_summary',
+    conciergeContext: budgetConciergeContext,
   });
   const [budgetNudgeDismissed, setBudgetNudgeDismissed] = useState(false);
 

@@ -63,6 +63,7 @@ import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 import {
   archiveVendorWorkspaceUpdate,
   listVendorWorkspaceUpdates,
@@ -1886,11 +1887,56 @@ export default function Vendors() {
     return prompts.slice(0, 3);
   }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, vendorTaskSummary.openTasks, vendors.length]);
 
+  const vendorsConciergeContext = useMemo(() => buildConciergeContext({
+    page: selectedVendor ? `Vendor detail: ${selectedVendor.name}` : 'Vendors',
+    role: profile?.role,
+    primaryGoal: 'Help the user close vendor decisions, chase follow-ups, and understand payment or claim gaps.',
+    nextBestAction: categoriesNeedingFinalChoice[0]
+      ? `Close the ${categoriesNeedingFinalChoice[0].category} vendor decision`
+      : finalVendorPaymentsDueSoon[0]
+        ? `Review payment for ${finalVendorPaymentsDueSoon[0].name}`
+        : vendorTaskSummary.openTasks > 0
+          ? 'Review open vendor follow-ups'
+          : vendors.length === 0
+            ? 'Add the first vendor'
+            : 'Run a vendor health check',
+    facts: [
+      ['Vendors tracked', vendors.length],
+      ['Visible vendors', vendorWorkspaceVendors.length],
+      ['Final vendors', finalVendorEntries.length],
+      ['Private vendor records', vendors.filter((vendor) => !vendor.vendor_listing_id).length],
+      ['Categories needing final choice', categoriesNeedingFinalChoice.length],
+      ['Open vendor tasks', vendorTaskSummary.openTasks],
+      ['Linked vendor tasks', vendorTaskSummary.linkedTasks],
+      ['Vendor payments due soon', finalVendorPaymentsDueSoon.length],
+      ['Selected vendor', selectedVendor?.name],
+      ['Selected vendor category', selectedVendor?.category],
+      ['Selected vendor status', selectedVendor?.selection_status],
+    ],
+    risks: [
+      vendors.length === 0 ? 'No vendors have been added yet.' : null,
+      categoriesNeedingFinalChoice[0] ? `${categoriesNeedingFinalChoice[0].category} still needs a final vendor decision.` : null,
+      finalVendorPaymentsDueSoon.length > 0 ? `${finalVendorPaymentsDueSoon.length} final vendor payment(s) are due soon.` : null,
+      vendorTaskSummary.openTasks > 0 ? `${vendorTaskSummary.openTasks} vendor follow-up task(s) are open.` : null,
+    ].filter(Boolean) as string[],
+  }), [
+    categoriesNeedingFinalChoice,
+    finalVendorEntries.length,
+    finalVendorPaymentsDueSoon,
+    profile?.role,
+    selectedVendor,
+    vendorTaskSummary.linkedTasks,
+    vendorTaskSummary.openTasks,
+    vendorWorkspaceVendors.length,
+    vendors,
+  ]);
+
   const vendorsAssistant = useInlineAssistant({
     feature: vendorsAssistantFeature,
     page: 'vendors',
     surface: 'vendor_decision_card',
     contextSource: selectedVendor ? 'selected_vendor_detail' : 'vendor_workspace_summary',
+    conciergeContext: vendorsConciergeContext,
   });
   const [vendorsNudgeDismissed, setVendorsNudgeDismissed] = useState(false);
 

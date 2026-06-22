@@ -25,6 +25,7 @@ import { summarizeContributions, type ContributionSummaryRow } from '@/lib/contr
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 import { cn } from '@/lib/utils';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 interface DashboardStats {
   totalBudget: number;
@@ -569,10 +570,60 @@ export default function Dashboard() {
     vendorDecisionsPending,
   ]);
 
+  const dashboardConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Wedding Home',
+    role: profile?.role,
+    weddingName: weddingTitle,
+    primaryGoal: 'Help the couple understand the next best planning move without overwhelming them.',
+    nextBestAction: homePrimaryAction.label,
+    facts: [
+      ['Wedding date countdown', daysUntil === null ? 'No date set' : daysUntil === 0 ? 'Wedding day' : `${daysUntil} days`],
+      ['Location', weddingLocation],
+      ['Setup progress', `${homeSetupPercentage}%`],
+      ['Budget allocated', `KES ${stats.totalBudget.toLocaleString()}`],
+      ['Budget spent', `KES ${stats.totalSpent.toLocaleString()}`],
+      ['Guests tracked', stats.totalGuests],
+      ['Guests confirmed', stats.confirmedGuests],
+      ['Open tasks', pendingTasks.length],
+      ['Vendors tracked', stats.totalVendors],
+      ['Final vendors', finalVendorUrgencies.length],
+      ['Funding gap', `KES ${contributionGap.toLocaleString()}`],
+    ],
+    risks: [
+      stats.totalTasks === 0 ? 'No checklist exists yet.' : null,
+      stats.totalBudget === 0 ? 'No budget categories are set yet.' : null,
+      stats.totalGuests === 0 ? 'Guest list has not started.' : null,
+      upcomingEvents.length === 0 ? 'Timeline has not started.' : null,
+      vendorDecisionsPending[0] ? `${vendorDecisionsPending[0].category} vendor decision is still open.` : null,
+      paymentsDueSoon.length > 0 ? `${paymentsDueSoon.length} vendor payment deadline(s) are due soon.` : null,
+    ].filter(Boolean) as string[],
+  }), [
+    contributionGap,
+    daysUntil,
+    finalVendorUrgencies.length,
+    homePrimaryAction.label,
+    homeSetupPercentage,
+    paymentsDueSoon.length,
+    pendingTasks.length,
+    profile?.role,
+    stats.completedTasks,
+    stats.confirmedGuests,
+    stats.totalBudget,
+    stats.totalGuests,
+    stats.totalSpent,
+    stats.totalTasks,
+    stats.totalVendors,
+    upcomingEvents.length,
+    vendorDecisionsPending,
+    weddingLocation,
+    weddingTitle,
+  ]);
+
   const dashboardAssistant = useInlineAssistant({
     feature: dashboardAssistantFeature,
     page: 'dashboard',
     surface: 'weekly_focus_card',
+    conciergeContext: dashboardConciergeContext,
   });
   const dashboardNudge = useMemo(() => {
     if (pendingTasks.length >= 3) {

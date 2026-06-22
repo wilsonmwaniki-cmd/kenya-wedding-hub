@@ -30,6 +30,7 @@ import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 interface Task {
   id: string;
@@ -579,11 +580,47 @@ export default function Tasks() {
     return prompts.slice(0, 3);
   }, [dueSoonVendorTasks, nextPendingTask, openVendorTaskCount, overduePending.length, privateTaskCount]);
 
+  const tasksConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Tasks',
+    role: profile?.role,
+    primaryGoal: 'Help the user decide what to do first and turn the task queue into a calm action plan.',
+    nextBestAction: nextPendingTask?.title ?? 'Create or choose the first planning task',
+    facts: [
+      ['Open tasks', pending.length],
+      ['Urgent tasks', urgentPending.length],
+      ['Overdue tasks', overduePending.length],
+      ['Completed tasks', done.length],
+      ['Private tasks', privateTaskCount],
+      ['Vendor-linked open tasks', openVendorTaskCount],
+      ['Vendor tasks due soon', dueSoonVendorTasks],
+      ['Next pending task', nextPendingTask?.title],
+      ['Current view mode', taskViewMode],
+    ],
+    risks: [
+      overduePending.length > 0 ? `${overduePending.length} task(s) are overdue.` : null,
+      urgentPending.length > 0 ? `${urgentPending.length} task(s) are critical or due soon.` : null,
+      dueSoonVendorTasks > 0 ? `${dueSoonVendorTasks} vendor-linked task(s) are due soon.` : null,
+      pending.length === 0 ? 'No active task queue exists.' : null,
+    ].filter(Boolean) as string[],
+  }), [
+    done.length,
+    dueSoonVendorTasks,
+    nextPendingTask?.title,
+    openVendorTaskCount,
+    overduePending.length,
+    pending.length,
+    privateTaskCount,
+    profile?.role,
+    taskViewMode,
+    urgentPending.length,
+  ]);
+
   const tasksAssistant = useInlineAssistant({
     feature: tasksAssistantFeature,
     page: 'tasks',
     surface: 'task_focus_card',
     contextSource: taskViewMode === 'completed' ? 'completed_tasks_summary' : 'pending_tasks_summary',
+    conciergeContext: tasksConciergeContext,
   });
   const [tasksNudgeDismissed, setTasksNudgeDismissed] = useState(false);
 
