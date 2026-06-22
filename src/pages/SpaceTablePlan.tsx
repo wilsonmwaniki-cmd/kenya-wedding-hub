@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   Armchair,
   CakeSlice,
-  CheckCircle2,
   Copy,
   Download,
   Grid3X3,
@@ -68,6 +67,7 @@ type TableShape = 'round' | 'rectangle' | 'high_table' | 'sweetheart';
 type SeatingPreset = 'banquet' | 'classroom' | 'boardroom' | 'ceremony_rows' | 'sweetheart';
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se';
 type InteractionMode = 'drag' | 'resize' | 'rotate';
+type DimensionUnit = 'meters' | 'feet';
 
 type PlanSummary = {
   id: string;
@@ -366,6 +366,7 @@ const MIN_ZOOM = zoomLevels[0];
 const MAX_ZOOM = zoomLevels[zoomLevels.length - 1];
 const PIXELS_PER_METER = 40;
 const CANVAS_PADDING = 280;
+const FEET_PER_METER = 3.28084;
 
 const seatingPresetOptions: Array<{ value: SeatingPreset; label: string; description: string }> = [
   { value: 'banquet', label: 'Banquet', description: 'Classic wedding seating around the table.' },
@@ -439,6 +440,29 @@ function buildVenuePresetCanvasSize(space: VenueSpacePreset) {
     Math.round(space.widthMeters * PIXELS_PER_METER + CANVAS_PADDING),
     Math.round(space.lengthMeters * PIXELS_PER_METER + CANVAS_PADDING),
   );
+}
+
+function pixelsToMeters(value: number) {
+  return Math.max(0, (value - CANVAS_PADDING) / PIXELS_PER_METER);
+}
+
+function pixelsToDimension(value: number, unit: DimensionUnit) {
+  const meters = pixelsToMeters(value);
+  return unit === 'feet' ? meters * FEET_PER_METER : meters;
+}
+
+function dimensionToPixels(value: number, unit: DimensionUnit) {
+  const meters = unit === 'feet' ? value / FEET_PER_METER : value;
+  return Math.round(meters * PIXELS_PER_METER + CANVAS_PADDING);
+}
+
+function formatDimension(value: number, unit: DimensionUnit) {
+  const dimension = pixelsToDimension(value, unit);
+  return Number.isFinite(dimension) ? Number(dimension.toFixed(1)) : 0;
+}
+
+function formatPaletteDimension(value: number) {
+  return `${(value / PIXELS_PER_METER).toFixed(1)}m`;
 }
 
 function buildSeatSlots(object: LocalSpaceObject & { tableDetails: LocalTableDetails }): SeatSlot[] {
@@ -707,6 +731,7 @@ export default function SpaceTablePlan() {
   const [planStatus, setPlanStatus] = useState<SpacePlanStatus>('draft');
   const [planNotes, setPlanNotes] = useState('');
   const [canvasSize, setCanvasSize] = useState(defaultCanvas);
+  const [dimensionUnit, setDimensionUnit] = useState<DimensionUnit>('meters');
   const [zoom, setZoom] = useState(0.75);
   const [objects, setObjects] = useState<LocalSpaceObject[]>([]);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
@@ -1128,7 +1153,8 @@ export default function SpaceTablePlan() {
 
   const beginCanvasPan = (event: React.PointerEvent<HTMLDivElement>) => {
     const viewport = viewportRef.current;
-    if (!viewport || event.target !== event.currentTarget) return;
+    const target = event.target as HTMLElement;
+    if (!viewport || target.closest('[data-space-object="true"], button, input, textarea, select, [role="slider"]')) return;
 
     event.currentTarget.setPointerCapture(event.pointerId);
     panRef.current = {
@@ -1306,39 +1332,6 @@ export default function SpaceTablePlan() {
         : zoomLevels.length - 1 - currentIndex;
       return zoomLevels[nextIndex];
     });
-  };
-
-  const setZoomAroundPoint = (nextZoom: number, clientX?: number, clientY?: number) => {
-    const viewport = viewportRef.current;
-    if (!viewport || clientX == null || clientY == null) {
-      setZoom(nextZoom);
-      return;
-    }
-
-    const rect = viewport.getBoundingClientRect();
-    const pointerX = clientX - rect.left + viewport.scrollLeft;
-    const pointerY = clientY - rect.top + viewport.scrollTop;
-    const contentX = pointerX / zoom;
-    const contentY = pointerY / zoom;
-
-    setZoom(nextZoom);
-
-    requestAnimationFrame(() => {
-      viewport.scrollLeft = contentX * nextZoom - (clientX - rect.left);
-      viewport.scrollTop = contentY * nextZoom - (clientY - rect.top);
-    });
-  };
-
-  const handleCanvasWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    if (!viewportRef.current) return;
-
-    event.preventDefault();
-
-    const delta = event.deltaY > 0 ? -0.12 : 0.12;
-    const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Number((zoom + delta).toFixed(2))));
-    if (nextZoom === zoom) return;
-
-    setZoomAroundPoint(nextZoom, event.clientX, event.clientY);
   };
 
   const applyVenuePresetToCanvas = () => {
@@ -1977,118 +1970,49 @@ export default function SpaceTablePlan() {
           </Card>
 
           <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
-            <CardHeader className="pb-4">
-              <CardTitle className="font-display text-2xl">Layout readiness</CardTitle>
-              <CardDescription>
-                Use the preview as an operational planning workspace, not just a design surface.
-              </CardDescription>
+            <CardHeader className="pb-3">
+              <CardTitle className="font-display text-xl">Readiness</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 text-sm leading-6 text-muted-foreground">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-3xl border border-primary/10 bg-primary/5 px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Objects placed</p>
-                  <p className="mt-2 font-display text-3xl text-foreground">{planHealth.objectCount}</p>
-                </div>
-                <div className="rounded-3xl border border-primary/10 bg-primary/5 px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Tables ready</p>
-                  <p className="mt-2 font-display text-3xl text-foreground">{planHealth.tableCount}</p>
-                </div>
-                <div className="rounded-3xl border border-primary/10 bg-primary/5 px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Guests assigned</p>
-                  <p className="mt-2 font-display text-3xl text-foreground">{planHealth.assignedGuests}</p>
-                </div>
-                <div className="rounded-3xl border border-primary/10 bg-primary/5 px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">VIP tables</p>
-                  <p className="mt-2 font-display text-3xl text-foreground">{planHealth.vipTables.length}</p>
-                </div>
-              </div>
-
-              <div className="rounded-[28px] border border-white/80 bg-white/90 p-4">
-                {planHealth.overCapacityTables.length > 0 ? (
-                  <div className="flex items-start gap-3 text-destructive">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <div>
-                      <p className="font-medium text-foreground">Some tables are over capacity.</p>
-                      <p>
-                        {planHealth.overCapacityTables.map((table) => table.tableDetails.tableName).join(', ')} need
-                        more seats or guest redistribution.
-                      </p>
-                    </div>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  ['Objects', planHealth.objectCount],
+                  ['Tables', planHealth.tableCount],
+                  ['Guests seated', planHealth.assignedGuests],
+                  ['Unassigned', planHealth.unassignedGuests.length],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-2xl border border-primary/10 bg-primary/5 px-3 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary/70">{label}</p>
+                    <p className="mt-1 font-display text-2xl text-foreground">{value}</p>
                   </div>
-                ) : (
-                  <div className="flex items-start gap-3 text-emerald-700">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                    <div>
-                      <p className="font-medium text-foreground">Capacity looks healthy so far.</p>
-                      <p>No table is overbooked in this draft right now.</p>
-                    </div>
-                  </div>
-                )}
+                ))}
               </div>
-
-              <div className="rounded-[28px] border border-white/80 bg-white/90 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Still to place</p>
-                <p className="mt-2">
-                  {planHealth.unassignedGuests.length > 0
-                    ? `${planHealth.unassignedGuests.length} guests still need a table assignment.`
-                    : 'Every guest in the current list has been assigned to a table.'}
-                </p>
-                {planHealth.unassignedGuests.length > 0 ? (
-                  <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
-                    {planHealth.unassignedGuests.map((guest) => guest.name).join(', ')}
-                  </p>
-                ) : null}
+              <div className={cn(
+                'rounded-2xl border px-3 py-3 text-xs font-medium',
+                planHealth.overCapacityTables.length > 0
+                  ? 'border-destructive/20 bg-destructive/5 text-destructive'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-800',
+              )}>
+                {planHealth.overCapacityTables.length > 0
+                  ? `${planHealth.overCapacityTables.length} table capacity issue${planHealth.overCapacityTables.length === 1 ? '' : 's'}`
+                  : 'Capacity looks healthy'}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_380px]">
-          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur xl:col-span-2 xl:col-start-1 xl:row-start-1">
-            <CardHeader>
-              <CardTitle className="font-display text-2xl">Object palette</CardTitle>
-              <CardDescription>Add the pieces you need, then use the canvas below as the main design surface.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid max-h-[360px] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {paletteItems.map((item) => {
-                const Icon = item.icon;
-
-                return (
-                  <button
-                    key={item.type}
-                    type="button"
-                    onClick={() => handleAddObject(item)}
-                    className="group flex min-h-20 items-center justify-between rounded-2xl border border-border/70 bg-white px-4 py-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-md"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={cn('flex h-10 w-10 items-center justify-center rounded-2xl border', item.toneClassName)}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">{item.label}</p>
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          {item.width} x {item.height}
-                        </p>
-                      </div>
-                    </div>
-                    <Plus className="h-4 w-4 text-muted-foreground transition group-hover:rotate-90 group-hover:text-primary" />
-                  </button>
-                );
-              })}
-            </CardContent>
-          </Card>
-
-          <Card className="overflow-hidden border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur xl:col-span-3 xl:row-start-2">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <Card className="overflow-hidden border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
             <CardHeader className="border-b border-border/60">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <CardTitle className="font-display text-2xl">Canvas</CardTitle>
-                  <CardDescription>A full-width planning surface for seating, service flow, decor, and room movement.</CardDescription>
+                  <CardDescription>Drag the canvas to move around. Add objects from the tool strip below.</CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-2 rounded-full border border-border/70 bg-white/90 px-3 py-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
                     <Move className="h-3.5 w-3.5" />
-                    Drag to arrange
+                    Drag canvas
                   </div>
                   <div className="flex items-center gap-2 rounded-full border border-border/70 bg-white/90 px-2 py-1.5 shadow-sm">
                     <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full" onClick={() => setZoomByDirection('out')} disabled={zoom <= MIN_ZOOM}>
@@ -2099,31 +2023,98 @@ export default function SpaceTablePlan() {
                       <ZoomIn className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="rounded-full border border-border/70 bg-white/90 px-3 py-2 text-[11px] text-muted-foreground">
-                    Wheel over canvas to zoom like a map
-                  </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4 p-4">
-              <div className="grid gap-3 lg:grid-cols-[180px_180px_minmax(220px,1fr)_minmax(260px,0.9fr)]">
+              <div className="rounded-[28px] border border-border/60 bg-white/80 p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Object palette</p>
+                    <p className="text-xs text-muted-foreground">Tap an item to place it on the canvas.</p>
+                  </div>
+                  <Badge variant="secondary" className="rounded-full">{paletteItems.length} tools</Badge>
+                </div>
+                <div className="grid max-h-44 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7">
+                  {paletteItems.map((item) => (
+                    <button
+                      key={item.type}
+                      type="button"
+                      onClick={() => handleAddObject(item)}
+                      className="group flex items-center justify-between gap-2 rounded-2xl border border-border/70 bg-background/90 px-3 py-2.5 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5"
+                    >
+                      <span>
+                        <span className="block text-sm font-medium text-foreground">{item.label}</span>
+                        <span className="mt-0.5 block text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                          {formatPaletteDimension(item.width)} x {formatPaletteDimension(item.height)}
+                        </span>
+                      </span>
+                      <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition group-hover:rotate-90 group-hover:text-primary" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[160px_160px_140px_minmax(220px,1fr)]">
                 <div className="space-y-2">
-                  <Label>Canvas width</Label>
+                  <Label>Width ({dimensionUnit === 'meters' ? 'm' : 'ft'})</Label>
                   <Input
                     type="number"
-                    value={canvasSize.width}
-                    onChange={(event) => setCanvasSize((current) => ({ ...current, width: Math.max(MIN_CANVAS_WIDTH, Number(event.target.value) || MIN_CANVAS_WIDTH) }))}
+                    step="0.1"
+                    value={formatDimension(canvasSize.width, dimensionUnit)}
+                    onChange={(event) =>
+                      setCanvasSize((current) => ({
+                        ...current,
+                        width: Math.max(MIN_CANVAS_WIDTH, dimensionToPixels(Number(event.target.value) || 0, dimensionUnit)),
+                      }))
+                    }
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Canvas height</Label>
+                  <Label>Height ({dimensionUnit === 'meters' ? 'm' : 'ft'})</Label>
                   <Input
                     type="number"
-                    value={canvasSize.height}
-                    onChange={(event) => setCanvasSize((current) => ({ ...current, height: Math.max(MIN_CANVAS_HEIGHT, Number(event.target.value) || MIN_CANVAS_HEIGHT) }))}
+                    step="0.1"
+                    value={formatDimension(canvasSize.height, dimensionUnit)}
+                    onChange={(event) =>
+                      setCanvasSize((current) => ({
+                        ...current,
+                        height: Math.max(MIN_CANVAS_HEIGHT, dimensionToPixels(Number(event.target.value) || 0, dimensionUnit)),
+                      }))
+                    }
                   />
                 </div>
-                <div className="space-y-3 rounded-3xl border border-border/70 bg-white/85 px-4 py-3">
+                <div className="space-y-2">
+                  <Label>Units</Label>
+                  <Select value={dimensionUnit} onValueChange={(value) => setDimensionUnit(value as DimensionUnit)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="meters">Meters</SelectItem>
+                      <SelectItem value="feet">Feet</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="rounded-3xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Room size</p>
+                  <p className="mt-2 text-foreground">
+                    {formatDimension(canvasSize.width, dimensionUnit)} x {formatDimension(canvasSize.height, dimensionUnit)} {dimensionUnit === 'meters' ? 'm' : 'ft'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant={snapToGrid ? 'default' : 'outline'} size="sm" onClick={() => setSnapToGrid((current) => !current)}>
+                  {snapToGrid ? 'Grid snap on' : 'Grid snap off'}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Click an object to edit it. Drag empty canvas space to pan.
+                </p>
+              </div>
+
+              <div className="relative">
+                <div className="absolute right-4 top-4 z-20 w-48 rounded-2xl border border-border/70 bg-white/90 px-4 py-3 shadow-lg backdrop-blur">
                   <div className="flex items-center justify-between gap-3">
                     <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Zoom</Label>
                     <span className="text-xs font-semibold tabular-nums text-foreground">{Math.round(zoom * 100)}%</span>
@@ -2136,22 +2127,7 @@ export default function SpaceTablePlan() {
                     onValueChange={([value]) => setZoom(Number(value.toFixed(2)))}
                     aria-label="Canvas zoom"
                   />
-                  <p className="text-[11px] text-muted-foreground">Use the wheel over the canvas for pointer-centered zoom.</p>
                 </div>
-                <div className="rounded-3xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Decorator note</p>
-                  <p className="mt-2 leading-6">Walkways, aisles, buffet runs, and staging zones can now be stretched using width and height so the layout reflects the actual room flow.</p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant={snapToGrid ? 'default' : 'outline'} size="sm" onClick={() => setSnapToGrid((current) => !current)}>
-                  {snapToGrid ? 'Snap to grid on' : 'Snap to grid off'}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Drag objects near each other to reveal alignment guides. Lock finished zones once decorators sign off.
-                </p>
-              </div>
 
               <div
                 ref={viewportRef}
@@ -2159,7 +2135,6 @@ export default function SpaceTablePlan() {
                   'min-h-[72vh] overflow-auto rounded-[32px] border border-border/60 bg-[#faf4ec] shadow-inner transition-colors duration-300',
                   panningCanvas ? 'ring-2 ring-primary/20' : '',
                 )}
-                onWheel={handleCanvasWheel}
               >
                 <div
                   className="transition-[width,height] duration-200 ease-out"
@@ -2228,6 +2203,7 @@ export default function SpaceTablePlan() {
                     return (
                       <div
                         key={object.id}
+                        data-space-object="true"
                         role="button"
                         tabIndex={0}
                         onPointerDown={(event) => handlePointerDown(event, object.id)}
@@ -2371,18 +2347,19 @@ export default function SpaceTablePlan() {
                 </div>
               </div>
               </div>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur xl:col-start-3 xl:row-start-1">
-            <CardHeader className="pb-4">
+          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur xl:sticky xl:top-4 xl:self-start">
+            <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <CardTitle className="font-display text-2xl">Inspector</CardTitle>
-                  <CardDescription>Refine the selected object so the space plan becomes operational, not just visual.</CardDescription>
+                  <CardTitle className="font-display text-xl">Inspector</CardTitle>
+                  <CardDescription>Selected object controls.</CardDescription>
                 </div>
                 {selectedObject ? (
-                  <div className="flex items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-1">
                     <Button variant="ghost" size="sm" onClick={() => moveSelectedLayer('backward')}>
                       Back
                     </Button>
@@ -2399,20 +2376,17 @@ export default function SpaceTablePlan() {
                 ) : null}
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="max-h-[calc(100vh-7rem)] overflow-y-auto">
               {!selectedObject ? (
-                <div className="rounded-[28px] border border-dashed border-primary/20 bg-primary/5 px-5 py-8 text-sm leading-6 text-muted-foreground">
-                  Select a layout object on the canvas to edit labels, notes, sizing, and guest assignments.
+                <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 px-4 py-5 text-sm leading-6 text-muted-foreground">
+                  Select an object to edit size, rotation, notes, and seats.
                 </div>
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   <div className="rounded-2xl border border-border/70 bg-background/80 p-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-foreground">Object protection</p>
-                        <p className="text-xs text-muted-foreground">
-                          Lock finished decor zones, aisles, or seating blocks so nobody drags them by mistake.
-                        </p>
                       </div>
                       <Button
                         type="button"
