@@ -570,6 +570,98 @@ export default function Dashboard() {
     vendorDecisionsPending,
   ]);
 
+  const homeSetupChecklist = [
+    {
+      label: 'Wedding profile',
+      detail: weddingDate && weddingLocation ? 'Date and location are in place.' : 'Add the date and location so the workspace feels complete.',
+      complete: Boolean(weddingDate && weddingLocation),
+    },
+    {
+      label: 'Budget started',
+      detail: stats.totalBudget > 0 ? `KES ${stats.totalBudget.toLocaleString()} planned so far.` : 'Set your first budget categories and working totals.',
+      complete: stats.totalBudget > 0,
+    },
+    {
+      label: 'Guest list started',
+      detail: stats.totalGuests > 0 ? `${stats.totalGuests} guest${stats.totalGuests === 1 ? '' : 's'} already tracked.` : 'Add your first guests to unlock RSVPs and seating.',
+      complete: stats.totalGuests > 0,
+    },
+    {
+      label: 'Checklist active',
+      detail: stats.totalTasks > 0 ? `${pendingTasks.length} task${pendingTasks.length === 1 ? '' : 's'} still open.` : 'Add your first tasks so the plan has momentum.',
+      complete: stats.totalTasks > 0,
+    },
+    {
+      label: 'Timeline started',
+      detail: upcomingEvents.length > 0 ? `${upcomingEvents.length} timeline moment${upcomingEvents.length === 1 ? '' : 's'} already visible.` : 'Build the first timeline events for the wedding day.',
+      complete: upcomingEvents.length > 0,
+    },
+    {
+      label: 'Vendor decisions moving',
+      detail: finalVendorUrgencies.length > 0 ? `${finalVendorUrgencies.length} final vendor${finalVendorUrgencies.length === 1 ? '' : 's'} already confirmed.` : 'Choose final vendors and track payments here.',
+      complete: finalVendorUrgencies.length > 0,
+    },
+  ];
+
+  const completedHomeSetupCount = homeSetupChecklist.filter((item) => item.complete).length;
+  const homeSetupPercentage = Math.round((completedHomeSetupCount / homeSetupChecklist.length) * 100);
+
+  const homePrimaryAction = (() => {
+    if (!isPlanner && (!weddingDate || !weddingLocation)) {
+      return {
+        href: '/settings',
+        label: 'Complete wedding profile',
+        description: 'Add your date and location so the workspace becomes more useful.',
+      };
+    }
+
+    if (stats.totalTasks === 0) {
+      return {
+        href: '/tasks',
+        label: 'Create first tasks',
+        description: 'Start the checklist so the rest of the plan has something concrete to organize around.',
+      };
+    }
+
+    if (stats.totalBudget === 0) {
+      return {
+        href: '/budget',
+        label: 'Start the budget',
+        description: 'Set your first categories and amounts before vendor costs start spreading out.',
+      };
+    }
+
+    if (stats.totalGuests === 0) {
+      return {
+        href: '/guests',
+        label: 'Build the guest list',
+        description: 'Add the first guests so RSVPs, tables, and invites have somewhere to begin.',
+      };
+    }
+
+    if (upcomingEvents.length === 0) {
+      return {
+        href: '/timeline',
+        label: 'Create the timeline',
+        description: 'Map the wedding day so everyone knows what happens next.',
+      };
+    }
+
+    if (finalVendorUrgencies.length === 0) {
+      return {
+        href: '/vendors',
+        label: 'Choose final vendors',
+        description: 'Move from browsing to confirmed bookings and payment tracking.',
+      };
+    }
+
+    return {
+      href: '/tasks',
+      label: 'Review this week',
+      description: 'Open the live checklist and move the highest-impact items forward.',
+    };
+  })();
+
   const dashboardConciergeContext = useMemo(() => buildConciergeContext({
     page: 'Wedding Home',
     role: profile?.role,
@@ -662,98 +754,6 @@ export default function Dashboard() {
   const guestConfirmationPercentage = stats.totalGuests > 0
     ? Math.round((stats.confirmedGuests / stats.totalGuests) * 100)
     : 0;
-
-  const homeSetupChecklist = [
-    {
-      label: 'Wedding profile',
-      detail: weddingDate && weddingLocation ? 'Date and location are in place.' : 'Add the date and location so the workspace feels complete.',
-      complete: Boolean(weddingDate && weddingLocation),
-    },
-    {
-      label: 'Budget started',
-      detail: stats.totalBudget > 0 ? `KES ${stats.totalBudget.toLocaleString()} planned so far.` : 'Set your first budget categories and working totals.',
-      complete: stats.totalBudget > 0,
-    },
-    {
-      label: 'Guest list started',
-      detail: stats.totalGuests > 0 ? `${stats.totalGuests} guest${stats.totalGuests === 1 ? '' : 's'} already tracked.` : 'Add your first guests to unlock RSVPs and seating.',
-      complete: stats.totalGuests > 0,
-    },
-    {
-      label: 'Checklist active',
-      detail: stats.totalTasks > 0 ? `${pendingTasks.length} task${pendingTasks.length === 1 ? '' : 's'} still open.` : 'Add your first tasks so the plan has momentum.',
-      complete: stats.totalTasks > 0,
-    },
-    {
-      label: 'Timeline started',
-      detail: upcomingEvents.length > 0 ? `${upcomingEvents.length} timeline moment${upcomingEvents.length === 1 ? '' : 's'} already visible.` : 'Build the first timeline events for the wedding day.',
-      complete: upcomingEvents.length > 0,
-    },
-    {
-      label: 'Vendor decisions moving',
-      detail: finalVendorUrgencies.length > 0 ? `${finalVendorUrgencies.length} final vendor${finalVendorUrgencies.length === 1 ? '' : 's'} already confirmed.` : 'Choose final vendors and track payments here.',
-      complete: finalVendorUrgencies.length > 0,
-    },
-  ];
-
-  const completedHomeSetupCount = homeSetupChecklist.filter((item) => item.complete).length;
-  const homeSetupPercentage = Math.round((completedHomeSetupCount / homeSetupChecklist.length) * 100);
-
-  const homePrimaryAction = (() => {
-    if (!isPlanner && (!weddingDate || !weddingLocation)) {
-      return {
-        href: '/settings',
-        label: 'Complete wedding profile',
-        description: 'Add your date and location so the workspace becomes more useful.',
-      };
-    }
-
-    if (stats.totalTasks === 0) {
-      return {
-        href: '/tasks',
-        label: 'Create first tasks',
-        description: 'Start the checklist so the rest of the plan has something concrete to organize around.',
-      };
-    }
-
-    if (stats.totalBudget === 0) {
-      return {
-        href: '/budget',
-        label: 'Start the budget',
-        description: 'Set your first categories and amounts before vendor costs start spreading out.',
-      };
-    }
-
-    if (stats.totalGuests === 0) {
-      return {
-        href: '/guests',
-        label: 'Build the guest list',
-        description: 'Add the first guests so RSVPs, tables, and invites have somewhere to begin.',
-      };
-    }
-
-    if (upcomingEvents.length === 0) {
-      return {
-        href: '/timeline',
-        label: 'Create the timeline',
-        description: 'Map the wedding day so everyone knows what happens next.',
-      };
-    }
-
-    if (finalVendorUrgencies.length === 0) {
-      return {
-        href: '/vendors',
-        label: 'Choose final vendors',
-        description: 'Move from browsing to confirmed bookings and payment tracking.',
-      };
-    }
-
-    return {
-      href: '/tasks',
-      label: 'Review this week',
-      description: 'Open the live checklist and move the highest-impact items forward.',
-    };
-  })();
 
   const homeActionCards = [
     {
