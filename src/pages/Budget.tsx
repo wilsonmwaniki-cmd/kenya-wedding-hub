@@ -847,6 +847,13 @@ export default function Budget() {
     });
   }, [activeBudgetScope, finalVendorPayments]);
 
+  const visibleSpentPercentage = visibleAllocated > 0
+    ? Math.min(Math.round((visibleSpent / visibleAllocated) * 100), 999)
+    : 0;
+  const paymentCoveragePercentage = invoiceTotal > 0
+    ? Math.min(Math.round((currentScopePaymentTotal / invoiceTotal) * 100), 999)
+    : 0;
+
   const budgetPrompts = useMemo(() => {
     const scopeLabel = activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget';
     const prompts: string[] = [];
@@ -1221,13 +1228,6 @@ export default function Budget() {
       setSelectedCategoryId(filteredVisibleCategories[0].id);
     }
   }, [filteredVisibleCategories, selectedCategoryId]);
-
-  const visibleSpentPercentage = visibleAllocated > 0
-    ? Math.min(Math.round((visibleSpent / visibleAllocated) * 100), 999)
-    : 0;
-  const paymentCoveragePercentage = invoiceTotal > 0
-    ? Math.min(Math.round((currentScopePaymentTotal / invoiceTotal) * 100), 999)
-    : 0;
 
   const budgetPrimaryAction = (() => {
     if (visibleCategories.length === 0) {
