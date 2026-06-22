@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,7 +16,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { useToast } from '@/hooks/use-toast';
 import { Heart, Plus, Trash2, Copy, ExternalLink, Star, Loader2, Eye, Tag, X } from 'lucide-react';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
-import { buildConciergeContext } from '@/lib/conciergeContext';
 
 const STYLE_SUGGESTIONS = ['Garden', 'Church', 'Beach', 'Traditional', 'Modern', 'Rustic', 'Luxury', 'Intimate', 'Outdoor', 'Cultural'];
 
@@ -54,8 +52,6 @@ export default function ManagePortfolio() {
   const { user, profile } = useAuth();
   const { selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
-  const assistantPanel = useAssistantPanel();
-  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [vendors, setVendors] = useState<PortfolioVendor[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -261,64 +257,6 @@ export default function ManagePortfolio() {
     () => (reviews.length ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length : 0),
     [reviews],
   );
-  const portfolioPrimaryAction = !portfolio
-    ? 'Create the portfolio hub'
-    : !isPublished
-      ? 'Polish and publish the wedding story'
-      : reviewableVendors.length > 0
-        ? `Review ${reviewableVendors.length} vendor${reviewableVendors.length === 1 ? '' : 's'}`
-        : 'Share the published portfolio';
-  const portfolioConciergeContext = useMemo(() => buildConciergeContext({
-    page: 'portfolio',
-    role: selectedClient ? 'planner' : 'couple',
-    weddingName: selectedClient?.client_name || profile?.wedding_name || title || 'Current wedding',
-    primaryGoal: 'Help the user turn completed wedding details into a polished public story with vendor credits and reviews.',
-    recommendedNextAction: portfolioPrimaryAction,
-    facts: [
-      `Portfolio exists: ${portfolio ? 'yes' : 'no'}`,
-      `Published: ${isPublished ? 'yes' : 'no'}`,
-      `Title: ${title || 'not set'}`,
-      `Wedding date: ${weddingDate || 'not set'}`,
-      `Location: ${location || 'not set'}`,
-      `Guest count: ${guestCount}`,
-      `Style tags: ${styleTags.length}`,
-      `Vendor credits: ${vendors.length}`,
-      `Reviews: ${reviews.length}`,
-      `Average rating: ${averageRating ? averageRating.toFixed(1) : 'none'}`,
-      `Reviewable vendors: ${reviewableVendors.length}`,
-      `Workspace vendors available for quick add: ${weddingVendors.length}`,
-    ],
-    risks: [
-      !portfolio ? 'The portfolio has not been created yet.' : null,
-      portfolio && !title.trim() ? 'The portfolio title is missing.' : null,
-      portfolio && !description.trim() ? 'The story description is missing.' : null,
-      portfolio && vendors.length === 0 ? 'No vendor credits have been added to the story.' : null,
-      portfolio && reviewableVendors.length > 0 ? `${reviewableVendors.length} credited vendors can still receive reviews.` : null,
-      portfolio && !isPublished ? 'The portfolio is still private.' : null,
-    ],
-  }), [
-    averageRating,
-    description,
-    guestCount,
-    isPublished,
-    location,
-    portfolio,
-    portfolioPrimaryAction,
-    profile?.wedding_name,
-    reviewableVendors.length,
-    reviews.length,
-    selectedClient,
-    styleTags.length,
-    title,
-    vendors.length,
-    weddingDate,
-    weddingVendors.length,
-  ]);
-
-  useEffect(() => {
-    setAssistantConciergeContext?.(portfolioConciergeContext);
-    return () => setAssistantConciergeContext?.(null);
-  }, [portfolioConciergeContext, setAssistantConciergeContext]);
 
   if (loading) {
     return <WorkspacePageSkeleton compact />;

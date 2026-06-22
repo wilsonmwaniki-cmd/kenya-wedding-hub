@@ -11,7 +11,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
 import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
@@ -19,7 +18,6 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { normalizeExternalUrl } from '@/lib/security';
-import { buildConciergeContext } from '@/lib/conciergeContext';
 
 type RegistryItem = {
   id: string;
@@ -84,8 +82,6 @@ export default function GiftRegistry() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const assistantPanel = useAssistantPanel();
-  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const { profile, isSuperAdmin, rolePreview } = useAuth();
   const { weddingId, entitlements, couplePlanTier, loading, refresh } = useWeddingEntitlements();
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -228,56 +224,6 @@ export default function GiftRegistry() {
       totalEstimatedValue,
     };
   }, [items]);
-  const registryPrimaryAction = !decision.allowed
-    ? 'Unlock the gift registry add-on'
-    : items.length === 0
-      ? 'Add the first gift'
-      : stats.activeItems > 0
-        ? 'Review needed gifts and share the list'
-        : 'Review purchased gifts and add anything missing';
-  const registryConciergeContext = useMemo(() => buildConciergeContext({
-    page: 'gift_registry',
-    role: 'couple',
-    weddingName: profile?.wedding_name || profile?.full_name || 'Current wedding',
-    primaryGoal: 'Help the user build a useful gift registry that is easy to share and keep updated.',
-    recommendedNextAction: registryPrimaryAction,
-    facts: [
-      `Registry access allowed: ${decision.allowed ? 'yes' : 'no'}`,
-      `Wedding attached: ${weddingId ? 'yes' : 'no'}`,
-      `Total registry items: ${stats.totalItems}`,
-      `Needed items: ${stats.activeItems}`,
-      `Purchased items: ${stats.purchasedCount}`,
-      `Total estimated value: ${formatKes(stats.totalEstimatedValue) ?? 'KES 0'}`,
-      `Items currently loading: ${itemsLoading ? 'yes' : 'no'}`,
-      `Focused upgrade flow: ${isFocusedUpgradeFlow ? 'yes' : 'no'}`,
-    ],
-    risks: [
-      !decision.allowed ? 'Gift Registry is not unlocked for this wedding.' : null,
-      !weddingId ? 'There is no active wedding workspace attached yet.' : null,
-      decision.allowed && items.length === 0 ? 'The registry is unlocked but has no gifts yet.' : null,
-      stats.activeItems === 0 && items.length > 0 ? 'Every listed gift is marked bought; the couple may need to add more items.' : null,
-      itemsError ? `Registry loading error: ${itemsError}` : null,
-    ],
-  }), [
-    decision.allowed,
-    isFocusedUpgradeFlow,
-    items.length,
-    itemsError,
-    itemsLoading,
-    profile?.full_name,
-    profile?.wedding_name,
-    registryPrimaryAction,
-    stats.activeItems,
-    stats.purchasedCount,
-    stats.totalEstimatedValue,
-    stats.totalItems,
-    weddingId,
-  ]);
-
-  useEffect(() => {
-    setAssistantConciergeContext?.(registryConciergeContext);
-    return () => setAssistantConciergeContext?.(null);
-  }, [registryConciergeContext, setAssistantConciergeContext]);
 
   const handleCheckout = async () => {
     if (!profile) return;

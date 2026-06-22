@@ -21,7 +21,6 @@ import {
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { normalizeInvokeError } from '@/lib/invokeErrors';
-import { buildConciergeContext } from '@/lib/conciergeContext';
 
 const VENDOR_ROLES = [
   { value: 'photographer', label: 'Photographer', icon: '📸' },
@@ -114,7 +113,6 @@ export default function Timeline() {
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
-  const setAssistantConciergeContext = assistantPanel?.setConciergeContext;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
   const [timelines, setTimelines] = useState<Timeline[]>([]);
@@ -160,15 +158,6 @@ export default function Timeline() {
   const selectedTimelineShareActive = selectedTimeline
     ? isTokenActive(selectedTimeline.share_expires_at, selectedTimeline.share_revoked_at)
     : false;
-  const templates = timelines.filter(t => t.is_template);
-  const instances = timelines.filter(t => !t.is_template);
-  const timelineHeroAction = instances.length === 0
-    ? 'Build the first timeline'
-    : selectedTimeline
-      ? 'Review the selected timeline flow'
-      : instances.length === 1
-        ? 'Refine the current wedding flow'
-        : 'Keep every timeline version in sync';
 
   // Load timelines
   const loadTimelines = async () => {
@@ -533,52 +522,6 @@ export default function Timeline() {
     setTimelines((prev) => prev.map((timeline) => (timeline.id === timelineId ? (data as Timeline) : timeline)));
   };
 
-  const timelineConciergeContext = useMemo(() => buildConciergeContext({
-    page: 'timeline',
-    role: isPlanner ? 'planner' : 'couple',
-    weddingName: selectedClient?.client_name || selectedTimeline?.title || 'Current wedding',
-    primaryGoal: 'Help the user turn the day-of schedule into a clear operational timeline with owners, handoffs, and share links.',
-    recommendedNextAction: timelineHeroAction,
-    facts: [
-      `Mode: ${selectedTimeline ? 'selected timeline detail' : 'timeline list'}`,
-      `Timeline versions: ${instances.length}`,
-      `Timeline templates: ${templates.length}`,
-      `Selected timeline: ${selectedTimeline?.title || 'none'}`,
-      `Selected timeline date: ${selectedTimeline?.timeline_date || 'not set'}`,
-      `Events in selected timeline: ${events.length}`,
-      `Unique assignees: ${allAssignees.length}`,
-      `Personal share links: ${shareLinks.length}`,
-      `Full timeline share link active: ${selectedTimelineShareActive ? 'yes' : 'no'}`,
-      `Category filter: ${filterCategory || 'all'}`,
-    ],
-    risks: [
-      instances.length === 0 ? 'No live wedding-day timeline has been created yet.' : null,
-      selectedTimeline && events.length === 0 ? 'The selected timeline has no events yet.' : null,
-      selectedTimeline && allAssignees.length === 0 ? 'No owners or vendors are assigned to timeline events yet.' : null,
-      selectedTimeline && !selectedTimelineShareActive ? 'The full public timeline share link is inactive.' : null,
-      selectedTimeline && shareLinks.length === 0 ? 'No personal timeline links have been created for vendors or assignees.' : null,
-      plannerNeedsApproval ? 'This planner is working on a linked wedding and bulk timeline edits stay with the couple.' : null,
-    ],
-  }), [
-    allAssignees.length,
-    events.length,
-    filterCategory,
-    instances.length,
-    isPlanner,
-    plannerNeedsApproval,
-    selectedClient?.client_name,
-    selectedTimeline,
-    selectedTimelineShareActive,
-    shareLinks.length,
-    templates.length,
-    timelineHeroAction,
-  ]);
-
-  useEffect(() => {
-    setAssistantConciergeContext?.(timelineConciergeContext);
-    return () => setAssistantConciergeContext?.(null);
-  }, [setAssistantConciergeContext, timelineConciergeContext]);
-
   if (loading) return <WorkspacePageSkeleton compact />;
 
   const refreshFullTimelineLink = async () => {
@@ -725,6 +668,14 @@ export default function Timeline() {
     }
     loadEvents(selectedTimeline.id);
   };
+
+  const templates = timelines.filter(t => t.is_template);
+  const instances = timelines.filter(t => !t.is_template);
+  const timelineHeroAction = instances.length === 0
+    ? 'Build the first timeline'
+    : instances.length === 1
+      ? 'Refine the current wedding flow'
+      : 'Keep every timeline version in sync';
 
   const formatTime = (t: string) => {
     const [h, m] = t.split(':');
