@@ -1912,7 +1912,7 @@ export default function SpaceTablePlan() {
                       key={item.type}
                       type="button"
                       onClick={() => handleAddObject(item)}
-                      className="group flex items-center justify-between gap-2 rounded-2xl border border-border/70 bg-background/90 px-3 py-2.5 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5"
+                      className="group flex items-center justify-between gap-2 rounded-2xl border border-border/70 bg-background/90 px-3 py-2 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5"
                     >
                       <span>
                         <span className="block text-sm font-medium text-foreground">{item.label}</span>
@@ -1920,7 +1920,7 @@ export default function SpaceTablePlan() {
                           {formatPaletteDimension(item.width)} x {formatPaletteDimension(item.height)}
                         </span>
                       </span>
-                      <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition group-hover:rotate-90 group-hover:text-primary" />
+                      <Plus className="h-3 w-3 shrink-0 text-muted-foreground/70 transition group-hover:rotate-90 group-hover:text-primary" />
                     </button>
                   ))}
                 </div>
