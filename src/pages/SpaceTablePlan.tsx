@@ -705,6 +705,22 @@ function downloadCsv(filename: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
+function csvCell(value: string | number | null | undefined) {
+  return `"${String(value ?? '').replaceAll('"', '""')}"`;
+}
+
+function csvRow(values: Array<string | number | null | undefined>) {
+  return values.map(csvCell).join(',');
+}
+
+function toExportFilenamePart(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/&/g, 'and');
+  return normalized
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'zania-couple';
+}
+
 export default function SpaceTablePlan() {
   const { user, profile } = useAuth();
   const { selectedClient } = usePlanner();
@@ -755,6 +771,30 @@ export default function SpaceTablePlan() {
     () => venuePresets.find((space) => space.id === selectedVenueSpaceId) ?? null,
     [selectedVenueSpaceId, venuePresets],
   );
+
+  const exportCoupleName = useMemo(() => {
+    const coupleProfileName = [profile?.full_name, profile?.partner_name]
+      .map((name) => name?.trim())
+      .filter(Boolean)
+      .join(' & ');
+    const plannerClientName = [selectedClient?.client_name, selectedClient?.partner_name]
+      .map((name) => name?.trim())
+      .filter(Boolean)
+      .join(' & ');
+
+    if (profile?.role === 'planner') {
+      return plannerClientName || weddingContext?.weddingName || 'Zania couple';
+    }
+
+    return coupleProfileName || weddingContext?.weddingName || 'Zania couple';
+  }, [
+    profile?.full_name,
+    profile?.partner_name,
+    profile?.role,
+    selectedClient?.client_name,
+    selectedClient?.partner_name,
+    weddingContext?.weddingName,
+  ]);
 
   const planHealth = useMemo(() => {
     const tableObjects = objects.filter(isTableObject);
@@ -1411,12 +1451,28 @@ export default function SpaceTablePlan() {
       return;
     }
 
+    const exportDate = new Date().toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
     const csv = [
-      ['Table', 'Guest', 'Group', 'Seat label', 'Notes'].join(','),
-      ...rows.map((row) => row.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')),
+      csvRow(['Zania Space & Table Plan']),
+      csvRow(['Couple', exportCoupleName]),
+      csvRow(['Wedding', weddingContext?.weddingName ?? exportCoupleName]),
+      csvRow(['Plan', planName]),
+      csvRow(['Space type', spaceType]),
+      csvRow(['Event', eventLabel || 'No event label']),
+      csvRow(['Exported', exportDate]),
+      csvRow(['Designed by', 'Zania']),
+      '',
+      csvRow(['Table', 'Guest', 'Group', 'Seat label', 'Notes']),
+      ...rows.map(csvRow),
+      '',
+      csvRow(['designed by Zania']),
     ].join('\n');
 
-    downloadCsv('zania-space-plan-table-list.csv', csv);
+    downloadCsv(`${toExportFilenamePart(exportCoupleName)}-zania-space-plan-table-list.csv`, csv);
   };
 
   const openPrintLayoutView = () => {
@@ -1476,10 +1532,65 @@ export default function SpaceTablePlan() {
     printWindow.document.write(`
       <html>
         <head>
-          <title>Zania Layout Print</title>
+          <title>${escapePrintHtml(exportCoupleName)} - Zania Layout Print</title>
           <style>
-            body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 24px; color: #2b2118; }
+            @page { margin: 18mm 14mm 18mm; }
+            * { box-sizing: border-box; }
+            body {
+              font-family: ui-sans-serif, system-ui, sans-serif;
+              margin: 0;
+              padding: 24px 24px 52px;
+              color: #2b2118;
+              background: #fffaf5;
+            }
             h1, h2 { margin: 0 0 8px; }
+            h1 { font-size: 32px; letter-spacing: -0.04em; }
+            h2 { margin-top: 24px; font-size: 18px; }
+            .brand-header {
+              display: flex;
+              align-items: flex-start;
+              justify-content: space-between;
+              gap: 24px;
+              border-bottom: 1px solid #eadfce;
+              margin-bottom: 24px;
+              padding-bottom: 18px;
+            }
+            .brand-mark {
+              margin: 0;
+              color: #3a2418;
+              font-family: Georgia, 'Times New Roman', serif;
+              font-size: 24px;
+              letter-spacing: 0.32em;
+            }
+            .brand-sub {
+              margin: 6px 0 0;
+              color: #b36a42;
+              font-size: 10px;
+              font-weight: 800;
+              letter-spacing: 0.24em;
+              text-transform: uppercase;
+            }
+            .prepared-for {
+              min-width: 220px;
+              border: 1px solid #eadfce;
+              border-radius: 18px;
+              background: #fff;
+              padding: 12px 14px;
+              text-align: right;
+            }
+            .prepared-for span {
+              display: block;
+              color: #b36a42;
+              font-size: 10px;
+              font-weight: 800;
+              letter-spacing: 0.18em;
+              text-transform: uppercase;
+            }
+            .prepared-for strong {
+              display: block;
+              margin-top: 4px;
+              font-size: 18px;
+            }
             .meta { margin: 0 0 20px; color: #6b5a4a; }
             .canvas-shell { overflow: hidden; border: 1px solid #e7dccf; border-radius: 24px; background: #faf4ec; padding: 16px; }
             .canvas { position: relative; width: ${canvasSize.width}px; height: ${canvasSize.height}px; background-image:
@@ -1497,9 +1608,38 @@ export default function SpaceTablePlan() {
             table { width: 100%; border-collapse: collapse; margin-top: 24px; }
             th, td { border: 1px solid #eadfce; padding: 10px; text-align: left; vertical-align: top; font-size: 12px; }
             th { background: #f6ece1; }
+            .print-footer {
+              position: fixed;
+              right: 0;
+              bottom: 0;
+              left: 0;
+              display: flex;
+              justify-content: space-between;
+              gap: 16px;
+              border-top: 1px solid #eadfce;
+              background: rgba(255, 250, 245, 0.96);
+              padding: 10px 24px;
+              color: #7a654f;
+              font-size: 11px;
+            }
+            .print-footer strong {
+              color: #3a2418;
+              letter-spacing: 0.14em;
+              text-transform: uppercase;
+            }
           </style>
         </head>
         <body>
+          <header class="brand-header">
+            <div>
+              <p class="brand-mark">ZANIA</p>
+              <p class="brand-sub">Kenya &amp; Diaspora Planning</p>
+            </div>
+            <div class="prepared-for">
+              <span>Prepared for</span>
+              <strong>${escapePrintHtml(exportCoupleName)}</strong>
+            </div>
+          </header>
           <h1>${escapePrintHtml(planName)}</h1>
           <p class="meta">${escapePrintHtml(weddingContext?.weddingName ?? '')} · ${escapePrintHtml(spaceType)} · ${escapePrintHtml(eventLabel || 'No event label')}${selectedVenuePreset ? ` · ${escapePrintHtml(buildVenuePresetLabel(selectedVenuePreset))}` : ''}</p>
           <div class="canvas-shell">
@@ -1511,6 +1651,10 @@ export default function SpaceTablePlan() {
             <thead><tr><th>Zone</th><th>Readiness</th><th>Notes</th></tr></thead>
             <tbody>${teamRows}</tbody>
           </table>
+          <footer class="print-footer">
+            <span>${escapePrintHtml(exportCoupleName)} &middot; ${escapePrintHtml(planName)}</span>
+            <strong>designed by Zania</strong>
+          </footer>
         </body>
       </html>
     `);
