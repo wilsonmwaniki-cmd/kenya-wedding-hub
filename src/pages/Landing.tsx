@@ -502,6 +502,16 @@ export default function Landing() {
                   </Link>
                 )}
               </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.66 }}
+                className="mt-6 inline-flex w-fit items-center gap-3 rounded-full border border-[#ead7b5]/18 bg-[#fff7eb]/10 px-4 py-2 text-[#f8ead9] shadow-[0_18px_40px_rgba(10,6,4,0.18)] backdrop-blur-sm"
+              >
+                <span className="h-2 w-2 rounded-full bg-[#d4bb7d] shadow-[0_0_18px_rgba(212,187,125,0.9)]" />
+                <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[#d4bb7d]">124+</span>
+                <span className="text-sm text-[#f6eee6]/78">wedding plans started on Zania</span>
+              </motion.div>
             </div>
 
             <motion.div
