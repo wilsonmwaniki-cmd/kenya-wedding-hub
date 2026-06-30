@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -128,6 +129,7 @@ function TikTokSocialIcon({ className }: { className?: string }) {
 }
 
 export default function VendorSettings() {
+  const navigate = useNavigate();
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
   const db = supabase as any;
@@ -172,6 +174,8 @@ export default function VendorSettings() {
   const [reputationOverview, setReputationOverview] = useState<VendorReputationOverview | null>(null);
   const [requestingVerification, setRequestingVerification] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [submissionSuccessOpen, setSubmissionSuccessOpen] = useState(false);
+  const [dashboardRedirectCountdown, setDashboardRedirectCountdown] = useState(3);
   const [venueSpaces, setVenueSpaces] = useState<VenueSpaceDraft[]>([]);
   const [venueSpacesLoading, setVenueSpacesLoading] = useState(false);
 
@@ -278,6 +282,26 @@ export default function VendorSettings() {
       active = false;
     };
   }, [listing?.id]);
+
+  useEffect(() => {
+    if (!submissionSuccessOpen) {
+      setDashboardRedirectCountdown(3);
+      return;
+    }
+
+    const countdownInterval = window.setInterval(() => {
+      setDashboardRedirectCountdown((current) => (current > 1 ? current - 1 : current));
+    }, 1000);
+
+    const redirectTimeout = window.setTimeout(() => {
+      navigate('/vendor-dashboard');
+    }, 3000);
+
+    return () => {
+      window.clearInterval(countdownInterval);
+      window.clearTimeout(redirectTimeout);
+    };
+  }, [navigate, submissionSuccessOpen]);
 
   useEffect(() => {
     if (!listing?.id) {
@@ -504,6 +528,7 @@ export default function VendorSettings() {
       // Reload
       const { data } = await supabase.from('vendor_listings').select('*').eq('user_id', user.id).maybeSingle();
       if (data) setListing(data as any);
+      setSubmissionSuccessOpen(true);
     }
     setSaving(false);
   };
@@ -1436,6 +1461,33 @@ export default function VendorSettings() {
           </form>
         </CardContent>
       </Card>
+
+      <Dialog open={submissionSuccessOpen} onOpenChange={setSubmissionSuccessOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="items-center text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <CheckCircle2 className="h-8 w-8" />
+            </div>
+            <DialogTitle className="font-display text-2xl">Review Request Sent</DialogTitle>
+            <DialogDescription className="max-w-sm">
+              Your vendor listing has been submitted successfully. We&apos;re taking you back to your dashboard now.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-4 text-center">
+            <p className="text-sm font-medium text-foreground">Redirecting to dashboard</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              In {dashboardRedirectCountdown} second{dashboardRedirectCountdown === 1 ? '' : 's'}.
+            </p>
+          </div>
+
+          <div className="flex justify-center">
+            <Button type="button" onClick={() => navigate('/vendor-dashboard')}>
+              Go to dashboard now
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -672,10 +672,6 @@ export default function VendorDashboard() {
   const selectedTaskDetails = selectedBooking ? taskDetailsByBookingId[selectedBooking.id] ?? [] : [];
   const selectedPaymentDetails = selectedBooking ? paymentDetailsByBookingId[selectedBooking.id] ?? [] : [];
 
-  if (loading) {
-    return <WorkspacePageSkeleton compact />;
-  }
-
   const statusColor = (status: string | null) => {
     switch (status) {
       case 'booked': return 'bg-primary/10 text-primary border border-primary/20';
@@ -758,6 +754,10 @@ export default function VendorDashboard() {
       cancelled = true;
     };
   }, [selectedWorkspaceInvite, toast]);
+
+  if (loading) {
+    return <WorkspacePageSkeleton compact />;
+  }
 
   const handleSaveInternalNotes = async (bookingId: string) => {
     const nextNotes = (internalNoteDrafts[bookingId] ?? '').trim();

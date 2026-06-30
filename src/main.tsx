@@ -17,4 +17,15 @@ async function bootstrapPricingCatalog() {
 }
 
 startApp();
-void bootstrapPricingCatalog();
+
+if (typeof window !== "undefined") {
+  const scheduleBootstrap = () => {
+    void bootstrapPricingCatalog();
+  };
+
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(scheduleBootstrap, { timeout: 3000 });
+  } else {
+    window.setTimeout(scheduleBootstrap, 1200);
+  }
+}

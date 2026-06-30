@@ -7,11 +7,8 @@ import { Analytics } from "@vercel/analytics/react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { AuthProvider } from "@/contexts/AuthContext";
-import AppAnalytics from "@/components/AppAnalytics";
 import { PublicErrorBoundary, WorkspaceErrorBoundary } from "@/components/AppErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import AppLayout from "@/components/AppLayout";
-import WorkspaceProviders from "@/components/WorkspaceProviders";
 import type { AppRole } from "@/lib/roles";
 
 const Landing = lazy(() => import("./pages/Landing"));
@@ -54,6 +51,9 @@ const LabsIndex = lazy(() => import("./pages/LabsIndex"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const ProfessionalNetwork = lazy(() => import("./pages/ProfessionalNetwork"));
+const AppAnalytics = lazy(() => import("@/components/AppAnalytics"));
+const AppLayout = lazy(() => import("@/components/AppLayout"));
+const WorkspaceProviders = lazy(() => import("@/components/WorkspaceProviders"));
 
 const queryClient = new QueryClient();
 
@@ -78,7 +78,11 @@ function ProtectedPage({
   return (
     <ProtectedRoute allowedRoles={allowedRoles}>
       <WorkspaceErrorBoundary>
-        <AppLayout>{children}</AppLayout>
+        <Suspense fallback={<RouteLoader />}>
+          <WorkspaceProviders>
+            <AppLayout>{children}</AppLayout>
+          </WorkspaceProviders>
+        </Suspense>
       </WorkspaceErrorBoundary>
     </ProtectedRoute>
   );
@@ -109,58 +113,58 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <WorkspaceProviders>
+          <Suspense fallback={null}>
             <AppAnalytics />
-            <Suspense fallback={<RouteLoader />}>
-              <Routes>
-                <Route path="/" element={<PublicPage><Landing /></PublicPage>} />
-                <Route path="/auth" element={<PublicPage><Auth /></PublicPage>} />
-                <Route path="/sign-in" element={<PublicPage><Auth /></PublicPage>} />
-                <Route path="/admin/login" element={<PublicPage><Auth /></PublicPage>} />
-                <Route path="/auth/callback" element={<PublicPage><AuthCallback /></PublicPage>} />
-                <Route path="/reset-password" element={<PublicPage><ResetPassword /></PublicPage>} />
-                <Route path="/pricing" element={<PublicPage><Pricing /></PublicPage>} />
-                <Route path="/privacy" element={<PublicPage><PrivacyPolicy /></PublicPage>} />
-                <Route path="/terms" element={<PublicPage><TermsOfService /></PublicPage>} />
-                <Route path="/planners" element={<PublicPage><PlannerDirectory /></PublicPage>} />
-                <Route path="/vendors-directory" element={<PublicPage><VendorDirectory /></PublicPage>} />
-                <Route path="/vendors-directory/collections/:slug" element={<PublicPage><VendorDirectory /></PublicPage>} />
-                <Route path="/vendor/:id" element={<PublicPage><VendorProfile /></PublicPage>} />
-                <Route path="/vendor-claim" element={<PublicPage><VendorClaim /></PublicPage>} />
-                <Route path="/planner/:id" element={<PublicPage><PlannerProfile /></PublicPage>} />
-                <Route path="/contributions/share/:token" element={<PublicPage><ContributionsShare /></PublicPage>} />
-                <Route path="/documents/share/:token" element={<PublicPage><CommercialDocumentShare /></PublicPage>} />
-                <Route path="/timeline/share/:token" element={<PublicPage><TimelineShare /></PublicPage>} />
-                <Route path="/rsvp/:token" element={<PublicPage><GuestRsvp /></PublicPage>} />
-                <Route path="/wedding/:token" element={<PublicPage><WeddingPortfolio /></PublicPage>} />
-                <Route path="/wedding-setup" element={<ProtectedStandalonePage allowedRoles={['couple']}><WeddingSetup /></ProtectedStandalonePage>} />
-                <Route path="/documents/:documentId/print" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><CommercialDocumentPrint /></ProtectedStandalonePage>} />
-                <Route path="/labs" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><LabsIndex /></ProtectedPage>} />
-                <Route path="/labs/network" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><ProfessionalNetwork /></ProtectedPage>} />
-                <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
-                <Route path="/dashboard" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Dashboard /></ProtectedPage>} />
-                <Route path="/budget" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Budget /></ProtectedPage>} />
-                <Route path="/tasks" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Tasks /></ProtectedPage>} />
-                <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Guests /></ProtectedPage>} />
-                <Route path="/contributions" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Contributions /></ProtectedPage>} />
-                <Route path="/gift-registry" element={<ProtectedPage allowedRoles={['couple', 'planner']}><GiftRegistry /></ProtectedPage>} />
-                <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
-                <Route path="/space-plan" element={<ProtectedPage allowedRoles={['couple', 'planner']}><SpaceTablePlan /></ProtectedPage>} />
-                <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
-                <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
-                <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
-                <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
-                <Route path="/planner-documents/:section" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
-                <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
-                <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><AiChat /></ProtectedPage>} />
-                <Route path="/admin" element={<ProtectedPage allowedRoles={['admin']}><AdminPortal /></ProtectedPage>} />
-                <Route path="/settings" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor', 'admin']}><ProfileSettings /></ProtectedPage>} />
-                <Route path="/timeline" element={<ProtectedPage allowedRoles={['couple', 'planner']}><TimelinePage /></ProtectedPage>} />
-                <Route path="/portfolio" element={<ProtectedPage allowedRoles={['couple', 'planner']}><ManagePortfolio /></ProtectedPage>} />
-                <Route path="*" element={<PublicPage><NotFound /></PublicPage>} />
-              </Routes>
-            </Suspense>
-          </WorkspaceProviders>
+          </Suspense>
+          <Suspense fallback={<RouteLoader />}>
+            <Routes>
+              <Route path="/" element={<PublicPage><Landing /></PublicPage>} />
+              <Route path="/auth" element={<PublicPage><Auth /></PublicPage>} />
+              <Route path="/sign-in" element={<PublicPage><Auth /></PublicPage>} />
+              <Route path="/admin/login" element={<PublicPage><Auth /></PublicPage>} />
+              <Route path="/auth/callback" element={<PublicPage><AuthCallback /></PublicPage>} />
+              <Route path="/reset-password" element={<PublicPage><ResetPassword /></PublicPage>} />
+              <Route path="/pricing" element={<PublicPage><Pricing /></PublicPage>} />
+              <Route path="/privacy" element={<PublicPage><PrivacyPolicy /></PublicPage>} />
+              <Route path="/terms" element={<PublicPage><TermsOfService /></PublicPage>} />
+              <Route path="/planners" element={<PublicPage><PlannerDirectory /></PublicPage>} />
+              <Route path="/vendors-directory" element={<PublicPage><VendorDirectory /></PublicPage>} />
+              <Route path="/vendors-directory/collections/:slug" element={<PublicPage><VendorDirectory /></PublicPage>} />
+              <Route path="/vendor/:id" element={<PublicPage><VendorProfile /></PublicPage>} />
+              <Route path="/vendor-claim" element={<PublicPage><VendorClaim /></PublicPage>} />
+              <Route path="/planner/:id" element={<PublicPage><PlannerProfile /></PublicPage>} />
+              <Route path="/contributions/share/:token" element={<PublicPage><ContributionsShare /></PublicPage>} />
+              <Route path="/documents/share/:token" element={<PublicPage><CommercialDocumentShare /></PublicPage>} />
+              <Route path="/timeline/share/:token" element={<PublicPage><TimelineShare /></PublicPage>} />
+              <Route path="/rsvp/:token" element={<PublicPage><GuestRsvp /></PublicPage>} />
+              <Route path="/wedding/:token" element={<PublicPage><WeddingPortfolio /></PublicPage>} />
+              <Route path="/wedding-setup" element={<ProtectedStandalonePage allowedRoles={['couple']}><WeddingSetup /></ProtectedStandalonePage>} />
+              <Route path="/documents/:documentId/print" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><CommercialDocumentPrint /></ProtectedStandalonePage>} />
+              <Route path="/labs" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><LabsIndex /></ProtectedPage>} />
+              <Route path="/labs/network" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><ProfessionalNetwork /></ProtectedPage>} />
+              <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
+              <Route path="/dashboard" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Dashboard /></ProtectedPage>} />
+              <Route path="/budget" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Budget /></ProtectedPage>} />
+              <Route path="/tasks" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Tasks /></ProtectedPage>} />
+              <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Guests /></ProtectedPage>} />
+              <Route path="/contributions" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Contributions /></ProtectedPage>} />
+              <Route path="/gift-registry" element={<ProtectedPage allowedRoles={['couple', 'planner']}><GiftRegistry /></ProtectedPage>} />
+              <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
+              <Route path="/space-plan" element={<ProtectedPage allowedRoles={['couple', 'planner']}><SpaceTablePlan /></ProtectedPage>} />
+              <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
+              <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
+              <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
+              <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
+              <Route path="/planner-documents/:section" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
+              <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
+              <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><AiChat /></ProtectedPage>} />
+              <Route path="/admin" element={<ProtectedPage allowedRoles={['admin']}><AdminPortal /></ProtectedPage>} />
+              <Route path="/settings" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor', 'admin']}><ProfileSettings /></ProtectedPage>} />
+              <Route path="/timeline" element={<ProtectedPage allowedRoles={['couple', 'planner']}><TimelinePage /></ProtectedPage>} />
+              <Route path="/portfolio" element={<ProtectedPage allowedRoles={['couple', 'planner']}><ManagePortfolio /></ProtectedPage>} />
+              <Route path="*" element={<PublicPage><NotFound /></PublicPage>} />
+            </Routes>
+          </Suspense>
         </AuthProvider>
       </BrowserRouter>
       <Analytics />
