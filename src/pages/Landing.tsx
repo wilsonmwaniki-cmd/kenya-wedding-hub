@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole } from '@/lib/roles';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
+import { getPublicPlatformStats, type PublicPlatformStats } from '@/lib/publicPlatformStats';
 import { saveEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 import { kenyaCounties } from '@/lib/kenyaLocations';
 import heroImage from '@/assets/hero-wedding.jpg';
@@ -401,10 +402,27 @@ function QuickSignupChooser() {
 
 export default function Landing() {
   const { user, profile, loading } = useAuth();
+  const [platformStats, setPlatformStats] = useState<PublicPlatformStats | null>(null);
   const workspaceRoute = user ? getHomeRouteForRole(profile?.role, profile?.planner_type) : '/dashboard';
   const signInRoute = '/sign-in';
   const primaryCtaLabel = user ? 'Continue to workspace' : 'Sign up free';
   const secondaryCtaLabel = user ? 'Open workspace' : 'Sign In';
+
+  useEffect(() => {
+    let ignore = false;
+
+    getPublicPlatformStats()
+      .then((stats) => {
+        if (!ignore) setPlatformStats(stats);
+      })
+      .catch((error) => {
+        console.error('Could not load public platform stats:', error);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   if (loading) {
     return <PublicPageSkeleton card={false} />;
@@ -507,9 +525,12 @@ export default function Landing() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.66 }}
                 className="mt-6 inline-flex w-fit items-center gap-3 rounded-full border border-[#ead7b5]/18 bg-[#fff7eb]/10 px-4 py-2 text-[#f8ead9] shadow-[0_18px_40px_rgba(10,6,4,0.18)] backdrop-blur-sm"
+                aria-live="polite"
               >
                 <span className="h-2 w-2 rounded-full bg-[#d4bb7d] shadow-[0_0_18px_rgba(212,187,125,0.9)]" />
-                <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[#d4bb7d]">124+</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.22em] text-[#d4bb7d]">
+                  {platformStats?.weddingPlansStartedDisplay ?? '...'}
+                </span>
                 <span className="text-sm text-[#f6eee6]/78">wedding plans started on Zania</span>
               </motion.div>
             </div>
