@@ -203,3 +203,7 @@ export function usePlanner() {
   if (!context) throw new Error('usePlanner must be used within PlannerProvider');
   return context;
 }
+
+export function useOptionalPlanner() {
+  return useContext(PlannerContext);
+}

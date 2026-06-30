@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { usePlanner } from '@/contexts/PlannerContext';
+import { useOptionalPlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import type { CoupleEntitlementKey, CouplePlanTier } from '@/lib/pricingPlans';
 
@@ -27,7 +27,9 @@ function inferCouplePlanTier(entitlements: Partial<Record<CoupleEntitlementKey, 
 
 export function useWeddingEntitlements() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
-  const { isPlanner, selectedClient } = usePlanner();
+  const plannerContext = useOptionalPlanner();
+  const isPlanner = plannerContext?.isPlanner ?? false;
+  const selectedClient = plannerContext?.selectedClient ?? null;
   const [state, setState] = useState<WeddingEntitlementsState>({
     weddingId: null,
     entitlements: {},
