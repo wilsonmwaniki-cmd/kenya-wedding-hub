@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,7 +16,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { useToast } from '@/hooks/use-toast';
 import { Heart, Plus, Trash2, Copy, ExternalLink, Star, Loader2, Eye, Tag, X } from 'lucide-react';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
-import { buildConciergeContext } from '@/lib/conciergeContext';
 
 const STYLE_SUGGESTIONS = ['Garden', 'Church', 'Beach', 'Traditional', 'Modern', 'Rustic', 'Luxury', 'Intimate', 'Outdoor', 'Cultural'];
 
@@ -54,7 +52,6 @@ export default function ManagePortfolio() {
   const { user, profile } = useAuth();
   const { selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
-  const assistantPanel = useAssistantPanel();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [vendors, setVendors] = useState<PortfolioVendor[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -267,52 +264,6 @@ export default function ManagePortfolio() {
       : reviewableVendors.length > 0
         ? `Review ${reviewableVendors.length} vendor${reviewableVendors.length === 1 ? '' : 's'}`
         : 'Share the published portfolio';
-  const portfolioConciergeContext = useMemo(() => buildConciergeContext({
-    page: 'portfolio',
-    role: selectedClient ? 'planner' : 'couple',
-    weddingName: selectedClient?.client_name || profile?.wedding_name || title || 'Current wedding',
-    primaryGoal: 'Help the user turn completed wedding details into a polished public story with vendor credits and reviews.',
-    recommendedNextAction: portfolioPrimaryAction,
-    facts: [
-      `Portfolio exists: ${portfolio ? 'yes' : 'no'}`,
-      `Published: ${isPublished ? 'yes' : 'no'}`,
-      `Title: ${title || 'not set'}`,
-      `Wedding date: ${weddingDate || 'not set'}`,
-      `Location: ${location || 'not set'}`,
-      `Guest count: ${guestCount}`,
-      `Style tags: ${styleTags.length}`,
-      `Vendor credits: ${vendors.length}`,
-      `Reviews: ${reviews.length}`,
-      `Average rating: ${averageRating ? averageRating.toFixed(1) : 'none'}`,
-      `Reviewable vendors: ${reviewableVendors.length}`,
-      `Workspace vendors available for quick add: ${weddingVendors.length}`,
-    ],
-    risks: [
-      !portfolio ? 'The portfolio has not been created yet.' : null,
-      portfolio && !title.trim() ? 'The portfolio title is missing.' : null,
-      portfolio && !description.trim() ? 'The story description is missing.' : null,
-      portfolio && vendors.length === 0 ? 'No vendor credits have been added to the story.' : null,
-      portfolio && reviewableVendors.length > 0 ? `${reviewableVendors.length} credited vendors can still receive reviews.` : null,
-      portfolio && !isPublished ? 'The portfolio is still private.' : null,
-    ],
-  }), [
-    averageRating,
-    description,
-    guestCount,
-    isPublished,
-    location,
-    portfolio,
-    portfolioPrimaryAction,
-    profile?.wedding_name,
-    reviewableVendors.length,
-    reviews.length,
-    selectedClient,
-    styleTags.length,
-    title,
-    vendors.length,
-    weddingDate,
-    weddingVendors.length,
-  ]);
 
   if (loading) {
     return <WorkspacePageSkeleton compact />;
@@ -465,7 +416,7 @@ export default function ManagePortfolio() {
 
       {/* Basic Info */}
       <Card className="shadow-card">
-        <CardHeader><CardTitle className="text-lg">Wedding Details</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-lg">Story Setup</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -528,138 +479,153 @@ export default function ManagePortfolio() {
         </CardContent>
       </Card>
 
-      {/* Vendor Credits */}
-      <Card className="shadow-card">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Wedding Team</CardTitle>
-          <Dialog open={addVendorOpen} onOpenChange={setAddVendorOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Add Vendor</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add Vendor Credit</DialogTitle></DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label>Vendor Name</Label>
-                  <Input value={newVendorName} onChange={e => setNewVendorName(e.target.value)} placeholder="Mwaniki Studios" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Category</Label>
-                  <Input value={newVendorCategory} onChange={e => setNewVendorCategory(e.target.value)} placeholder="Photography" />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button onClick={addVendorToPortfolio} disabled={!newVendorName || !newVendorCategory}>Add</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
-        <CardContent>
-          {vendors.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 py-8 text-center">
-              <p className="text-sm font-medium text-foreground">No vendor credits yet</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Add the planner, photographer, caterer, stylist, and other key contributors you want highlighted on the public page.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {vendors.map(v => (
-                <div key={v.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div>
-                    <p className="font-medium text-card-foreground text-sm">{v.vendor_name}</p>
-                    <Badge variant="outline" className="text-xs mt-0.5">{v.vendor_category}</Badge>
-                  </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeVendor(v.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <details className="rounded-[1.6rem] border border-border/70 bg-card shadow-card" open={vendors.length === 0 && reviews.length === 0}>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
+          <div>
+            <p className="text-lg font-semibold text-foreground">Vendor Credits And Reviews</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Keep this secondary until the story itself is ready, then add social proof and team credits.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+            <span>{vendors.length} vendors</span>
+            <span>{reviews.length} reviews</span>
+          </div>
+        </summary>
 
-      {/* Reviews */}
-      <Card className="shadow-card">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Reviews</CardTitle>
-          {reviewableVendors.length > 0 && (
-            <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5"><Star className="h-4 w-4" /> Write Review</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Review a Vendor</DialogTitle></DialogHeader>
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label>Vendor</Label>
-                    <Select value={reviewVendorId} onValueChange={setReviewVendorId}>
-                      <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
-                      <SelectContent>
-                        {reviewableVendors.map(v => (
-                          <SelectItem key={v.vendor_listing_id!} value={v.vendor_listing_id!}>{v.vendor_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Rating</Label>
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4, 5].map(s => (
-                        <button key={s} onClick={() => setReviewRating(s)}>
-                          <Star className={`h-6 w-6 transition-colors ${s <= reviewRating ? 'text-accent fill-accent' : 'text-muted-foreground/30'}`} />
-                        </button>
-                      ))}
+        <div className="space-y-6 px-6 pb-6">
+          <Card className="shadow-none">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-lg">Wedding Team</CardTitle>
+              <Dialog open={addVendorOpen} onOpenChange={setAddVendorOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Add Vendor</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Add Vendor Credit</DialogTitle></DialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label>Vendor Name</Label>
+                      <Input value={newVendorName} onChange={e => setNewVendorName(e.target.value)} placeholder="Mwaniki Studios" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Category</Label>
+                      <Input value={newVendorCategory} onChange={e => setNewVendorCategory(e.target.value)} placeholder="Photography" />
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>Review (optional)</Label>
-                    <Textarea value={reviewText} onChange={e => setReviewText(e.target.value)} placeholder="How was your experience?" rows={3} />
-                  </div>
+                  <DialogFooter>
+                    <Button onClick={addVendorToPortfolio} disabled={!newVendorName || !newVendorCategory}>Add</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
+            <CardContent>
+              {vendors.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 py-8 text-center">
+                  <p className="text-sm font-medium text-foreground">No vendor credits yet</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Add the planner, photographer, caterer, stylist, and other key contributors you want highlighted on the public page.
+                  </p>
                 </div>
-                <DialogFooter>
-                  <Button onClick={submitReview} disabled={!reviewVendorId}>Submit Review</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-        </CardHeader>
-        <CardContent>
-          {reviews.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 py-8 text-center">
-              <p className="text-sm font-medium text-foreground">No public reviews yet</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Add a few thoughtful vendor reviews to give future couples more confidence in the team behind your wedding.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {reviews.map(r => {
-                const vendor = vendors.find(v => v.vendor_listing_id === r.vendor_listing_id);
-                return (
-                  <div key={r.id} className="rounded-lg border border-border p-4">
-                    <div className="flex items-start justify-between">
+              ) : (
+                <div className="space-y-2">
+                  {vendors.map(v => (
+                    <div key={v.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                       <div>
-                        <p className="font-medium text-card-foreground text-sm">{vendor?.vendor_name || 'Vendor'}</p>
-                        <div className="flex gap-0.5 mt-1">
+                        <p className="font-medium text-card-foreground text-sm">{v.vendor_name}</p>
+                        <Badge variant="outline" className="text-xs mt-0.5">{v.vendor_category}</Badge>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeVendor(v.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-none">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-lg">Reviews</CardTitle>
+              {reviewableVendors.length > 0 && (
+                <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5"><Star className="h-4 w-4" /> Write Review</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader><DialogTitle>Review a Vendor</DialogTitle></DialogHeader>
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label>Vendor</Label>
+                        <Select value={reviewVendorId} onValueChange={setReviewVendorId}>
+                          <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
+                          <SelectContent>
+                            {reviewableVendors.map(v => (
+                              <SelectItem key={v.vendor_listing_id!} value={v.vendor_listing_id!}>{v.vendor_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Rating</Label>
+                        <div className="flex gap-1">
                           {[1, 2, 3, 4, 5].map(s => (
-                            <Star key={s} className={`h-3.5 w-3.5 ${s <= r.rating ? 'text-accent fill-accent' : 'text-muted-foreground/30'}`} />
+                            <button key={s} onClick={() => setReviewRating(s)}>
+                              <Star className={`h-6 w-6 transition-colors ${s <= reviewRating ? 'text-accent fill-accent' : 'text-muted-foreground/30'}`} />
+                            </button>
                           ))}
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteReview(r.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="space-y-1.5">
+                        <Label>Review (optional)</Label>
+                        <Textarea value={reviewText} onChange={e => setReviewText(e.target.value)} placeholder="How was your experience?" rows={3} />
+                      </div>
                     </div>
-                    {r.review_text && <p className="mt-2 text-sm text-muted-foreground">{r.review_text}</p>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                    <DialogFooter>
+                      <Button onClick={submitReview} disabled={!reviewVendorId}>Submit Review</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </CardHeader>
+            <CardContent>
+              {reviews.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 py-8 text-center">
+                  <p className="text-sm font-medium text-foreground">No public reviews yet</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Add a few thoughtful vendor reviews to give future couples more confidence in the team behind your wedding.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {reviews.map(r => {
+                    const vendor = vendors.find(v => v.vendor_listing_id === r.vendor_listing_id);
+                    return (
+                      <div key={r.id} className="rounded-lg border border-border p-4">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-medium text-card-foreground text-sm">{vendor?.vendor_name || 'Vendor'}</p>
+                            <div className="flex gap-0.5 mt-1">
+                              {[1, 2, 3, 4, 5].map(s => (
+                                <Star key={s} className={`h-3.5 w-3.5 ${s <= r.rating ? 'text-accent fill-accent' : 'text-muted-foreground/30'}`} />
+                              ))}
+                            </div>
+                          </div>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteReview(r.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                        {r.review_text && <p className="mt-2 text-sm text-muted-foreground">{r.review_text}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </details>
     </div>
   );
 }

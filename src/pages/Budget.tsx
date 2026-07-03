@@ -1265,6 +1265,7 @@ export default function Budget() {
       description: 'Open the category workspace and check which lines are tightening up.',
     };
   })();
+  const budgetScopeLabel = activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget';
 
   const exportBudgetData = () => {
     const rows = visibleCategories.map((category) => ({
@@ -1349,7 +1350,7 @@ export default function Budget() {
 
             <details className="rounded-2xl border border-border/70 bg-background/70 p-3">
               <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Budget view controls
+                Scope and view
               </summary>
               <div className="mt-3 flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
@@ -1757,255 +1758,75 @@ export default function Budget() {
         </div>
       </div>
 
-      {!budgetNudgeDismissed && budgetNudge && assistantPanel && (
-        <Card className="border-primary/20 bg-primary/5 shadow-card">
-          <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-foreground">{budgetNudge.title}</p>
-              <p className="text-sm text-muted-foreground">{budgetNudge.body}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                className="gap-2"
-                onClick={() => assistantPanel.openAssistant(budgetNudge.prompt)}
-              >
-                Review with AI
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => setBudgetNudgeDismissed(true)}
-              >
-                Dismiss
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {!budgetAssistant.dismissed && (
-        <InlineAssistantCard
-          title={activeBudgetScope === 'personal' ? 'Personal budget pressure check' : 'Budget pressure check'}
-          description={
-            activeBudgetScope === 'personal'
-              ? 'Get a quick read on private couple spending, near-limit lines, and what to adjust next.'
-              : 'See where the wedding budget is tightening and what to rebalance or pay attention to next.'
-          }
-          badgeLabel="AI Budget"
-          prompts={budgetPrompts}
-          response={budgetAssistant.response}
-          error={budgetAssistant.error}
-          loading={budgetAssistant.loading || budgetAssistant.usageLoading || budgetAssistant.accessLoading}
-          decision={budgetAssistant.decision}
-          canUseAssistant={budgetAssistant.canUseAssistant}
-          emptyStateTitle="Get a quick budget read before you keep editing"
-          emptyStateBody="Ask for a simple budget health check, a rebalance suggestion, or a payment priority review based on the budget you already have here."
-          dismissible
-          onDismiss={() => budgetAssistant.setDismissed(true)}
-          onPromptClick={(prompt) => budgetAssistant.runPrompt(prompt)}
-        />
-      )}
-
-      <Card className="shadow-card">
-        <CardContent className="py-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">Spending summary</p>
-              <p className="text-sm text-muted-foreground">
-                {activeBudgetScope === 'wedding'
-                  ? 'Track budget room, vendor commitments, payments made, and balance still outstanding.'
-                  : 'Track private spending against your personal budget and what is still left to cover.'}
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Remaining budget</p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(remainingBudget)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                {activeBudgetScope === 'wedding' ? 'Total vendor invoices' : 'Total planned costs'}
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(invoiceTotal)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-primary">Total payments made</p>
-              <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(currentScopePaymentTotal)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-primary">Total balance</p>
-              <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(totalBalance)}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-card">
-        <CardContent className="py-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">
-                {activeBudgetScope === 'personal' ? 'Personal budget board' : 'Budget intelligence is active'}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {activeBudgetScope === 'personal'
-                  ? 'Track private couple costs like rent, dowry, honeymoon, rings, and preparation expenses separately from the public wedding budget.'
-                  : `Record actual paid spend here to improve your planning benchmarks.${selectedClient?.wedding_location ? ` Benchmarks are tuned to ${selectedClient.wedding_location}.` : ''}`}
-              </p>
-            </div>
-            {activeBudgetScope === 'wedding' && benchmarksLoading && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Refreshing benchmarks
-              </div>
-            )}
-          </div>
-          {activeBudgetScope === 'wedding' && highlightedBenchmarks.length > 0 && (
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {highlightedBenchmarks.map(({ category, benchmark }) => (
-                <div key={category} className="rounded-lg border border-border/70 bg-background px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-foreground">{category}</span>
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                      {benchmark?.sample_size ?? 0} obs
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{benchmarkSummary(benchmark)}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {activeBudgetScope === 'wedding' && (
-      <Card className="shadow-card">
-        <CardContent className="py-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">Final vendor payment map</p>
-              <p className="text-sm text-muted-foreground">
-                This summary tracks committed vendor spend from the vendors shortlist and final-selection workflow.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Committed contracts</p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorContract)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid so far</p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorPaid)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Outstanding</p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorOutstanding)}</p>
-            </div>
-          </div>
-
-          {finalVendorPayments.length > 0 ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {finalVendorPayments.map((vendor) => (
-                <div key={vendor.id} className="rounded-lg border border-border/70 bg-background px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{vendor.category}</p>
-                      <p className="text-sm text-muted-foreground">{vendor.name}</p>
-                    </div>
-                    <Badge variant={vendorPaymentStatusTone(vendor.payment_status)} className="text-[10px]">
-                      {vendorPaymentStatusLabel(vendor.payment_status)}
-                    </Badge>
-                  </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Contract</p>
-                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.price)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</p>
-                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.amount_paid)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Outstanding</p>
-                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(Math.max((vendor.price ?? 0) - vendor.amount_paid, 0))}</p>
-                    </div>
-                  </div>
-                  {vendor.payment_due_date && (
-                    <p className="mt-3 text-xs text-muted-foreground">Next payment due {new Date(vendor.payment_due_date).toLocaleDateString()}.</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-muted-foreground">
-              No final vendors selected yet. Finalize vendors in the vendors workflow to see contract and payment tracking here.
+      <details className="rounded-[1.6rem] border border-border/70 bg-card shadow-card">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
+          <div>
+            <p className="text-lg font-semibold text-foreground">AI budget guidance</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Open this when you want a quick read on pressure, rebalance suggestions, or which payment should happen next.
             </p>
-          )}
-        </CardContent>
-      </Card>
-      )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+            <span>{visibleOverBudgetCategories.length} over</span>
+            <span>{visibleNearLimitCategories.length} near limit</span>
+            <span>{paymentsDueSoon.length} due soon</span>
+          </div>
+        </summary>
 
-      {budgetViewMode === 'payments_made' ? (
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-primary" />
-              <p className="text-sm font-medium text-foreground">Payments made</p>
-            </div>
-            {currentScopePayments.length > 0 ? (
-              <div className="mt-4 space-y-3">
-                {currentScopePayments.map((payment) => (
-                  <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{payment.payee_name}</p>
-                      <p className="text-xs text-muted-foreground">{payment.category_name}</p>
-                    </div>
-                    <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
-                    <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
-                    <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-muted-foreground">
-                No payments recorded yet. Use “Record Payment Made” to start building your payment history.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      ) : currentScopePayments.length > 0 ? (
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <div className="flex items-center gap-2">
-              <Receipt className="h-4 w-4 text-primary" />
-              <p className="text-sm font-medium text-foreground">Payments by category</p>
-            </div>
-            <div className="mt-4 space-y-6">
-              {Object.entries(paymentsByCategory).map(([categoryName, payments]) => (
-                <div key={categoryName} className="space-y-3">
-                  <div className="border-b border-border pb-2">
-                    <p className="text-lg font-semibold text-foreground">{categoryName}</p>
-                  </div>
-                  {payments.map((payment) => (
-                    <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
-                      <div className="text-sm font-medium text-foreground">{payment.payee_name}</div>
-                      <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
-                      <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
-                      <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
-                    </div>
-                  ))}
+        <div className="space-y-4 px-6 pb-6">
+          {!budgetNudgeDismissed && budgetNudge && assistantPanel && (
+            <Card className="border-primary/20 bg-primary/5 shadow-card">
+              <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{budgetNudge.title}</p>
+                  <p className="text-sm text-muted-foreground">{budgetNudge.body}</p>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => assistantPanel.openAssistant(budgetNudge.prompt)}
+                  >
+                    Review with AI
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setBudgetNudgeDismissed(true)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!budgetAssistant.dismissed && (
+            <InlineAssistantCard
+              title={activeBudgetScope === 'personal' ? 'Personal budget pressure check' : 'Budget pressure check'}
+              description={
+                activeBudgetScope === 'personal'
+                  ? 'Get a quick read on private couple spending, near-limit lines, and what to adjust next.'
+                  : 'See where the wedding budget is tightening and what to rebalance or pay attention to next.'
+              }
+              badgeLabel="AI Budget"
+              prompts={budgetPrompts}
+              response={budgetAssistant.response}
+              error={budgetAssistant.error}
+              loading={budgetAssistant.loading || budgetAssistant.usageLoading || budgetAssistant.accessLoading}
+              decision={budgetAssistant.decision}
+              canUseAssistant={budgetAssistant.canUseAssistant}
+              emptyStateTitle="Get a quick budget read before you keep editing"
+              emptyStateBody="Ask for a simple budget health check, a rebalance suggestion, or a payment priority review based on the budget you already have here."
+              dismissible
+              onDismiss={() => budgetAssistant.setDismissed(true)}
+              onPromptClick={(prompt) => budgetAssistant.runPrompt(prompt)}
+            />
+          )}
+        </div>
+      </details>
 
       <Card className="overflow-hidden shadow-card">
         <CardContent className="p-0">
@@ -2451,6 +2272,221 @@ export default function Budget() {
           </div>
         </CardContent>
       </Card>
+
+      <details className="group rounded-[28px] border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(250,244,237,0.76))] shadow-card">
+        <summary className="flex cursor-pointer list-none flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Budget reports</p>
+              <InfoTip content="Open this when you want the deeper reporting view: summary totals, market signals, vendor commitments, and payment history." />
+            </div>
+            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Open the deeper money view</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Keep the main workspace focused on active budget lines, then open the full reports when you need broader financial context.
+            </p>
+          </div>
+          <Badge variant="outline" className="w-fit rounded-full border-primary/20 bg-white/80 px-3 py-1 text-primary">
+            View reports
+          </Badge>
+        </summary>
+        <div className="space-y-6 border-t border-border/70 p-5 pt-6">
+          <Card className="shadow-card">
+            <CardContent className="py-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Money snapshot</p>
+                  <p className="text-sm text-muted-foreground">
+                    A compact summary of this {budgetScopeLabel}: what is planned, what is paid, and what is still open.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Remaining budget</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(remainingBudget)}</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {activeBudgetScope === 'wedding' ? 'Total vendor invoices' : 'Total planned costs'}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(invoiceTotal)}</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-primary">Total payments made</p>
+                  <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(currentScopePaymentTotal)}</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-primary">Total balance</p>
+                  <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(totalBalance)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card">
+            <CardContent className="py-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {activeBudgetScope === 'personal' ? 'Personal budget signals' : 'Budget intelligence'}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {activeBudgetScope === 'personal'
+                      ? 'Keep private couple costs separate and visible without mixing them into the shared wedding budget.'
+                      : `Use real paid spend to sharpen your planning benchmarks.${selectedClient?.wedding_location ? ` Benchmarks are tuned to ${selectedClient.wedding_location}.` : ''}`}
+                  </p>
+                </div>
+                {activeBudgetScope === 'wedding' && benchmarksLoading && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Refreshing benchmarks
+                  </div>
+                )}
+              </div>
+              {activeBudgetScope === 'wedding' && highlightedBenchmarks.length > 0 && (
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {highlightedBenchmarks.map(({ category, benchmark }) => (
+                    <div key={category} className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">{category}</span>
+                        <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                          {benchmark?.sample_size ?? 0} obs
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">{benchmarkSummary(benchmark)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {activeBudgetScope === 'wedding' && (
+            <Card className="shadow-card">
+              <CardContent className="py-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Final vendor payment map</p>
+                    <p className="text-sm text-muted-foreground">
+                      Committed vendor spend from the vendors workflow, kept separate from the category editor.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Committed contracts</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorContract)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid so far</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorPaid)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Outstanding</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorOutstanding)}</p>
+                  </div>
+                </div>
+
+                {finalVendorPayments.length > 0 ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {finalVendorPayments.map((vendor) => (
+                      <div key={vendor.id} className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{vendor.category}</p>
+                            <p className="text-sm text-muted-foreground">{vendor.name}</p>
+                          </div>
+                          <Badge variant={vendorPaymentStatusTone(vendor.payment_status)} className="text-[10px]">
+                            {vendorPaymentStatusLabel(vendor.payment_status)}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Contract</p>
+                            <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.price)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</p>
+                            <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.amount_paid)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Outstanding</p>
+                            <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(Math.max((vendor.price ?? 0) - vendor.amount_paid, 0))}</p>
+                          </div>
+                        </div>
+                        {vendor.payment_due_date && (
+                          <p className="mt-3 text-xs text-muted-foreground">Next payment due {new Date(vendor.payment_due_date).toLocaleDateString()}.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    No final vendors selected yet. Finalize vendors in the vendors workflow to see contract and payment tracking here.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {budgetViewMode === 'payments_made' ? (
+            <Card className="shadow-card">
+              <CardContent className="py-5">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-medium text-foreground">Payments made</p>
+                </div>
+                {currentScopePayments.length > 0 ? (
+                  <div className="mt-4 space-y-3">
+                    {currentScopePayments.map((payment) => (
+                      <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{payment.payee_name}</p>
+                          <p className="text-xs text-muted-foreground">{payment.category_name}</p>
+                        </div>
+                        <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
+                        <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
+                        <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    No payments recorded yet. Use “Record Payment Made” to start building your payment history.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ) : currentScopePayments.length > 0 ? (
+            <Card className="shadow-card">
+              <CardContent className="py-5">
+                <div className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-medium text-foreground">Payments by category</p>
+                </div>
+                <div className="mt-4 space-y-6">
+                  {Object.entries(paymentsByCategory).map(([categoryName, payments]) => (
+                    <div key={categoryName} className="space-y-3">
+                      <div className="border-b border-border pb-2">
+                        <p className="text-lg font-semibold text-foreground">{categoryName}</p>
+                      </div>
+                      {payments.map((payment) => (
+                        <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
+                          <div className="text-sm font-medium text-foreground">{payment.payee_name}</div>
+                          <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
+                          <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
+                          <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      </details>
 
       <Dialog open={Boolean(recordingCategory)} onOpenChange={(nextOpen) => { if (!nextOpen) setRecordingCategory(null); }}>
         <DialogContent>

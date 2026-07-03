@@ -8,8 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import InfoTip from '@/components/InfoTip';
@@ -21,7 +20,6 @@ import {
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { normalizeInvokeError } from '@/lib/invokeErrors';
-import { buildConciergeContext } from '@/lib/conciergeContext';
 
 const VENDOR_ROLES = [
   { value: 'photographer', label: 'Photographer', icon: '📸' },
@@ -531,47 +529,6 @@ export default function Timeline() {
     setSelectedTimeline(data as Timeline);
     setTimelines((prev) => prev.map((timeline) => (timeline.id === timelineId ? (data as Timeline) : timeline)));
   };
-
-  const timelineConciergeContext = useMemo(() => buildConciergeContext({
-    page: 'timeline',
-    role: isPlanner ? 'planner' : 'couple',
-    weddingName: selectedClient?.client_name || selectedTimeline?.title || 'Current wedding',
-    primaryGoal: 'Help the user turn the day-of schedule into a clear operational timeline with owners, handoffs, and share links.',
-    recommendedNextAction: timelineHeroAction,
-    facts: [
-      `Mode: ${selectedTimeline ? 'selected timeline detail' : 'timeline list'}`,
-      `Timeline versions: ${instances.length}`,
-      `Timeline templates: ${templates.length}`,
-      `Selected timeline: ${selectedTimeline?.title || 'none'}`,
-      `Selected timeline date: ${selectedTimeline?.timeline_date || 'not set'}`,
-      `Events in selected timeline: ${events.length}`,
-      `Unique assignees: ${allAssignees.length}`,
-      `Personal share links: ${shareLinks.length}`,
-      `Full timeline share link active: ${selectedTimelineShareActive ? 'yes' : 'no'}`,
-      `Category filter: ${filterCategory || 'all'}`,
-    ],
-    risks: [
-      instances.length === 0 ? 'No live wedding-day timeline has been created yet.' : null,
-      selectedTimeline && events.length === 0 ? 'The selected timeline has no events yet.' : null,
-      selectedTimeline && allAssignees.length === 0 ? 'No owners or vendors are assigned to timeline events yet.' : null,
-      selectedTimeline && !selectedTimelineShareActive ? 'The full public timeline share link is inactive.' : null,
-      selectedTimeline && shareLinks.length === 0 ? 'No personal timeline links have been created for vendors or assignees.' : null,
-      plannerNeedsApproval ? 'This planner is working on a linked wedding and bulk timeline edits stay with the couple.' : null,
-    ],
-  }), [
-    allAssignees.length,
-    events.length,
-    filterCategory,
-    instances.length,
-    isPlanner,
-    plannerNeedsApproval,
-    selectedClient?.client_name,
-    selectedTimeline,
-    selectedTimelineShareActive,
-    shareLinks.length,
-    templates.length,
-    timelineHeroAction,
-  ]);
 
   if (loading) return <WorkspacePageSkeleton compact />;
 
@@ -1235,169 +1192,159 @@ export default function Timeline() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="timelines">
-        <TabsList className="h-auto w-full flex-wrap justify-start">
-          <TabsTrigger value="timelines">Timelines ({instances.length})</TabsTrigger>
-          <TabsTrigger value="templates">Templates ({templates.length})</TabsTrigger>
-        </TabsList>
+      <div className="space-y-4">
+        <Card className="border-primary/15 shadow-card">
+          <CardContent className="space-y-5 p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Live timelines</p>
+                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Open the working schedule</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Keep the active wedding-day timelines in focus. Templates stay available below when you need them.
+                </p>
+              </div>
+              <Badge variant="outline" className="rounded-full px-3 py-1">
+                {instances.length} live
+              </Badge>
+            </div>
 
-        <TabsContent value="timelines" className="mt-4">
-          {instances.length === 0 ? (
-            <div className="grid gap-4 lg:grid-cols-3">
-              <Card className="border-dashed shadow-card">
-                <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
+            {instances.length === 0 ? (
+              <Card className="border-dashed shadow-none">
+                <CardContent className="flex flex-col items-start gap-5 p-6">
                   <div>
                     <Calendar className="mb-3 h-10 w-10 text-primary/60" />
-                    <p className="text-lg font-semibold text-foreground">Start from scratch</p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Build the day step by step.
+                    <p className="text-lg font-semibold text-foreground">No live timeline yet</p>
+                    <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+                      Start with one workable schedule. You can refine times, copy from templates, and add share links after the shape of the day is clear.
                     </p>
                   </div>
-                  <Button className="gap-1.5" onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}>
-                    <Plus className="h-4 w-4" /> Create Blank Timeline
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="border-dashed shadow-card">
-                <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
-                  <div>
-                    <FileText className="mb-3 h-10 w-10 text-primary/60" />
-                    <p className="text-lg font-semibold text-foreground">
-                      {templates.length > 0 ? 'Use a template' : 'Create a reusable template'}
-                    </p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {templates.length > 0
-                        ? 'Start from a saved flow, then adjust the timings.'
-                        : 'Save a structure now so future setups start faster.'}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={() => {
-                      if (templates.length > 0) {
-                        setNewIsTemplate(false);
-                        setFromTemplateId(templates[0].id);
+                  <div className="flex flex-wrap gap-2">
+                    <Button className="gap-1.5" onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}>
+                      <Plus className="h-4 w-4" /> Create Blank Timeline
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => {
+                        if (templates.length > 0) {
+                          const firstTemplate = templates[0];
+                          if (firstTemplate) {
+                            selectTimeline(firstTemplate);
+                          }
+                          return;
+                        }
+                        setNewIsTemplate(true);
+                        setFromTemplateId(null);
                         setCreateOpen(true);
-                        return;
-                      }
-                      setNewIsTemplate(true);
-                      setFromTemplateId(null);
-                      setCreateOpen(true);
-                    }}
-                  >
-                    <FileText className="h-4 w-4" />
-                    {templates.length > 0 ? 'Start from Template' : 'Create Template'}
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="border-dashed shadow-card">
-                <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
-                  <div>
-                    <p className="text-lg font-semibold text-foreground">Plan with AI</p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Get a practical first draft.
-                    </p>
+                      }}
+                    >
+                      <FileText className="h-4 w-4" />
+                      {templates.length > 0 ? 'Open template library' : 'Create Template'}
+                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={() =>
-                      assistantPanel?.openAssistant(
-                        'Build me a full wedding-day timeline with getting ready, ceremony, couple photos, reception, speeches, dinner, and closing.',
-                      )
-                    }
-                  >
-                    Create with AI
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {instances.map((t, i) => (
+                  <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+                    <Card className="cursor-pointer hover:shadow-md transition-shadow group" onClick={() => selectTimeline(t)}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                          <CardTitle className="text-base">{t.title}</CardTitle>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                        {t.timeline_date && (
+                          <CardDescription className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(t.timeline_date).toLocaleDateString()}
+                          </CardDescription>
+                        )}
+                      </CardHeader>
+                      <CardContent className="pb-4">
+                        <div className="flex items-center justify-between">
+                          <Button variant="ghost" size="sm" className="text-xs gap-1 text-muted-foreground p-0 h-auto" onClick={e => { e.stopPropagation(); copyToClipboard(`${baseUrl}/timeline/share/${t.share_token}`); }}>
+                            <Link2 className="h-3 w-3" /> Copy link
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); deleteTimeline(t.id); }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <details className="rounded-3xl border border-border/70 bg-background p-5 shadow-card">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Template library</p>
+                <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Reusable wedding-day structures</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Open this when you want to save a reusable flow or apply a saved structure to a new wedding day.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <FileText className="h-4 w-4" />
+                {templates.length} template{templates.length === 1 ? '' : 's'}
+              </div>
+            </div>
+          </summary>
+          <div className="mt-5">
+            {templates.length === 0 ? (
+              <Card className="border-dashed shadow-none">
+                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                  <FileText className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                  <p className="text-muted-foreground font-medium">No templates yet</p>
+                  <p className="text-sm text-muted-foreground/70 mt-1">Create a reusable timeline structure.</p>
+                  <Button size="sm" className="mt-4 gap-1.5" onClick={() => { setNewIsTemplate(true); setFromTemplateId(null); setCreateOpen(true); }}>
+                    <Plus className="h-4 w-4" /> Create Template
                   </Button>
                 </CardContent>
               </Card>
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {instances.map((t, i) => (
-                <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                  <Card className="cursor-pointer hover:shadow-md transition-shadow group" onClick={() => selectTimeline(t)}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <CardTitle className="text-base">{t.title}</CardTitle>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                      {t.timeline_date && (
-                        <CardDescription className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(t.timeline_date).toLocaleDateString()}
-                        </CardDescription>
-                      )}
-                    </CardHeader>
-                    <CardContent className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <Button variant="ghost" size="sm" className="text-xs gap-1 text-muted-foreground p-0 h-auto" onClick={e => { e.stopPropagation(); copyToClipboard(`${baseUrl}/timeline/share/${t.share_token}`); }}>
-                          <Link2 className="h-3 w-3" /> Copy link
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); deleteTimeline(t.id); }}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="templates" className="mt-4">
-          {templates.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <FileText className="h-10 w-10 text-muted-foreground/40 mb-3" />
-                <p className="text-muted-foreground font-medium">No templates yet</p>
-                <p className="text-sm text-muted-foreground/70 mt-1">Create a reusable timeline structure.</p>
-                <Button size="sm" className="mt-4 gap-1.5" onClick={() => { setNewIsTemplate(true); setFromTemplateId(null); setCreateOpen(true); }}>
-                  <Plus className="h-4 w-4" /> Create Template
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {templates.map((t, i) => (
-                <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                  <Card className="cursor-pointer hover:shadow-md transition-shadow group" onClick={() => selectTimeline(t)}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          {t.title}
-                          <Badge variant="secondary" className="text-[10px]">Template</Badge>
-                        </CardTitle>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <Button
-                          variant="outline" size="sm" className="text-xs gap-1"
-                          onClick={e => {
-                            e.stopPropagation();
-                            openApplyTemplate(t);
-                          }}
-                        >
-                          <Copy className="h-3 w-3" /> Apply Template
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); deleteTimeline(t.id); }}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {templates.map((t, i) => (
+                  <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+                    <Card className="cursor-pointer hover:shadow-md transition-shadow group" onClick={() => selectTimeline(t)}>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            {t.title}
+                            <Badge variant="secondary" className="text-[10px]">Template</Badge>
+                          </CardTitle>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pb-4">
+                        <div className="flex items-center justify-between">
+                          <Button
+                            variant="outline" size="sm" className="text-xs gap-1"
+                            onClick={e => {
+                              e.stopPropagation();
+                              openApplyTemplate(t);
+                            }}
+                          >
+                            <Copy className="h-3 w-3" /> Apply Template
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); deleteTimeline(t.id); }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
 
       {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

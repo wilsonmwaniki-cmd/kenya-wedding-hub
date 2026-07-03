@@ -831,6 +831,15 @@ export default function Dashboard() {
     },
   ];
 
+  const workspaceQuickLinks = [
+    { label: 'Budget', href: '/budget', summary: moduleCards[0].summary, icon: Wallet },
+    { label: 'Guests', href: '/guests', summary: moduleCards[3].summary, icon: Users },
+    { label: 'Tasks', href: '/tasks', summary: moduleCards[5].summary, icon: CheckSquare },
+    { label: 'Vendors', href: '/vendors', summary: moduleCards[2].summary, icon: Store },
+    { label: 'Timeline', href: '/timeline', summary: moduleCards[1].summary, icon: Clock },
+    { label: 'Contributions', href: '/contributions', summary: moduleCards[4].summary, icon: HandCoins },
+  ];
+
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton />;
   if (pageLoading) return <WorkspacePageSkeleton />;
 
@@ -1092,55 +1101,75 @@ export default function Dashboard() {
         <summary className="flex cursor-pointer list-none flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">More detail</p>
-              <InfoTip content="Open this when you want the full operational dashboard: pulse metrics, workspace links, vendor payments, timeline support, and planning digest." />
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Reports</p>
+              <InfoTip content="Open this when you want the deeper operational view: progress signals, workspace shortcuts, vendor commitments, and planning risks." />
             </div>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Show full planning dashboard</h2>
+            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Open the deeper wedding reports</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Hidden by default so the home screen stays focused. Nothing has been removed.
+              Keep the home screen focused, then open the detailed reports only when you need the full picture.
             </p>
           </div>
           <Badge variant="outline" className="w-fit rounded-full border-primary/20 bg-white/80 px-3 py-1 text-primary">
-            Open reports
+            View reports
           </Badge>
         </summary>
         <div className="space-y-8 border-t border-[#ead8c7] p-5 pt-6">
-      <div className="space-y-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.28em] text-primary">Wedding Pulse</p>
-          <h2 className="mt-2 font-display text-3xl font-semibold leading-none text-foreground">One quick read of the whole plan</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Get the clearest progress signals before you dive into any one workspace.
-          </p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {homePulseCards.map((card, index) => (
-            <motion.div
-              key={card.label}
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.04 }}
-            >
-              <Link to={card.href} className="block h-full">
-                <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(249,242,235,0.84))] shadow-[0_18px_40px_rgba(28,22,18,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(28,22,18,0.07)]">
-                  <CardContent className="space-y-4 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
-                        <card.icon className="h-5 w-5 text-primary" />
-                      </div>
-                      <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground" />
+      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+        <Card className="border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.84))] shadow-[0_18px_40px_rgba(28,22,18,0.05)]">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Wedding pulse</p>
+              <InfoTip content="Use this strip when you want the quickest read on progress before opening a specific workspace." />
+            </div>
+            <CardTitle className="font-display text-2xl">One quick read of the whole plan</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Four signals that tell you whether the wedding is moving cleanly.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {homePulseCards.map((card) => (
+                <Link key={card.label} to={card.href} className="group rounded-2xl border border-border/70 bg-white/72 p-4 transition-all hover:-translate-y-0.5 hover:border-primary/30">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.label}</p>
+                    <card.icon className="h-4 w-4 text-primary/80" />
+                  </div>
+                  <p className="mt-2 text-xl font-semibold text-foreground">{card.value}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{card.detail}</p>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.84))] shadow-[0_18px_40px_rgba(28,22,18,0.05)]">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Workspaces</p>
+              <InfoTip content="Jump straight to the area you need without scanning a full card grid." />
+            </div>
+            <CardTitle className="font-display text-2xl">Open the right workspace fast</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Quick links to the six places couples need most often.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {workspaceQuickLinks.map((module) => (
+                <Link key={module.label} to={module.href} className="group flex items-start justify-between gap-3 rounded-2xl border border-border/70 bg-white/72 p-4 transition-all hover:-translate-y-0.5 hover:border-primary/30">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <module.icon className="h-4 w-4 text-primary/80" />
+                      <p className="text-sm font-medium text-foreground">{module.label}</p>
                     </div>
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.label}</p>
-                      <p className="mt-2 text-2xl font-semibold text-foreground">{card.value}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">{card.detail}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">{module.summary}</p>
+                  </div>
+                  <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Linked planner info for couples */}
@@ -1170,35 +1199,6 @@ export default function Dashboard() {
       )}
 
       {linkedPlanner && !isPlanner && <PlannerChangeRequestsCard />}
-
-      <div className="space-y-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Workspaces</p>
-          <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Open the part of the wedding you need</h2>
-          <p className="text-sm text-muted-foreground">Each area keeps the relevant decisions, actions, and records together.</p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {moduleCards.map((module, i) => (
-            <motion.div key={module.label} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-              <Link to={module.href} className="block h-full">
-                <Card className="h-full shadow-card transition-all hover:-translate-y-0.5 hover:shadow-warm">
-                  <CardHeader className="flex flex-row items-start justify-between pb-3">
-                    <div>
-                      <CardTitle className="text-lg">{module.label}</CardTitle>
-                      <p className="mt-2 text-sm font-semibold text-foreground">{module.summary}</p>
-                    </div>
-                    <module.icon className="h-5 w-5 text-primary" />
-                  </CardHeader>
-                  <CardContent className="flex items-center justify-between pt-0">
-                    <p className="max-w-[18rem] text-sm text-muted-foreground">{module.description}</p>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  </CardContent>
-                </Card>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
-      </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <Card className="border-primary/15 shadow-card">
@@ -1399,12 +1399,27 @@ export default function Dashboard() {
           </Card>
         )}
         <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="flex h-full items-start gap-4 py-5">
-            <Heart className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-            <div>
-              <p className="font-medium text-card-foreground">Wedding Rhythm</p>
+          <CardContent className="space-y-3 py-5">
+            <div className="flex items-start gap-4">
+              <Heart className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div>
+                <p className="font-medium text-card-foreground">Collaboration principle</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  The wedding runs better when money, people, vendors, and schedule stay tied to the same workspace.
+                </p>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Fastest unblocker</p>
+              <p className="mt-2 text-base font-medium text-foreground">
+                {vendorDecisionsPending[0]
+                  ? `Choose a final ${vendorDecisionsPending[0].category} vendor`
+                  : nextPublicTask?.title ?? nextPrivateTask?.title ?? 'Open the wedding workspace'}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                The strongest version of this product keeps every decision attached to the wedding itself. When the money, people, vendors, and schedule stay connected, planning feels lighter and follow-up gets faster.
+                {vendorDecisionsPending[0]
+                  ? `${vendorDecisionsPending[0].candidates} options are still active in that category.`
+                  : 'The fastest path forward is the next visible task or payment milestone.'}
               </p>
             </div>
           </CardContent>
@@ -1577,7 +1592,7 @@ export default function Dashboard() {
 
           <Card className="border-primary/20 bg-primary/5">
             <CardHeader className="pb-3">
-              <CardTitle className="font-display text-xl">What Your Side Should Handle Next</CardTitle>
+              <CardTitle className="font-display text-xl">What your side should handle next</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-2xl border border-border/70 bg-background/70 p-4">

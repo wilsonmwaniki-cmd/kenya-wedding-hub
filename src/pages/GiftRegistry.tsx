@@ -11,7 +11,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
 import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
@@ -19,7 +18,6 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { normalizeExternalUrl } from '@/lib/security';
-import { buildConciergeContext } from '@/lib/conciergeContext';
 
 type RegistryItem = {
   id: string;
@@ -84,7 +82,6 @@ export default function GiftRegistry() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const assistantPanel = useAssistantPanel();
   const { profile, isSuperAdmin, rolePreview } = useAuth();
   const { weddingId, entitlements, couplePlanTier, loading, refresh } = useWeddingEntitlements();
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -234,44 +231,6 @@ export default function GiftRegistry() {
       : stats.activeItems > 0
         ? 'Review needed gifts and share the list'
         : 'Review purchased gifts and add anything missing';
-  const registryConciergeContext = useMemo(() => buildConciergeContext({
-    page: 'gift_registry',
-    role: 'couple',
-    weddingName: profile?.wedding_name || profile?.full_name || 'Current wedding',
-    primaryGoal: 'Help the user build a useful gift registry that is easy to share and keep updated.',
-    recommendedNextAction: registryPrimaryAction,
-    facts: [
-      `Registry access allowed: ${decision.allowed ? 'yes' : 'no'}`,
-      `Wedding attached: ${weddingId ? 'yes' : 'no'}`,
-      `Total registry items: ${stats.totalItems}`,
-      `Needed items: ${stats.activeItems}`,
-      `Purchased items: ${stats.purchasedCount}`,
-      `Total estimated value: ${formatKes(stats.totalEstimatedValue) ?? 'KES 0'}`,
-      `Items currently loading: ${itemsLoading ? 'yes' : 'no'}`,
-      `Focused upgrade flow: ${isFocusedUpgradeFlow ? 'yes' : 'no'}`,
-    ],
-    risks: [
-      !decision.allowed ? 'Gift Registry is not unlocked for this wedding.' : null,
-      !weddingId ? 'There is no active wedding workspace attached yet.' : null,
-      decision.allowed && items.length === 0 ? 'The registry is unlocked but has no gifts yet.' : null,
-      stats.activeItems === 0 && items.length > 0 ? 'Every listed gift is marked bought; the couple may need to add more items.' : null,
-      itemsError ? `Registry loading error: ${itemsError}` : null,
-    ],
-  }), [
-    decision.allowed,
-    isFocusedUpgradeFlow,
-    items.length,
-    itemsError,
-    itemsLoading,
-    profile?.full_name,
-    profile?.wedding_name,
-    registryPrimaryAction,
-    stats.activeItems,
-    stats.purchasedCount,
-    stats.totalEstimatedValue,
-    stats.totalItems,
-    weddingId,
-  ]);
 
   const handleCheckout = async () => {
     if (!profile) return;
@@ -462,19 +421,6 @@ export default function GiftRegistry() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <Gift className="h-5 w-5 text-primary" />
-            <Badge variant="secondary">Add-on</Badge>
-          </div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Make gifting easy for guests</h1>
-          <p className="max-w-2xl text-muted-foreground">
-            Add the essentials first, then use status and links to show what is still needed without overloading guests.
-          </p>
-        </div>
-      </div>
-
       {statusMessage && (
         <Card className={`border ${statusMessage.tone === 'success' ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`}>
           <CardContent className="px-6 py-5">
@@ -528,26 +474,43 @@ export default function GiftRegistry() {
         </div>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card className="border-[#d9e5f4] bg-[#f4f8fd]/90 shadow-card">
-              <CardContent className="px-5 py-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Registry items</p>
-                <p className="mt-2 font-display text-3xl font-semibold">{stats.totalItems}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-[#f0dfc5] bg-[#fff8ec]/95 shadow-card">
-              <CardContent className="px-5 py-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Still needed</p>
-                <p className="mt-2 font-display text-3xl font-semibold">{stats.activeItems}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-[#d9ead7] bg-[#f4fbf3]/90 shadow-card">
-              <CardContent className="px-5 py-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Estimated value</p>
-                <p className="mt-2 font-display text-3xl font-semibold">{formatKes(stats.totalEstimatedValue) ?? 'KES 0'}</p>
-              </CardContent>
-            </Card>
-          </div>
+          <Card className="border-border/70 shadow-card">
+            <CardContent className="space-y-5 px-6 py-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="max-w-2xl space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Gift className="h-5 w-5 text-primary" />
+                    <Badge variant="secondary">Gift registry</Badge>
+                  </div>
+                  <div>
+                    <h1 className="font-display text-3xl font-bold text-foreground">Make gifting easy for guests</h1>
+                    <p className="mt-2 text-muted-foreground">
+                      Start with the gifts that matter most, then keep the list current so guests can see what is still needed.
+                    </p>
+                  </div>
+                </div>
+                <div className="min-w-[220px] rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Next focus</p>
+                  <p className="mt-2 font-medium text-foreground">{registryPrimaryAction}</p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Items</p>
+                  <p className="mt-2 font-display text-3xl font-semibold">{stats.totalItems}</p>
+                </div>
+                <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Still needed</p>
+                  <p className="mt-2 font-display text-3xl font-semibold">{stats.activeItems}</p>
+                </div>
+                <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Estimated value</p>
+                  <p className="mt-2 font-display text-3xl font-semibold">{formatKes(stats.totalEstimatedValue) ?? 'KES 0'}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card className="border-border/70 shadow-card">
             <CardHeader>

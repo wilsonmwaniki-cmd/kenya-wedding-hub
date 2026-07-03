@@ -2719,54 +2719,6 @@ export default function Vendors() {
               </CardContent>
             </Card>
 
-            {!vendorsNudgeDismissed && vendorsNudge && assistantPanel && (
-              <Card className="border-primary/20 bg-primary/5 shadow-card">
-                <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{vendorsNudge.title}</p>
-                    <p className="text-sm text-muted-foreground">{vendorsNudge.body}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => assistantPanel.openAssistant(vendorsNudge.prompt)}
-                    >
-                      Review with AI
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setVendorsNudgeDismissed(true)}
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {!vendorsAssistant.dismissed && (
-              <InlineAssistantCard
-                title="Which vendor decision needs attention?"
-                description="A quick read on vendor decisions and follow-ups."
-                badgeLabel="AI Vendors"
-                prompts={vendorsPrompts}
-                response={vendorsAssistant.response}
-                error={vendorsAssistant.error}
-                loading={vendorsAssistant.loading || vendorsAssistant.usageLoading || vendorsAssistant.accessLoading}
-                decision={vendorsAssistant.decision}
-                canUseAssistant={vendorsAssistant.canUseAssistant}
-                emptyStateTitle="Get a simple vendor priority check before you dive into the list"
-                emptyStateBody="Ask for help closing a category, reviewing follow-ups, or seeing which vendor decision matters most right now."
-                dismissible
-                onDismiss={() => vendorsAssistant.setDismissed(true)}
-                onPromptClick={(prompt) => vendorsAssistant.runPrompt(prompt)}
-              />
-            )}
-
             {vendorWorkspaceVendors.length === 0 ? (
               <Card className="border-dashed border-primary/25 bg-primary/5 shadow-card">
                 <CardContent className="flex flex-col items-start gap-4 p-6 sm:p-8">
@@ -2815,6 +2767,71 @@ export default function Vendors() {
                 ))}
               </div>
             )}
+
+            <details className="rounded-[1.6rem] border border-border/70 bg-card shadow-card">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
+                <div>
+                  <p className="text-lg font-semibold text-foreground">AI guidance</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Open this when you want help prioritizing vendor decisions, shortlist gaps, or follow-ups.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                  <span>{categoriesNeedingFinalChoice.length} open decisions</span>
+                  <span>{vendorTaskSummary.openTasks} follow-ups</span>
+                </div>
+              </summary>
+
+              <div className="space-y-4 px-6 pb-6">
+                {!vendorsNudgeDismissed && vendorsNudge && assistantPanel && (
+                  <Card className="border-primary/20 bg-primary/5 shadow-card">
+                    <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{vendorsNudge.title}</p>
+                        <p className="text-sm text-muted-foreground">{vendorsNudge.body}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => assistantPanel.openAssistant(vendorsNudge.prompt)}
+                        >
+                          Review with AI
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setVendorsNudgeDismissed(true)}
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {!vendorsAssistant.dismissed && (
+                  <InlineAssistantCard
+                    title="Which vendor decision needs attention?"
+                    description="A quick read on vendor decisions and follow-ups."
+                    badgeLabel="AI Vendors"
+                    prompts={vendorsPrompts}
+                    response={vendorsAssistant.response}
+                    error={vendorsAssistant.error}
+                    loading={vendorsAssistant.loading || vendorsAssistant.usageLoading || vendorsAssistant.accessLoading}
+                    decision={vendorsAssistant.decision}
+                    canUseAssistant={vendorsAssistant.canUseAssistant}
+                    emptyStateTitle="Get a simple vendor priority check before you dive into the list"
+                    emptyStateBody="Ask for help closing a category, reviewing follow-ups, or seeing which vendor decision matters most right now."
+                    dismissible
+                    onDismiss={() => vendorsAssistant.setDismissed(true)}
+                    onPromptClick={(prompt) => vendorsAssistant.runPrompt(prompt)}
+                  />
+                )}
+              </div>
+            </details>
           </>
         ) : (
           <>
@@ -2907,7 +2924,7 @@ export default function Vendors() {
             {selectedVendorTab === 'details' && (
               <div className="space-y-8">
                 <section className="space-y-4">
-                  <h2 className="text-2xl font-medium text-foreground">Vendor Details</h2>
+                  <h2 className="text-2xl font-medium text-foreground">Overview</h2>
                   <Card className="shadow-card">
                     <CardContent className="space-y-3 py-6">
                       <p className="text-2xl font-semibold text-foreground">{selectedVendor.name}</p>
@@ -2938,121 +2955,127 @@ export default function Vendors() {
                       </div>
                     </CardContent>
                   </Card>
-                  {!selectedVendor.vendor_listing_id && (
-                    <Card className="shadow-card">
-                      <CardContent className="space-y-5 py-6">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <h3 className="text-xl font-medium text-foreground">Invite this vendor into Zania later</h3>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              This stays private to your wedding workspace. Save the vendor's contact details now so the record is ready for delivery in the next step.
-                            </p>
+                  <details className="rounded-[1.4rem] border border-border/70 bg-card shadow-card" open={!selectedVendor.vendor_listing_id}>
+                    <summary className="cursor-pointer list-none px-6 py-5">
+                      <p className="text-lg font-semibold text-foreground">Invite and pricing intelligence</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Contact setup, claim readiness, and learned price signals for this vendor.
+                      </p>
+                    </summary>
+                    <div className="space-y-5 px-6 pb-6">
+                      {!selectedVendor.vendor_listing_id && (
+                        <div className="rounded-xl border border-border/70 bg-background p-5">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <h3 className="text-xl font-medium text-foreground">Invite this vendor into Zania later</h3>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                This stays private to your wedding workspace. Save the vendor's contact details now so the record is ready for delivery in the next step.
+                              </p>
+                            </div>
+                            <Badge variant="outline">
+                              {selectedVendorActiveInvite ? `Draft status: ${selectedVendorActiveInvite.invite_status}` : 'No invite draft yet'}
+                            </Badge>
                           </div>
-                          <Badge variant="outline">
-                            {selectedVendorActiveInvite ? `Draft status: ${selectedVendorActiveInvite.invite_status}` : 'No invite draft yet'}
-                          </Badge>
-                        </div>
 
-                        {workspaceInviteLoadingVendorId === selectedVendor.id ? (
-                          <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Loading saved invite details...
-                          </div>
-                        ) : (
-                          <form onSubmit={saveWorkspaceVendorInvite} className="space-y-4">
-                            <FormSubmitError message={workspaceInviteError} />
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="workspace-vendor-invite-email">Vendor email</Label>
-                                <Input
-                                  id="workspace-vendor-invite-email"
-                                  type="email"
-                                  value={workspaceInviteForm.email}
-                                  onChange={(event) => {
-                                    setWorkspaceInviteForm((current) => ({ ...current, email: event.target.value }));
-                                    setWorkspaceInviteError(null);
-                                  }}
-                                  placeholder="vendor@example.com"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="workspace-vendor-invite-phone">Vendor phone</Label>
-                                <Input
-                                  id="workspace-vendor-invite-phone"
-                                  value={workspaceInviteForm.phone}
-                                  onChange={(event) => {
-                                    setWorkspaceInviteForm((current) => ({ ...current, phone: event.target.value }));
-                                    setWorkspaceInviteError(null);
-                                  }}
-                                  placeholder="+254..."
-                                />
-                              </div>
+                          {workspaceInviteLoadingVendorId === selectedVendor.id ? (
+                            <div className="mt-4 flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Loading saved invite details...
                             </div>
-                            <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
-                              <div className="space-y-2">
-                                <Label htmlFor="workspace-vendor-invite-message">Invite note</Label>
-                                <Textarea
-                                  id="workspace-vendor-invite-message"
-                                  value={workspaceInviteForm.message}
-                                  onChange={(event) => {
-                                    setWorkspaceInviteForm((current) => ({ ...current, message: event.target.value }));
-                                    setWorkspaceInviteError(null);
-                                  }}
-                                  placeholder="A couple has added you to their Zania wedding workspace and would like to invite you in when they are ready."
-                                />
+                          ) : (
+                            <form onSubmit={saveWorkspaceVendorInvite} className="mt-4 space-y-4">
+                              <FormSubmitError message={workspaceInviteError} />
+                              <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                  <Label htmlFor="workspace-vendor-invite-email">Vendor email</Label>
+                                  <Input
+                                    id="workspace-vendor-invite-email"
+                                    type="email"
+                                    value={workspaceInviteForm.email}
+                                    onChange={(event) => {
+                                      setWorkspaceInviteForm((current) => ({ ...current, email: event.target.value }));
+                                      setWorkspaceInviteError(null);
+                                    }}
+                                    placeholder="vendor@example.com"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="workspace-vendor-invite-phone">Vendor phone</Label>
+                                  <Input
+                                    id="workspace-vendor-invite-phone"
+                                    value={workspaceInviteForm.phone}
+                                    onChange={(event) => {
+                                      setWorkspaceInviteForm((current) => ({ ...current, phone: event.target.value }));
+                                      setWorkspaceInviteError(null);
+                                    }}
+                                    placeholder="+254..."
+                                  />
+                                </div>
                               </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="workspace-vendor-invite-expiry">Draft expiry</Label>
-                                <Input
-                                  id="workspace-vendor-invite-expiry"
-                                  type="date"
-                                  value={workspaceInviteForm.expiresAt}
-                                  onChange={(event) => {
-                                    setWorkspaceInviteForm((current) => ({ ...current, expiresAt: event.target.value }));
-                                    setWorkspaceInviteError(null);
-                                  }}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                  Optional for now. Delivery and claim handling comes next.
-                                </p>
+                              <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
+                                <div className="space-y-2">
+                                  <Label htmlFor="workspace-vendor-invite-message">Invite note</Label>
+                                  <Textarea
+                                    id="workspace-vendor-invite-message"
+                                    value={workspaceInviteForm.message}
+                                    onChange={(event) => {
+                                      setWorkspaceInviteForm((current) => ({ ...current, message: event.target.value }));
+                                      setWorkspaceInviteError(null);
+                                    }}
+                                    placeholder="A couple has added you to their Zania wedding workspace and would like to invite you in when they are ready."
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="workspace-vendor-invite-expiry">Draft expiry</Label>
+                                  <Input
+                                    id="workspace-vendor-invite-expiry"
+                                    type="date"
+                                    value={workspaceInviteForm.expiresAt}
+                                    onChange={(event) => {
+                                      setWorkspaceInviteForm((current) => ({ ...current, expiresAt: event.target.value }));
+                                      setWorkspaceInviteError(null);
+                                    }}
+                                  />
+                                  <p className="text-xs text-muted-foreground">
+                                    Optional for now. Delivery and claim handling comes next.
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="text-sm text-muted-foreground">
-                                {selectedVendorInvites.length > 0
-                                  ? `${selectedVendorInvites.length} invite record${selectedVendorInvites.length === 1 ? '' : 's'} saved for this vendor.`
-                                  : 'No invite records saved yet for this vendor.'}
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {selectedVendorActiveInvite ? (
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="text-sm text-muted-foreground">
+                                  {selectedVendorInvites.length > 0
+                                    ? `${selectedVendorInvites.length} invite record${selectedVendorInvites.length === 1 ? '' : 's'} saved for this vendor.`
+                                    : 'No invite records saved yet for this vendor.'}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {selectedVendorActiveInvite ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      className="gap-2"
+                                      onClick={() => void sendWorkspaceVendorInviteEmail()}
+                                      disabled={workspaceInviteSubmittingVendorId === selectedVendor.id || !selectedVendorActiveInvite.invite_contact_email}
+                                    >
+                                      {workspaceInviteSubmittingVendorId === selectedVendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                      Send Invite Email
+                                    </Button>
+                                  ) : null}
                                   <Button
-                                    type="button"
-                                    variant="outline"
+                                    type="submit"
                                     className="gap-2"
-                                    onClick={() => void sendWorkspaceVendorInviteEmail()}
-                                    disabled={workspaceInviteSubmittingVendorId === selectedVendor.id || !selectedVendorActiveInvite.invite_contact_email}
+                                    disabled={workspaceInviteSubmittingVendorId === selectedVendor.id || !activeWeddingId}
                                   >
                                     {workspaceInviteSubmittingVendorId === selectedVendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                                    Send Invite Email
+                                    {selectedVendorActiveInvite ? 'Update Invite Draft' : 'Create Invite Draft'}
                                   </Button>
-                                ) : null}
-                                <Button
-                                  type="submit"
-                                  className="gap-2"
-                                  disabled={workspaceInviteSubmittingVendorId === selectedVendor.id || !activeWeddingId}
-                                >
-                                  {workspaceInviteSubmittingVendorId === selectedVendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                                  {selectedVendorActiveInvite ? 'Update Invite Draft' : 'Create Invite Draft'}
-                                </Button>
+                                </div>
                               </div>
-                            </div>
-                          </form>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-                  <Card className="shadow-card">
-                    <CardContent className="space-y-4 py-6">
+                            </form>
+                          )}
+                        </div>
+                      )}
+                      <Card className="shadow-none">
+                        <CardContent className="space-y-4 py-6">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-2">
@@ -3174,14 +3197,22 @@ export default function Vendors() {
                           No learned price signal yet. Once this vendor shares a range, sends a quote, or closes paid work through Zania, this profile will start estimating the real working price.
                         </div>
                       )}
-                    </CardContent>
-                  </Card>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </details>
                 </section>
 
-                <section className="space-y-4">
-                  <h2 className="text-2xl font-medium text-foreground">Vendor Updates</h2>
-                  <Card className="shadow-card">
-                    <CardContent className="space-y-4 py-6">
+                <details className="rounded-[1.4rem] border border-border/70 bg-card shadow-card">
+                  <summary className="cursor-pointer list-none px-6 py-5">
+                    <p className="text-lg font-semibold text-foreground">Updates and notes</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Progress notes from the vendor and your private planning notes for this relationship.
+                    </p>
+                  </summary>
+                  <div className="space-y-6 px-6 pb-6">
+                    <Card className="shadow-none">
+                      <CardContent className="space-y-4 py-6">
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
                         Claimed vendors can post structured progress notes here. These stay separate from your private decision notes and from live planning tasks.
                       </div>
@@ -3232,14 +3263,10 @@ export default function Vendors() {
                           ))}
                         </div>
                       )}
-                    </CardContent>
-                  </Card>
-                </section>
-
-                <section className="space-y-4">
-                  <h2 className="text-2xl font-medium text-foreground">Notes</h2>
-                  <Card className="shadow-card">
-                    <CardContent className="space-y-4 py-6">
+                      </CardContent>
+                    </Card>
+                    <Card className="shadow-none">
+                      <CardContent className="space-y-4 py-6">
                       <Textarea
                         value={notesDrafts[selectedVendor.id] ?? ''}
                         onChange={(event) => setNotesDrafts((prev) => ({ ...prev, [selectedVendor.id]: event.target.value }))}
@@ -3257,9 +3284,10 @@ export default function Vendors() {
                           Save Notes
                         </Button>
                       </div>
-                    </CardContent>
-                  </Card>
-                </section>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </details>
               </div>
             )}
 

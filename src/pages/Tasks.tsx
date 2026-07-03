@@ -26,7 +26,6 @@ import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
@@ -206,7 +205,6 @@ export default function Tasks() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const assistantPanel = useAssistantPanel();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -622,45 +620,6 @@ export default function Tasks() {
     contextSource: taskViewMode === 'completed' ? 'completed_tasks_summary' : 'pending_tasks_summary',
     conciergeContext: tasksConciergeContext,
   });
-  const [tasksNudgeDismissed, setTasksNudgeDismissed] = useState(false);
-
-  const tasksNudge = useMemo(() => {
-    if (overduePending.length > 0) {
-      return {
-        title: `${overduePending.length} overdue task${overduePending.length === 1 ? '' : 's'} need attention`,
-        body: 'Get a quick catch-up plan before these tasks start blocking the rest of the wedding.',
-        prompt: 'Turn the overdue tasks into a simple catch-up plan for this week.',
-      };
-    }
-
-    if (dueSoonVendorTasks > 0 || openVendorTaskCount > 0) {
-      return {
-        title: 'Vendor-linked tasks are still open',
-        body: 'Use the assistant to decide what vendor follow-up should happen next.',
-        prompt: 'Review the vendor-linked tasks and tell me what needs attention first.',
-      };
-    }
-
-    if (privateTaskCount > 0 && nextPendingTask) {
-      return {
-        title: 'Private couple tasks still need a plan',
-        body: 'Sort out what the two of you should handle directly before delegating the rest.',
-        prompt: 'Separate the private couple tasks from the shared ones and tell me what we should handle ourselves first.',
-      };
-    }
-
-    if (nextPendingTask) {
-      return {
-        title: 'Start with the next right task',
-        body: 'A quick AI pass can help you decide what to tackle before you get lost in the list.',
-        prompt: nextPendingTask.category
-          ? `Tell me what to do first for the next ${nextPendingTask.category} task on our list.`
-          : 'Tell me which pending task should be tackled first and why.',
-      };
-    }
-
-    return null;
-  }, [dueSoonVendorTasks, nextPendingTask, openVendorTaskCount, overduePending.length, privateTaskCount]);
 
   const filteredPending = useMemo(
     () => pending.filter(taskMatchesWorkspaceFilters).sort(sortTasksByDateAndPriority),
@@ -916,7 +875,7 @@ export default function Tasks() {
           </div>
 
           <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
-            <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Focus snapshot</p>
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Today on tasks</p>
             <div className="mt-4 space-y-3">
               <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
                 <p className="text-sm font-medium text-foreground">{nextPendingTask?.title ?? 'No pending task selected yet'}</p>
@@ -1228,81 +1187,69 @@ export default function Tasks() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Link2 className="h-4 w-4" />
-              <p className="text-sm font-medium text-foreground">Vendor-linked tasks</p>
-            </div>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{openVendorTaskCount}</p>
-            <p className="text-sm text-muted-foreground">Open tasks tied directly to a vendor choice or shortlist.</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <p className="text-sm font-medium text-foreground">Private couple tasks</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{privateTaskCount}</p>
-            <p className="text-sm text-muted-foreground">Tasks reserved for the private couple workspace.</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <p className="text-sm font-medium text-foreground">Delegatable actions</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{delegatedTaskCount}</p>
-            <p className="text-sm text-muted-foreground">{vendorsWithOpenTasks} vendors and {dueSoonVendorTasks} due vendor actions are still active this week.</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {!tasksNudgeDismissed && tasksNudge && assistantPanel && (
-        <Card className="border-primary/20 bg-primary/5 shadow-card">
-          <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <details className="rounded-3xl border border-border/70 bg-background p-5 shadow-card">
+        <summary className="cursor-pointer list-none">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-foreground">{tasksNudge.title}</p>
-              <p className="text-sm text-muted-foreground">{tasksNudge.body}</p>
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">AI guidance and reports</p>
+              <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Open deeper task help only when you need it</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Keep the checklist in focus by default. Open this for AI recovery help and secondary workload signals.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                className="gap-2"
-                onClick={() => assistantPanel.openAssistant(tasksNudge.prompt)}
-              >
-                <CalendarPlus className="h-4 w-4" />
-                Review with AI
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => setTasksNudgeDismissed(true)}
-              >
-                Dismiss
-              </Button>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Link2 className="h-4 w-4" />
+              Hidden by default
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {!tasksAssistant.dismissed && (
-        <InlineAssistantCard
-          title="What should we tackle first?"
-          description="Get a quick task recovery plan based on overdue items, vendor-linked work, and what is due next."
-          badgeLabel="AI Tasks"
-          prompts={tasksPrompts}
-          response={tasksAssistant.response}
-          error={tasksAssistant.error}
-          loading={tasksAssistant.loading || tasksAssistant.usageLoading || tasksAssistant.accessLoading}
-          decision={tasksAssistant.decision}
-          canUseAssistant={tasksAssistant.canUseAssistant}
-          emptyStateTitle="Get a simple task plan before you start checking things off"
-          emptyStateBody="Ask for a catch-up plan, a vendor-task review, or the next best task to focus on from the list already on this page."
-          dismissible
-          onDismiss={() => tasksAssistant.setDismissed(true)}
-          onPromptClick={(prompt) => tasksAssistant.runPrompt(prompt)}
-        />
-      )}
+          </div>
+        </summary>
+        <div className="mt-5 space-y-4">
+          {!tasksAssistant.dismissed && (
+            <InlineAssistantCard
+              title="What should we tackle first?"
+              description="Get a quick task recovery plan based on overdue items, vendor-linked work, and what is due next."
+              badgeLabel="AI Tasks"
+              prompts={tasksPrompts}
+              response={tasksAssistant.response}
+              error={tasksAssistant.error}
+              loading={tasksAssistant.loading || tasksAssistant.usageLoading || tasksAssistant.accessLoading}
+              decision={tasksAssistant.decision}
+              canUseAssistant={tasksAssistant.canUseAssistant}
+              emptyStateTitle="Get a simple task plan before you start checking things off"
+              emptyStateBody="Ask for a catch-up plan, a vendor-task review, or the next best task to focus on from the list already on this page."
+              dismissible
+              onDismiss={() => tasksAssistant.setDismissed(true)}
+              onPromptClick={(prompt) => tasksAssistant.runPrompt(prompt)}
+            />
+          )}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="shadow-none">
+              <CardContent className="py-5">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Link2 className="h-4 w-4" />
+                  <p className="text-sm font-medium text-foreground">Vendor-linked tasks</p>
+                </div>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{openVendorTaskCount}</p>
+                <p className="text-sm text-muted-foreground">Open tasks tied directly to a vendor choice or shortlist.</p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-none">
+              <CardContent className="py-5">
+                <p className="text-sm font-medium text-foreground">Private couple tasks</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{privateTaskCount}</p>
+                <p className="text-sm text-muted-foreground">Tasks reserved for the private couple workspace.</p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-none">
+              <CardContent className="py-5">
+                <p className="text-sm font-medium text-foreground">Delegatable actions</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{delegatedTaskCount}</p>
+                <p className="text-sm text-muted-foreground">{vendorsWithOpenTasks} vendors and {dueSoonVendorTasks} due vendor actions are still active this week.</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </details>
 
       <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
         <Card className="border-primary/15 shadow-card">

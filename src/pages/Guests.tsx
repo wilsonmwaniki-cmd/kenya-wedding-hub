@@ -2,7 +2,6 @@ import { Suspense, lazy, useEffect, useState, useRef, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { supabase } from '@/integrations/supabase/client';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -32,7 +31,6 @@ import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { sanitizeHtml } from '@/lib/security';
-import { buildConciergeContext } from '@/lib/conciergeContext';
 
 const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
 
@@ -154,14 +152,12 @@ export default function Guests() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
-  const assistantPanel = useAssistantPanel();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
   const [open, setOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeGuest, setComposeGuest] = useState<Guest | null>(null);
   const [checkInMode, setCheckInMode] = useState(false);
-  const [activeTab, setActiveTab] = useState('list');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGroup, setFilterGroup] = useState<string>('all');
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
@@ -703,67 +699,6 @@ export default function Guests() {
     ? isTokenActive(selectedGuest.rsvp_token_expires_at, selectedGuest.rsvp_token_revoked_at)
     : false;
 
-  const guestConciergeContext = useMemo(() => buildConciergeContext({
-    page: 'guests',
-    role: isPlanner ? 'planner' : 'couple',
-    weddingName: selectedClient?.client_name || coupleName || 'Current wedding',
-    primaryGoal: 'Help the user turn the guest list into a clean RSVP, seating, and check-in workflow.',
-    recommendedNextAction: guestPrimaryAction,
-    facts: [
-      `Guests tracked: ${guests.length}`,
-      `Confirmed RSVPs: ${confirmed}`,
-      `Pending RSVPs: ${pendingGuests}`,
-      `Declined guests: ${declinedGuests}`,
-      `Guests with email: ${guestsWithEmail}`,
-      `Guests missing all contact details: ${guestsMissingContact}`,
-      `Guests without table assignments: ${guestsWithoutTables}`,
-      `Visible guests after filters: ${visibleGuests.length}`,
-      `Guest groups: ${uniqueGroups.length}`,
-      `Active tab: ${activeTab}`,
-    ],
-    risks: [
-      guests.length === 0 ? 'The guest list has not been started.' : null,
-      pendingWithEmail.length > 0 ? `${pendingWithEmail.length} pending guest invites can be sent now.` : null,
-      guestsMissingContact > 0 ? `${guestsMissingContact} guests have no email or phone, so RSVP follow-up will be hard.` : null,
-      guestsWithoutTables > 0 ? `${guestsWithoutTables} active guests do not have table assignments yet.` : null,
-      !guestRsvpDecision.allowed ? 'RSVP management is locked behind the guest add-on for this wedding.' : null,
-      plannerNeedsApproval ? 'This planner is working on a linked wedding and some guest changes require couple approval.' : null,
-    ],
-    sections: selectedGuest ? [
-      {
-        title: 'Selected guest',
-        lines: [
-          `Name: ${selectedGuest.name}`,
-          `RSVP: ${selectedGuest.rsvp_status || 'pending'}`,
-          `Group: ${selectedGuest.group_name || 'none'}`,
-          `Category: ${selectedGuest.category || 'general'}`,
-          `Has email: ${selectedGuest.email ? 'yes' : 'no'}`,
-          `RSVP link active: ${selectedGuestRsvpActive ? 'yes' : 'no'}`,
-        ],
-      },
-    ] : [],
-  }), [
-    activeTab,
-    confirmed,
-    coupleName,
-    declinedGuests,
-    guestPrimaryAction,
-    guestRsvpDecision.allowed,
-    guests.length,
-    guestsMissingContact,
-    guestsWithEmail,
-    guestsWithoutTables,
-    isPlanner,
-    pendingGuests,
-    pendingWithEmail.length,
-    plannerNeedsApproval,
-    selectedClient?.client_name,
-    selectedGuest,
-    selectedGuestRsvpActive,
-    uniqueGroups.length,
-    visibleGuests.length,
-  ]);
-
   useEffect(() => {
     setSelectedGuestDraft(selectedGuest ? { ...selectedGuest } : null);
   }, [selectedGuest]);
@@ -994,120 +929,120 @@ export default function Guests() {
         <InlineUpgradePrompt decision={guestRsvpDecision} />
       )}
 
-      {/* Tabs: List / Insights */}
-      <Tabs
-        value={activeTab}
-        onValueChange={(nextTab) => {
-          if (nextTab === 'insights' && !requireGuestRsvpManagement()) return;
-          setActiveTab(nextTab);
-        }}
-      >
-        <TabsList className="h-auto w-full flex-wrap justify-start">
-          <TabsTrigger value="list" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Guest List</TabsTrigger>
-          <TabsTrigger value="insights" className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Insights</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="insights" className="mt-4">
-          <GuestInsights guests={guests as any} />
-        </TabsContent>
-
-        <TabsContent value="list" className="mt-4 space-y-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative min-w-0 flex-1 sm:min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                placeholder="Search guests..."
-                className="pl-10"
-              />
-            </div>
-            {uniqueGroups.length > 0 && (
-              <Select value={filterGroup} onValueChange={setFilterGroup}>
-                <SelectTrigger className="w-40"><SelectValue placeholder="All groups" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Groups</SelectItem>
-                  {uniqueGroups.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          <Card className="overflow-hidden shadow-card">
-            <CardContent className="p-0">
-              <div className="grid lg:grid-cols-[360px_minmax(0,1fr)]">
-                <div className="border-b border-border/70 bg-muted/20 lg:border-b-0 lg:border-r">
-                  <div className="grid gap-3 p-5 sm:grid-cols-3 lg:grid-cols-1">
-                    <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Visible</p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">{visibleGuests.length}</p>
-                    </div>
-                    <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Invite ready</p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">{pendingWithEmail.length}</p>
-                    </div>
-                    <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Declined</p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">{declinedGuests}</p>
-                    </div>
-                  </div>
-
-                  <div className="max-h-[620px] space-y-2 overflow-y-auto border-t border-border/70 p-3">
-                    {visibleGuests.length > 0 ? (
-                      visibleGuests.map((g) => {
-                        const isSelected = selectedGuest?.id === g.id;
-                        return (
-                          <button
-                            key={g.id}
-                            type="button"
-                            onClick={() => setSelectedGuestId(g.id)}
-                            className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
-                              isSelected
-                                ? 'border-primary bg-primary/6 shadow-sm'
-                                : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-foreground">{g.name}</p>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <Badge variant={g.rsvp_status === 'confirmed' ? 'default' : g.rsvp_status === 'declined' ? 'destructive' : 'secondary'} className="capitalize">
-                                    {g.rsvp_status || 'pending'}
-                                  </Badge>
-                                  {g.category && g.category !== 'general' && (
-                                    <Badge variant="secondary" className="text-[10px] capitalize">{g.category}</Badge>
-                                  )}
-                                  {g.group_name && (
-                                    <Badge variant="outline" className="text-[10px]">{g.group_name}</Badge>
-                                  )}
-                                </div>
-                              </div>
-                              <Users className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
-                            </div>
-                            <p className="mt-3 truncate text-xs text-muted-foreground">
-                              {g.email || g.phone || 'No contact details yet'}
-                            </p>
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
-                        <p className="text-sm font-medium text-foreground">
-                          {searchTerm || filterGroup !== 'all' ? 'No guests match this view' : 'No guests added yet'}
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {searchTerm || filterGroup !== 'all'
-                            ? 'Try a different name, phone, email, or group search.'
-                            : 'Add the first guest and start shaping the wedding headcount.'}
-                        </p>
-                      </div>
-                    )}
-                  </div>
+      <div className="space-y-4">
+        <Card className="overflow-hidden shadow-card">
+          <CardContent className="space-y-5 p-5 lg:p-6">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest list</p>
+                  <InfoTip content="Keep the list in focus here. Invite analytics and deeper coordination stay tucked away until needed." />
                 </div>
+                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Who still needs action?</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Search the list, clean contact details, and update RSVP status without leaving the workspace.
+                </p>
+              </div>
 
-                <div className="bg-background">
-                  {guestEditor && selectedGuest ? (
-                    <div className="space-y-6 p-5 lg:p-6">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="relative min-w-0 flex-1 sm:min-w-[220px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    placeholder="Search guests..."
+                    className="pl-10"
+                  />
+                </div>
+                {uniqueGroups.length > 0 && (
+                  <Select value={filterGroup} onValueChange={setFilterGroup}>
+                    <SelectTrigger className="w-44"><SelectValue placeholder="All groups" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Groups</SelectItem>
+                      {uniqueGroups.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Visible</p>
+                <p className="mt-2 text-xl font-semibold text-foreground">{visibleGuests.length}</p>
+              </div>
+              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Invite ready</p>
+                <p className="mt-2 text-xl font-semibold text-foreground">{pendingWithEmail.length}</p>
+              </div>
+              <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Missing contact</p>
+                <p className="mt-2 text-xl font-semibold text-foreground">{guestsMissingContact}</p>
+              </div>
+              <div className="rounded-2xl border border-[#f1d6d3] bg-[#fff4f2]/90 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Unseated</p>
+                <p className="mt-2 text-xl font-semibold text-foreground">{guestsWithoutTables}</p>
+              </div>
+            </div>
+
+            <div className="grid lg:grid-cols-[340px_minmax(0,1fr)]">
+              <div className="border-b border-border/70 bg-muted/20 lg:border-b-0 lg:border-r">
+                <div className="max-h-[620px] space-y-2 overflow-y-auto p-3">
+                  {visibleGuests.length > 0 ? (
+                    visibleGuests.map((g) => {
+                      const isSelected = selectedGuest?.id === g.id;
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => setSelectedGuestId(g.id)}
+                          className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                            isSelected
+                              ? 'border-primary bg-primary/6 shadow-sm'
+                              : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-foreground">{g.name}</p>
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <Badge variant={g.rsvp_status === 'confirmed' ? 'default' : g.rsvp_status === 'declined' ? 'destructive' : 'secondary'} className="capitalize">
+                                  {g.rsvp_status || 'pending'}
+                                </Badge>
+                                {g.category && g.category !== 'general' && (
+                                  <Badge variant="secondary" className="text-[10px] capitalize">{g.category}</Badge>
+                                )}
+                                {g.group_name && (
+                                  <Badge variant="outline" className="text-[10px]">{g.group_name}</Badge>
+                                )}
+                              </div>
+                            </div>
+                            <Users className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                          </div>
+                          <p className="mt-3 truncate text-xs text-muted-foreground">
+                            {g.email || g.phone || 'No contact details yet'}
+                          </p>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
+                      <p className="text-sm font-medium text-foreground">
+                        {searchTerm || filterGroup !== 'all' ? 'No guests match this view' : 'No guests added yet'}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {searchTerm || filterGroup !== 'all'
+                          ? 'Try a different name, phone, email, or group search.'
+                          : 'Add the first guest and start shaping the wedding headcount.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-background">
+                {guestEditor && selectedGuest ? (
+                  <div className="space-y-6 p-5 lg:p-6">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
@@ -1259,10 +1194,26 @@ export default function Guests() {
 
                         <div className="space-y-4">
                           <div className="rounded-2xl border border-border/70 bg-background p-4">
-                            <p className="text-sm font-medium text-foreground">{plannerNeedsApproval ? 'Planner visibility' : 'RSVP and invite actions'}</p>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {plannerNeedsApproval ? 'RSVP links, invite sending, and public guest access controls stay on the couple side.' : 'Update status, then send or copy the invite.'}
-                            </p>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-medium text-foreground">{plannerNeedsApproval ? 'Planner visibility' : 'RSVP and invite actions'}</p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {plannerNeedsApproval ? 'RSVP links, invite sending, and public guest access controls stay on the couple side.' : 'Update status, then send or copy the invite.'}
+                                </p>
+                              </div>
+                              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2 text-right">
+                                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-primary">Readiness</p>
+                                <p className="mt-1 text-sm font-medium text-foreground">
+                                  {!selectedGuest.email && !selectedGuest.phone
+                                    ? 'Needs contact'
+                                    : selectedGuest.rsvp_status === 'pending'
+                                      ? 'Ready to invite'
+                                      : selectedGuest.rsvp_status === 'confirmed'
+                                        ? 'Ready for seating'
+                                        : 'Closed out'}
+                                </p>
+                              </div>
+                            </div>
 
                             <div className="mt-4 space-y-3">
                               <div className="space-y-2">
@@ -1350,11 +1301,9 @@ export default function Guests() {
                                 </>
                               )}
                             </div>
-                          </div>
-
-                          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                            <p className="text-sm font-medium text-foreground">Guest readiness</p>
-                            <p className="mt-1 text-sm text-muted-foreground">
+                            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                              <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">What to do next</p>
+                              <p className="mt-2 text-sm text-muted-foreground">
                               {!selectedGuest.email && !selectedGuest.phone
                                 ? 'This guest still needs at least one contact method before outreach gets easier.'
                                 : selectedGuest.rsvp_status === 'pending'
@@ -1362,28 +1311,55 @@ export default function Guests() {
                                   : selectedGuest.rsvp_status === 'confirmed'
                                     ? 'This guest is confirmed. You can now use group, meal, and plus-one details for seating and service planning.'
                                     : 'This guest has declined, so the slot is no longer part of the active headcount.'}
-                            </p>
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
+                  </div>
+                ) : (
+                  <div className="flex min-h-[420px] items-center justify-center p-8">
+                    <div className="max-w-md text-center">
+                      <Users className="mx-auto h-10 w-10 text-muted-foreground" />
+                      <h2 className="mt-4 font-display text-2xl font-semibold text-foreground">No guest selected</h2>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Pick a guest to manage details and RSVP actions.
+                      </p>
                     </div>
-                  ) : (
-                    <div className="flex min-h-[420px] items-center justify-center p-8">
-                      <div className="max-w-md text-center">
-                        <Users className="mx-auto h-10 w-10 text-muted-foreground" />
-                        <h2 className="mt-4 font-display text-2xl font-semibold text-foreground">No guest selected</h2>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          Pick a guest to manage details and RSVP actions.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          </CardContent>
+        </Card>
+
+        <details className="rounded-3xl border border-border/70 bg-background p-5 shadow-card">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest reports</p>
+                <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Invite analytics and deeper coordination</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Open this when you need RSVP intelligence, response patterns, and fuller guest reporting.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <BarChart3 className="h-4 w-4" />
+                Hidden by default
+              </div>
+            </div>
+          </summary>
+          <div className="mt-5">
+            {guestRsvpDecision.allowed ? (
+              <GuestInsights guests={guests as any} />
+            ) : (
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
+                Unlock RSVP & Guest Management to open guest insights, invite analytics, and deeper reporting.
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
 
       {/* Compose Invite Dialog */}
       <Dialog open={composeOpen} onOpenChange={setComposeOpen}>

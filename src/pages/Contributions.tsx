@@ -12,7 +12,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
   buildContributionReminderMessage,
@@ -31,7 +30,6 @@ import { ArrowUpRight, Banknote, CalendarDays, Copy, Download, ExternalLink, Gif
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
-import { buildConciergeContext } from '@/lib/conciergeContext';
 
 type ContributionRound = {
   id: string;
@@ -155,7 +153,6 @@ export default function Contributions() {
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const assistantPanel = useAssistantPanel();
   const db = supabase as any;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
@@ -309,55 +306,6 @@ export default function Contributions() {
       : fundingGap > 0
         ? 'Review the remaining funding gap'
         : 'Share the contribution summary';
-
-  const contributionsConciergeContext = useMemo(() => buildConciergeContext({
-    page: 'contributions',
-    role: isPlanner ? 'planner' : 'couple',
-    weddingName: workspaceName,
-    primaryGoal: 'Help the user manage family, committee, cash, and in-kind support without losing track of pledges.',
-    recommendedNextAction: contributionPrimaryAction,
-    facts: [
-      `Current view: ${selectedRoundLabel}`,
-      `Contribution records in view: ${filteredRows.length}`,
-      `All contribution records: ${rows.length}`,
-      `Active rounds: ${activeRounds}`,
-      `Funding target: ${formatCurrency(fundingTarget)}`,
-      `Total support: ${formatCurrency(summary.totalSupport)}`,
-      `Collected cash: ${formatCurrency(summary.collectedCash)}`,
-      `Outstanding pledges: ${formatCurrency(summary.outstandingPledges)}`,
-      `In-kind value: ${formatCurrency(summary.inKindValue)}`,
-      `Contributors tracked: ${summary.contributorCount}`,
-      `Coverage: ${Math.round(coveragePercentage)}%`,
-      `Public share link active: ${shareIsActive ? 'yes' : 'no'}`,
-    ],
-    risks: [
-      rows.length === 0 ? 'No contributions or pledges have been recorded yet.' : null,
-      pendingRows.length > 0 ? `${pendingRows.length} pending pledge follow-ups need attention.` : null,
-      fundingGap > 0 ? `There is still a ${formatCurrency(fundingGap)} funding gap.` : null,
-      activeRounds === 0 ? 'There are no active contribution rounds.' : null,
-      !shareIsActive ? 'The public contribution summary link is not active.' : null,
-      plannerNeedsApproval ? 'This planner is working on a linked wedding and contribution edits may need couple approval.' : null,
-    ],
-  }), [
-    activeRounds,
-    contributionPrimaryAction,
-    coveragePercentage,
-    filteredRows.length,
-    fundingGap,
-    fundingTarget,
-    isPlanner,
-    pendingRows.length,
-    plannerNeedsApproval,
-    rows.length,
-    selectedRoundLabel,
-    shareIsActive,
-    summary.collectedCash,
-    summary.contributorCount,
-    summary.inKindValue,
-    summary.outstandingPledges,
-    summary.totalSupport,
-    workspaceName,
-  ]);
 
   const copyText = async (value: string, successTitle: string, successDescription?: string) => {
     try {
@@ -872,268 +820,6 @@ export default function Contributions() {
         </CardContent>
       </Card>
 
-      <details className="print:hidden rounded-[28px] border border-border/70 bg-background/70 p-4 shadow-card">
-        <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          Show contribution detail cards
-        </summary>
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <Card className="shadow-card">
-          <CardHeader className="pb-2">
-            <CardDescription>Wedding target</CardDescription>
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <Banknote className="h-5 w-5 text-primary" />
-              {formatCurrency(budgetTarget)}
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">Current wedding budget target</p>
-          </CardHeader>
-        </Card>
-        <Card className="shadow-card">
-          <CardHeader className="pb-2">
-            <CardDescription>Pledged cash</CardDescription>
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <HandCoins className="h-5 w-5 text-primary" />
-              {formatCurrency(summary.pledgedCash)}
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">Promises recorded so far</p>
-          </CardHeader>
-        </Card>
-        <Card className="shadow-card">
-          <CardHeader className="pb-2">
-            <CardDescription>Collected cash</CardDescription>
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <ArrowUpRight className="h-5 w-5 text-emerald-600" />
-              {formatCurrency(summary.collectedCash)}
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">Money already received</p>
-          </CardHeader>
-        </Card>
-        <Card className="shadow-card">
-          <CardHeader className="pb-2">
-            <CardDescription>In-kind value</CardDescription>
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <Gift className="h-5 w-5 text-primary" />
-              {formatCurrency(summary.inKindValue)}
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">Goods and services pledged</p>
-          </CardHeader>
-        </Card>
-        <Card className="shadow-card">
-          <CardHeader className="pb-2">
-            <CardDescription>Supporters tracked</CardDescription>
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <Users className="h-5 w-5 text-primary" />
-              {summary.contributorCount}
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">Unique contributors recorded</p>
-          </CardHeader>
-        </Card>
-      </div>
-      </details>
-
-      <Card className="shadow-card print:hidden">
-        <CardHeader>
-          <CardTitle className="font-display text-2xl">Fundraising rounds</CardTitle>
-          <CardDescription>Track each family meeting, committee drive, or church fundraiser separately when needed.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={selectedRoundId === 'all' ? 'default' : 'outline'}
-              onClick={() => setSelectedRoundId('all')}
-            >
-              All rounds
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={selectedRoundId === 'unassigned' ? 'default' : 'outline'}
-              onClick={() => setSelectedRoundId('unassigned')}
-            >
-              Unassigned
-            </Button>
-            {rounds.map((round) => (
-              <Button
-                key={round.id}
-                type="button"
-                size="sm"
-                variant={selectedRoundId === round.id ? 'default' : 'outline'}
-                onClick={() => setSelectedRoundId(round.id)}
-              >
-                {round.title}
-              </Button>
-            ))}
-          </div>
-          {rounds.length > 0 ? (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {rounds.map((round) => (
-                <div key={round.id} className="rounded-2xl border border-border/70 bg-background/70 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{round.title}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Goal {formatCurrency(round.goal_amount)}
-                      </p>
-                    </div>
-                    <Badge variant={round.is_active ? 'default' : 'outline'} className="rounded-full">
-                      {round.is_active ? 'Active' : 'Closed'}
-                    </Badge>
-                  </div>
-                  {(round.starts_on || round.ends_on) && (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      {safeDateLabel(round.starts_on)} {round.ends_on ? `to ${safeDateLabel(round.ends_on)}` : ''}
-                    </p>
-                  )}
-                  {round.notes && (
-                    <p className="mt-3 text-sm text-muted-foreground">{round.notes}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border/70 p-6">
-              <p className="text-sm font-medium text-foreground">No rounds yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Add a round for each fundraiser, family meeting, church drive, or committee collection if you want to track them separately.
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-card print:hidden">
-        <CardHeader>
-          <CardTitle className="font-display text-2xl">Meeting summary</CardTitle>
-          <CardDescription>
-            Use this to follow up pending pledges, open the public summary, or print a clean committee-ready summary.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Current view</p>
-              <p className="mt-2 text-sm font-semibold text-foreground">{selectedRoundLabel}</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {pendingRows.length
-                  ? `${pendingRows.length} pending pledge${pendingRows.length === 1 ? '' : 's'} worth ${formatCurrency(summary.outstandingPledges)} still need follow-up.`
-                  : 'Everything in this view is either paid, in-kind, or already cleared.'}
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => void copyMeetingFollowUp()} className="gap-2" disabled={!pendingRows.length}>
-                  <Copy className="h-4 w-4" />
-                  Copy pending summary
-                </Button>
-                {!plannerNeedsApproval && (
-                  <Button variant="outline" onClick={() => void openShareSummaryPage()} className="gap-2">
-                    <ExternalLink className="h-4 w-4" />
-                    Open share page
-                  </Button>
-                )}
-              </div>
-              {!plannerNeedsApproval && latestShareUrl ? (
-                <div className="mt-4 rounded-xl border border-border/60 bg-background/75 p-3">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Public summary link</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Badge variant={shareIsActive ? 'default' : 'secondary'}>
-                      {shareIsActive ? 'Link active' : 'Link inactive'}
-                    </Badge>
-                    {shareState?.expiresAt && (
-                      <span className="text-xs text-muted-foreground">
-                        Expires {new Date(shareState.expiresAt).toLocaleDateString()}
-                      </span>
-                    )}
-                    {typeof shareState?.accessCount === 'number' && (
-                      <span className="text-xs text-muted-foreground">
-                        {shareState.accessCount} public open{shareState.accessCount === 1 ? '' : 's'}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-2 flex gap-2">
-                    <Input readOnly value={latestShareUrl} className="text-xs" />
-                    <Button size="icon" variant="outline" disabled={!shareIsActive} onClick={() => void copyShareSummaryLink()}>
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    {shareState?.lastAccessedAt
-                      ? `Last opened ${new Date(shareState.lastAccessedAt).toLocaleString()}`
-                      : 'No public opens recorded yet.'}
-                  </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <Button variant="outline" className="gap-2" onClick={() => void refreshShareSummaryLink()} disabled={creatingShareLink}>
-                      {creatingShareLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
-                      Refresh Link
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="gap-2 text-destructive hover:text-destructive"
-                      onClick={() => void revokeShareSummaryLink()}
-                      disabled={creatingShareLink || !shareIsActive}
-                    >
-                      <ShieldOff className="h-4 w-4" />
-                      Revoke Link
-                    </Button>
-                  </div>
-                </div>
-              ) : plannerNeedsApproval ? (
-                <div className="mt-4 rounded-xl border border-primary/15 bg-primary/5 p-3 text-sm text-muted-foreground">
-                  Public contribution summary links, refresh, and revoke controls stay on the couple side.
-                </div>
-              ) : null}
-            </div>
-            <div className="rounded-2xl border border-border/70 bg-background/75 p-4">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">What to say in the meeting</p>
-              <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                <li>• Budget target: {formatCurrency(fundingTarget)}</li>
-                <li>• Support raised so far: {formatCurrency(summary.totalSupport)}</li>
-                <li>• Outstanding pledges: {formatCurrency(summary.outstandingPledges)}</li>
-                <li>• Contributors tracked: {summary.contributorCount}</li>
-                <li>• Active rounds: {activeRounds}</li>
-              </ul>
-            </div>
-          </div>
-          {pendingRows.length ? (
-            <div className="rounded-2xl border border-border/70">
-              <div className="border-b border-border/70 px-4 py-3">
-                <p className="text-sm font-semibold text-foreground">Pending pledges to follow up</p>
-              </div>
-              <div className="divide-y divide-border/60">
-                {pendingRows.slice(0, 6).map((row) => (
-                  <div key={row.id} className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{row.contributor_name}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Outstanding {formatCurrency(getOutstandingContributionAmount(row))}
-                        {row.purpose ? ` • ${row.purpose}` : ''}
-                        {row.contributor_phone ? ` • ${row.contributor_phone}` : ''}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm" onClick={() => void copyIndividualReminder(row)} className="gap-2">
-                        <Copy className="h-4 w-4" />
-                        Copy reminder
-                      </Button>
-                      {row.contributor_phone ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-2"
-                          onClick={() => window.open(`https://wa.me/${row.contributor_phone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(buildContributionReminderMessage(row, workspaceName))}`, '_blank', 'noopener,noreferrer')}
-                        >
-                          <MessageCircle className="h-4 w-4" />
-                          WhatsApp
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
       <Card className="shadow-card print:hidden">
         <CardHeader>
           <CardTitle className="font-display text-2xl">Contribution tracker</CardTitle>
@@ -1254,6 +940,293 @@ export default function Contributions() {
           )}
         </CardContent>
       </Card>
+
+      <details className="print:hidden rounded-3xl border border-border/70 bg-background p-5 shadow-card">
+        <summary className="cursor-pointer list-none">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Rounds and campaigns</p>
+              <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Separate family meetings, committee drives, and special collections</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Open this only when you need to split the funding tracker into distinct rounds.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CalendarDays className="h-4 w-4" />
+              {rounds.length} round{rounds.length === 1 ? '' : 's'}
+            </div>
+          </div>
+        </summary>
+        <div className="mt-5 space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={selectedRoundId === 'all' ? 'default' : 'outline'}
+              onClick={() => setSelectedRoundId('all')}
+            >
+              All rounds
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={selectedRoundId === 'unassigned' ? 'default' : 'outline'}
+              onClick={() => setSelectedRoundId('unassigned')}
+            >
+              Unassigned
+            </Button>
+            {rounds.map((round) => (
+              <Button
+                key={round.id}
+                type="button"
+                size="sm"
+                variant={selectedRoundId === round.id ? 'default' : 'outline'}
+                onClick={() => setSelectedRoundId(round.id)}
+              >
+                {round.title}
+              </Button>
+            ))}
+          </div>
+          {rounds.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {rounds.map((round) => (
+                <div key={round.id} className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{round.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Goal {formatCurrency(round.goal_amount)}
+                      </p>
+                    </div>
+                    <Badge variant={round.is_active ? 'default' : 'outline'} className="rounded-full">
+                      {round.is_active ? 'Active' : 'Closed'}
+                    </Badge>
+                  </div>
+                  {(round.starts_on || round.ends_on) && (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {safeDateLabel(round.starts_on)} {round.ends_on ? `to ${safeDateLabel(round.ends_on)}` : ''}
+                    </p>
+                  )}
+                  {round.notes && (
+                    <p className="mt-3 text-sm text-muted-foreground">{round.notes}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border/70 p-6">
+              <p className="text-sm font-medium text-foreground">No rounds yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Add a round for each fundraiser, family meeting, church drive, or committee collection if you want to track them separately.
+              </p>
+            </div>
+          )}
+        </div>
+      </details>
+
+      <details className="print:hidden rounded-[28px] border border-border/70 bg-background/70 p-4 shadow-card">
+        <summary className="cursor-pointer list-none">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contribution reports</p>
+              <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Meeting prep and deeper funding signals</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Open this when you need the detailed funding breakdown, pending pledge follow-up, or public summary link controls.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Share2 className="h-4 w-4" />
+              Hidden by default
+            </div>
+          </div>
+        </summary>
+        <div className="mt-4 space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <Card className="shadow-none">
+              <CardHeader className="pb-2">
+                <CardDescription>Wedding target</CardDescription>
+                <CardTitle className="flex items-center gap-2 text-2xl">
+                  <Banknote className="h-5 w-5 text-primary" />
+                  {formatCurrency(budgetTarget)}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">Current wedding budget target</p>
+              </CardHeader>
+            </Card>
+            <Card className="shadow-none">
+              <CardHeader className="pb-2">
+                <CardDescription>Pledged cash</CardDescription>
+                <CardTitle className="flex items-center gap-2 text-2xl">
+                  <HandCoins className="h-5 w-5 text-primary" />
+                  {formatCurrency(summary.pledgedCash)}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">Promises recorded so far</p>
+              </CardHeader>
+            </Card>
+            <Card className="shadow-none">
+              <CardHeader className="pb-2">
+                <CardDescription>Collected cash</CardDescription>
+                <CardTitle className="flex items-center gap-2 text-2xl">
+                  <ArrowUpRight className="h-5 w-5 text-emerald-600" />
+                  {formatCurrency(summary.collectedCash)}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">Money already received</p>
+              </CardHeader>
+            </Card>
+            <Card className="shadow-none">
+              <CardHeader className="pb-2">
+                <CardDescription>In-kind value</CardDescription>
+                <CardTitle className="flex items-center gap-2 text-2xl">
+                  <Gift className="h-5 w-5 text-primary" />
+                  {formatCurrency(summary.inKindValue)}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">Goods and services pledged</p>
+              </CardHeader>
+            </Card>
+            <Card className="shadow-none">
+              <CardHeader className="pb-2">
+                <CardDescription>Supporters tracked</CardDescription>
+                <CardTitle className="flex items-center gap-2 text-2xl">
+                  <Users className="h-5 w-5 text-primary" />
+                  {summary.contributorCount}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">Unique contributors recorded</p>
+              </CardHeader>
+            </Card>
+          </div>
+
+          <Card className="shadow-none">
+            <CardHeader>
+              <CardTitle className="font-display text-2xl">Meeting summary</CardTitle>
+              <CardDescription>
+                Use this to follow up pending pledges, open the public summary, or print a clean committee-ready summary.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Current view</p>
+                  <p className="mt-2 text-sm font-semibold text-foreground">{selectedRoundLabel}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {pendingRows.length
+                      ? `${pendingRows.length} pending pledge${pendingRows.length === 1 ? '' : 's'} worth ${formatCurrency(summary.outstandingPledges)} still need follow-up.`
+                      : 'Everything in this view is either paid, in-kind, or already cleared.'}
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={() => void copyMeetingFollowUp()} className="gap-2" disabled={!pendingRows.length}>
+                      <Copy className="h-4 w-4" />
+                      Copy pending summary
+                    </Button>
+                    {!plannerNeedsApproval && (
+                      <Button variant="outline" onClick={() => void openShareSummaryPage()} className="gap-2">
+                        <ExternalLink className="h-4 w-4" />
+                        Open share page
+                      </Button>
+                    )}
+                  </div>
+                  {!plannerNeedsApproval && latestShareUrl ? (
+                    <div className="mt-4 rounded-xl border border-border/60 bg-background/75 p-3">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Public summary link</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge variant={shareIsActive ? 'default' : 'secondary'}>
+                          {shareIsActive ? 'Link active' : 'Link inactive'}
+                        </Badge>
+                        {shareState?.expiresAt && (
+                          <span className="text-xs text-muted-foreground">
+                            Expires {new Date(shareState.expiresAt).toLocaleDateString()}
+                          </span>
+                        )}
+                        {typeof shareState?.accessCount === 'number' && (
+                          <span className="text-xs text-muted-foreground">
+                            {shareState.accessCount} public open{shareState.accessCount === 1 ? '' : 's'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 flex gap-2">
+                        <Input readOnly value={latestShareUrl} className="text-xs" />
+                        <Button size="icon" variant="outline" disabled={!shareIsActive} onClick={() => void copyShareSummaryLink()}>
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        {shareState?.lastAccessedAt
+                          ? `Last opened ${new Date(shareState.lastAccessedAt).toLocaleString()}`
+                          : 'No public opens recorded yet.'}
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <Button variant="outline" className="gap-2" onClick={() => void refreshShareSummaryLink()} disabled={creatingShareLink}>
+                          {creatingShareLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+                          Refresh Link
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="gap-2 text-destructive hover:text-destructive"
+                          onClick={() => void revokeShareSummaryLink()}
+                          disabled={creatingShareLink || !shareIsActive}
+                        >
+                          <ShieldOff className="h-4 w-4" />
+                          Revoke Link
+                        </Button>
+                      </div>
+                    </div>
+                  ) : plannerNeedsApproval ? (
+                    <div className="mt-4 rounded-xl border border-primary/15 bg-primary/5 p-3 text-sm text-muted-foreground">
+                      Public contribution summary links, refresh, and revoke controls stay on the couple side.
+                    </div>
+                  ) : null}
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-background/75 p-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">What to say in the meeting</p>
+                  <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                    <li>• Budget target: {formatCurrency(fundingTarget)}</li>
+                    <li>• Support raised so far: {formatCurrency(summary.totalSupport)}</li>
+                    <li>• Outstanding pledges: {formatCurrency(summary.outstandingPledges)}</li>
+                    <li>• Contributors tracked: {summary.contributorCount}</li>
+                    <li>• Active rounds: {activeRounds}</li>
+                  </ul>
+                </div>
+              </div>
+              {pendingRows.length ? (
+                <div className="rounded-2xl border border-border/70">
+                  <div className="border-b border-border/70 px-4 py-3">
+                    <p className="text-sm font-semibold text-foreground">Pending pledges to follow up</p>
+                  </div>
+                  <div className="divide-y divide-border/60">
+                    {pendingRows.slice(0, 6).map((row) => (
+                      <div key={row.id} className="flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{row.contributor_name}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Outstanding {formatCurrency(getOutstandingContributionAmount(row))}
+                            {row.purpose ? ` • ${row.purpose}` : ''}
+                            {row.contributor_phone ? ` • ${row.contributor_phone}` : ''}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="outline" size="sm" onClick={() => void copyIndividualReminder(row)} className="gap-2">
+                            <Copy className="h-4 w-4" />
+                            Copy reminder
+                          </Button>
+                          {row.contributor_phone ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-2"
+                              onClick={() => window.open(`https://wa.me/${row.contributor_phone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(buildContributionReminderMessage(row, workspaceName))}`, '_blank', 'noopener,noreferrer')}
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                              WhatsApp
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
+      </details>
 
       <section className="hidden print:block">
         <div className="space-y-6">
