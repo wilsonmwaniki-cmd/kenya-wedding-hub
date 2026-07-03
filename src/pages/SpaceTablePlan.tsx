@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   Armchair,
   CakeSlice,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
   Grid3X3,
@@ -759,6 +761,7 @@ export default function SpaceTablePlan() {
   const [panningCanvas, setPanningCanvas] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
+  const [setupPanelOpen, setSetupPanelOpen] = useState(false);
 
   const selectedObject = useMemo(
     () => objects.find((object) => object.id === selectedObjectId) ?? null,
@@ -1936,239 +1939,102 @@ export default function SpaceTablePlan() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(212,118,70,0.12),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(212,187,125,0.14),transparent_28%),linear-gradient(180deg,#fcf7ef_0%,#f7efe5_52%,#f5ebdf_100%)]">
-      <div className="mx-auto max-w-[1600px] px-4 py-6 md:px-6">
-        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <Badge variant="outline" className="w-fit rounded-full border-primary/20 bg-white/80 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-primary shadow-sm">
+      <div className="mx-auto max-w-[1680px] px-3 py-4 md:px-4">
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div className="space-y-2">
+            <Badge variant="outline" className="w-fit rounded-full border-primary/20 bg-white/80 px-2.5 py-1 text-[10px] uppercase tracking-[0.24em] text-primary shadow-sm">
               Preview only
             </Badge>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.32em] text-primary/75">{weddingContext.audienceLabel}</p>
-              <h1 className="mt-2 font-display text-4xl text-foreground">Space &amp; Table Plan</h1>
-              <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground">
-                Sketch the event space, place the key zones, assign guests to tables, and shape an execution-ready layout before it reaches the live Zania app.
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary/75">{weddingContext.audienceLabel}</p>
+              <h1 className="mt-1 font-display text-3xl text-foreground md:text-[2.2rem]">Space &amp; Table Plan</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                A tighter layout surface for table planning, guest flow, and venue execution.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Button variant="outline" className="gap-2 bg-white/80" onClick={createFreshPlanDraft}>
-              <Plus className="h-4 w-4" />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className={cn(
+              'rounded-full border px-3 py-1.5 text-[11px] font-medium',
+              planHealth.overCapacityTables.length > 0
+                ? 'border-destructive/20 bg-destructive/5 text-destructive'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800',
+            )}>
+              {planHealth.overCapacityTables.length > 0
+                ? `${planHealth.overCapacityTables.length} capacity issue${planHealth.overCapacityTables.length === 1 ? '' : 's'}`
+                : 'Capacity healthy'}
+            </div>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={createFreshPlanDraft}>
+              <Plus className="h-3.5 w-3.5" />
               New draft
             </Button>
-            <Button variant="outline" className="gap-2 bg-white/80" onClick={exportAssignmentsCsv}>
-              <Download className="h-4 w-4" />
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={exportAssignmentsCsv}>
+              <Download className="h-3.5 w-3.5" />
               Export table CSV
             </Button>
-            <Button variant="outline" className="gap-2 bg-white/80" onClick={openPrintLayoutView}>
-              <MapIcon className="h-4 w-4" />
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={openPrintLayoutView}>
+              <MapIcon className="h-3.5 w-3.5" />
               Print layout
             </Button>
-            <Button className="gap-2" onClick={savePlan} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            <Button size="sm" className="h-8 gap-1.5 px-3 text-xs" onClick={savePlan} disabled={saving}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
               Save draft
             </Button>
           </div>
         </div>
 
-        <div className="mb-6">
-          <Card className="border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
-            <CardHeader className="pb-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <CardTitle className="font-display text-2xl">{weddingContext.weddingName}</CardTitle>
-                  <CardDescription>Plan setup and readiness at a glance.</CardDescription>
+        <div className="grid gap-6">
+          <Card className="overflow-hidden border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
+            <CardHeader className="border-b border-border/60 px-3 py-3 sm:px-4">
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+                  <div>
+                    <CardTitle className="font-display text-xl sm:text-2xl">{weddingContext.weddingName}</CardTitle>
+                    <CardDescription className="text-xs sm:text-sm">Two compact tool rows above, more room for the live canvas below.</CardDescription>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
+                      {planHealth.objectCount} objects
+                    </Badge>
+                    <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
+                      {planHealth.tableCount} tables
+                    </Badge>
+                    <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
+                      {planHealth.assignedGuests} seated
+                    </Badge>
+                    <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
+                      {planHealth.unassignedGuests.length} open
+                    </Badge>
+                  </div>
                 </div>
-                <div className={cn(
-                  'w-fit rounded-full border px-3 py-1.5 text-xs font-medium',
-                  planHealth.overCapacityTables.length > 0
-                    ? 'border-destructive/20 bg-destructive/5 text-destructive'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-800',
-                )}>
-                  {planHealth.overCapacityTables.length > 0
-                    ? `${planHealth.overCapacityTables.length} capacity issue${planHealth.overCapacityTables.length === 1 ? '' : 's'}`
-                    : 'Capacity healthy'}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
-              <div className="space-y-2 xl:col-span-2">
-                <Label>Saved plans</Label>
-                <Select value={selectedPlanId ?? 'new'} onValueChange={(value) => setSelectedPlanId(value === 'new' ? null : value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a saved plan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="new">New unsaved draft</SelectItem>
-                    {plans.map((plan) => (
-                      <SelectItem key={plan.id} value={plan.id}>
-                        {plan.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
-              <div className="space-y-2 xl:col-span-1">
-                <Label>Status</Label>
-                <Select value={planStatus} onValueChange={(value) => setPlanStatus(value as SpacePlanStatus)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="review">Review</SelectItem>
-                    <SelectItem value="final">Final</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2 xl:col-span-2">
-                <Label>Plan name</Label>
-                <Input value={planName} onChange={(event) => setPlanName(event.target.value)} />
-              </div>
-
-              <div className="space-y-2 xl:col-span-2">
-                <Label>Space type</Label>
-                <Select value={spaceType} onValueChange={(value) => setSpaceType(value as (typeof spaceTypeOptions)[number])}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {spaceTypeOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2 xl:col-span-1">
-                <Label>Event label</Label>
-                <Input value={eventLabel} onChange={(event) => setEventLabel(event.target.value)} placeholder="Main reception" />
-              </div>
-
-              <div className="space-y-2 xl:col-span-4">
-                <Label>Venue space preset</Label>
-                <div className="flex flex-col gap-3 lg:flex-row">
-                  <Select value={selectedVenueSpaceId ?? 'none'} onValueChange={(value) => setSelectedVenueSpaceId(value === 'none' ? null : value)}>
-                    <SelectTrigger className="lg:flex-1">
-                      <SelectValue placeholder="Choose a venue space preset" />
+                <div className="grid gap-2 xl:grid-cols-[180px_130px_110px_110px_auto_auto_auto_1fr]">
+                  <Select value={selectedPlanId ?? 'new'} onValueChange={(value) => setSelectedPlanId(value === 'new' ? null : value)}>
+                    <SelectTrigger className="h-9 bg-white/90 text-xs">
+                      <SelectValue placeholder="Saved plan" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No venue preset</SelectItem>
-                      {venuePresets.map((space) => (
-                        <SelectItem key={space.id} value={space.id}>
-                          {buildVenuePresetLabel(space)}
+                      <SelectItem value="new">New unsaved draft</SelectItem>
+                      {plans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id}>
+                          {plan.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button type="button" variant="outline" onClick={applyVenuePresetToCanvas} disabled={!selectedVenuePreset}>
-                    Apply venue dimensions
-                  </Button>
-                </div>
-                {selectedVenuePreset ? (
-                  <div className="rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
-                    <p className="font-medium text-foreground">{buildVenuePresetLabel(selectedVenuePreset)}</p>
-                    <p className="mt-1">
-                      {selectedVenuePreset.widthMeters}m x {selectedVenuePreset.lengthMeters}m
-                      {selectedVenuePreset.maxSeatedCapacity ? ` · seats ${selectedVenuePreset.maxSeatedCapacity}` : ''}
-                      {selectedVenuePreset.maxStandingCapacity ? ` · standing ${selectedVenuePreset.maxStandingCapacity}` : ''}
-                    </p>
-                    {selectedVenuePreset.locationNotes ? <p className="mt-2">{selectedVenuePreset.locationNotes}</p> : null}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Venue vendors can publish their actual wedding spaces, then couples and planners can start from those dimensions instead of rebuilding the room from scratch.
-                  </p>
-                )}
-              </div>
 
-              <div className="space-y-2 xl:col-span-4">
-                <Label>Plan notes</Label>
-                <Textarea
-                  value={planNotes}
-                  onChange={(event) => setPlanNotes(event.target.value)}
-                  placeholder="What should decorators, ushers, or caterers understand from this layout?"
-                  className="min-h-[90px]"
-                />
-              </div>
-              <div className="grid gap-2 md:grid-cols-4 xl:col-span-8">
-                {[
-                  ['Objects', planHealth.objectCount],
-                  ['Tables', planHealth.tableCount],
-                  ['Guests seated', planHealth.assignedGuests],
-                  ['Unassigned', planHealth.unassignedGuests.length],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-2xl border border-primary/10 bg-primary/5 px-3 py-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary/70">{label}</p>
-                    <p className="mt-1 font-display text-2xl text-foreground">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  <Select value={planStatus} onValueChange={(value) => setPlanStatus(value as SpacePlanStatus)}>
+                    <SelectTrigger className="h-9 bg-white/90 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="review">Review</SelectItem>
+                      <SelectItem value="final">Final</SelectItem>
+                    </SelectContent>
+                  </Select>
 
-        <div className="grid gap-6">
-          <Card className="overflow-hidden border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
-            <CardHeader className="border-b border-border/60">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="font-display text-2xl">Canvas</CardTitle>
-                  <CardDescription>Drag the canvas to move around. Add objects from the tool strip below.</CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-2 rounded-full border border-border/70 bg-white/90 px-3 py-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                    <Move className="h-3.5 w-3.5" />
-                    Drag canvas
-                  </div>
-                  <div className="flex items-center gap-2 rounded-full border border-border/70 bg-white/90 px-2 py-1.5 shadow-sm">
-                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full" onClick={() => setZoomByDirection('out')} disabled={zoom <= MIN_ZOOM}>
-                      <ZoomOut className="h-4 w-4" />
-                    </Button>
-                    <span className="min-w-14 text-center text-xs font-semibold text-foreground tabular-nums">{Math.round(zoom * 100)}%</span>
-                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8 rounded-full" onClick={() => setZoomByDirection('in')} disabled={zoom >= MAX_ZOOM}>
-                      <ZoomIn className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4 p-4">
-              <div className="rounded-[28px] border border-border/60 bg-white/80 p-3">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Object palette</p>
-                    <p className="text-xs text-muted-foreground">Tap an item to place it on the canvas.</p>
-                  </div>
-                  <Badge variant="secondary" className="rounded-full">{paletteItems.length} tools</Badge>
-                </div>
-                <div className="grid max-h-44 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7">
-                  {paletteItems.map((item) => (
-                    <button
-                      key={item.type}
-                      type="button"
-                      onClick={() => handleAddObject(item)}
-                      className="group flex items-center justify-between gap-2 rounded-2xl border border-border/70 bg-background/90 px-3 py-2 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5"
-                    >
-                      <span>
-                        <span className="block text-sm font-medium text-foreground">{item.label}</span>
-                        <span className="mt-0.5 block text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                          {formatPaletteDimension(item.width)} x {formatPaletteDimension(item.height)}
-                        </span>
-                      </span>
-                      <Plus className="h-3 w-3 shrink-0 text-muted-foreground/70 transition group-hover:rotate-90 group-hover:text-primary" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid gap-3 lg:grid-cols-[160px_160px_140px_minmax(220px,1fr)]">
-                <div className="space-y-2">
-                  <Label>Width ({dimensionUnit === 'meters' ? 'm' : 'ft'})</Label>
                   <Input
                     type="number"
                     step="0.1"
@@ -2179,10 +2045,10 @@ export default function SpaceTablePlan() {
                         width: Math.max(MIN_CANVAS_WIDTH, dimensionToPixels(Number(event.target.value) || 0, dimensionUnit)),
                       }))
                     }
+                    className="h-9 bg-white/90 text-xs"
+                    aria-label={`Canvas width in ${dimensionUnit}`}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label>Height ({dimensionUnit === 'meters' ? 'm' : 'ft'})</Label>
+
                   <Input
                     type="number"
                     step="0.1"
@@ -2193,12 +2059,12 @@ export default function SpaceTablePlan() {
                         height: Math.max(MIN_CANVAS_HEIGHT, dimensionToPixels(Number(event.target.value) || 0, dimensionUnit)),
                       }))
                     }
+                    className="h-9 bg-white/90 text-xs"
+                    aria-label={`Canvas height in ${dimensionUnit}`}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label>Units</Label>
+
                   <Select value={dimensionUnit} onValueChange={(value) => setDimensionUnit(value as DimensionUnit)}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9 bg-white/90 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -2206,24 +2072,72 @@ export default function SpaceTablePlan() {
                       <SelectItem value="feet">Feet</SelectItem>
                     </SelectContent>
                   </Select>
+
+                  <Button
+                    type="button"
+                    variant={snapToGrid ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-9 px-3 text-[11px]"
+                    onClick={() => setSnapToGrid((current) => !current)}
+                  >
+                    {snapToGrid ? 'Snap on' : 'Snap off'}
+                  </Button>
+
+                  <div className="flex items-center gap-1 rounded-2xl border border-border/70 bg-white/90 px-1 py-1 shadow-sm">
+                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-xl" onClick={() => setZoomByDirection('out')} disabled={zoom <= MIN_ZOOM}>
+                      <ZoomOut className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="min-w-11 text-center text-[11px] font-semibold tabular-nums text-foreground">{Math.round(zoom * 100)}%</span>
+                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-xl" onClick={() => setZoomByDirection('in')} disabled={zoom >= MAX_ZOOM}>
+                      <ZoomIn className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-1.5 xl:ml-auto">
+                    <div className="hidden items-center gap-1 rounded-full border border-border/70 bg-white/90 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground lg:flex">
+                      <Move className="h-3 w-3" />
+                      Pan
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 gap-1.5 px-2.5 text-[11px]"
+                      onClick={() => setSetupPanelOpen((current) => !current)}
+                    >
+                      {setupPanelOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      Plan setup
+                    </Button>
+                  </div>
                 </div>
-                <div className="rounded-3xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Room size</p>
-                  <p className="mt-2 text-foreground">
-                    {formatDimension(canvasSize.width, dimensionUnit)} x {formatDimension(canvasSize.height, dimensionUnit)} {dimensionUnit === 'meters' ? 'm' : 'ft'}
-                  </p>
+
+                <div className="rounded-[22px] border border-border/60 bg-white/80 px-2 py-2 shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/70">Tool strip</p>
+                      <p className="text-[11px] text-muted-foreground">Two-row palette for faster layout work.</p>
+                    </div>
+                    <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-[10px]">{paletteItems.length} tools</Badge>
+                  </div>
+                  <div className="grid grid-flow-col grid-rows-2 gap-1.5 overflow-x-auto pb-1 [grid-auto-columns:minmax(112px,1fr)]">
+                    {paletteItems.map((item) => (
+                      <button
+                        key={item.type}
+                        type="button"
+                        onClick={() => handleAddObject(item)}
+                        className="group flex h-10 items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/90 px-2.5 text-left shadow-sm transition duration-200 hover:border-primary/40 hover:bg-primary/5"
+                      >
+                        <span className="min-w-0">
+                          <span className="truncate text-[11px] font-medium text-foreground">{item.label}</span>
+                        </span>
+                        <Plus className="h-3 w-3 shrink-0 text-muted-foreground/70 transition group-hover:rotate-90 group-hover:text-primary" />
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant={snapToGrid ? 'default' : 'outline'} size="sm" onClick={() => setSnapToGrid((current) => !current)}>
-                  {snapToGrid ? 'Grid snap on' : 'Grid snap off'}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Click an object to edit it. Drag empty canvas space to pan.
-                </p>
-              </div>
-
+            </CardHeader>
+            <CardContent className="space-y-3 p-3 sm:p-4">
               <div className="rounded-[28px] border border-border/60 bg-white/85 p-3 shadow-sm">
                 {!selectedObject ? (
                   <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
@@ -2340,10 +2254,10 @@ export default function SpaceTablePlan() {
               </div>
 
               <div className="relative">
-                <div className="absolute right-4 top-4 z-20 w-48 rounded-2xl border border-border/70 bg-white/90 px-4 py-3 shadow-lg backdrop-blur">
+                <div className="absolute right-3 top-3 z-20 w-40 rounded-2xl border border-border/70 bg-white/90 px-3 py-2.5 shadow-lg backdrop-blur">
                   <div className="flex items-center justify-between gap-3">
-                    <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Zoom</Label>
-                    <span className="text-xs font-semibold tabular-nums text-foreground">{Math.round(zoom * 100)}%</span>
+                    <Label className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Zoom</Label>
+                    <span className="text-[11px] font-semibold tabular-nums text-foreground">{Math.round(zoom * 100)}%</span>
                   </div>
                   <Slider
                     value={[zoom]}
@@ -2358,7 +2272,7 @@ export default function SpaceTablePlan() {
               <div
                 ref={viewportRef}
                 className={cn(
-                  'min-h-[72vh] overflow-auto rounded-[32px] border border-border/60 bg-[#faf4ec] shadow-inner transition-colors duration-300',
+                  'h-[calc(100vh-240px)] min-h-[560px] overflow-auto rounded-[32px] border border-border/60 bg-[#faf4ec] shadow-inner transition-colors duration-300',
                   panningCanvas ? 'ring-2 ring-primary/20' : '',
                 )}
               >
@@ -2575,6 +2489,112 @@ export default function SpaceTablePlan() {
               </div>
               </div>
             </CardContent>
+          </Card>
+
+          <Card className="border-white/70 bg-white/80 shadow-[0_18px_50px_rgba(67,36,20,0.06)] backdrop-blur">
+            <button
+              type="button"
+              onClick={() => setSetupPanelOpen((current) => !current)}
+              className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
+            >
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-primary/70">Plan setup</p>
+                <h2 className="mt-1 font-display text-xl text-foreground">Venue, notes, and plan metadata</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Keep the heavier setup fields tucked away until you actually need them.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.18em]">
+                  {setupPanelOpen ? 'Open' : 'Closed'}
+                </Badge>
+                {setupPanelOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </button>
+
+            {setupPanelOpen ? (
+              <CardContent className="grid gap-4 border-t border-border/60 pt-4 md:grid-cols-2 xl:grid-cols-8">
+                <div className="space-y-2 xl:col-span-2">
+                  <Label>Plan name</Label>
+                  <Input value={planName} onChange={(event) => setPlanName(event.target.value)} />
+                </div>
+
+                <div className="space-y-2 xl:col-span-2">
+                  <Label>Space type</Label>
+                  <Select value={spaceType} onValueChange={(value) => setSpaceType(value as (typeof spaceTypeOptions)[number])}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {spaceTypeOptions.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2 xl:col-span-2">
+                  <Label>Event label</Label>
+                  <Input value={eventLabel} onChange={(event) => setEventLabel(event.target.value)} placeholder="Main reception" />
+                </div>
+
+                <div className="rounded-3xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground xl:col-span-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">Room size</p>
+                  <p className="mt-2 text-foreground">
+                    {formatDimension(canvasSize.width, dimensionUnit)} x {formatDimension(canvasSize.height, dimensionUnit)} {dimensionUnit === 'meters' ? 'm' : 'ft'}
+                  </p>
+                </div>
+
+                <div className="space-y-2 xl:col-span-4">
+                  <Label>Venue space preset</Label>
+                  <div className="flex flex-col gap-3 lg:flex-row">
+                    <Select value={selectedVenueSpaceId ?? 'none'} onValueChange={(value) => setSelectedVenueSpaceId(value === 'none' ? null : value)}>
+                      <SelectTrigger className="lg:flex-1">
+                        <SelectValue placeholder="Choose a venue space preset" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No venue preset</SelectItem>
+                        {venuePresets.map((space) => (
+                          <SelectItem key={space.id} value={space.id}>
+                            {buildVenuePresetLabel(space)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" onClick={applyVenuePresetToCanvas} disabled={!selectedVenuePreset}>
+                      Apply venue dimensions
+                    </Button>
+                  </div>
+                  {selectedVenuePreset ? (
+                    <div className="rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground">{buildVenuePresetLabel(selectedVenuePreset)}</p>
+                      <p className="mt-1">
+                        {selectedVenuePreset.widthMeters}m x {selectedVenuePreset.lengthMeters}m
+                        {selectedVenuePreset.maxSeatedCapacity ? ` · seats ${selectedVenuePreset.maxSeatedCapacity}` : ''}
+                        {selectedVenuePreset.maxStandingCapacity ? ` · standing ${selectedVenuePreset.maxStandingCapacity}` : ''}
+                      </p>
+                      {selectedVenuePreset.locationNotes ? <p className="mt-2">{selectedVenuePreset.locationNotes}</p> : null}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Venue vendors can publish their actual wedding spaces, then couples and planners can start from those dimensions instead of rebuilding the room from scratch.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2 xl:col-span-4">
+                  <Label>Plan notes</Label>
+                  <Textarea
+                    value={planNotes}
+                    onChange={(event) => setPlanNotes(event.target.value)}
+                    placeholder="What should decorators, ushers, or caterers understand from this layout?"
+                    className="min-h-[90px]"
+                  />
+                </div>
+              </CardContent>
+            ) : null}
           </Card>
 
         </div>
