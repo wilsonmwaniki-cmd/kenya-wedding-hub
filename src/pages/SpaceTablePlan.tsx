@@ -4,8 +4,7 @@ import {
   AlertTriangle,
   Armchair,
   CakeSlice,
-  ChevronDown,
-  ChevronUp,
+  CircleHelp,
   Copy,
   Download,
   Grid3X3,
@@ -36,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
@@ -170,9 +170,15 @@ type AlignmentGuide = {
   position: number;
 };
 
+type TutorialStep = {
+  title: string;
+  body: string;
+};
+
 type CanvasPaletteItem = {
   type: SpaceObjectType;
   label: string;
+  description: string;
   icon: React.ComponentType<{ className?: string }>;
   width: number;
   height: number;
@@ -185,6 +191,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'round_table',
     label: 'Round table',
+    description: 'Seat guests around a round reception table.',
     icon: Users,
     width: 120,
     height: 120,
@@ -195,6 +202,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'rectangular_table',
     label: 'Rectangular table',
+    description: 'Place a banquet or long family table.',
     icon: Square,
     width: 160,
     height: 96,
@@ -205,6 +213,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'high_table',
     label: 'High table',
+    description: 'Add a cocktail-height table for mingling zones.',
     icon: Sparkles,
     width: 180,
     height: 84,
@@ -215,6 +224,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'sweetheart_table',
     label: 'Sweetheart',
+    description: 'Reserve a two-seat table for the couple.',
     icon: Armchair,
     width: 140,
     height: 76,
@@ -225,6 +235,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'stage',
     label: 'Stage',
+    description: 'Mark the main performance or speeches platform.',
     icon: MapIcon,
     width: 240,
     height: 100,
@@ -233,6 +244,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'dance_floor',
     label: 'Dance floor',
+    description: 'Create the central dancing area.',
     icon: Grid3X3,
     width: 220,
     height: 220,
@@ -241,6 +253,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'cake_table',
     label: 'Cake table',
+    description: 'Place the cake display and cutting table.',
     icon: CakeSlice,
     width: 120,
     height: 72,
@@ -249,6 +262,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'buffet_station',
     label: 'Buffet',
+    description: 'Lay out a buffet or serving line.',
     icon: Wine,
     width: 200,
     height: 72,
@@ -257,6 +271,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'bar',
     label: 'Bar',
+    description: 'Position the drinks service counter.',
     icon: Wine,
     width: 160,
     height: 72,
@@ -265,6 +280,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'dj_booth',
     label: 'DJ booth',
+    description: 'Set the DJ or sound booth location.',
     icon: Music4,
     width: 140,
     height: 72,
@@ -273,6 +289,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'photo_booth',
     label: 'Photo booth',
+    description: 'Add a guest photo booth corner.',
     icon: Sparkles,
     width: 150,
     height: 84,
@@ -281,6 +298,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'entrance',
     label: 'Entrance',
+    description: 'Show the main guest entry point.',
     icon: Move,
     width: 160,
     height: 68,
@@ -289,6 +307,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'aisle',
     label: 'Aisle',
+    description: 'Draw the main aisle or processional path.',
     icon: MapIcon,
     width: 240,
     height: 64,
@@ -297,6 +316,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'decor_zone',
     label: 'Decor zone',
+    description: 'Reserve styling space for decor features.',
     icon: Sparkles,
     width: 180,
     height: 96,
@@ -305,6 +325,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'vip_zone',
     label: 'VIP zone',
+    description: 'Block out a premium seating or lounge area.',
     icon: Users,
     width: 210,
     height: 110,
@@ -313,6 +334,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'reserved_zone',
     label: 'Reserved zone',
+    description: 'Set aside a controlled or restricted area.',
     icon: AlertCircle,
     width: 190,
     height: 96,
@@ -321,6 +343,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'walkway',
     label: 'Walkway',
+    description: 'Protect guest and service movement paths.',
     icon: Move,
     width: 220,
     height: 60,
@@ -329,6 +352,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'power_point',
     label: 'Power point',
+    description: 'Mark a power or technical connection point.',
     icon: AlertTriangle,
     width: 92,
     height: 74,
@@ -337,6 +361,7 @@ const paletteItems: CanvasPaletteItem[] = [
   {
     type: 'vendor_station',
     label: 'Vendor station',
+    description: 'Allocate operating space for a vendor team.',
     icon: Wine,
     width: 170,
     height: 84,
@@ -358,6 +383,25 @@ const defaultCanvas = {
   width: 2400,
   height: 1400,
 };
+
+const tutorialSteps: TutorialStep[] = [
+  {
+    title: 'Start with the top row',
+    body: 'Choose a saved plan, set the room size, then save when the layout feels right.',
+  },
+  {
+    title: 'Use the tool strip',
+    body: 'Click any tool to drop it onto the canvas. Start with tables, stage, and walkway zones first.',
+  },
+  {
+    title: 'Edit only the selected item',
+    body: 'When an object is selected, use the inspector to rename it, resize it, rotate it, or lock it in place.',
+  },
+  {
+    title: 'Arrange on the canvas',
+    body: 'Drag objects into place, zoom in for precision, and keep the main guest flow clear.',
+  },
+];
 
 const MIN_CANVAS_WIDTH = 1400;
 const MIN_CANVAS_HEIGHT = 900;
@@ -725,6 +769,63 @@ function toExportFilenamePart(value: string) {
     || 'zania-couple';
 }
 
+function HoverTip({ content, children }: { content: string; children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top" align="center" sideOffset={8} className="max-w-[220px] text-xs leading-5">
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function usesDashedDimensionBorder(objectType: SpaceObjectType) {
+  return ['walkway', 'aisle', 'decor_zone', 'vip_zone', 'reserved_zone'].includes(objectType);
+}
+
+function TutorialCard({
+  stepIndex,
+  onSkip,
+  onBack,
+  onNext,
+  compact = false,
+}: {
+  stepIndex: number;
+  onSkip: () => void;
+  onBack: () => void;
+  onNext: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={cn(
+      'rounded-[24px] border border-primary/20 bg-white/95 p-4 shadow-[0_18px_50px_rgba(67,36,20,0.14)] backdrop-blur',
+      compact ? 'max-w-[320px]' : 'max-w-[360px]',
+    )}>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-primary/70">
+        Quick guide · Step {stepIndex + 1} of {tutorialSteps.length}
+      </p>
+      <h3 className="mt-2 font-display text-xl text-foreground">{tutorialSteps[stepIndex].title}</h3>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{tutorialSteps[stepIndex].body}</p>
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <Button type="button" variant="ghost" size="sm" className="text-xs" onClick={onSkip}>
+          Skip
+        </Button>
+        <div className="flex items-center gap-2">
+          {stepIndex > 0 ? (
+            <Button type="button" variant="outline" size="sm" className="text-xs" onClick={onBack}>
+              Back
+            </Button>
+          ) : null}
+          <Button type="button" size="sm" className="text-xs" onClick={onNext}>
+            {stepIndex === tutorialSteps.length - 1 ? 'Finish' : 'Next'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SpaceTablePlan() {
   const { user, profile } = useAuth();
   const { selectedClient } = usePlanner();
@@ -761,7 +862,8 @@ export default function SpaceTablePlan() {
   const [panningCanvas, setPanningCanvas] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
-  const [setupPanelOpen, setSetupPanelOpen] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
 
   const selectedObject = useMemo(
     () => objects.find((object) => object.id === selectedObjectId) ?? null,
@@ -777,6 +879,10 @@ export default function SpaceTablePlan() {
     () => venuePresets.find((space) => space.id === selectedVenueSpaceId) ?? null,
     [selectedVenueSpaceId, venuePresets],
   );
+  const paletteRows = useMemo(() => {
+    const splitIndex = Math.ceil(paletteItems.length / 2);
+    return [paletteItems.slice(0, splitIndex), paletteItems.slice(splitIndex)];
+  }, []);
 
   const exportCoupleName = useMemo(() => {
     const coupleProfileName = [profile?.full_name, profile?.partner_name]
@@ -901,6 +1007,35 @@ export default function SpaceTablePlan() {
     weddingContext?.weddingName,
     zoom,
   ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const tutorialSeen = window.localStorage.getItem('zania-space-plan-tutorial-seen');
+    if (!tutorialSeen) {
+      setShowTutorial(true);
+      setTutorialStepIndex(0);
+    }
+  }, []);
+
+  const closeTutorial = (markSeen = true) => {
+    if (typeof window !== 'undefined' && markSeen) {
+      window.localStorage.setItem('zania-space-plan-tutorial-seen', 'true');
+    }
+    setShowTutorial(false);
+  };
+
+  const restartTutorial = () => {
+    setTutorialStepIndex(0);
+    setShowTutorial(true);
+  };
+
+  const advanceTutorial = () => {
+    if (tutorialStepIndex >= tutorialSteps.length - 1) {
+      closeTutorial(true);
+      return;
+    }
+    setTutorialStepIndex((current) => current + 1);
+  };
 
   useEffect(() => {
     if (!user || !profile) return;
@@ -1948,9 +2083,6 @@ export default function SpaceTablePlan() {
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary/75">{weddingContext.audienceLabel}</p>
               <h1 className="mt-1 font-display text-3xl text-foreground md:text-[2.2rem]">Space &amp; Table Plan</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                A tighter layout surface for table planning, guest flow, and venue execution.
-              </p>
             </div>
           </div>
 
@@ -1965,33 +2097,40 @@ export default function SpaceTablePlan() {
                 ? `${planHealth.overCapacityTables.length} capacity issue${planHealth.overCapacityTables.length === 1 ? '' : 's'}`
                 : 'Capacity healthy'}
             </div>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={createFreshPlanDraft}>
-              <Plus className="h-3.5 w-3.5" />
-              New draft
-            </Button>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={exportAssignmentsCsv}>
-              <Download className="h-3.5 w-3.5" />
-              Export table CSV
-            </Button>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={openPrintLayoutView}>
-              <MapIcon className="h-3.5 w-3.5" />
-              Print layout
-            </Button>
-            <Button size="sm" className="h-8 gap-1.5 px-3 text-xs" onClick={savePlan} disabled={saving}>
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-              Save draft
-            </Button>
+            <HoverTip content="Start over with a fresh empty layout draft.">
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={createFreshPlanDraft}>
+                <Plus className="h-3.5 w-3.5" />
+                New draft
+              </Button>
+            </HoverTip>
+            <HoverTip content="Download the current table assignments as a CSV for planning and operations.">
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={exportAssignmentsCsv}>
+                <Download className="h-3.5 w-3.5" />
+                Export table CSV
+              </Button>
+            </HoverTip>
+            <HoverTip content="Open a print-friendly version of the layout for venue or vendor handoff.">
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={openPrintLayoutView}>
+                <MapIcon className="h-3.5 w-3.5" />
+                Print layout
+              </Button>
+            </HoverTip>
+            <HoverTip content="Save your latest changes to this draft.">
+              <Button size="sm" className="h-8 gap-1.5 px-3 text-xs" onClick={savePlan} disabled={saving}>
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                Save draft
+              </Button>
+            </HoverTip>
           </div>
         </div>
 
         <div className="grid gap-6">
           <Card className="overflow-hidden border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
             <CardHeader className="border-b border-border/60 px-3 py-3 sm:px-4">
-              <div className="space-y-3">
+                <div className="space-y-3">
                 <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
                   <div>
                     <CardTitle className="font-display text-xl sm:text-2xl">{weddingContext.weddingName}</CardTitle>
-                    <CardDescription className="text-xs sm:text-sm">Two compact tool rows above, more room for the live canvas below.</CardDescription>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
@@ -2009,7 +2148,7 @@ export default function SpaceTablePlan() {
                   </div>
                 </div>
 
-                <div className="grid gap-2 xl:grid-cols-[180px_130px_110px_110px_auto_auto_auto_1fr]">
+                <div className="grid gap-2 xl:grid-cols-[180px_130px_96px_96px_88px_86px_116px_40px]">
                   <Select value={selectedPlanId ?? 'new'} onValueChange={(value) => setSelectedPlanId(value === 'new' ? null : value)}>
                     <SelectTrigger className="h-9 bg-white/90 text-xs">
                       <SelectValue placeholder="Saved plan" />
@@ -2073,96 +2212,99 @@ export default function SpaceTablePlan() {
                     </SelectContent>
                   </Select>
 
-                  <Button
-                    type="button"
-                    variant={snapToGrid ? 'default' : 'outline'}
-                    size="sm"
-                    className="h-9 px-3 text-[11px]"
-                    onClick={() => setSnapToGrid((current) => !current)}
-                  >
-                    {snapToGrid ? 'Snap on' : 'Snap off'}
-                  </Button>
-
-                  <div className="flex items-center gap-1 rounded-2xl border border-border/70 bg-white/90 px-1 py-1 shadow-sm">
-                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-xl" onClick={() => setZoomByDirection('out')} disabled={zoom <= MIN_ZOOM}>
-                      <ZoomOut className="h-3.5 w-3.5" />
-                    </Button>
-                    <span className="min-w-11 text-center text-[11px] font-semibold tabular-nums text-foreground">{Math.round(zoom * 100)}%</span>
-                    <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-xl" onClick={() => setZoomByDirection('in')} disabled={zoom >= MAX_ZOOM}>
-                      <ZoomIn className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-1.5 xl:ml-auto">
-                    <div className="hidden items-center gap-1 rounded-full border border-border/70 bg-white/90 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground lg:flex">
-                      <Move className="h-3 w-3" />
-                      Pan
-                    </div>
+                  <HoverTip content="Snap objects neatly to the grid while arranging the room.">
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant={snapToGrid ? 'default' : 'outline'}
                       size="sm"
-                      className="h-9 gap-1.5 px-2.5 text-[11px]"
-                      onClick={() => setSetupPanelOpen((current) => !current)}
+                      className="h-9 px-3 text-[11px]"
+                      onClick={() => setSnapToGrid((current) => !current)}
                     >
-                      {setupPanelOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                      Plan setup
+                      {snapToGrid ? 'Snap on' : 'Snap off'}
                     </Button>
+                  </HoverTip>
+
+                  <HoverTip content="Zoom the canvas in or out for detail work and broad layout checks.">
+                    <div className="flex h-9 items-center gap-0.5 rounded-2xl border border-border/70 bg-white/90 px-1 py-1 shadow-sm">
+                      <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-xl" onClick={() => setZoomByDirection('out')} disabled={zoom <= MIN_ZOOM}>
+                        <ZoomOut className="h-3.5 w-3.5" />
+                      </Button>
+                      <span className="min-w-10 text-center text-[11px] font-semibold tabular-nums text-foreground">{Math.round(zoom * 100)}%</span>
+                      <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-xl" onClick={() => setZoomByDirection('in')} disabled={zoom >= MAX_ZOOM}>
+                        <ZoomIn className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </HoverTip>
+
+                  <div className="flex items-center justify-end gap-1.5 xl:ml-auto">
+                    <HoverTip content="Open the short guided walkthrough for this layout workspace.">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9 rounded-2xl bg-white/90"
+                        onClick={restartTutorial}
+                        aria-label="Open space plan guide"
+                      >
+                        <CircleHelp className="h-4 w-4" />
+                      </Button>
+                    </HoverTip>
                   </div>
                 </div>
-
-                <div className="rounded-[22px] border border-border/60 bg-white/80 px-2 py-2 shadow-sm">
-                  <div className="mb-2 flex items-center justify-between gap-2 px-1">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/70">Tool strip</p>
-                      <p className="text-[11px] text-muted-foreground">Two-row palette for faster layout work.</p>
-                    </div>
-                    <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-[10px]">{paletteItems.length} tools</Badge>
+                {showTutorial && tutorialStepIndex === 0 ? (
+                  <div className="flex justify-end">
+                    <TutorialCard
+                      stepIndex={tutorialStepIndex}
+                      onSkip={() => closeTutorial(true)}
+                      onBack={() => setTutorialStepIndex((current) => Math.max(0, current - 1))}
+                      onNext={advanceTutorial}
+                    />
                   </div>
-                  <div className="grid grid-flow-col grid-rows-2 gap-1.5 overflow-x-auto pb-1 [grid-auto-columns:minmax(112px,1fr)]">
-                    {paletteItems.map((item) => (
-                      <button
-                        key={item.type}
-                        type="button"
-                        onClick={() => handleAddObject(item)}
-                        className="group flex h-10 items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/90 px-2.5 text-left shadow-sm transition duration-200 hover:border-primary/40 hover:bg-primary/5"
-                      >
-                        <span className="min-w-0">
-                          <span className="truncate text-[11px] font-medium text-foreground">{item.label}</span>
-                        </span>
-                        <Plus className="h-3 w-3 shrink-0 text-muted-foreground/70 transition group-hover:rotate-90 group-hover:text-primary" />
-                      </button>
+                ) : null}
+
+                <div className="rounded-[20px] border border-border/60 bg-white/80 px-2 py-2 shadow-sm">
+                  <div className="space-y-1.5">
+                    {paletteRows.map((row, rowIndex) => (
+                      <div key={rowIndex} className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}>
+                        {row.map((item) => (
+                          <HoverTip key={item.type} content={item.description}>
+                            <button
+                              type="button"
+                              onClick={() => handleAddObject(item)}
+                              className="group flex h-7 items-center gap-1 rounded-md border border-border/70 bg-background/90 px-1.5 text-left shadow-sm transition duration-200 hover:border-primary/40 hover:bg-primary/5"
+                            >
+                              <item.icon className="h-3 w-3 shrink-0 text-muted-foreground/80 transition group-hover:text-primary" />
+                              <span className="truncate text-[9px] font-medium text-foreground">{item.label}</span>
+                            </button>
+                          </HoverTip>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 </div>
+                {showTutorial && tutorialStepIndex === 1 ? (
+                  <TutorialCard
+                    stepIndex={tutorialStepIndex}
+                    onSkip={() => closeTutorial(true)}
+                    onBack={() => setTutorialStepIndex((current) => Math.max(0, current - 1))}
+                    onNext={advanceTutorial}
+                  />
+                ) : null}
               </div>
             </CardHeader>
             <CardContent className="space-y-3 p-3 sm:p-4">
               <div className="rounded-[28px] border border-border/60 bg-white/85 p-3 shadow-sm">
                 {!selectedObject ? (
                   <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-                    <span>Select an object to edit label, size, rotation, layer, lock, and notes.</span>
+                    <span>Select an object to edit it.</span>
                     <Badge variant="outline" className="rounded-full">Inspector</Badge>
                   </div>
                 ) : (
-                  <div className="grid gap-3 xl:grid-cols-[1.2fr_0.9fr_1fr_auto]">
-                    <div className="grid gap-2 sm:grid-cols-[minmax(160px,1fr)_120px]">
+                  <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr_1fr_auto]">
+                    <div className="grid gap-2 sm:grid-cols-[minmax(160px,1fr)]">
                       <div className="space-y-1">
                         <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Selected</Label>
                         <Input value={selectedObject.label} onChange={(event) => updateSelectedObject((object) => ({ ...object, label: event.target.value }))} />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Rotation</Label>
-                        <Input
-                          type="number"
-                          value={selectedObject.rotation}
-                          onChange={(event) =>
-                            updateSelectedObject((object) => ({
-                              ...object,
-                              rotation: Math.max(-180, Math.min(180, Number(event.target.value) || 0)),
-                            }))
-                          }
-                        />
                       </div>
                     </div>
 
@@ -2200,17 +2342,29 @@ export default function SpaceTablePlan() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-3">
                         <Label className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Angle</Label>
-                        <span className="text-xs font-semibold tabular-nums text-foreground">{selectedObject.rotation}°</span>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={selectedObject.rotation}
+                          onChange={(event) =>
+                            updateSelectedObject((object) => ({
+                              ...object,
+                              rotation: Math.max(-180, Math.min(180, Number(event.target.value) || 0)),
+                            }))
+                          }
+                          className="h-8 w-24 text-right text-xs tabular-nums"
+                          aria-label="Angle in degrees"
+                        />
                       </div>
                       <Slider
                         value={[selectedObject.rotation]}
                         min={-180}
                         max={180}
-                        step={1}
+                        step={0.1}
                         onValueChange={([value]) =>
                           updateSelectedObject((object) => ({
                             ...object,
-                            rotation: value,
+                            rotation: Number(value.toFixed(1)),
                           }))
                         }
                         aria-label="Object rotation"
@@ -2218,27 +2372,37 @@ export default function SpaceTablePlan() {
                     </div>
 
                     <div className="flex flex-wrap items-end gap-2 xl:justify-end">
-                      <Button
-                        type="button"
-                        variant={selectedObject.locked ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => updateSelectedObject((object) => ({ ...object, locked: !object.locked }))}
-                      >
-                        {selectedObject.locked ? <Lock className="mr-2 h-4 w-4" /> : <Unlock className="mr-2 h-4 w-4" />}
-                        {selectedObject.locked ? 'Locked' : 'Unlocked'}
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => moveSelectedLayer('backward')}>
-                        Back
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => moveSelectedLayer('forward')}>
-                        Front
-                      </Button>
-                      <Button variant="outline" size="icon" onClick={duplicateSelectedObject} aria-label="Duplicate selected object">
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="icon" onClick={deleteSelectedObject} aria-label="Delete selected object">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <HoverTip content="Lock this object so it stays fixed while you move other items.">
+                        <Button
+                          type="button"
+                          variant={selectedObject.locked ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => updateSelectedObject((object) => ({ ...object, locked: !object.locked }))}
+                        >
+                          {selectedObject.locked ? <Lock className="mr-2 h-4 w-4" /> : <Unlock className="mr-2 h-4 w-4" />}
+                          {selectedObject.locked ? 'Locked' : 'Unlocked'}
+                        </Button>
+                      </HoverTip>
+                      <HoverTip content="Send the selected object one layer back.">
+                        <Button variant="outline" size="sm" onClick={() => moveSelectedLayer('backward')}>
+                          Back
+                        </Button>
+                      </HoverTip>
+                      <HoverTip content="Bring the selected object one layer forward.">
+                        <Button variant="outline" size="sm" onClick={() => moveSelectedLayer('forward')}>
+                          Front
+                        </Button>
+                      </HoverTip>
+                      <HoverTip content="Create a copy of the selected object.">
+                        <Button variant="outline" size="icon" onClick={duplicateSelectedObject} aria-label="Duplicate selected object">
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </HoverTip>
+                      <HoverTip content="Delete the selected object from the layout.">
+                        <Button variant="outline" size="icon" onClick={deleteSelectedObject} aria-label="Delete selected object">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </HoverTip>
                     </div>
 
                     <div className="space-y-1 xl:col-span-4">
@@ -2251,24 +2415,20 @@ export default function SpaceTablePlan() {
                     </div>
                   </div>
                 )}
+                {showTutorial && tutorialStepIndex === 2 ? (
+                  <div className="mt-3 flex justify-end">
+                    <TutorialCard
+                      stepIndex={tutorialStepIndex}
+                      onSkip={() => closeTutorial(true)}
+                      onBack={() => setTutorialStepIndex((current) => Math.max(0, current - 1))}
+                      onNext={advanceTutorial}
+                      compact
+                    />
+                  </div>
+                ) : null}
               </div>
 
               <div className="relative">
-                <div className="absolute right-3 top-3 z-20 w-40 rounded-2xl border border-border/70 bg-white/90 px-3 py-2.5 shadow-lg backdrop-blur">
-                  <div className="flex items-center justify-between gap-3">
-                    <Label className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Zoom</Label>
-                    <span className="text-[11px] font-semibold tabular-nums text-foreground">{Math.round(zoom * 100)}%</span>
-                  </div>
-                  <Slider
-                    value={[zoom]}
-                    min={MIN_ZOOM}
-                    max={MAX_ZOOM}
-                    step={0.05}
-                    onValueChange={([value]) => setZoom(Number(value.toFixed(2)))}
-                    aria-label="Canvas zoom"
-                  />
-                </div>
-
               <div
                 ref={viewportRef}
                 className={cn(
@@ -2302,30 +2462,68 @@ export default function SpaceTablePlan() {
                   >
                     {loadingPlan ? (
                       <div className="absolute inset-0 bg-white/75 p-6 backdrop-blur-sm">
-                        <div className="grid h-full gap-4 md:grid-cols-[1.2fr_0.8fr]">
-                          <div className="rounded-[28px] border border-border/60 bg-white/80 p-5">
-                            <Skeleton className="h-6 w-40" />
-                            <Skeleton className="mt-3 h-4 w-56" />
-                            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                              {Array.from({ length: 4 }).map((_, index) => (
-                                <div key={index} className="rounded-2xl border border-border/50 bg-background/75 p-4">
-                                  <Skeleton className="h-4 w-28" />
-                                  <Skeleton className="mt-4 h-24 w-full rounded-2xl" />
-                                </div>
-                              ))}
+                        <div className="flex h-full flex-col gap-5">
+                          <div className="rounded-[24px] border border-border/60 bg-white/85 p-4 shadow-sm">
+                            <div className="flex gap-2">
+                              <Skeleton className="h-9 w-40 rounded-2xl" />
+                              <Skeleton className="h-9 w-28 rounded-2xl" />
+                              <Skeleton className="h-9 w-24 rounded-2xl" />
+                              <Skeleton className="h-9 w-24 rounded-2xl" />
+                              <Skeleton className="h-9 w-20 rounded-2xl" />
+                              <Skeleton className="h-9 w-20 rounded-2xl" />
+                              <Skeleton className="ml-auto h-9 w-10 rounded-2xl" />
+                            </div>
+                            <div className="mt-4 space-y-2">
+                              <div className="grid grid-cols-10 gap-2">
+                                {Array.from({ length: 10 }).map((_, index) => (
+                                  <Skeleton key={index} className="h-7 rounded-xl" />
+                                ))}
+                              </div>
+                              <div className="grid grid-cols-9 gap-2">
+                                {Array.from({ length: 9 }).map((_, index) => (
+                                  <Skeleton key={index} className="h-7 rounded-xl" />
+                                ))}
+                              </div>
                             </div>
                           </div>
-                          <div className="rounded-[28px] border border-border/60 bg-white/80 p-5">
-                            <Skeleton className="h-5 w-32" />
-                            <Skeleton className="mt-3 h-10 w-full rounded-2xl" />
-                            <Skeleton className="mt-4 h-10 w-full rounded-2xl" />
-                            <Skeleton className="mt-4 h-32 w-full rounded-[24px]" />
+                          <div className="rounded-[24px] border border-border/60 bg-white/85 p-4 shadow-sm">
+                            <div className="grid grid-cols-[1.2fr_0.9fr_1fr_auto] gap-3">
+                              <Skeleton className="h-10 rounded-2xl" />
+                              <div className="grid grid-cols-2 gap-2">
+                                <Skeleton className="h-10 rounded-2xl" />
+                                <Skeleton className="h-10 rounded-2xl" />
+                              </div>
+                              <Skeleton className="h-10 rounded-2xl" />
+                              <div className="flex gap-2">
+                                {Array.from({ length: 5 }).map((_, index) => (
+                                  <Skeleton key={index} className="h-10 w-16 rounded-2xl" />
+                                ))}
+                              </div>
+                            </div>
+                            <Skeleton className="mt-3 h-10 rounded-2xl" />
+                          </div>
+                          <div className="relative flex-1 rounded-[28px] border border-border/60 bg-[#faf4ec] p-6 shadow-inner">
+                            <div className="absolute inset-0 bg-[linear-gradient(rgba(115,80,50,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(115,80,50,0.08)_1px,transparent_1px)] bg-[size:40px_40px] opacity-45" />
+                            <Skeleton className="absolute left-24 top-24 h-20 w-24 rounded-full" />
+                            <Skeleton className="absolute left-80 top-48 h-28 w-40 rounded-[24px]" />
+                            <Skeleton className="absolute left-[34rem] top-28 h-16 w-52 rounded-[999px]" />
                           </div>
                         </div>
                       </div>
                     ) : null}
+                    {showTutorial && tutorialStepIndex === 3 && !loadingPlan ? (
+                      <div className="absolute right-6 top-6 z-30">
+                        <TutorialCard
+                          stepIndex={tutorialStepIndex}
+                          onSkip={() => closeTutorial(true)}
+                          onBack={() => setTutorialStepIndex((current) => Math.max(0, current - 1))}
+                          onNext={advanceTutorial}
+                          compact
+                        />
+                      </div>
+                    ) : null}
 
-                  {objects.length === 0 ? (
+                  {!loadingPlan && objects.length === 0 ? (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="max-w-md rounded-[28px] border border-dashed border-primary/25 bg-white/85 px-8 py-8 text-center shadow-sm">
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary/70">Blank canvas</p>
@@ -2455,9 +2653,17 @@ export default function SpaceTablePlan() {
                           </div>
                           {isTableObject(object) ? (
                             <div className="space-y-1">
-                              <p className="text-[11px] uppercase tracking-[0.2em] text-stone-700/80">
+                            <p className="text-[11px] uppercase tracking-[0.2em] text-stone-700/80">
                                 {object.tableDetails.tableName}
                               </p>
+                              <div className={cn(
+                                'w-fit rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-stone-800 shadow-sm',
+                                usesDashedDimensionBorder(object.objectType)
+                                  ? 'border-2 border-dashed border-current/70 bg-white/90'
+                                  : 'border-2 border-current/50 bg-white/95',
+                              )}>
+                                {formatPaletteDimension(object.width)} x {formatPaletteDimension(object.height)}
+                              </div>
                               {object.tableDetails.vip ? (
                                 <Badge variant="secondary" className="w-fit rounded-full bg-white/70 text-[9px] uppercase tracking-[0.18em] text-stone-700">
                                   VIP
@@ -2465,9 +2671,14 @@ export default function SpaceTablePlan() {
                               ) : null}
                             </div>
                           ) : (
-                            <p className="text-[11px] uppercase tracking-[0.18em] text-stone-700/70">
-                              {object.width} x {object.height}
-                            </p>
+                            <div className={cn(
+                              'w-fit rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-stone-800 shadow-sm',
+                              usesDashedDimensionBorder(object.objectType)
+                                ? 'border-2 border-dashed border-current/70 bg-white/90'
+                                : 'border-2 border-current/50 bg-white/95',
+                            )}>
+                              {formatPaletteDimension(object.width)} x {formatPaletteDimension(object.height)}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -2492,28 +2703,7 @@ export default function SpaceTablePlan() {
           </Card>
 
           <Card className="border-white/70 bg-white/80 shadow-[0_18px_50px_rgba(67,36,20,0.06)] backdrop-blur">
-            <button
-              type="button"
-              onClick={() => setSetupPanelOpen((current) => !current)}
-              className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
-            >
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-primary/70">Plan setup</p>
-                <h2 className="mt-1 font-display text-xl text-foreground">Venue, notes, and plan metadata</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Keep the heavier setup fields tucked away until you actually need them.
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <Badge variant="outline" className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.18em]">
-                  {setupPanelOpen ? 'Open' : 'Closed'}
-                </Badge>
-                {setupPanelOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-              </div>
-            </button>
-
-            {setupPanelOpen ? (
-              <CardContent className="grid gap-4 border-t border-border/60 pt-4 md:grid-cols-2 xl:grid-cols-8">
+            <CardContent className="grid gap-4 pt-4 md:grid-cols-2 xl:grid-cols-8">
                 <div className="space-y-2 xl:col-span-2">
                   <Label>Plan name</Label>
                   <Input value={planName} onChange={(event) => setPlanName(event.target.value)} />
@@ -2547,9 +2737,9 @@ export default function SpaceTablePlan() {
                   </p>
                 </div>
 
-                <div className="space-y-2 xl:col-span-4">
-                  <Label>Venue space preset</Label>
-                  <div className="flex flex-col gap-3 lg:flex-row">
+                    <div className="space-y-2 xl:col-span-4">
+                      <Label>Venue space preset</Label>
+                      <div className="flex flex-col gap-3 lg:flex-row">
                     <Select value={selectedVenueSpaceId ?? 'none'} onValueChange={(value) => setSelectedVenueSpaceId(value === 'none' ? null : value)}>
                       <SelectTrigger className="lg:flex-1">
                         <SelectValue placeholder="Choose a venue space preset" />
@@ -2567,22 +2757,18 @@ export default function SpaceTablePlan() {
                       Apply venue dimensions
                     </Button>
                   </div>
-                  {selectedVenuePreset ? (
-                    <div className="rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
-                      <p className="font-medium text-foreground">{buildVenuePresetLabel(selectedVenuePreset)}</p>
-                      <p className="mt-1">
-                        {selectedVenuePreset.widthMeters}m x {selectedVenuePreset.lengthMeters}m
-                        {selectedVenuePreset.maxSeatedCapacity ? ` · seats ${selectedVenuePreset.maxSeatedCapacity}` : ''}
-                        {selectedVenuePreset.maxStandingCapacity ? ` · standing ${selectedVenuePreset.maxStandingCapacity}` : ''}
-                      </p>
-                      {selectedVenuePreset.locationNotes ? <p className="mt-2">{selectedVenuePreset.locationNotes}</p> : null}
+                      {selectedVenuePreset ? (
+                        <div className="rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
+                          <p className="font-medium text-foreground">{buildVenuePresetLabel(selectedVenuePreset)}</p>
+                          <p className="mt-1">
+                            {selectedVenuePreset.widthMeters}m x {selectedVenuePreset.lengthMeters}m
+                            {selectedVenuePreset.maxSeatedCapacity ? ` · seats ${selectedVenuePreset.maxSeatedCapacity}` : ''}
+                            {selectedVenuePreset.maxStandingCapacity ? ` · standing ${selectedVenuePreset.maxStandingCapacity}` : ''}
+                          </p>
+                          {selectedVenuePreset.locationNotes ? <p className="mt-2">{selectedVenuePreset.locationNotes}</p> : null}
+                        </div>
+                      ) : null}
                     </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Venue vendors can publish their actual wedding spaces, then couples and planners can start from those dimensions instead of rebuilding the room from scratch.
-                    </p>
-                  )}
-                </div>
 
                 <div className="space-y-2 xl:col-span-4">
                   <Label>Plan notes</Label>
@@ -2593,8 +2779,7 @@ export default function SpaceTablePlan() {
                     className="min-h-[90px]"
                   />
                 </div>
-              </CardContent>
-            ) : null}
+            </CardContent>
           </Card>
 
         </div>
