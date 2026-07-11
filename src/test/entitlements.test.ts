@@ -80,6 +80,22 @@ describe("getEntitlementDecision", () => {
     expect(decision.reasons).toContain("Your free planner tier includes only 1 active wedding.");
   });
 
+  it("uses the planner free wedding guardrail when provided", () => {
+    const decision = getEntitlementDecision("planner.additional_weddings", {
+      profile: {
+        role: "planner",
+        planner_type: "professional",
+        planner_subscription_status: "inactive",
+      },
+      activeWeddingCount: 0,
+      plannerFreeWeddingEligible: false,
+      plannerFreeWeddingReason: "Your free planner tier already has its wedding workspace.",
+    });
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reasons).toContain("Your free planner tier already has its wedding workspace.");
+  });
+
   it("honors the global local bypass switch for QA", () => {
     window.localStorage.setItem("zania-unlock-all-features", "true");
 

@@ -97,6 +97,8 @@ interface EntitlementContext {
   profile?: EntitlementProfileLike | null;
   vendorListing?: EntitlementVendorLike | null;
   activeWeddingCount?: number;
+  plannerFreeWeddingEligible?: boolean | null;
+  plannerFreeWeddingReason?: string | null;
   weddingEntitlements?: Partial<Record<CoupleEntitlementKey, boolean>> | null;
   couplePlanTier?: CouplePlanTier | null;
   professionalAudience?: ProfessionalAudience | null;
@@ -373,6 +375,7 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
 
   const audience = getPricingAudience(context.profile);
   const activeWeddingCount = context.activeWeddingCount ?? 0;
+  const plannerFreeWeddingEligible = context.plannerFreeWeddingEligible ?? activeWeddingCount < 1;
 
   switch (feature) {
     case 'couple.ai_assistant':
@@ -463,11 +466,11 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
         reasons: plannerHasActiveSubscription(context.profile) ? [] : ['AI planning support is part of Planner Pro.'],
       });
     case 'planner.additional_weddings':
-      return buildDecision(feature, 'planner', activeWeddingCount < 1 || plannerHasActiveSubscription(context.profile), {
+      return buildDecision(feature, 'planner', plannerFreeWeddingEligible || plannerHasActiveSubscription(context.profile), {
         title: 'You’ve reached your free planner limit',
         description: 'Your free planner account includes 1 active wedding. Upgrade to Planner Pro to manage more weddings without closing your current work.',
-        reasons: activeWeddingCount >= 1 && !plannerHasActiveSubscription(context.profile)
-          ? ['Your free planner tier includes only 1 active wedding.']
+        reasons: !plannerFreeWeddingEligible && !plannerHasActiveSubscription(context.profile)
+          ? [context.plannerFreeWeddingReason || 'Your free planner tier includes only 1 active wedding.']
           : [],
       });
     case 'planner.vendor_outreach':

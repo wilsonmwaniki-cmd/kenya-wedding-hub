@@ -16,10 +16,11 @@ import { motion } from 'framer-motion';
 import MyConnections from '@/components/MyConnections';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { isCommitteePlanner } from '@/lib/plannerAccess';
-import { requestPlannerLinkByCode } from '@/lib/collaborationCodes';
+import { approvePlannerCodeLinkRequest, requestPlannerLinkByCode } from '@/lib/collaborationCodes';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
+import { usePlannerFreeWeddingStatus } from '@/hooks/usePlannerFreeWeddingStatus';
 
 interface LinkRequest {
   id: string;
@@ -83,22 +84,18 @@ export default function PlannerDashboard() {
   const outgoingCodeRequests = linkRequests.filter((req) => req.request_source === 'planner_code');
 
   const approveRequest = async (req: LinkRequest) => {
-    // Create a planner_client record linked to the couple's user id
-    if (!user) return;
-    const { error: clientError } = await supabase.from('planner_clients').insert({
-      planner_user_id: user.id,
-      client_name: req.couple_name || 'Client',
-      linked_user_id: req.couple_user_id,
-    });
-    if (clientError) {
-      toast({ title: 'Error', description: clientError.message, variant: 'destructive' });
-      return;
+    try {
+      await approvePlannerCodeLinkRequest(req.id);
+      toast({ title: 'Request approved!', description: `${req.couple_name} is now linked.` });
+      await loadLinkRequests();
+      await loadClients();
+    } catch (error: any) {
+      toast({
+        title: 'Could not approve request',
+        description: error.message || 'The planner workspace could not be linked right now.',
+        variant: 'destructive',
+      });
     }
-    // Update request status
-    await supabase.from('planner_link_requests').update({ status: 'approved' }).eq('id', req.id);
-    toast({ title: 'Request approved!', description: `${req.couple_name} is now linked.` });
-    loadLinkRequests();
-    loadClients();
   };
 
   const rejectRequest = async (req: LinkRequest) => {
@@ -161,14 +158,14 @@ export default function PlannerDashboard() {
     }
 
     setAddingClient(true);
-    const { error } = await supabase.from('planner_clients').insert({
-      planner_user_id: user.id,
-      client_name: form.client_name.trim(),
-      partner_name: form.partner_name.trim() || null,
-      wedding_date: form.wedding_date || null,
-      wedding_location: form.wedding_location.trim() || null,
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
+    const db = supabase as any;
+    const { error } = await db.rpc('create_planner_client_guarded', {
+      client_name_input: form.client_name.trim(),
+      partner_name_input: form.partner_name.trim() || null,
+      wedding_date_input: form.wedding_date || null,
+      wedding_location_input: form.wedding_location.trim() || null,
+      email_input: form.email.trim() || null,
+      phone_input: form.phone.trim() || null,
     });
     if (error) {
       setClientSubmitError(error.message || 'Could not save this wedding workspace right now.');
@@ -184,9 +181,24 @@ export default function PlannerDashboard() {
   };
 
   const deleteClient = async (id: string) => {
-    await supabase.from('planner_clients').delete().eq('id', id);
-    loadClients();
-    toast({ title: 'Client removed' });
+    const db = supabase as any;
+    const { data, error } = await db.rpc('archive_planner_client_guarded', {
+      target_client_id: id,
+    });
+
+    if (error) {
+      toast({ title: 'Could not archive client', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    await loadClients();
+    const released = Boolean(data?.released_free_tier_slot);
+    toast({
+      title: released ? 'Client archived and free slot reopened' : 'Client archived',
+      description: released
+        ? 'That unused test workspace released your one free-tier replacement.'
+        : 'This planner workspace is now archived and kept in history.',
+    });
   };
 
   const openClientDashboard = (client: PlannerClient) => {
@@ -196,17 +208,20 @@ export default function PlannerDashboard() {
 
   const plannerPreviewMode = isSuperAdmin && (rolePreview === 'planner' || rolePreview === 'committee');
   const isCommittee = isCommitteePlanner(profile);
+  const { status: plannerFreeWeddingStatus } = usePlannerFreeWeddingStatus(!isCommittee);
   const { entitlements: professionalEntitlements, teamSeatLimit: professionalTeamSeatLimit } = useProfessionalEntitlements(
     isCommittee ? null : 'planner',
   );
   const workspaceDecision = getEntitlementDecision(isCommittee ? 'committee.connect_couples' : 'planner.full_workspace', {
     profile,
-    activeWeddingCount: clients.length,
+    activeWeddingCount: !isCommittee ? plannerFreeWeddingStatus.meaningfulClientCount : clients.length,
     bypass: plannerPreviewMode,
   });
   const addWeddingDecision = getEntitlementDecision('planner.additional_weddings', {
     profile,
-    activeWeddingCount: clients.length,
+    activeWeddingCount: !isCommittee ? plannerFreeWeddingStatus.meaningfulClientCount : clients.length,
+    plannerFreeWeddingEligible: isCommittee ? clients.length < 1 : plannerFreeWeddingStatus.canAddWedding,
+    plannerFreeWeddingReason: plannerFreeWeddingStatus.gatingReason,
     bypass: plannerPreviewMode,
   });
   const fullPlannerAccess = workspaceDecision.allowed;
