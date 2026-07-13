@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, CalendarDays, FilePlus2, Loader2, Save, Send, ShieldCheck, Trash2 } from 'lucide-react';
+import { BadgeCheck, CalendarDays, Copy, FilePlus2, Link2, Loader2, Mail, PenLine, RotateCw, Save, Send, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,14 +12,25 @@ import { useToast } from '@/hooks/use-toast';
 import {
   createProfessionalContract,
   deleteProfessionalContract,
+  buildProfessionalContractShareEmailDraft,
+  buildProfessionalContractShareUrl,
+  getProfessionalContractActivity,
   listProfessionalContracts,
+  markProfessionalContractSent,
   professionalContractStatusLabel,
+  professionalContractEventLabel,
   professionalContractStatusOptions,
+  refreshProfessionalContractShareToken,
+  revokeProfessionalContractShareToken,
+  signOwnedProfessionalContract,
   updateProfessionalContract,
   type CommercialDocumentRole,
+  type ProfessionalContractActivity,
+  type ProfessionalContractShareState,
   type PlannerClientOption,
   type ProfessionalContractRecord,
   type ProfessionalContractStatus,
+  type ProfessionalContractSignerRecord,
   type VendorBookingOption,
   type VendorListingOption,
 } from '@/lib/commercialDocuments';
@@ -65,6 +76,21 @@ function blankDraft(): ContractDraft {
   };
 }
 
+function isShareActive(shareState: ProfessionalContractShareState | null) {
+  if (!shareState) return false;
+  if (shareState.revokedAt) return false;
+  if (!shareState.expiresAt) return true;
+  return new Date(shareState.expiresAt).getTime() > Date.now();
+}
+
+function signatureFontStyle() {
+  return {
+    fontFamily: '"Montserrat", sans-serif',
+    fontStyle: 'italic',
+    fontWeight: 600,
+  } as const;
+}
+
 export default function ContractsWorkspace({ role, plannerClients = [], vendorListings = [], vendorBookings = [] }: Props) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -78,6 +104,10 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [activity, setActivity] = useState<ProfessionalContractActivity | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [signingIssuer, setSigningIssuer] = useState(false);
 
   const loadContracts = async (preferredId?: string | null) => {
     const next = await listProfessionalContracts({ role, search: search.trim() || undefined });
@@ -139,6 +169,7 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
   useEffect(() => {
     if (!selectedContract) {
       setDetailDraft(null);
+      setActivity(null);
       return;
     }
     setDetailDraft({
@@ -156,6 +187,29 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
       terms: selectedContract.terms ?? '',
       notes: selectedContract.notes ?? '',
     });
+  }, [selectedContract?.id]);
+
+  useEffect(() => {
+    if (!selectedContract) return;
+    let cancelled = false;
+
+    const loadActivity = async () => {
+      setActivityLoading(true);
+      try {
+        const next = await getProfessionalContractActivity(selectedContract.id);
+        if (!cancelled) setActivity(next);
+      } catch (error) {
+        console.error('Could not load contract activity:', error);
+        if (!cancelled) setActivity(null);
+      } finally {
+        if (!cancelled) setActivityLoading(false);
+      }
+    };
+
+    void loadActivity();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedContract?.id]);
 
   const selectedClient = useMemo(
@@ -199,6 +253,19 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
       completed,
     };
   }, [contracts]);
+
+  const issuerSigner = useMemo(
+    () => activity?.signers.find((signer) => signer.signerRole === 'issuer') ?? null,
+    [activity?.signers],
+  );
+  const clientSigner = useMemo(
+    () => activity?.signers.find((signer) => signer.signerRole === 'client') ?? null,
+    [activity?.signers],
+  );
+  const shareUrl = activity?.shareState
+    ? buildProfessionalContractShareUrl(activity.shareState.shareToken, window.location.origin)
+    : null;
+  const shareActive = isShareActive(activity?.shareState ?? null);
 
   const handleCreate = async () => {
     if (!createDraft.title.trim() || !createDraft.recipientName.trim()) {
@@ -286,6 +353,125 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
       toast({ title: 'Could not delete contract', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleCopyShareLink = async () => {
+    if (!selectedContract) return;
+    setSharing(true);
+    try {
+      const token = await markProfessionalContractSent(selectedContract.id);
+      const url = buildProfessionalContractShareUrl(token, window.location.origin);
+      await navigator.clipboard.writeText(url);
+      await loadContracts(selectedContract.id);
+      setActivity(await getProfessionalContractActivity(selectedContract.id));
+      toast({
+        title: 'Signing link copied',
+        description: 'The public contract link is ready to send.',
+      });
+    } catch (error) {
+      console.error('Could not copy contract share link:', error);
+      toast({
+        title: 'Could not copy signing link',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleEmailShare = async () => {
+    if (!selectedContract) return;
+    setSharing(true);
+    try {
+      const token = await markProfessionalContractSent(selectedContract.id);
+      const url = buildProfessionalContractShareUrl(token, window.location.origin);
+      const draft = buildProfessionalContractShareEmailDraft({
+        contract: selectedContract,
+        shareUrl: url,
+      });
+      await loadContracts(selectedContract.id);
+      setActivity(await getProfessionalContractActivity(selectedContract.id));
+      window.location.href = draft.href;
+    } catch (error) {
+      console.error('Could not prepare contract share email:', error);
+      toast({
+        title: 'Could not prepare email draft',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleIssuerSignature = async () => {
+    if (!selectedContract) return;
+    setSigningIssuer(true);
+    try {
+      await signOwnedProfessionalContract(selectedContract.id);
+      await loadContracts(selectedContract.id);
+      setActivity(await getProfessionalContractActivity(selectedContract.id));
+      toast({
+        title: 'Signature added',
+        description: 'Your side of the contract is now signed.',
+      });
+    } catch (error) {
+      console.error('Could not sign contract as issuer:', error);
+      toast({
+        title: 'Could not sign contract',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSigningIssuer(false);
+    }
+  };
+
+  const handleRefreshShareLink = async () => {
+    if (!selectedContract) return;
+    setSharing(true);
+    try {
+      const token = await refreshProfessionalContractShareToken(selectedContract.id);
+      await loadContracts(selectedContract.id);
+      setActivity(await getProfessionalContractActivity(selectedContract.id));
+      await navigator.clipboard.writeText(buildProfessionalContractShareUrl(token, window.location.origin));
+      toast({
+        title: 'Signing link refreshed',
+        description: 'The previous link has been replaced and the new one is copied.',
+      });
+    } catch (error) {
+      console.error('Could not refresh contract share link:', error);
+      toast({
+        title: 'Could not refresh signing link',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleRevokeShareLink = async () => {
+    if (!selectedContract) return;
+    setSharing(true);
+    try {
+      await revokeProfessionalContractShareToken(selectedContract.id);
+      setActivity(await getProfessionalContractActivity(selectedContract.id));
+      toast({
+        title: 'Signing link revoked',
+        description: 'The public contract link is no longer active.',
+      });
+    } catch (error) {
+      console.error('Could not revoke contract share link:', error);
+      toast({
+        title: 'Could not revoke signing link',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -392,7 +578,15 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                         </div>
                         <div className="text-sm text-muted-foreground">{contract.eventDate ? new Date(contract.eventDate).toLocaleDateString() : 'No event date'}</div>
                         <div className="flex items-center gap-2">
-                          <Badge variant={contract.status === 'completed' ? 'default' : contract.status === 'cancelled' ? 'outline' : 'secondary'}>
+                          <Badge
+                            variant={
+                              contract.status === 'completed'
+                                ? 'success'
+                                : contract.status === 'cancelled'
+                                  ? 'destructive'
+                                  : 'warning'
+                            }
+                          >
                             {professionalContractStatusLabel(contract.status)}
                           </Badge>
                         </div>
@@ -471,6 +665,105 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                   <Label>Internal notes</Label>
                   <Textarea rows={4} value={detailDraft.notes} onChange={(event) => setDetailDraft((current) => current ? { ...current, notes: event.target.value } : current)} placeholder="Internal reminders, meeting notes, or follow-up context." />
                 </div>
+                <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+                  <div className="rounded-2xl border border-border bg-muted/10 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Signing link</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Let clients review and sign without creating a Zania account.
+                        </p>
+                      </div>
+                      {activityLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button type="button" size="sm" className="gap-2" onClick={handleCopyShareLink} disabled={sharing}>
+                        {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                        Copy signing link
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleEmailShare} disabled={sharing}>
+                        <Mail className="h-4 w-4" />
+                        Email draft
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleRefreshShareLink} disabled={sharing}>
+                        {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+                        Refresh link
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={handleRevokeShareLink} disabled={sharing || !activity?.shareState || !shareActive}>
+                        <ShieldOff className="h-4 w-4" />
+                        Revoke link
+                      </Button>
+                    </div>
+                    <div className="mt-4 rounded-xl border border-border/70 bg-white/80 p-3 text-sm text-muted-foreground">
+                      {shareUrl ? (
+                        <>
+                          <div className="flex items-center gap-2 text-foreground">
+                            <Link2 className="h-4 w-4 text-primary" />
+                            <span className="font-medium">{shareActive ? 'Public signing link active' : 'Signing link inactive'}</span>
+                          </div>
+                          <p className="mt-2 break-all">{shareUrl}</p>
+                          <p className="mt-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                            {typeof activity?.shareState?.accessCount === 'number'
+                              ? `${activity.shareState.accessCount} public open${activity.shareState.accessCount === 1 ? '' : 's'}`
+                              : 'No public opens yet'}
+                          </p>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {activity?.shareState?.expiresAt
+                              ? `Expires ${new Date(activity.shareState.expiresAt).toLocaleDateString()}`
+                              : 'No expiry set'}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {activity?.shareState?.lastAccessedAt
+                              ? `Last opened ${new Date(activity.shareState.lastAccessedAt).toLocaleString()}`
+                              : 'No public opens recorded yet.'}
+                          </p>
+                        </>
+                      ) : (
+                        <p>Generate the signing link when this agreement is ready for the client.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border bg-muted/10 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Signatures</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Keep the issuer and client signature states in one place.
+                        </p>
+                      </div>
+                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleIssuerSignature} disabled={signingIssuer || !!issuerSigner?.signedAt}>
+                        {signingIssuer ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
+                        {issuerSigner?.signedAt ? 'Issuer signed' : 'Sign as issuer'}
+                      </Button>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      {[issuerSigner, clientSigner].map((signer, index) => (
+                        <div key={signer?.id ?? index} className="rounded-xl border border-border/70 bg-white/80 p-4">
+                          <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                            {signer?.signerTitle || (index === 0 ? (role === 'planner' ? 'Planner' : 'Vendor') : 'Client')}
+                          </p>
+                          {signer?.signedName ? (
+                            <>
+                              <p className="mt-3 text-2xl text-foreground" style={signatureFontStyle()}>{signer.signedName}</p>
+                              <p className="mt-2 text-sm font-medium text-foreground">{signer.signerName}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Signed {new Date(signer.signedAt || '').toLocaleDateString()}
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="mt-3 text-sm font-medium text-foreground">{index === 0 ? 'Signature pending on your side' : 'Client signature pending'}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {index === 0 ? 'Add your typed signature when the contract is ready.' : 'The client can sign from the public contract link.'}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-muted/10 p-4 text-sm text-muted-foreground">
                   <div className="flex flex-wrap items-center gap-3">
                     <span>Sent: {selectedContract.sentAt ? new Date(selectedContract.sentAt).toLocaleDateString() : 'Not yet'}</span>
@@ -483,6 +776,40 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                     <Button type="button" variant="outline" size="sm" onClick={() => setDetailDraft((current) => current ? { ...current, status: 'completed' } : current)}>
                       <ShieldCheck className="mr-2 h-4 w-4" />Mark completed
                     </Button>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-border bg-white/90 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Timeline</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Watch each contract move from draft to completion.
+                      </p>
+                    </div>
+                    {activityLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                  </div>
+                  <div className="mt-4 space-y-4">
+                    {activity?.events.length ? (
+                      activity.events.map((event, index) => (
+                        <div key={event.id} className="flex gap-4">
+                          <div className="flex w-5 flex-col items-center">
+                            <span className={`mt-1 h-2.5 w-2.5 rounded-full ${index === 0 ? 'bg-primary' : 'bg-primary/45'}`} />
+                            {index !== activity.events.length - 1 && <span className="mt-1 h-full w-px bg-border" />}
+                          </div>
+                          <div className="pb-4">
+                            <p className="text-sm font-semibold text-foreground">{professionalContractEventLabel(event.eventType)}</p>
+                            <p className="mt-1 text-sm text-muted-foreground">{event.actorName || 'Zania contract activity'}</p>
+                            <p className="mt-1 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                              {new Date(event.createdAt).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-border bg-muted/10 p-4 text-sm text-muted-foreground">
+                        Contract events will appear here as the signing process moves.
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap justify-between gap-3">

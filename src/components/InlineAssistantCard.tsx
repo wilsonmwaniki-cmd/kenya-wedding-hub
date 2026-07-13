@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Loader2, X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import SafeMarkdown from '@/components/SafeMarkdown';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Badge } from '@/components/ui/badge';
@@ -134,13 +134,11 @@ export default function InlineAssistantCard({
                   onClick={() => assistantPanel.openAssistant(panelPrompt)}
                 >
                   Open assistant panel
-                  <ArrowRight className="h-4 w-4" />
                 </Button>
               ) : (
                 <Button asChild variant="ghost" className="gap-2">
                   <Link to={fullAssistantHref}>
                     Open full assistant
-                    <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>
               )}

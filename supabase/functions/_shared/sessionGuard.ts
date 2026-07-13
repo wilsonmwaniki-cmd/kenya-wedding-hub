@@ -70,5 +70,19 @@ export async function assertActiveAuthSession(
     throw new AuthSessionError();
   }
 
+  const trustedResult = await adminClient.rpc('is_current_trusted_auth_session', {
+    target_session_id: sessionId,
+    target_user_id: userId,
+  });
+
+  if (trustedResult.error) {
+    console.error('Could not validate trusted device state:', trustedResult.error.message ?? trustedResult.error);
+    throw new AuthSessionError();
+  }
+
+  if (trustedResult.data !== true) {
+    throw new AuthSessionError();
+  }
+
   return { sessionId };
 }

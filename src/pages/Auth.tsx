@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, isProfessionalSetupPending, type SignupRole } from '@/lib/roles';
@@ -36,6 +37,7 @@ import AppleAuthButton from '@/components/AppleAuthButton';
 import { normalizeHumanName, normalizeHumanNameInput } from '@/lib/names';
 import { isAppleAuthEnabled } from '@/lib/featureFlags';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
+import PublicSiteFooter from '@/components/PublicSiteFooter';
 
 type AuthEntryState = {
   mode?: 'signup' | 'signin';
@@ -54,6 +56,7 @@ type SignupSuccessState = {
   accent: string;
 };
 type OAuthProvider = 'google' | 'apple';
+type AccountPurpose = 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other';
 
 type SignupResultState = {
   requiresEmailConfirmation: boolean;
@@ -94,6 +97,14 @@ function buildSignupSuccessDescription(
 
   return signupResult.requiresEmailConfirmation ? confirmedMessage : instantAccessMessage;
 }
+
+const accountPurposeOptions: Array<{ value: AccountPurpose; label: string }> = [
+  { value: 'planning_my_own_wedding', label: 'I am planning my own wedding' },
+  { value: 'helping_family_or_friend', label: 'I am helping a family member or friend' },
+  { value: 'professional_planner', label: 'I am a professional wedding planner' },
+  { value: 'vendor', label: 'I am a wedding vendor' },
+  { value: 'other', label: 'Other' },
+];
 
 function getFallbackRouteFromUserMetadata(
   userMetadata: Record<string, unknown> | null | undefined,
@@ -193,6 +204,7 @@ export default function Auth() {
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [accountPurpose, setAccountPurpose] = useState<AccountPurpose>('planning_my_own_wedding');
   const [signupMethod, setSignupMethod] = useState<SignupMethod | null>(defaultToSignup ? null : 'email');
   const [selectedAudience, setSelectedAudience] = useState<AuthAudience | null>(null);
   const [signupPath, setSignupPath] = useState<WeddingSignupIntent | null>(null);
@@ -252,6 +264,22 @@ export default function Auth() {
     if (role === 'vendor') return 'This email does not have a vendor account yet. Choose vendor sign up first.';
     return 'This email does not have a wedding account yet. Choose the matching sign up path first.';
   }, [location.search]);
+
+  useEffect(() => {
+    if (!isSignUp) return;
+
+    if (signupPath === 'professional') {
+      setAccountPurpose(professionalSignupRole === 'vendor' ? 'vendor' : 'professional_planner');
+      return;
+    }
+
+    if (signupPath === 'join_wedding') {
+      setAccountPurpose('helping_family_or_friend');
+      return;
+    }
+
+    setAccountPurpose('planning_my_own_wedding');
+  }, [isSignUp, professionalSignupRole, signupPath]);
 
   useEffect(() => {
     if (hasExplicitUrlAuthState || location.pathname === '/sign-in') return;
@@ -567,6 +595,7 @@ export default function Auth() {
     setFullName('');
     setEmail('');
     setPassword('');
+    setAccountPurpose('planning_my_own_wedding');
     setGeneratedPassword(null);
     setShowPassword(false);
     setAcceptedTerms(false);
@@ -775,6 +804,7 @@ export default function Auth() {
           persistWeddingIntentIfNeeded();
           const signupResult = await signUp(email, password, fullName, 'couple', {
             signupIntent: 'create_wedding',
+            accountPurpose,
           });
           setSignupSuccess({
             title: 'Welcome to Zania',
@@ -794,6 +824,7 @@ export default function Auth() {
           persistWeddingIntentIfNeeded();
           const signupResult = await signUp(email, password, fullName, 'couple', {
             signupIntent: 'join_wedding',
+            accountPurpose,
             weddingCode: normalizeJoinCode(weddingCode),
           });
           setSignupSuccess({
@@ -815,6 +846,7 @@ export default function Auth() {
           clearPendingProfessionalSetup();
           const signupResult = await signUp(email, password, fullName, professionalSignupRole, {
             signupIntent: 'professional',
+            accountPurpose,
             professionalRoleLocked: true,
           });
           setSignupSuccess({
@@ -918,8 +950,9 @@ export default function Auth() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-warm p-4">
-      <Card className="w-full max-w-2xl shadow-warm border-border/50">
+    <div className="min-h-screen bg-gradient-warm p-4">
+      <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-2xl items-center justify-center">
+        <Card className="w-full shadow-warm border-border/50">
         <CardHeader className="space-y-3 text-center">
           <div className="mx-auto">
             <BrandWordmark size="md" />
@@ -1040,7 +1073,7 @@ export default function Auth() {
                           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#c2724f]">
                             {signupSuccess.accent}
                           </p>
-                          <h3 className="mt-2 font-display text-3xl text-[#201814]">
+                          <h3 className="marketing-h3 mt-2 text-[#201814]">
                             Welcome to a calmer way to plan.
                           </h3>
                         </div>
@@ -1081,25 +1114,25 @@ export default function Auth() {
               )}
 
               {postSignupMessage && !isSignUp && (
-                <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left">
-                  <p className="text-sm font-medium text-emerald-900">Check your email, then sign in</p>
-                  <p className="mt-1 text-sm text-emerald-800">{postSignupMessage}</p>
+                <div className="semantic-surface-success mb-5 rounded-2xl border px-4 py-3 text-left">
+                  <p className="text-sm font-medium text-success">Check your email, then sign in</p>
+                  <p className="mt-1 text-sm text-foreground/75">{postSignupMessage}</p>
                 </div>
               )}
 
               {!isSignupSuccessStep && authErrorMessage && (
-                <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left">
-                  <p className="text-sm font-medium text-red-900">That account does not exist yet</p>
-                  <p className="mt-1 text-sm text-red-800">{authErrorMessage}</p>
+                <div className="semantic-surface-danger mb-5 rounded-2xl border px-4 py-3 text-left">
+                  <p className="text-sm font-medium text-destructive">That account does not exist yet</p>
+                  <p className="mt-1 text-sm text-foreground/75">{authErrorMessage}</p>
                 </div>
               )}
 
               {!isSignupSuccessStep && (
                 <>
               {!isSignUp && (
-                <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4 text-left">
+                <div className="semantic-surface-info mb-5 rounded-2xl border px-4 py-4 text-left">
                   <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-full bg-primary/12 p-2 text-primary">
+                    <div className="mt-0.5 rounded-full border border-[hsl(var(--info-soft-border))] bg-[hsl(var(--info-soft))] p-2 text-info">
                       <ShieldCheck className="h-4 w-4" />
                     </div>
                     <div>
@@ -1202,7 +1235,7 @@ export default function Auth() {
               )}
 
               {isSignUp && hasChosenAudiencePath && (
-                <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                <div className="semantic-surface-success mb-5 rounded-2xl border px-4 py-3">
                   <p className="text-sm font-medium text-foreground">14-day full-access beta trial</p>
                   <p className="mt-1 text-xs leading-6 text-muted-foreground">
                     New accounts start with two weeks of premium access, so you can test the full experience before any upgrade is required.
@@ -1214,7 +1247,7 @@ export default function Auth() {
                 {isSignUp ? (
                   isSignupMethodStep ? (
                     <>
-                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                      <div className="semantic-surface-info rounded-2xl border px-4 py-3">
                         <p className="text-sm font-medium text-foreground">Step 1 of 4</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           Choose how you want to begin. We will only show the next choice after this one.
@@ -1247,7 +1280,7 @@ export default function Auth() {
                     </>
                   ) : isSignupAccountStep ? (
                     <>
-                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                      <div className="semantic-surface-info rounded-2xl border px-4 py-3">
                         <p className="text-sm font-medium text-foreground">Step 2 of 4</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {hasLockedSignupTrack
@@ -1291,6 +1324,25 @@ export default function Auth() {
                           required
                         />
                         <FormFieldError message={formErrors.fullName} />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="account-purpose">What best describes how you will use Zania?</Label>
+                        <Select value={accountPurpose} onValueChange={(value: AccountPurpose) => setAccountPurpose(value)}>
+                          <SelectTrigger id="account-purpose">
+                            <SelectValue placeholder="Choose how you will use Zania" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {accountPurposeOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          We use this to guide you into the right workspace and upgrade path. You can change it later in Settings.
+                        </p>
                       </div>
 
                       <div className="space-y-2">
@@ -1689,7 +1741,11 @@ export default function Auth() {
             </>
           )}
         </CardContent>
-      </Card>
+        </Card>
+      </div>
+      <div className="mx-auto mt-6 max-w-2xl">
+        <PublicSiteFooter className="rounded-[2rem] border-border/60 bg-white/45 backdrop-blur-sm" />
+      </div>
     </div>
   );
 }

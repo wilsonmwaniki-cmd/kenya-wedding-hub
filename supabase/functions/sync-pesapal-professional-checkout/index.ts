@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import Stripe from 'https://esm.sh/stripe@14.25.0?target=denonext';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
+import { fetchPesapalToken, getPesapalTransactionStatus, loadPesapalConfig, mapPesapalStatus } from '../_shared/pesapal.ts';
 import { loadPricingCheckoutConfig } from '../_shared/pricingCatalog.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
@@ -25,7 +25,7 @@ serve(async (req) => {
       audienceValue?: string | null,
     ) => {
       await logFunctionEvent({
-        functionName: 'sync-professional-checkout',
+        functionName: 'sync-pesapal-professional-checkout',
         severity: status >= 500 ? 'error' : 'warn',
         status: 'failure',
         eventType,
@@ -50,16 +50,15 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY) {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
       return await respondWithError(500, 'Checkout sync environment variables are not fully configured.', 'sync_environment_incomplete');
     }
 
-    const { sessionId, audience } = await req.json();
+    const { orderTrackingId, audience } = await req.json();
 
-    if (!sessionId || typeof sessionId !== 'string') {
-      return await respondWithError(400, 'Missing Stripe checkout session id.', 'session_id_missing');
+    if (!orderTrackingId || typeof orderTrackingId !== 'string') {
+      return await respondWithError(400, 'Missing Pesapal order tracking id.', 'order_tracking_id_missing');
     }
 
     if (audience !== 'planner' && audience !== 'vendor') {
@@ -71,9 +70,6 @@ serve(async (req) => {
     });
     const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const pricingCheckoutConfig = await loadPricingCheckoutConfig(serviceClient);
-    const stripe = new Stripe(STRIPE_SECRET_KEY, {
-      apiVersion: '2024-06-20',
-    });
 
     const {
       data: { user },
@@ -86,26 +82,54 @@ serve(async (req) => {
 
     await assertActiveAuthSession(serviceClient, authHeader, user.id);
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    const entitlementCode = session.metadata?.entitlement_code;
-    const checkoutUserId = session.metadata?.user_id;
-    const checkoutAudience = session.metadata?.audience;
+    const { data: transaction, error: transactionError } = await serviceClient
+      .from('payment_transactions')
+      .select('*')
+      .eq('provider', 'pesapal')
+      .eq('provider_reference', orderTrackingId)
+      .maybeSingle();
 
-    if (checkoutUserId !== user.id) {
-      return await respondWithError(403, 'This checkout session does not belong to the current user.', 'user_session_mismatch', { checkoutUserId, sessionId }, user.id, checkoutAudience);
+    if (transactionError || !transaction) {
+      return await respondWithError(404, 'This Pesapal transaction could not be found.', 'transaction_missing', { orderTrackingId }, user.id, audience);
     }
 
-    if (checkoutAudience !== audience) {
-      return await respondWithError(400, 'This checkout session does not match the requested professional audience.', 'audience_mismatch', { checkoutAudience, requestedAudience: audience, sessionId }, user.id, checkoutAudience);
+    if (transaction.user_id !== user.id) {
+      return await respondWithError(403, 'This Pesapal transaction does not belong to the current user.', 'user_transaction_mismatch', { orderTrackingId }, user.id, transaction.audience);
     }
 
-    if (session.status !== 'complete') {
-      return await respondWithError(400, 'Stripe checkout is not complete yet.', 'checkout_incomplete', { stripeStatus: session.status, sessionId }, user.id, checkoutAudience);
+    if (transaction.audience !== audience) {
+      return await respondWithError(400, 'This Pesapal transaction does not match the requested professional audience.', 'audience_mismatch', { transactionAudience: transaction.audience, requestedAudience: audience }, user.id, transaction.audience);
     }
 
-    const mapping = entitlementCode ? pricingCheckoutConfig.professionalCheckoutMap[entitlementCode] : null;
+    const config = loadPesapalConfig();
+    const token = await fetchPesapalToken(config);
+    const statusResult = await getPesapalTransactionStatus(config, token.token, orderTrackingId);
+    const mappedStatus = mapPesapalStatus(statusResult.statusCode ?? statusResult.paymentStatusDescription ?? null);
+
+    await serviceClient
+      .from('payment_transactions')
+      .update({
+        status: mappedStatus,
+        payment_method: statusResult.paymentMethod,
+        payment_account: statusResult.paymentAccount,
+        confirmation_code: statusResult.confirmationCode,
+        provider_status_code: statusResult.statusCode == null ? null : String(statusResult.statusCode),
+        provider_status_description: statusResult.paymentStatusDescription,
+        raw_response: statusResult.raw,
+      })
+      .eq('id', transaction.id);
+
+    if (mappedStatus !== 'completed') {
+      return await respondWithError(400, 'Pesapal payment is not complete yet.', 'checkout_incomplete', {
+        orderTrackingId,
+        paymentStatus: statusResult.paymentStatusDescription,
+        statusCode: statusResult.statusCode,
+      }, user.id, transaction.audience);
+    }
+
+    const mapping = pricingCheckoutConfig.professionalCheckoutMap[transaction.lookup_key];
     if (!mapping) {
-      return await respondWithError(400, 'This checkout session is not a supported professional add-on.', 'entitlement_unsupported', { entitlementCode, sessionId }, user.id, checkoutAudience);
+      return await respondWithError(400, 'This Pesapal transaction is not a supported professional add-on.', 'entitlement_unsupported', { lookupKey: transaction.lookup_key }, user.id, transaction.audience);
     }
 
     const entitlementWrites = await Promise.all(
@@ -131,15 +155,14 @@ serve(async (req) => {
               audience,
               feature_key: featureKey,
               status: 'active',
-              source_lookup_key: entitlementCode,
-              source_bundle_code: entitlementCode,
+              source_lookup_key: transaction.lookup_key,
+              source_bundle_code: transaction.lookup_key,
               seat_limit: seatLimit,
               effective_from: new Date().toISOString(),
               effective_to: null,
               metadata: {
-                checkout_session_id: session.id,
-                customer_id: session.customer,
-                subscription_id: session.subscription,
+                order_tracking_id: orderTrackingId,
+                merchant_reference: transaction.merchant_reference,
               },
             },
             {
@@ -153,34 +176,32 @@ serve(async (req) => {
     );
 
     await logFunctionEvent({
-      functionName: 'sync-professional-checkout',
+      functionName: 'sync-pesapal-professional-checkout',
       severity: 'info',
       status: 'success',
       eventType: 'checkout_sync_succeeded',
-      message: `Activated professional add-on ${entitlementCode}.`,
+      message: `Activated professional Pesapal add-on ${transaction.lookup_key}.`,
       userId: user.id,
-      audience: checkoutAudience,
+      audience: transaction.audience,
       requestId,
       details: {
-        sessionId,
+        orderTrackingId,
         activatedFeatures: entitlementWrites,
         seatLimit: mapping.seatLimit ?? null,
       },
     });
 
-    return new Response(
-      JSON.stringify({
-        audience,
-        activatedFeatures: entitlementWrites,
-        seatLimit: mapping.seatLimit ?? null,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      },
-    );
+    return new Response(JSON.stringify({
+      audience,
+      activatedFeatures: entitlementWrites,
+      seatLimit: mapping.seatLimit ?? null,
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   } catch (error) {
-    console.error('sync-professional-checkout error:', error);
+    console.error('sync-pesapal-professional-checkout error:', error);
+
     if (isAuthSessionError(error)) {
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.status,
@@ -189,17 +210,18 @@ serve(async (req) => {
     }
 
     await logFunctionEvent({
-      functionName: 'sync-professional-checkout',
+      functionName: 'sync-pesapal-professional-checkout',
       severity: 'error',
       status: 'failure',
       eventType: 'checkout_sync_failed',
-      message: error instanceof Error ? error.message : 'Unknown professional checkout sync error',
+      message: error instanceof Error ? error.message : 'Unknown Pesapal professional checkout sync error',
       requestId,
       details: {
         error: error instanceof Error ? error.stack ?? error.message : String(error),
       },
     });
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown Pesapal professional checkout sync error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

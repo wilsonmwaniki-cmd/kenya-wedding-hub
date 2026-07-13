@@ -8,11 +8,11 @@ import type { EntitlementDecision } from '@/lib/entitlements';
 
 export function InlineUpgradePrompt({ decision }: { decision: EntitlementDecision }) {
   return (
-    <Alert className="border-primary/20 bg-primary/5">
+    <Alert variant="info">
       <LockKeyhole className="h-4 w-4 text-primary" />
       <AlertTitle className="flex flex-wrap items-center gap-2">
         {decision.title}
-        <Badge variant="secondary">{decision.planName}</Badge>
+        <Badge variant="info">{decision.planName}</Badge>
       </AlertTitle>
       <AlertDescription className="space-y-3">
         <p>{decision.description}</p>
@@ -50,7 +50,7 @@ export function UpgradePromptDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="mb-2 flex items-center gap-2">
-            <Badge variant="secondary">{decision.planName}</Badge>
+            <Badge variant="info">{decision.planName}</Badge>
           </div>
           <DialogTitle className="font-display flex items-center gap-2">
             <LockKeyhole className="h-5 w-5 text-primary" />

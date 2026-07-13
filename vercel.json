@@ -5,7 +5,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://*.vercel-scripts.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://us.i.posthog.com https://*.posthog.com https://vitals.vercel-insights.com https://*.vercel-insights.com https://va.vercel-scripts.com https://*.vercel-scripts.com; frame-src 'self' https://js.stripe.com; worker-src 'self' blob:; upgrade-insecure-requests"
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://*.vercel-scripts.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://us.i.posthog.com https://*.posthog.com https://vitals.vercel-insights.com https://*.vercel-insights.com https://va.vercel-scripts.com https://*.vercel-scripts.com; frame-src 'self'; worker-src 'self' blob:; upgrade-insecure-requests"
         },
         {
           "key": "X-Content-Type-Options",
@@ -26,7 +26,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://*.vercel-scripts.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://us.i.posthog.com https://*.posthog.com https://vitals.vercel-insights.com https://*.vercel-insights.com https://va.vercel-scripts.com https://*.vercel-scripts.com; frame-src 'self' https://js.stripe.com; worker-src 'self' blob:; upgrade-insecure-requests"
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://*.vercel-scripts.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://us.i.posthog.com https://*.posthog.com https://vitals.vercel-insights.com https://*.vercel-insights.com https://va.vercel-scripts.com https://*.vercel-scripts.com; frame-src 'self'; worker-src 'self' blob:; upgrade-insecure-requests"
         },
         {
           "key": "X-Content-Type-Options",
@@ -52,7 +52,29 @@
           "value": "zaniaweddings.com"
         }
       ],
-      "destination": "https://www.zaniaweddings.com/:path*",
+      "destination": "https://www.planwithzania.com/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.zaniaweddings.com"
+        }
+      ],
+      "destination": "https://www.planwithzania.com/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "planwithzania.com"
+        }
+      ],
+      "destination": "https://www.planwithzania.com/:path*",
       "permanent": true
     },
     {
@@ -70,7 +92,7 @@
   "rewrites": [
     {
       "source": "/((?!assets/|favicon.ico|robots.txt|manifest.json).*)",
-      "destination": "/"
+      "destination": "/spa.html"
     }
   ]
 }

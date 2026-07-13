@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download, Search, ChevronRight, CircleDashed, PanelsTopLeft } from 'lucide-react';
+import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download, Search, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
@@ -849,7 +849,7 @@ export default function Tasks() {
           <div className="space-y-5">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Task Workspace</p>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Choose the next task with confidence</h1>
+              <h1 className="workspace-h1 mt-2">Choose the next task with confidence</h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
                 Zania separates urgent work, private work, and vendor-linked follow-up so the checklist feels like a path instead of a pile.
               </p>
@@ -895,7 +895,7 @@ export default function Tasks() {
                   <p className="mt-2 text-xl font-semibold text-foreground">{openVendorTaskCount}</p>
                 </div>
               </div>
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <div className="semantic-surface-info rounded-2xl border p-4">
                 <p className="text-sm font-medium text-foreground">
                   {overduePending.length > 0
                     ? `${overduePending.length} overdue task${overduePending.length === 1 ? '' : 's'} need recovery`
@@ -1192,7 +1192,7 @@ export default function Tasks() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">AI guidance and reports</p>
-              <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Open deeper task help only when you need it</h3>
+              <h3 className="workspace-h3 mt-2">Open deeper task help only when you need it</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 Keep the checklist in focus by default. Open this for AI recovery help and secondary workload signals.
               </p>
@@ -1257,7 +1257,7 @@ export default function Tasks() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Task Queue</p>
-                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Browse the live checklist</h2>
+                <h2 className="workspace-h2 mt-2">Browse the live checklist</h2>
               </div>
               <Badge variant="outline" className="rounded-full px-3 py-1">
                 {visibleTasks.length} visible
@@ -1298,10 +1298,7 @@ export default function Tasks() {
             {((taskViewMode === 'completed' && filteredDone.length === 0) ||
               (taskViewMode !== 'completed' && filteredPending.length === 0)) ? (
               <div className="rounded-3xl border border-dashed border-border/70 bg-muted/15 p-8 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
-                  <PanelsTopLeft className="h-5 w-5 text-primary" />
-                </div>
-                <p className="mt-4 text-lg font-semibold text-foreground">
+                <p className="text-lg font-semibold text-foreground">
                   {taskViewMode === 'completed' ? 'No completed tasks yet' : 'No tasks match this view yet'}
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -1337,12 +1334,12 @@ export default function Tasks() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Selected Task</p>
-                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">
+                <h2 className="workspace-h2 mt-2">
                   {selectedTask?.title ?? 'Pick a task from the queue'}
                 </h2>
               </div>
               {selectedTask?.completed ? (
-                <Badge className="rounded-full border border-primary/20 bg-primary/10 text-primary hover:bg-primary/10">
+                <Badge variant="success" className="rounded-full">
                   Done
                 </Badge>
               ) : selectedTask ? (
@@ -1425,7 +1422,7 @@ export default function Tasks() {
                     </p>
                   </div>
 
-                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                  <div className="semantic-surface-info rounded-2xl border p-4">
                     <p className="text-sm font-medium text-foreground">Recommended next move</p>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {selectedTask.completed
@@ -1485,10 +1482,7 @@ export default function Tasks() {
               );
             })() : (
               <div className="rounded-3xl border border-dashed border-border/70 bg-muted/15 p-10 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
-                  <CircleDashed className="h-5 w-5 text-primary" />
-                </div>
-                <p className="mt-4 text-lg font-semibold text-foreground">Select a task to focus the workspace</p>
+                <p className="text-lg font-semibold text-foreground">Select a task to focus the workspace</p>
                 <p className="mt-2 text-sm text-muted-foreground">
                   Pick any task from the queue to see its details, vendor link, budget context, and the next recommended move.
                 </p>

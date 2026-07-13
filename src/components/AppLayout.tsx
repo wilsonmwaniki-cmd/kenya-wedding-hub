@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { getHomeRouteForRole, isProfessionalSetupPending, type PlannerType } from '@/lib/roles';
 import { AssistantPanelProvider, useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import BrandWordmark from '@/components/BrandWordmark';
+import AccountReviewBanner from '@/components/AccountReviewBanner';
 import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isProfessionalNetworkEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 
 const AssistantPanel = lazy(() => import('@/components/AssistantPanel'));
@@ -505,7 +506,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           )}
-          <div className="mx-auto w-full max-w-[1680px]">
+          <div className="mx-auto w-full max-w-[1680px]" data-page-shell>
+            <AccountReviewBanner />
             {children}
           </div>
           <AssistantPanelSlot

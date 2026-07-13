@@ -24,10 +24,32 @@ import {
   shouldStartBetaTrial,
   type BetaTrialStatus,
 } from '@/lib/betaTrial';
+import {
+  isCanonicalProductionHostname,
+  isProductionHostname,
+  PRIMARY_PRODUCTION_HOST,
+  PRIMARY_PRODUCTION_ORIGIN,
+} from '@/lib/appDomain';
+import {
+  getCurrentDeviceProfile,
+  listMyDeviceSessions,
+  registerCurrentDeviceSession,
+  sendDeviceVerificationOtp,
+  signOutOtherDeviceSessions,
+  verifyDeviceVerificationOtp,
+  type DeviceSessionRow,
+} from '@/lib/deviceSessions';
 
 interface Profile {
   id: string;
   user_id: string;
+  account_purpose: 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other' | null;
+  verified_couple: boolean;
+  professional_use_risk_score: number;
+  professional_use_risk_level: 'low' | 'medium' | 'high';
+  last_risk_calculated_at: string | null;
+  support_review_status: 'none' | 'pending' | 'approved' | 'restricted';
+  support_review_notes: string | null;
   collaboration_code: string | null;
   full_name: string | null;
   partner_name: string | null;
@@ -40,7 +62,6 @@ interface Profile {
   company_email: string | null;
   company_phone: string | null;
   company_website: string | null;
-  stripe_customer_id: string | null;
   bio: string | null;
   specialties: string[] | null;
   avatar_url: string | null;
@@ -79,6 +100,16 @@ interface AuthContextType {
   baseProfile: Profile | null;
   availableRoles: AppRole[];
   loading: boolean;
+  deviceSessions: DeviceSessionRow[];
+  deviceVerificationRequired: boolean;
+  deviceVerificationMessage: string | null;
+  deviceVerificationEmailHint: string | null;
+  deviceVerificationChallengeId: string | null;
+  deviceVerificationSubmitting: boolean;
+  refreshDeviceSessions: () => Promise<void>;
+  sendCurrentDeviceVerificationCode: () => Promise<void>;
+  verifyCurrentDeviceVerificationCode: (otpCode: string) => Promise<void>;
+  signOutOtherDevices: () => Promise<number>;
   isSuperAdmin: boolean;
   rolePreview: RolePreview;
   signUp: (
@@ -88,6 +119,7 @@ interface AuthContextType {
     role?: SignupRole,
     options?: {
       signupIntent?: WeddingSignupIntent | null;
+      accountPurpose?: 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other' | null;
       weddingOwnerRole?: WeddingOwnerRole | null;
       partnerEmail?: string | null;
       weddingName?: string | null;
@@ -243,12 +275,8 @@ const getCanonicalAppOrigin = (): string => {
   if (typeof window === 'undefined') return '';
 
   const currentUrl = new URL(window.location.href);
-  const isProductionHost =
-    currentUrl.hostname === 'zaniaweddings.com'
-    || currentUrl.hostname === 'www.zaniaweddings.com';
-
-  if (isProductionHost) {
-    return 'https://www.zaniaweddings.com';
+  if (isProductionHostname(currentUrl.hostname)) {
+    return PRIMARY_PRODUCTION_ORIGIN;
   }
 
   return window.location.origin;
@@ -259,9 +287,7 @@ const normalizeProductionAuthEntry = (): boolean => {
 
   const currentUrl = new URL(window.location.href);
   const hashParams = new URLSearchParams(currentUrl.hash.replace(/^#/, ''));
-  const isProductionHost =
-    currentUrl.hostname === 'zaniaweddings.com'
-    || currentUrl.hostname === 'www.zaniaweddings.com';
+  const isProductionHost = isProductionHostname(currentUrl.hostname);
 
   if (!isProductionHost) return false;
 
@@ -271,7 +297,7 @@ const normalizeProductionAuthEntry = (): boolean => {
     currentUrl.pathname === '/reset-password'
     || currentUrl.searchParams.get('type') === 'recovery'
     || isRecoveryHash;
-  const needsWwwHost = currentUrl.hostname !== 'www.zaniaweddings.com';
+  const needsWwwHost = !isCanonicalProductionHostname(currentUrl.hostname);
   const needsCallbackPath =
     hasAuthHash
     && !isRecoveryResetRoute
@@ -280,7 +306,7 @@ const normalizeProductionAuthEntry = (): boolean => {
   if (!needsWwwHost && !needsCallbackPath) return false;
 
   const targetUrl = new URL(currentUrl.toString());
-  targetUrl.hostname = 'www.zaniaweddings.com';
+  targetUrl.hostname = PRIMARY_PRODUCTION_HOST;
 
   if (hasAuthHash && !isRecoveryResetRoute) {
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
@@ -376,9 +402,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [baseProfile, setBaseProfile] = useState<Profile | null>(null);
   const [availableRoles, setAvailableRoles] = useState<AppRole[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deviceSessions, setDeviceSessions] = useState<DeviceSessionRow[]>([]);
+  const [deviceVerificationRequired, setDeviceVerificationRequired] = useState(false);
+  const [deviceVerificationMessage, setDeviceVerificationMessage] = useState<string | null>(null);
+  const [deviceVerificationEmailHint, setDeviceVerificationEmailHint] = useState<string | null>(null);
+  const [deviceVerificationChallengeId, setDeviceVerificationChallengeId] = useState<string | null>(null);
+  const [deviceVerificationSubmitting, setDeviceVerificationSubmitting] = useState(false);
   const [rolePreview, setRolePreviewState] = useState<RolePreview>('admin');
   const pendingWeddingRecoveryRef = useRef<string | null>(null);
   const authHydrationRequestRef = useRef(0);
+  const verifiedSessionKeysRef = useRef(new Set<string>());
 
   const getFallbackFullName = (authUser: User) => {
     const fullName = authUser.user_metadata?.full_name;
@@ -616,6 +649,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const buildFallbackProfile = (authUser: User, role: AppRole): Profile => ({
     id: authUser.id,
     user_id: authUser.id,
+    account_purpose: role === 'vendor'
+      ? 'vendor'
+      : role === 'planner'
+        ? 'professional_planner'
+        : 'planning_my_own_wedding',
+    verified_couple: false,
+    professional_use_risk_score: 0,
+    professional_use_risk_level: 'low',
+    last_risk_calculated_at: null,
+    support_review_status: 'none',
+    support_review_notes: null,
     collaboration_code: null,
     full_name: getFallbackFullName(authUser) || null,
     partner_name: null,
@@ -628,7 +672,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     company_email: authUser.email ?? null,
     company_phone: null,
     company_website: null,
-    stripe_customer_id: null,
     bio: null,
     specialties: null,
     avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null,
@@ -888,6 +931,99 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return fallbackProfile;
   };
 
+  const refreshDeviceSessions = async (userId = user?.id) => {
+    if (!userId) {
+      setDeviceSessions([]);
+      return;
+    }
+
+    try {
+      const rows = await listMyDeviceSessions();
+      setDeviceSessions(rows);
+    } catch (error) {
+      console.error('Could not load device sessions:', error);
+    }
+  };
+
+  const registerDeviceForSession = async (nextSession: Session) => {
+    const device = getCurrentDeviceProfile();
+    const sessionKey = `${nextSession.user.id}:${device.deviceId}:${nextSession.access_token.slice(-12)}`;
+    if (verifiedSessionKeysRef.current.has(sessionKey)) {
+      await refreshDeviceSessions(nextSession.user.id);
+      return;
+    }
+
+    const registration = await registerCurrentDeviceSession(nextSession.user.email ?? null);
+    verifiedSessionKeysRef.current.add(sessionKey);
+
+    if (registration.status === 'verification_required') {
+      setDeviceVerificationRequired(true);
+      setDeviceVerificationMessage(registration.message ?? 'We noticed a sign-in from a new device. Enter the OTP sent to your email to continue.');
+      setDeviceVerificationEmailHint(registration.emailHint ?? nextSession.user.email ?? null);
+      try {
+        const otpResult = await sendDeviceVerificationOtp();
+        setDeviceVerificationChallengeId(otpResult.challengeId);
+        if (otpResult.emailHint) {
+          setDeviceVerificationEmailHint(otpResult.emailHint);
+        }
+      } catch (error) {
+        console.error('Could not send device verification OTP:', error);
+        setDeviceVerificationMessage(
+          error instanceof Error
+            ? error.message
+            : 'We noticed a sign-in from a new device. Request a verification code to continue.',
+        );
+      }
+    } else {
+      setDeviceVerificationRequired(false);
+      setDeviceVerificationMessage(null);
+      setDeviceVerificationEmailHint(null);
+      setDeviceVerificationChallengeId(null);
+    }
+
+    await refreshDeviceSessions(nextSession.user.id);
+  };
+
+  const sendCurrentDeviceVerificationCode = async () => {
+    setDeviceVerificationSubmitting(true);
+    try {
+      const result = await sendDeviceVerificationOtp();
+      setDeviceVerificationChallengeId(result.challengeId);
+      setDeviceVerificationEmailHint(result.emailHint ?? deviceVerificationEmailHint);
+      setDeviceVerificationMessage('We noticed a sign-in from a new device. Enter the OTP sent to your email to continue.');
+    } finally {
+      setDeviceVerificationSubmitting(false);
+    }
+  };
+
+  const verifyCurrentDeviceVerificationCode = async (otpCode: string) => {
+    if (!deviceVerificationChallengeId) {
+      throw new Error('Request a verification code first.');
+    }
+
+    setDeviceVerificationSubmitting(true);
+    try {
+      const result = await verifyDeviceVerificationOtp(deviceVerificationChallengeId, otpCode);
+      if (!result.verified) {
+        throw new Error(result.message);
+      }
+
+      setDeviceVerificationRequired(false);
+      setDeviceVerificationMessage(null);
+      setDeviceVerificationEmailHint(null);
+      setDeviceVerificationChallengeId(null);
+      await refreshDeviceSessions();
+    } finally {
+      setDeviceVerificationSubmitting(false);
+    }
+  };
+
+  const signOutOtherDevices = async () => {
+    const signedOutCount = await signOutOtherDeviceSessions();
+    await refreshDeviceSessions();
+    return signedOutCount;
+  };
+
   const syncAuthState = async (
     nextSession: Session | null,
     options?: { requestId?: number },
@@ -925,12 +1061,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         immediateFallbackProfile,
         'Auth profile hydration',
       );
+      await registerDeviceForSession(nextSession);
       return;
     }
 
     pendingWeddingRecoveryRef.current = null;
     setBaseProfile(null);
     setAvailableRoles([]);
+    setDeviceSessions([]);
+    setDeviceVerificationRequired(false);
+    setDeviceVerificationMessage(null);
+    setDeviceVerificationEmailHint(null);
+    setDeviceVerificationChallengeId(null);
   };
 
   useEffect(() => {
@@ -1248,15 +1390,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    const pendingAuthSyncs = new Set<ReturnType<typeof setTimeout>>();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        try {
+      (_event, session) => {
+        // Supabase can deadlock when its client is called from inside this callback.
+        // Defer profile, role, and device hydration until the auth lock is released.
+        const timeoutId = setTimeout(() => {
+          pendingAuthSyncs.delete(timeoutId);
           if (!active) return;
-          await syncAuthState(session);
-        } finally {
-          if (active) setLoading(false);
-        }
+
+          void syncAuthState(session)
+            .catch((error) => {
+              console.error('Deferred auth state synchronization failed:', error);
+            })
+            .finally(() => {
+              if (active) setLoading(false);
+            });
+        }, 0);
+
+        pendingAuthSyncs.add(timeoutId);
       }
     );
 
@@ -1315,6 +1468,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       active = false;
+      pendingAuthSyncs.forEach((timeoutId) => clearTimeout(timeoutId));
+      pendingAuthSyncs.clear();
       subscription.unsubscribe();
     };
   }, []);
@@ -1326,6 +1481,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     role: SignupRole = 'couple',
     options?: {
       signupIntent?: WeddingSignupIntent | null;
+      accountPurpose?: 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other' | null;
       weddingOwnerRole?: WeddingOwnerRole | null;
       partnerEmail?: string | null;
       weddingName?: string | null;
@@ -1480,6 +1636,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     setRolePreviewState('admin');
     authHydrationRequestRef.current += 1;
+    verifiedSessionKeysRef.current.clear();
     clearPendingOAuthSignupState();
     clearPendingProfessionalSetup();
     let globalSignOutError: Error | null = null;
@@ -1553,6 +1710,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         baseProfile,
         availableRoles,
         loading,
+        deviceSessions,
+        deviceVerificationRequired,
+        deviceVerificationMessage,
+        deviceVerificationEmailHint,
+        deviceVerificationChallengeId,
+        deviceVerificationSubmitting,
+        refreshDeviceSessions,
+        sendCurrentDeviceVerificationCode,
+        verifyCurrentDeviceVerificationCode,
+        signOutOtherDevices,
         isSuperAdmin,
         rolePreview,
         signUp,

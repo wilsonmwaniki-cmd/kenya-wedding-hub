@@ -114,7 +114,7 @@ export default function CommercialDocumentShare() {
 
               <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary">{commercialDocumentTypeLabel(document.documentType)}</Badge>
-                <Badge variant={document.status === 'paid' || document.status === 'accepted' || document.status === 'issued' ? 'default' : 'outline'}>
+                <Badge variant={document.status === 'paid' || document.status === 'accepted' || document.status === 'issued' ? 'success' : 'warning'}>
                   {commercialDocumentStatusLabel(document.status)}
                 </Badge>
               </div>

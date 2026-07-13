@@ -39,6 +39,7 @@ import {
   type WeddingReferenceCurrency,
 } from '@/lib/weddingWorkspace';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
+import PublicSiteFooter from '@/components/PublicSiteFooter';
 
 type CreateStep = 'basics' | 'planning' | 'review';
 
@@ -596,10 +597,7 @@ export default function WeddingSetup() {
                   <div className="grid gap-6">
                     <Card className="border-border/70 shadow-none">
                       <CardHeader>
-                        <CardTitle className="flex items-center gap-2 font-display">
-                          <CalendarDays className="h-5 w-5 text-primary" />
-                          Planning context
-                        </CardTitle>
+                        <CardTitle>Planning context</CardTitle>
                         <CardDescription>
                           Choose the mode that best matches how this wedding will be managed day to day.
                         </CardDescription>
@@ -768,10 +766,7 @@ export default function WeddingSetup() {
             ) : (
               <Card className="border-border/70 shadow-none">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 font-display">
-                    <Users className="h-5 w-5 text-primary" />
-                    Join the wedding
-                  </CardTitle>
+                  <CardTitle>Join the wedding</CardTitle>
                   <CardDescription>
                     Use the same email that was invited and enter the wedding code exactly as it appears in the invite.
                   </CardDescription>
@@ -821,6 +816,9 @@ export default function WeddingSetup() {
             </div>
           </div>
         </main>
+      </div>
+      <div className="mx-auto mt-8 max-w-6xl">
+        <PublicSiteFooter className="rounded-[2rem] border-border/60 bg-white/45 backdrop-blur-sm" />
       </div>
     </div>
   );

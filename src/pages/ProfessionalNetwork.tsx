@@ -9,7 +9,6 @@ import {
   MessageSquareText,
   Send,
   ShieldCheck,
-  Sparkles,
   Store,
   Users,
 } from 'lucide-react';
@@ -23,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import ProfessionalExchangeTab from '@/components/professional-network/ProfessionalExchangeTab';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -909,8 +909,9 @@ export default function ProfessionalNetwork() {
       </Card>
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-xl grid-cols-3">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="exchange">Exchange</TabsTrigger>
           <TabsTrigger value="inbox">Inbox</TabsTrigger>
         </TabsList>
 
@@ -924,16 +925,12 @@ export default function ProfessionalNetwork() {
               <CardContent className="space-y-4">
                 {onboarding.steps.map((step) => (
                   <div key={step.key} className="flex items-start gap-3 rounded-2xl border border-border/60 bg-background/60 p-4">
-                    {step.complete ? (
-                      <CheckCircle2 className="mt-0.5 h-5 w-5 text-primary" />
-                    ) : (
-                      <Sparkles className="mt-0.5 h-5 w-5 text-muted-foreground" />
-                    )}
+                    {step.complete ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-success" aria-hidden="true" /> : null}
                     <div>
                       <p className="font-medium text-foreground">{step.label}</p>
                       <p className="mt-1 text-sm text-muted-foreground">{step.helper}</p>
                     </div>
-                    <Badge variant={step.complete ? 'default' : 'outline'} className="ml-auto">
+                    <Badge variant={step.complete ? 'success' : 'outline'} className="ml-auto">
                       {step.complete ? 'Done' : 'Next'}
                     </Badge>
                   </div>
@@ -1121,10 +1118,10 @@ export default function ProfessionalNetwork() {
                   authoredRelationships.map((relationship) => (
                     <div key={relationship.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={relationship.is_public ? 'default' : 'outline'}>
+                        <Badge variant="outline">
                           {professionalRelationshipMeta[relationship.relationship_type].shortLabel}
                         </Badge>
-                        <Badge variant="secondary">{relationship.is_public ? 'Public' : 'Private'}</Badge>
+                        <Badge variant={relationship.is_public ? 'success' : 'outline'}>{relationship.is_public ? 'Public' : 'Private'}</Badge>
                       </div>
                       <p className="mt-3 font-medium text-foreground">{renderRelationshipTargetLabel(relationship)}</p>
                       {relationship.note && <p className="mt-2 text-sm text-muted-foreground">{relationship.note}</p>}
@@ -1146,14 +1143,14 @@ export default function ProfessionalNetwork() {
                   receivedRelationships.map((relationship) => (
                     <div key={relationship.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={relationship.is_public ? 'default' : 'outline'}>
+                        <Badge variant="outline">
                           {professionalRelationshipMeta[relationship.relationship_type].label}
                         </Badge>
                         {relationship.target_acknowledged && (
-                          <Badge variant="secondary">Acknowledged</Badge>
+                          <Badge variant="success">Acknowledged</Badge>
                         )}
                         {relationship.is_public ? (
-                          <Badge variant="secondary">Visible on network surfaces</Badge>
+                          <Badge variant="success">Visible on network surfaces</Badge>
                         ) : (
                           <Badge variant="outline">Private</Badge>
                         )}
@@ -1193,7 +1190,7 @@ export default function ProfessionalNetwork() {
                     <div key={request.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline">{professionalRelationshipMeta[request.requested_relationship_type].label}</Badge>
-                        <Badge variant={request.status === 'pending' ? 'secondary' : request.status === 'accepted' ? 'default' : 'outline'}>
+                        <Badge variant={request.status === 'pending' ? 'warning' : request.status === 'accepted' ? 'success' : 'outline'}>
                           {request.status}
                         </Badge>
                       </div>
@@ -1254,7 +1251,7 @@ export default function ProfessionalNetwork() {
                     <div key={request.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline">{professionalRelationshipMeta[request.requested_relationship_type].label}</Badge>
-                        <Badge variant={request.status === 'pending' ? 'secondary' : request.status === 'accepted' ? 'default' : 'outline'}>
+                        <Badge variant={request.status === 'pending' ? 'warning' : request.status === 'accepted' ? 'success' : 'outline'}>
                           {request.status}
                         </Badge>
                       </div>
@@ -1341,6 +1338,25 @@ export default function ProfessionalNetwork() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="exchange" className="space-y-6">
+          <ProfessionalExchangeTab
+            db={db}
+            userId={user?.id ?? ''}
+            role={role as ProfessionalNetworkRole}
+            profile={profile ?? null}
+            vendorListing={vendorListing}
+            plannerPeers={plannerPeers}
+            vendorPeers={vendorPeers}
+            onToast={({ title, description, variant }) => {
+              toast({
+                title,
+                description,
+                variant,
+              });
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="inbox" className="space-y-6">

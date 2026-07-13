@@ -21,8 +21,8 @@ export type CouplePlanDefinition = {
   monthlyPriceKes: number | null;
   bundleType: 'couple_plan';
   bundleCode: string | null;
-  stripeMonthlyLookupKey: string | null;
-  stripeAnnualLookupKey: string | null;
+  checkoutMonthlyLookupKey: string | null;
+  checkoutAnnualLookupKey: string | null;
 };
 
 export type CoupleAddonDefinition = {
@@ -30,8 +30,8 @@ export type CoupleAddonDefinition = {
   title: string;
   bundleType: 'wedding_addon';
   bundleCode: CoupleAddonCode;
-  stripeMonthlyLookupKey: string | null;
-  stripeAnnualLookupKey: string | null;
+  checkoutMonthlyLookupKey: string | null;
+  checkoutAnnualLookupKey: string | null;
 };
 
 export type ProfessionalPlanDefinition = {
@@ -42,8 +42,8 @@ export type ProfessionalPlanDefinition = {
   monthlyPriceKes: number | null;
   bundleType: 'professional_plan';
   bundleCode: string | null;
-  stripeMonthlyLookupKey: string | null;
-  stripeAnnualLookupKey: string | null;
+  checkoutMonthlyLookupKey: string | null;
+  checkoutAnnualLookupKey: string | null;
 };
 
 export type ProfessionalAddonDefinition = {
@@ -52,8 +52,8 @@ export type ProfessionalAddonDefinition = {
   title: string;
   bundleType: 'professional_addon';
   bundleCode: ProfessionalAddonCode;
-  stripeMonthlyLookupKey: string | null;
-  stripeAnnualLookupKey: string | null;
+  checkoutMonthlyLookupKey: string | null;
+  checkoutAnnualLookupKey: string | null;
   seatLimit: number | null;
 };
 
@@ -67,12 +67,19 @@ export type AudiencePlan = {
   displayMonthlyPriceKes: number | null;
   displayAnnualPriceKes: number | null;
   entitlementCode: string;
-  stripeProductKey: string;
-  stripeMonthlyLookupKey: string | null;
-  stripeAnnualLookupKey: string | null;
-  stripeOneTimeLookupKey: string | null;
+  billingProductKey: string;
+  checkoutMonthlyLookupKey: string | null;
+  checkoutAnnualLookupKey: string | null;
+  checkoutOneTimeLookupKey: string | null;
   successPath: string;
   cancelPath: string;
+};
+
+type LegacyLookupFields = {
+  stripeMonthlyLookupKey?: string | null;
+  stripeAnnualLookupKey?: string | null;
+  stripeOneTimeLookupKey?: string | null;
+  stripeProductKey?: string | null;
 };
 
 type PricingConfigOverrides = {
@@ -95,11 +102,108 @@ function parsePricingConfigOverrides(): PricingConfigOverrides {
       console.warn('Ignoring VITE_PRICING_CONFIG_JSON because it is not a JSON object.');
       return {};
     }
-    return parsed as PricingConfigOverrides;
+    return normalizePricingConfigOverridesShape(parsed);
   } catch (error) {
     console.warn('Could not parse VITE_PRICING_CONFIG_JSON. Falling back to default pricing config.', error);
     return {};
   }
+}
+
+function normalizeLookupValue(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeLookupFields<T extends Record<string, unknown>>(value: T) {
+  const legacy = value as T & LegacyLookupFields;
+  const next = { ...value } as T & {
+    billingProductKey?: string | null;
+    checkoutMonthlyLookupKey?: string | null;
+    checkoutAnnualLookupKey?: string | null;
+    checkoutOneTimeLookupKey?: string | null;
+  };
+
+  next.billingProductKey = normalizeLookupValue(next.billingProductKey) ?? normalizeLookupValue(legacy.stripeProductKey);
+  next.checkoutMonthlyLookupKey = normalizeLookupValue(next.checkoutMonthlyLookupKey) ?? normalizeLookupValue(legacy.stripeMonthlyLookupKey);
+  next.checkoutAnnualLookupKey = normalizeLookupValue(next.checkoutAnnualLookupKey) ?? normalizeLookupValue(legacy.stripeAnnualLookupKey);
+  next.checkoutOneTimeLookupKey = normalizeLookupValue(next.checkoutOneTimeLookupKey) ?? normalizeLookupValue(legacy.stripeOneTimeLookupKey);
+
+  delete legacy.stripeProductKey;
+  delete legacy.stripeMonthlyLookupKey;
+  delete legacy.stripeAnnualLookupKey;
+  delete legacy.stripeOneTimeLookupKey;
+
+  return next;
+}
+
+function normalizePricingConfigOverridesShape(raw: unknown): PricingConfigOverrides {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+
+  const parsed = raw as Record<string, unknown>;
+  const next: PricingConfigOverrides = {};
+
+  if (parsed.couplePlans && typeof parsed.couplePlans === 'object' && !Array.isArray(parsed.couplePlans)) {
+    next.couplePlans = Object.fromEntries(
+      Object.entries(parsed.couplePlans as Record<string, unknown>).map(([key, value]) => [
+        key,
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? normalizeLookupFields(value as Record<string, unknown>)
+          : {},
+      ]),
+    ) as PricingConfigOverrides['couplePlans'];
+  }
+
+  if (parsed.coupleAddons && typeof parsed.coupleAddons === 'object' && !Array.isArray(parsed.coupleAddons)) {
+    next.coupleAddons = Object.fromEntries(
+      Object.entries(parsed.coupleAddons as Record<string, unknown>).map(([key, value]) => [
+        key,
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? normalizeLookupFields(value as Record<string, unknown>)
+          : {},
+      ]),
+    ) as PricingConfigOverrides['coupleAddons'];
+  }
+
+  if (parsed.professionalPlans && typeof parsed.professionalPlans === 'object' && !Array.isArray(parsed.professionalPlans)) {
+    next.professionalPlans = Object.fromEntries(
+      Object.entries(parsed.professionalPlans as Record<string, unknown>).map(([audience, tiers]) => [
+        audience,
+        tiers && typeof tiers === 'object' && !Array.isArray(tiers)
+          ? Object.fromEntries(
+              Object.entries(tiers as Record<string, unknown>).map(([tier, value]) => [
+                tier,
+                value && typeof value === 'object' && !Array.isArray(value)
+                  ? normalizeLookupFields(value as Record<string, unknown>)
+                  : {},
+              ]),
+            )
+          : {},
+      ]),
+    ) as PricingConfigOverrides['professionalPlans'];
+  }
+
+  if (parsed.professionalAddons && typeof parsed.professionalAddons === 'object' && !Array.isArray(parsed.professionalAddons)) {
+    next.professionalAddons = Object.fromEntries(
+      Object.entries(parsed.professionalAddons as Record<string, unknown>).map(([key, value]) => [
+        key,
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? normalizeLookupFields(value as Record<string, unknown>)
+          : {},
+      ]),
+    ) as PricingConfigOverrides['professionalAddons'];
+  }
+
+  if (parsed.audiencePlans && typeof parsed.audiencePlans === 'object' && !Array.isArray(parsed.audiencePlans)) {
+    next.audiencePlans = Object.fromEntries(
+      Object.entries(parsed.audiencePlans as Record<string, unknown>).map(([key, value]) => [
+        key,
+        value && typeof value === 'object' && !Array.isArray(value)
+          ? normalizeLookupFields(value as Record<string, unknown>)
+          : {},
+      ]),
+    ) as PricingConfigOverrides['audiencePlans'];
+  }
+
+  return next;
 }
 
 function applyOverride<T extends Record<string, unknown>>(base: T, override?: Partial<T>) {
@@ -151,8 +255,8 @@ const defaultCouplePlanDefinitions: CouplePlanDefinition[] = [
     monthlyPriceKes: null,
     bundleType: 'couple_plan',
     bundleCode: null,
-    stripeMonthlyLookupKey: null,
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: null,
+    checkoutAnnualLookupKey: null,
   },
   {
     tier: 'basic',
@@ -161,8 +265,8 @@ const defaultCouplePlanDefinitions: CouplePlanDefinition[] = [
     monthlyPriceKes: 750,
     bundleType: 'couple_plan',
     bundleCode: 'couple_basic_annual',
-    stripeMonthlyLookupKey: 'couple_basic_monthly',
-    stripeAnnualLookupKey: 'couple_basic_annual',
+    checkoutMonthlyLookupKey: 'couple_basic_monthly',
+    checkoutAnnualLookupKey: 'couple_basic_annual',
   },
   {
     tier: 'premium',
@@ -171,8 +275,8 @@ const defaultCouplePlanDefinitions: CouplePlanDefinition[] = [
     monthlyPriceKes: 2000,
     bundleType: 'couple_plan',
     bundleCode: 'couple_premium_annual',
-    stripeMonthlyLookupKey: 'couple_premium_monthly',
-    stripeAnnualLookupKey: 'couple_premium_annual',
+    checkoutMonthlyLookupKey: 'couple_premium_monthly',
+    checkoutAnnualLookupKey: 'couple_premium_annual',
   },
 ];
 
@@ -182,16 +286,16 @@ const defaultCoupleAddonDefinitions: CoupleAddonDefinition[] = [
     title: 'Gift Registry',
     bundleType: 'wedding_addon',
     bundleCode: 'gift_registry_addon',
-    stripeMonthlyLookupKey: 'gift_registry_addon',
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: 'gift_registry_addon',
+    checkoutAnnualLookupKey: null,
   },
   {
     code: 'guest_rsvp_management_addon',
     title: 'Guest RSVP & Management',
     bundleType: 'wedding_addon',
     bundleCode: 'guest_rsvp_management_addon',
-    stripeMonthlyLookupKey: 'guest_rsvp_management_addon',
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: 'guest_rsvp_management_addon',
+    checkoutAnnualLookupKey: null,
   },
 ];
 
@@ -262,8 +366,8 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
     monthlyPriceKes: null,
     bundleType: 'professional_plan',
     bundleCode: null,
-    stripeMonthlyLookupKey: null,
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: null,
+    checkoutAnnualLookupKey: null,
   },
   {
     audience: 'planner',
@@ -273,8 +377,8 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
     monthlyPriceKes: 1000,
     bundleType: 'professional_plan',
     bundleCode: 'planner_premium_annual',
-    stripeMonthlyLookupKey: 'planner_premium_monthly',
-    stripeAnnualLookupKey: 'planner_premium_annual',
+    checkoutMonthlyLookupKey: 'planner_premium_monthly',
+    checkoutAnnualLookupKey: 'planner_premium_annual',
   },
   {
     audience: 'vendor',
@@ -284,8 +388,8 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
     monthlyPriceKes: null,
     bundleType: 'professional_plan',
     bundleCode: null,
-    stripeMonthlyLookupKey: null,
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: null,
+    checkoutAnnualLookupKey: null,
   },
   {
     audience: 'vendor',
@@ -295,8 +399,8 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
     monthlyPriceKes: 1000,
     bundleType: 'professional_plan',
     bundleCode: 'vendor_premium_annual',
-    stripeMonthlyLookupKey: 'vendor_premium_monthly',
-    stripeAnnualLookupKey: 'vendor_premium_annual',
+    checkoutMonthlyLookupKey: 'vendor_premium_monthly',
+    checkoutAnnualLookupKey: 'vendor_premium_annual',
   },
 ];
 
@@ -307,8 +411,8 @@ const defaultProfessionalAddonDefinitions: ProfessionalAddonDefinition[] = [
     title: 'Media',
     bundleType: 'professional_addon',
     bundleCode: 'media_addon',
-    stripeMonthlyLookupKey: 'media_addon',
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: 'media_addon',
+    checkoutAnnualLookupKey: null,
     seatLimit: null,
   },
   {
@@ -317,8 +421,8 @@ const defaultProfessionalAddonDefinitions: ProfessionalAddonDefinition[] = [
     title: 'Advertising',
     bundleType: 'professional_addon',
     bundleCode: 'advertising_addon',
-    stripeMonthlyLookupKey: 'advertising_addon',
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: 'advertising_addon',
+    checkoutAnnualLookupKey: null,
     seatLimit: null,
   },
   {
@@ -327,8 +431,8 @@ const defaultProfessionalAddonDefinitions: ProfessionalAddonDefinition[] = [
     title: 'Team Workspace',
     bundleType: 'professional_addon',
     bundleCode: 'team_workspace_bundle_3',
-    stripeMonthlyLookupKey: 'team_workspace_bundle_3',
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: 'team_workspace_bundle_3',
+    checkoutAnnualLookupKey: null,
     seatLimit: 3,
   },
   {
@@ -337,8 +441,8 @@ const defaultProfessionalAddonDefinitions: ProfessionalAddonDefinition[] = [
     title: 'Team Workspace',
     bundleType: 'professional_addon',
     bundleCode: 'team_workspace_bundle_5',
-    stripeMonthlyLookupKey: 'team_workspace_bundle_5',
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: 'team_workspace_bundle_5',
+    checkoutAnnualLookupKey: null,
     seatLimit: 5,
   },
   {
@@ -347,8 +451,8 @@ const defaultProfessionalAddonDefinitions: ProfessionalAddonDefinition[] = [
     title: 'Team Workspace',
     bundleType: 'professional_addon',
     bundleCode: 'team_workspace_bundle_10',
-    stripeMonthlyLookupKey: 'team_workspace_bundle_10',
-    stripeAnnualLookupKey: null,
+    checkoutMonthlyLookupKey: 'team_workspace_bundle_10',
+    checkoutAnnualLookupKey: null,
     seatLimit: 10,
   },
 ];
@@ -382,10 +486,10 @@ const defaultAudiencePlans: AudiencePlan[] = [
     displayMonthlyPriceKes: null,
     displayAnnualPriceKes: null,
     entitlementCode: 'planning_pass',
-    stripeProductKey: 'planning_pass',
-    stripeMonthlyLookupKey: null,
-    stripeAnnualLookupKey: null,
-    stripeOneTimeLookupKey: 'planning_pass_one_time',
+    billingProductKey: 'planning_pass',
+    checkoutMonthlyLookupKey: null,
+    checkoutAnnualLookupKey: null,
+    checkoutOneTimeLookupKey: 'planning_pass_one_time',
     successPath: '/budget?upgrade=success',
     cancelPath: '/pricing?upgrade=cancelled',
   },
@@ -399,10 +503,10 @@ const defaultAudiencePlans: AudiencePlan[] = [
     displayMonthlyPriceKes: null,
     displayAnnualPriceKes: null,
     entitlementCode: 'committee_pass',
-    stripeProductKey: 'committee_pass',
-    stripeMonthlyLookupKey: null,
-    stripeAnnualLookupKey: null,
-    stripeOneTimeLookupKey: 'committee_pass_one_time',
+    billingProductKey: 'committee_pass',
+    checkoutMonthlyLookupKey: null,
+    checkoutAnnualLookupKey: null,
+    checkoutOneTimeLookupKey: 'committee_pass_one_time',
     successPath: '/dashboard?upgrade=success',
     cancelPath: '/pricing?upgrade=cancelled',
   },
@@ -416,10 +520,10 @@ const defaultAudiencePlans: AudiencePlan[] = [
     displayMonthlyPriceKes: 1000,
     displayAnnualPriceKes: 9000,
     entitlementCode: 'booking_management',
-    stripeProductKey: 'planner_premium',
-    stripeMonthlyLookupKey: 'planner_premium_monthly',
-    stripeAnnualLookupKey: 'planner_premium_annual',
-    stripeOneTimeLookupKey: null,
+    billingProductKey: 'planner_premium',
+    checkoutMonthlyLookupKey: 'planner_premium_monthly',
+    checkoutAnnualLookupKey: 'planner_premium_annual',
+    checkoutOneTimeLookupKey: null,
     successPath: '/clients?upgrade=success',
     cancelPath: '/pricing?upgrade=cancelled',
   },
@@ -433,10 +537,10 @@ const defaultAudiencePlans: AudiencePlan[] = [
     displayMonthlyPriceKes: 1000,
     displayAnnualPriceKes: 9000,
     entitlementCode: 'booking_management',
-    stripeProductKey: 'vendor_premium',
-    stripeMonthlyLookupKey: 'vendor_premium_monthly',
-    stripeAnnualLookupKey: 'vendor_premium_annual',
-    stripeOneTimeLookupKey: null,
+    billingProductKey: 'vendor_premium',
+    checkoutMonthlyLookupKey: 'vendor_premium_monthly',
+    checkoutAnnualLookupKey: 'vendor_premium_annual',
+    checkoutOneTimeLookupKey: null,
     successPath: '/vendor-dashboard?upgrade=success',
     cancelPath: '/pricing?upgrade=cancelled',
   },
@@ -479,7 +583,7 @@ export const audiencePlans: AudiencePlan[] = [...initialResolvedPricingCatalog.a
 
 export function hydratePricingCatalog(overrides: PricingConfigOverrides | null | undefined) {
   if (!overrides) return;
-  applyPricingConfig(mergePricingConfigOverrides(overrides, pricingConfigOverrides));
+  applyPricingConfig(mergePricingConfigOverrides(normalizePricingConfigOverridesShape(overrides), pricingConfigOverrides));
 }
 
 export function getAudiencePlan(audience: PricingAudience) {
@@ -522,9 +626,9 @@ export function getLookupKeyForCadence(
   cadence: PricingCheckoutCadence,
   overrides?: Partial<Record<'one_time' | 'monthly' | 'annual', string | null>>,
 ) {
-  if (cadence === 'one_time') return overrides?.one_time ?? plan.stripeOneTimeLookupKey;
-  if (cadence === 'monthly') return overrides?.monthly ?? plan.stripeMonthlyLookupKey;
-  return overrides?.annual ?? plan.stripeAnnualLookupKey;
+  if (cadence === 'one_time') return overrides?.one_time ?? plan.checkoutOneTimeLookupKey;
+  if (cadence === 'monthly') return overrides?.monthly ?? plan.checkoutMonthlyLookupKey;
+  return overrides?.annual ?? plan.checkoutAnnualLookupKey;
 }
 
 export function getDisplayPriceForCadence(plan: AudiencePlan, cadence: PricingCheckoutCadence) {
@@ -574,9 +678,9 @@ export function buildPricingHref(audience: PricingAudience, feature?: string) {
   });
 
   if (feature) params.set('feature', feature);
-  if (plan.stripeOneTimeLookupKey) params.set('oneTimeLookupKey', plan.stripeOneTimeLookupKey);
-  if (plan.stripeMonthlyLookupKey) params.set('monthlyLookupKey', plan.stripeMonthlyLookupKey);
-  if (plan.stripeAnnualLookupKey) params.set('annualLookupKey', plan.stripeAnnualLookupKey);
+  if (plan.checkoutOneTimeLookupKey) params.set('oneTimeLookupKey', plan.checkoutOneTimeLookupKey);
+  if (plan.checkoutMonthlyLookupKey) params.set('monthlyLookupKey', plan.checkoutMonthlyLookupKey);
+  if (plan.checkoutAnnualLookupKey) params.set('annualLookupKey', plan.checkoutAnnualLookupKey);
   params.set('successPath', plan.successPath);
   params.set('cancelPath', plan.cancelPath);
 

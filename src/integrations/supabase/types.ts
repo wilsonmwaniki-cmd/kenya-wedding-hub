@@ -528,7 +528,6 @@ export type Database = {
           role: Database["public"]["Enums"]["app_role"]
           service_areas: string[]
           specialties: string[] | null
-          stripe_customer_id: string | null
           travel_scope: string
           updated_at: string
           user_id: string
@@ -570,7 +569,6 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           service_areas?: string[]
           specialties?: string[] | null
-          stripe_customer_id?: string | null
           travel_scope?: string
           updated_at?: string
           user_id: string
@@ -612,7 +610,6 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"]
           service_areas?: string[]
           specialties?: string[] | null
-          stripe_customer_id?: string | null
           travel_scope?: string
           updated_at?: string
           user_id?: string

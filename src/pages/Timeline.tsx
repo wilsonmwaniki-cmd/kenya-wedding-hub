@@ -694,9 +694,9 @@ export default function Timeline() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="font-display text-2xl font-bold text-foreground flex items-center gap-2">
+            <h1 className="workspace-h1 flex items-center gap-2">
               {selectedTimeline.title}
-              {selectedTimeline.is_template && <Badge variant="secondary" className="text-xs">Template</Badge>}
+              {selectedTimeline.is_template && <Badge variant="info" className="text-xs">Template</Badge>}
             </h1>
             {selectedTimeline.timeline_date && (
               <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
@@ -917,7 +917,7 @@ export default function Timeline() {
                   </Button>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <Badge variant={selectedTimelineShareActive ? 'default' : 'secondary'}>
+                  <Badge variant={selectedTimelineShareActive ? 'success' : 'outline'}>
                     {selectedTimelineShareActive ? 'Link active' : 'Link inactive'}
                   </Badge>
                   {selectedTimeline.share_expires_at && (
@@ -970,7 +970,7 @@ export default function Timeline() {
                               <span className="text-xs text-muted-foreground">{roleMeta.label}</span>
                             )}
                             <div className="flex-1" />
-                            <Badge variant={shareIsActive ? 'default' : 'secondary'} className="shrink-0">
+                            <Badge variant={shareIsActive ? 'success' : 'outline'} className="shrink-0">
                               {shareIsActive ? 'Active' : 'Inactive'}
                             </Badge>
                             <select
@@ -1089,15 +1089,15 @@ export default function Timeline() {
   // List view
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
+      <Card className="overflow-hidden border-border/70 bg-gradient-to-br from-background via-background to-muted/30 shadow-card">
         <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.25fr_0.95fr] lg:p-8">
           <div className="space-y-5">
             <div>
               <div className="flex items-center gap-2">
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Timeline Workspace</p>
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-info">Timeline Workspace</p>
                 <InfoTip content="Build the wedding-day flow, keep timings clear, and share either the full schedule or role-specific views with the right people." />
               </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Build the day-of flow without overwhelm</h1>
+              <h1 className="workspace-h1 mt-2">Build the day-of flow without overwhelm</h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
                 Start with one schedule, then refine timings, roles, and share links once the shape of the day is clear.
               </p>
@@ -1177,7 +1177,7 @@ export default function Timeline() {
               )}
                 </div>
               </details>
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <div className="semantic-surface-info rounded-2xl border p-4">
                 <p className="text-sm font-medium text-foreground">
                   {templates.length > 0 ? 'Templates make repeat planning faster' : 'A clean first draft is enough to get moving'}
                 </p>
@@ -1193,12 +1193,12 @@ export default function Timeline() {
       </Card>
 
       <div className="space-y-4">
-        <Card className="border-primary/15 shadow-card">
+        <Card className="border-border/70 shadow-card">
           <CardContent className="space-y-5 p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Live timelines</p>
-                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Open the working schedule</h2>
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-info">Live timelines</p>
+                <h2 className="workspace-h2 mt-2">Open the working schedule</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Keep the active wedding-day timelines in focus. Templates stay available below when you need them.
                 </p>
@@ -1212,7 +1212,6 @@ export default function Timeline() {
               <Card className="border-dashed shadow-none">
                 <CardContent className="flex flex-col items-start gap-5 p-6">
                   <div>
-                    <Calendar className="mb-3 h-10 w-10 text-primary/60" />
                     <p className="text-lg font-semibold text-foreground">No live timeline yet</p>
                     <p className="mt-2 max-w-xl text-sm text-muted-foreground">
                       Start with one workable schedule. You can refine times, copy from templates, and add share links after the shape of the day is clear.
@@ -1284,7 +1283,7 @@ export default function Timeline() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Template library</p>
-                <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Reusable wedding-day structures</h3>
+                <h3 className="workspace-h3 mt-2">Reusable wedding-day structures</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Open this when you want to save a reusable flow or apply a saved structure to a new wedding day.
                 </p>

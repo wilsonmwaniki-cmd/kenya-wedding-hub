@@ -28,7 +28,7 @@ import InlineAssistantCard from '@/components/InlineAssistantCard';
 import InfoTip from '@/components/InfoTip';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
-import { syncCoupleCheckout } from '@/lib/billing';
+import { getCheckoutReferenceFromSearchParams, syncCoupleCheckout } from '@/lib/billing';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
@@ -244,7 +244,7 @@ export default function Budget() {
   });
   const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
   const upgradeState = searchParams.get('upgrade');
-  const checkoutSessionId = searchParams.get('checkout_session_id');
+  const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
 
   const categoriesQueryKey = ['budget', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
   const vendorsQueryKey = ['budget-vendors', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
@@ -290,19 +290,19 @@ export default function Budget() {
   useEffect(() => {
     if (
       upgradeState !== 'success'
-      || !checkoutSessionId
-      || processedCheckoutSessionId === checkoutSessionId
+      || !checkoutReference
+      || processedCheckoutSessionId === checkoutReference
       || !profile
     ) {
       return;
     }
 
     let cancelled = false;
-    setProcessedCheckoutSessionId(checkoutSessionId);
+    setProcessedCheckoutSessionId(checkoutReference);
 
     const runSync = async () => {
       try {
-        const result = await syncCoupleCheckout(checkoutSessionId);
+        const result = await syncCoupleCheckout(checkoutReference);
         if (cancelled) return;
 
         await refresh();
@@ -329,7 +329,7 @@ export default function Budget() {
     return () => {
       cancelled = true;
     };
-  }, [checkoutSessionId, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
+  }, [checkoutReference, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
@@ -1266,6 +1266,81 @@ export default function Budget() {
     };
   })();
   const budgetScopeLabel = activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget';
+  const budgetHealthSummary = (() => {
+    if (visibleCategories.length === 0) {
+      return {
+        badge: 'Not started',
+        title: activeBudgetScope === 'personal' ? 'Private budget still needs a base plan' : 'Wedding budget still needs a base plan',
+        body: activeBudgetScope === 'personal'
+          ? 'Add the couple-only lines you do not want mixed into the shared wedding budget.'
+          : 'Add the first wedding categories so deposits, balances, and real spend have a proper home.',
+        toneClass: 'border-[#f0dfc5] bg-[#fff8ec]/95',
+      };
+    }
+
+    if (visibleOverBudgetCategories[0]) {
+      return {
+        badge: 'Needs attention',
+        title: `${visibleOverBudgetCategories[0].name} is already over plan`,
+        body: 'Rebalance this line first so the broader budget picture stays honest.',
+        toneClass: 'border-[#f1d6d3] bg-[#fff4f2]/90',
+      };
+    }
+
+    if (visibleNearLimitCategories[0]) {
+      return {
+        badge: 'Watch closely',
+        title: `${visibleNearLimitCategories[0].name} is getting close to its cap`,
+        body: 'This line is tightening up and should be reviewed before the next payment lands.',
+        toneClass: 'border-[#f0dfc5] bg-[#fff8ec]/95',
+      };
+    }
+
+    if (paymentsDueSoon[0]) {
+      return {
+        badge: 'Coming up',
+        title: `${paymentsDueSoon[0].name} has a payment due soon`,
+        body: 'Use the category workspace to confirm the amount, status, and what still needs to be paid.',
+        toneClass: 'border-[#d9e5f4] bg-[#f4f8fd]/90',
+      };
+    }
+
+    return {
+      badge: 'Healthy',
+      title: 'The budget picture is steady right now',
+      body: 'Keep planned totals and real payments current so pressure stays visible before it becomes a surprise.',
+      toneClass: 'border-[#d9ead7] bg-[#f4fbf3]/90',
+    };
+  })();
+
+  const budgetMetricBand = [
+    {
+      label: 'Budget used',
+      value: visibleCategories.length > 0 ? `${visibleSpentPercentage}%` : 'Not started',
+      detail: `KES ${visibleSpent.toLocaleString()} spent of KES ${visibleAllocated.toLocaleString()}`,
+      className: 'border-[#d9e5f4] bg-[#f4f8fd]/90',
+    },
+    {
+      label: 'Payments logged',
+      value: currentScopePayments.length > 0 ? `${paymentCoveragePercentage}%` : 'No payments yet',
+      detail: currentScopePayments.length > 0
+        ? `${formatCurrency(currentScopePaymentTotal)} recorded so far`
+        : 'Start a payment trail for this scope',
+      className: 'border-[#d9ead7] bg-[#f4fbf3]/90',
+    },
+    {
+      label: 'Remaining budget',
+      value: formatCurrency(remainingBudget),
+      detail: activeBudgetScope === 'wedding' ? 'Still available in the current wedding plan' : 'Still available in the private couple budget',
+      className: 'border-border/70 bg-background/85',
+    },
+    {
+      label: 'Outstanding',
+      value: formatCurrency(totalBalance),
+      detail: activeBudgetScope === 'wedding' ? 'Still not covered by logged payments' : 'Still not logged against the private budget',
+      className: 'border-border/70 bg-background/85',
+    },
+  ];
 
   const exportBudgetData = () => {
     const rows = visibleCategories.map((category) => ({
@@ -1306,93 +1381,98 @@ export default function Budget() {
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
+      <Card className="overflow-hidden border-border/70 bg-gradient-to-br from-background via-background to-muted/30 shadow-card">
         <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.35fr_0.95fr] lg:p-8">
           <div className="space-y-5">
             <div>
               <div className="flex items-center gap-2">
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Budget Workspace</p>
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-info">Budget Workspace</p>
                 <InfoTip content="Track shared wedding spending separately from private couple-only costs, then record real payments against each budget line." />
               </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Know what to update next</h1>
+              <h1 className="workspace-h1 mt-2">Know what to update next</h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
                 Zania keeps the money view simple: what is planned, what has been paid, and the next budget line that needs attention.
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Budget used</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {visibleCategories.length > 0 ? `${visibleSpentPercentage}%` : 'Not started'}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  KES {visibleSpent.toLocaleString()} spent of KES {visibleAllocated.toLocaleString()}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Payments logged</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {currentScopePayments.length > 0 ? `${paymentCoveragePercentage}%` : 'No payments yet'}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {currentScopePayments.length > 0
-                    ? `${formatCurrency(currentScopePaymentTotal)} recorded so far`
-                    : 'Start a payment trail for this budget scope'}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{budgetPrimaryAction.label}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
+            <div className="semantic-surface-info rounded-3xl border p-5 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-info">Right now</p>
+                  <h2 className="workspace-h2">{budgetPrimaryAction.label}</h2>
+                  <p className="max-w-2xl text-sm text-muted-foreground">{budgetPrimaryAction.description}</p>
+                </div>
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap lg:w-auto">
+                  <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
+                    <Plus className="h-4 w-4" />
+                    Add Category
+                  </Button>
+                  <Button type="button" variant="outline" className="gap-2" onClick={() => setPaymentDialogOpen(true)}>
+                    <Receipt className="h-4 w-4" />
+                    Record Payment
+                  </Button>
+                </div>
               </div>
             </div>
 
-            <details className="rounded-2xl border border-border/70 bg-background/70 p-3">
-              <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Scope and view
-              </summary>
-              <div className="mt-3 flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
-                <Button
-                  type="button"
-                  variant={activeBudgetScope === 'wedding' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setActiveBudgetScope('wedding')}
-                >
-                  Wedding Budget
-                </Button>
-                {showPersonalBudget && (
-                  <Button
-                    type="button"
-                    variant={activeBudgetScope === 'personal' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setActiveBudgetScope('personal')}
-                  >
-                    Personal Budget
-                  </Button>
-                )}
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {budgetMetricBand.map((metric) => (
+                <div key={metric.label} className={`rounded-2xl border p-4 ${metric.className}`}>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{metric.label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{metric.value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-border/70 bg-background/70 p-3">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Scope and view</p>
+                  <p className="text-xs text-muted-foreground">Keep the main workspace focused on one budget lens at a time.</p>
+                </div>
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                  <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
+                    <Button
+                      type="button"
+                      variant={activeBudgetScope === 'wedding' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setActiveBudgetScope('wedding')}
+                    >
+                      Wedding Budget
+                    </Button>
+                    {showPersonalBudget && (
+                      <Button
+                        type="button"
+                        variant={activeBudgetScope === 'personal' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setActiveBudgetScope('personal')}
+                      >
+                        Personal Budget
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
+                    <Button
+                      type="button"
+                      variant={budgetViewMode === 'by_category' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setBudgetViewMode('by_category')}
+                    >
+                      By Category
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={budgetViewMode === 'payments_made' ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setBudgetViewMode('payments_made')}
+                    >
+                      Payments Made
+                    </Button>
+                  </div>
+                </div>
               </div>
-              <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
-                <Button
-                  type="button"
-                  variant={budgetViewMode === 'payments_made' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setBudgetViewMode('payments_made')}
-                >
-                  Payments Made
-                </Button>
-                <Button
-                  type="button"
-                  variant={budgetViewMode === 'by_category' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setBudgetViewMode('by_category')}
-                >
-                  By Category
-                </Button>
-              </div>
-              </div>
-            </details>
+            </div>
           </div>
 
           <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
@@ -1401,20 +1481,15 @@ export default function Budget() {
               <InfoTip content="This panel highlights pressure points like overspend, categories nearing the limit, and vendor payments that may need attention soon." />
             </div>
             <div className="mt-4 space-y-3">
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-sm font-medium text-foreground">
-                  {visibleOverBudgetCategories.length > 0
-                    ? `${visibleOverBudgetCategories.length} category${visibleOverBudgetCategories.length === 1 ? '' : 'ies'} over the limit`
-                    : visibleNearLimitCategories.length > 0
-                      ? `${visibleNearLimitCategories.length} category${visibleNearLimitCategories.length === 1 ? '' : 'ies'} close to the limit`
-                      : 'Budget pressure is under control right now'}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {visibleOverBudgetCategories[0]
-                    ? `${visibleOverBudgetCategories[0].name} is already over plan and should be reviewed first.`
-                    : visibleNearLimitCategories[0]
-                      ? `${visibleNearLimitCategories[0].name} is approaching its cap.`
-                      : 'Keep payments and spent totals current so this picture stays useful.'}
+              <div className={`rounded-2xl border p-4 ${budgetHealthSummary.toneClass}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-foreground">{budgetHealthSummary.title}</p>
+                  <Badge variant="outline" className="rounded-full bg-white/80 text-[10px] uppercase tracking-[0.14em]">
+                    {budgetHealthSummary.badge}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {budgetHealthSummary.body}
                 </p>
               </div>
 
@@ -1429,7 +1504,7 @@ export default function Budget() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <div className="semantic-surface-info rounded-2xl border p-4">
                 <p className="text-sm font-medium text-foreground">
                   {paymentsDueSoon.length > 0
                     ? `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due in 14 days`
@@ -1444,6 +1519,23 @@ export default function Budget() {
                       ? 'Use the category workspace below to keep planned and real spend aligned.'
                       : 'Track honeymoon, rings, dowry, and home setup without mixing them into shared spending.'}
                 </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Over plan</p>
+                    <p className="mt-1 text-lg font-semibold text-foreground">{visibleOverBudgetCategories.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Near limit</p>
+                    <p className="mt-1 text-lg font-semibold text-foreground">{visibleNearLimitCategories.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Due soon</p>
+                    <p className="mt-1 text-lg font-semibold text-foreground">{paymentsDueSoon.length}</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1775,7 +1867,7 @@ export default function Budget() {
 
         <div className="space-y-4 px-6 pb-6">
           {!budgetNudgeDismissed && budgetNudge && assistantPanel && (
-            <Card className="border-primary/20 bg-primary/5 shadow-card">
+            <Card className="semantic-surface-info shadow-card">
               <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-semibold text-foreground">{budgetNudge.title}</p>
@@ -1977,7 +2069,7 @@ export default function Budget() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h2 className="font-display text-2xl font-semibold text-foreground">
+                          <h2 className="workspace-h2">
                             {selectedBudgetCategory.name}
                           </h2>
                           <InfoTip
@@ -2051,9 +2143,9 @@ export default function Budget() {
                           </div>
                         </div>
                       ) : (
-                        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                        <div className="semantic-surface-info rounded-2xl border p-4">
                           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                            <Lock className="h-4 w-4 text-primary" />
+                            <Lock className="h-4 w-4 text-info" />
                             Couple-only spending
                           </div>
                           <p className="mt-1 text-sm text-muted-foreground">
@@ -2253,7 +2345,7 @@ export default function Budget() {
                 <div className="flex min-h-[420px] items-center justify-center p-8">
                   <div className="max-w-md text-center">
                     <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground" />
-                    <h2 className="mt-4 font-display text-2xl font-semibold text-foreground">
+                    <h2 className="workspace-h2 mt-4">
                       {activeBudgetScope === 'personal' ? 'No private budget lines yet' : 'No wedding budget lines yet'}
                     </h2>
                     <p className="mt-2 text-sm text-muted-foreground">
@@ -2277,15 +2369,15 @@ export default function Budget() {
         <summary className="flex cursor-pointer list-none flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Budget reports</p>
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-info">Budget reports</p>
               <InfoTip content="Open this when you want the deeper reporting view: summary totals, market signals, vendor commitments, and payment history." />
             </div>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Open the deeper money view</h2>
+            <h2 className="workspace-h2 mt-2">Open the deeper money view</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Keep the main workspace focused on active budget lines, then open the full reports when you need broader financial context.
             </p>
           </div>
-          <Badge variant="outline" className="w-fit rounded-full border-primary/20 bg-white/80 px-3 py-1 text-primary">
+          <Badge variant="info" className="w-fit rounded-full px-3 py-1">
             View reports
           </Badge>
         </summary>
@@ -2312,8 +2404,8 @@ export default function Budget() {
                   <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(invoiceTotal)}</p>
                 </div>
                 <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-                  <p className="text-xs uppercase tracking-wide text-primary">Total payments made</p>
-                  <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(currentScopePaymentTotal)}</p>
+                  <p className="text-xs uppercase tracking-wide text-success">Total payments made</p>
+                  <p className="mt-2 text-2xl font-semibold text-success">{formatCurrency(currentScopePaymentTotal)}</p>
                 </div>
                 <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
                   <p className="text-xs uppercase tracking-wide text-primary">Total balance</p>

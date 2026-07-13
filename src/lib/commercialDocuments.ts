@@ -276,6 +276,83 @@ export type ProfessionalContractRecord = {
   metadata: Record<string, unknown>;
 };
 
+export type ProfessionalContractShareState = {
+  id: string;
+  contractId: string;
+  shareToken: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
+};
+
+export type ProfessionalContractSignerRole = 'issuer' | 'client';
+
+export type ProfessionalContractSignerRecord = {
+  id: string;
+  contractId: string;
+  signerRole: ProfessionalContractSignerRole;
+  signerName: string;
+  signerEmail: string | null;
+  signerTitle: string | null;
+  signatureMethod: 'typed';
+  signedName: string | null;
+  signedAt: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type ProfessionalContractEventType =
+  | 'created'
+  | 'share_link_created'
+  | 'sent_for_signature'
+  | 'share_viewed'
+  | 'signed_by_client'
+  | 'signed_by_issuer'
+  | 'completed'
+  | 'cancelled';
+
+export type ProfessionalContractEventRecord = {
+  id: string;
+  contractId: string;
+  eventType: ProfessionalContractEventType;
+  actorSource: 'system' | 'owner' | 'public_signer';
+  actorName: string | null;
+  actorEmail: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type ProfessionalContractActivity = {
+  shareState: ProfessionalContractShareState | null;
+  signers: ProfessionalContractSignerRecord[];
+  events: ProfessionalContractEventRecord[];
+};
+
+export type SharedProfessionalContract = {
+  id: string;
+  role: CommercialDocumentRole;
+  title: string;
+  status: ProfessionalContractStatus;
+  recipientName: string;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  weddingName: string | null;
+  eventDate: string | null;
+  sentAt: string | null;
+  signedAt: string | null;
+  summary: string | null;
+  notes: string | null;
+  terms: string | null;
+  issuerName: string;
+  issuerEmail: string | null;
+  issuerPhone: string | null;
+  issuerWebsite: string | null;
+  issuerLocation: string | null;
+  shareExpiresAt: string | null;
+  signers: ProfessionalContractSignerRecord[];
+  events: ProfessionalContractEventRecord[];
+};
+
 export type DocumentTemplateItem = {
   description: string;
   quantity?: number;
@@ -493,6 +570,69 @@ function mapDocumentTemplate(row: Record<string, unknown>): ProfessionalDocument
   };
 }
 
+function mapProfessionalContractSigner(row: Record<string, unknown>): ProfessionalContractSignerRecord {
+  return {
+    id: String(row.id ?? ''),
+    contractId: String(row.contract_id ?? row.contractId ?? ''),
+    signerRole: row.signer_role === 'client' || row.signerRole === 'client' ? 'client' : 'issuer',
+    signerName: String(row.signer_name ?? row.signerName ?? ''),
+    signerEmail:
+      typeof row.signer_email === 'string'
+        ? row.signer_email
+        : typeof row.signerEmail === 'string'
+          ? row.signerEmail
+          : null,
+    signerTitle:
+      typeof row.signer_title === 'string'
+        ? row.signer_title
+        : typeof row.signerTitle === 'string'
+          ? row.signerTitle
+          : null,
+    signatureMethod: 'typed',
+    signedName:
+      typeof row.signed_name === 'string'
+        ? row.signed_name
+        : typeof row.signedName === 'string'
+          ? row.signedName
+          : null,
+    signedAt:
+      typeof row.signed_at === 'string'
+        ? row.signed_at
+        : typeof row.signedAt === 'string'
+          ? row.signedAt
+          : null,
+    metadata: toObject(row.metadata),
+  };
+}
+
+function mapProfessionalContractEvent(row: Record<string, unknown>): ProfessionalContractEventRecord {
+  return {
+    id: String(row.id ?? ''),
+    contractId: String(row.contract_id ?? row.contractId ?? ''),
+    eventType: String(row.event_type ?? row.eventType ?? 'created') as ProfessionalContractEventType,
+    actorSource:
+      row.actor_source === 'owner' || row.actorSource === 'owner'
+        ? 'owner'
+        : row.actor_source === 'public_signer' || row.actorSource === 'public_signer'
+          ? 'public_signer'
+          : 'system',
+    actorName:
+      typeof row.actor_name === 'string'
+        ? row.actor_name
+        : typeof row.actorName === 'string'
+          ? row.actorName
+          : null,
+    actorEmail:
+      typeof row.actor_email === 'string'
+        ? row.actor_email
+        : typeof row.actorEmail === 'string'
+          ? row.actorEmail
+          : null,
+    payload: toObject(row.payload),
+    createdAt: String(row.created_at ?? row.createdAt ?? ''),
+  };
+}
+
 function mapCommercialDocumentDetail(row: Record<string, unknown>): CommercialDocumentDetail {
   const document = mapCommercialDocument(row);
   const items = Array.isArray(row.commercial_document_items)
@@ -582,6 +722,28 @@ export function professionalContractStatusLabel(status: ProfessionalContractStat
     case 'draft':
     default:
       return 'Draft';
+  }
+}
+
+export function professionalContractEventLabel(eventType: ProfessionalContractEventType | string | null | undefined) {
+  switch (eventType) {
+    case 'share_link_created':
+      return 'Signing link created';
+    case 'sent_for_signature':
+      return 'Sent for signature';
+    case 'share_viewed':
+      return 'Opened by recipient';
+    case 'signed_by_client':
+      return 'Signed by client';
+    case 'signed_by_issuer':
+      return 'Signed by issuer';
+    case 'completed':
+      return 'Contract completed';
+    case 'cancelled':
+      return 'Contract cancelled';
+    case 'created':
+    default:
+      return 'Draft created';
   }
 }
 
@@ -915,16 +1077,18 @@ export async function getSharedCommercialDocument(shareToken: string) {
   } satisfies SharedCommercialDocument;
 }
 
+import { isProductionHostname, PRIMARY_PRODUCTION_ORIGIN } from '@/lib/appDomain';
+
 export function canonicalZaniaOrigin(origin?: string) {
-  if (!origin) return 'https://www.zaniaweddings.com';
+  if (!origin) return PRIMARY_PRODUCTION_ORIGIN;
   try {
     const url = new URL(origin);
-    if (url.hostname === 'zaniaweddings.com' || url.hostname === 'www.zaniaweddings.com') {
-      return 'https://www.zaniaweddings.com';
+    if (isProductionHostname(url.hostname)) {
+      return PRIMARY_PRODUCTION_ORIGIN;
     }
     return url.origin;
   } catch {
-    return 'https://www.zaniaweddings.com';
+    return PRIMARY_PRODUCTION_ORIGIN;
   }
 }
 
@@ -1119,6 +1283,230 @@ export async function updateProfessionalContract(contractId: string, input: Upda
 export async function deleteProfessionalContract(contractId: string) {
   const { error } = await (supabase as any).from('professional_contracts').delete().eq('id', contractId);
   if (error) throw error;
+}
+
+export async function ensureProfessionalContractShareToken(contractId: string) {
+  const { data, error } = await (supabase as any).rpc('ensure_professional_contract_share_token', {
+    _contract_id: contractId,
+  });
+
+  if (error) throw error;
+  return String(data);
+}
+
+export async function markProfessionalContractSent(contractId: string) {
+  const { data, error } = await (supabase as any).rpc('mark_professional_contract_sent', {
+    _contract_id: contractId,
+  });
+
+  if (error) throw error;
+  return String(data);
+}
+
+export async function refreshProfessionalContractShareToken(contractId: string) {
+  const { data, error } = await (supabase as any).rpc('refresh_professional_contract_share_token', {
+    _contract_id: contractId,
+  });
+
+  if (error) throw error;
+  return String(data);
+}
+
+export async function revokeProfessionalContractShareToken(contractId: string) {
+  const { error } = await (supabase as any).rpc('revoke_professional_contract_share_token', {
+    _contract_id: contractId,
+  });
+
+  if (error) throw error;
+}
+
+export async function getProfessionalContractShareState(contractId: string) {
+  const { data, error } = await (supabase as any)
+    .from('professional_contract_shares')
+    .select('id, contract_id, share_token, expires_at, revoked_at, last_accessed_at, access_count')
+    .eq('contract_id', contractId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    id: String(data.id),
+    contractId: String(data.contract_id),
+    shareToken: String(data.share_token),
+    expiresAt: typeof data.expires_at === 'string' ? data.expires_at : null,
+    revokedAt: typeof data.revoked_at === 'string' ? data.revoked_at : null,
+    lastAccessedAt: typeof data.last_accessed_at === 'string' ? data.last_accessed_at : null,
+    accessCount: Number(data.access_count ?? 0),
+  } satisfies ProfessionalContractShareState;
+}
+
+export async function listProfessionalContractSigners(contractId: string) {
+  const { data, error } = await (supabase as any)
+    .from('professional_contract_signers')
+    .select('*')
+    .eq('contract_id', contractId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map(mapProfessionalContractSigner);
+}
+
+export async function listProfessionalContractEvents(contractId: string) {
+  const { data, error } = await (supabase as any)
+    .from('professional_contract_events')
+    .select('*')
+    .eq('contract_id', contractId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map(mapProfessionalContractEvent);
+}
+
+export async function getProfessionalContractActivity(contractId: string) {
+  const [shareState, signers, events] = await Promise.all([
+    getProfessionalContractShareState(contractId),
+    listProfessionalContractSigners(contractId),
+    listProfessionalContractEvents(contractId),
+  ]);
+
+  return {
+    shareState,
+    signers,
+    events,
+  } satisfies ProfessionalContractActivity;
+}
+
+export async function signOwnedProfessionalContract(contractId: string, signedName?: string | null) {
+  const { data, error } = await (supabase as any).rpc('sign_owned_professional_contract', {
+    _contract_id: contractId,
+    _signed_name: signedName ?? null,
+  });
+
+  if (error) throw error;
+  if (!data) return null;
+  return mapSharedProfessionalContract(data as Record<string, unknown>);
+}
+
+function mapSharedProfessionalContract(row: Record<string, unknown>): SharedProfessionalContract {
+  return {
+    id: String(row.id ?? ''),
+    role: row.role === 'planner' ? 'planner' : 'vendor',
+    title: String(row.title ?? ''),
+    status: String(row.status ?? 'draft') as ProfessionalContractStatus,
+    recipientName: String(row.recipientName ?? row.recipient_name ?? ''),
+    recipientEmail:
+      typeof row.recipientEmail === 'string'
+        ? row.recipientEmail
+        : typeof row.recipient_email === 'string'
+          ? row.recipient_email
+          : null,
+    recipientPhone:
+      typeof row.recipientPhone === 'string'
+        ? row.recipientPhone
+        : typeof row.recipient_phone === 'string'
+          ? row.recipient_phone
+          : null,
+    weddingName:
+      typeof row.weddingName === 'string'
+        ? row.weddingName
+        : typeof row.wedding_name === 'string'
+          ? row.wedding_name
+          : null,
+    eventDate:
+      typeof row.eventDate === 'string'
+        ? row.eventDate
+        : typeof row.event_date === 'string'
+          ? row.event_date
+          : null,
+    sentAt:
+      typeof row.sentAt === 'string'
+        ? row.sentAt
+        : typeof row.sent_at === 'string'
+          ? row.sent_at
+          : null,
+    signedAt:
+      typeof row.signedAt === 'string'
+        ? row.signedAt
+        : typeof row.signed_at === 'string'
+          ? row.signed_at
+          : null,
+    summary: typeof row.summary === 'string' ? row.summary : null,
+    notes: typeof row.notes === 'string' ? row.notes : null,
+    terms: typeof row.terms === 'string' ? row.terms : null,
+    issuerName: String(row.issuerName ?? ''),
+    issuerEmail: typeof row.issuerEmail === 'string' ? row.issuerEmail : null,
+    issuerPhone: typeof row.issuerPhone === 'string' ? row.issuerPhone : null,
+    issuerWebsite: typeof row.issuerWebsite === 'string' ? row.issuerWebsite : null,
+    issuerLocation: typeof row.issuerLocation === 'string' ? row.issuerLocation : null,
+    shareExpiresAt: typeof row.shareExpiresAt === 'string' ? row.shareExpiresAt : null,
+    signers: Array.isArray(row.signers)
+      ? row.signers.map((signer) => mapProfessionalContractSigner(signer as Record<string, unknown>))
+      : [],
+    events: Array.isArray(row.events)
+      ? row.events.map((event) => mapProfessionalContractEvent(event as Record<string, unknown>))
+      : [],
+  };
+}
+
+export async function getSharedProfessionalContract(shareToken: string) {
+  const { data, error } = await (supabase as any).rpc('get_shared_professional_contract', {
+    _share_token: shareToken,
+  });
+
+  if (error) throw error;
+  if (!data) return null;
+  return mapSharedProfessionalContract(data as Record<string, unknown>);
+}
+
+export async function signSharedProfessionalContract(input: {
+  shareToken: string;
+  signedName: string;
+  signerEmail?: string | null;
+  agreedToTerms: boolean;
+  signerUserAgent?: string | null;
+  signerTimezone?: string | null;
+  signerLocale?: string | null;
+}) {
+  const { data, error } = await (supabase as any).rpc('sign_shared_professional_contract', {
+    _share_token: input.shareToken,
+    _signed_name: input.signedName,
+    _signer_email: input.signerEmail ?? null,
+    _agreed_to_terms: input.agreedToTerms,
+    _signer_user_agent: input.signerUserAgent ?? null,
+    _signer_timezone: input.signerTimezone ?? null,
+    _signer_locale: input.signerLocale ?? null,
+  });
+
+  if (error) throw error;
+  if (!data) return null;
+  return mapSharedProfessionalContract(data as Record<string, unknown>);
+}
+
+export function buildProfessionalContractShareUrl(shareToken: string, origin?: string) {
+  return `${canonicalZaniaOrigin(origin)}/contracts/share/${shareToken}`;
+}
+
+export function buildProfessionalContractShareEmailDraft(input: {
+  contract: Pick<ProfessionalContractRecord, 'title' | 'recipientName' | 'eventDate'>;
+  shareUrl: string;
+}) {
+  const subject = `Signature request: ${input.contract.title}`;
+  const eventLine = input.contract.eventDate
+    ? `Event date: ${new Date(input.contract.eventDate).toLocaleDateString('en-KE')}\n`
+    : '';
+  const body =
+    `Hello ${input.contract.recipientName},\n\n` +
+    `Please review and sign your contract here:\n${input.shareUrl}\n\n` +
+    `${eventLine}` +
+    `You can open the link without creating a Zania account.\n\n` +
+    `Thank you.`;
+
+  return {
+    subject,
+    body,
+    href: `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+  };
 }
 
 export async function listDocumentTemplates(filters: DocumentTemplateListFilters) {

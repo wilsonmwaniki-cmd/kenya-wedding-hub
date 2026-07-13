@@ -12,6 +12,23 @@ export type ProfessionalThreadContext =
   | 'partnership'
   | 'general';
 
+export type ProfessionalExchangeCategory =
+  | 'sourcing'
+  | 'decor'
+  | 'venue_logistics'
+  | 'power_av'
+  | 'catering'
+  | 'transport'
+  | 'staffing'
+  | 'pricing'
+  | 'workflow'
+  | 'emergency';
+
+export type ProfessionalExchangeUrgency =
+  | 'planning'
+  | 'this_week'
+  | 'event_day';
+
 export interface ProfessionalNetworkStep {
   key: string;
   label: string;
@@ -30,6 +47,17 @@ export interface ProfessionalNetworkChecklist {
 export interface ProfessionalRelationshipMeta {
   label: string;
   shortLabel: string;
+  description: string;
+}
+
+export interface ProfessionalExchangeCategoryMeta {
+  label: string;
+  shortLabel: string;
+  description: string;
+}
+
+export interface ProfessionalExchangeUrgencyMeta {
+  label: string;
   description: string;
 }
 
@@ -74,6 +102,77 @@ export const professionalThreadContextMeta: Record<ProfessionalThreadContext, { 
     description: 'Use for professional follow-up that does not fit a narrower workflow.',
   },
 };
+
+export const professionalExchangeCategoryMeta: Record<ProfessionalExchangeCategory, ProfessionalExchangeCategoryMeta> = {
+  sourcing: {
+    label: 'Sourcing goods',
+    shortLabel: 'Sourcing',
+    description: 'Find suppliers, rentals, materials, or short-notice stock.',
+  },
+  decor: {
+    label: 'Decor and styling',
+    shortLabel: 'Decor',
+    description: 'Ask about florals, draping, styling materials, and visual execution.',
+  },
+  venue_logistics: {
+    label: 'Venue logistics',
+    shortLabel: 'Venue',
+    description: 'Handle layout, access, venue rules, tenting, and setup flow.',
+  },
+  power_av: {
+    label: 'Power, sound, and AV',
+    shortLabel: 'Power / AV',
+    description: 'Coordinate generators, lighting, sound, staging, and technical backups.',
+  },
+  catering: {
+    label: 'Catering and bar',
+    shortLabel: 'Catering',
+    description: 'Discuss food service, staffing, menus, bar setup, and guest service flow.',
+  },
+  transport: {
+    label: 'Transport and delivery',
+    shortLabel: 'Transport',
+    description: 'Get help with fleet, guest movement, pickups, and delivery coordination.',
+  },
+  staffing: {
+    label: 'Staffing and crew',
+    shortLabel: 'Staffing',
+    description: 'Find extra hands, ushers, crew, setup teams, or technical specialists.',
+  },
+  pricing: {
+    label: 'Pricing and budgeting',
+    shortLabel: 'Pricing',
+    description: 'Compare rates, budget ranges, and scope assumptions before booking.',
+  },
+  workflow: {
+    label: 'Workflow and process',
+    shortLabel: 'Workflow',
+    description: 'Share playbooks for timelines, approvals, briefings, and team coordination.',
+  },
+  emergency: {
+    label: 'Event-day emergency',
+    shortLabel: 'Emergency',
+    description: 'Use for urgent rescue requests when something needs an immediate fix.',
+  },
+};
+
+export const professionalExchangeUrgencyMeta: Record<ProfessionalExchangeUrgency, ProfessionalExchangeUrgencyMeta> = {
+  planning: {
+    label: 'Planning ahead',
+    description: 'Useful during normal planning and research.',
+  },
+  this_week: {
+    label: 'Needed this week',
+    description: 'Best for near-term sourcing or coordination.',
+  },
+  event_day: {
+    label: 'Event-day urgent',
+    description: 'Use when you need a fast answer for a live wedding or setup day.',
+  },
+};
+
+export const professionalExchangeCategories = Object.keys(professionalExchangeCategoryMeta) as ProfessionalExchangeCategory[];
+export const professionalExchangeUrgencies = Object.keys(professionalExchangeUrgencyMeta) as ProfessionalExchangeUrgency[];
 
 export function getRecommendationRequestKindsForRole(role: ProfessionalNetworkRole): ProfessionalRelationshipKind[] {
   if (role === 'planner') {

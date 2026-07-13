@@ -32,6 +32,7 @@ const VendorDocuments = lazy(() => import("./pages/VendorDocuments"));
 const PlannerDocuments = lazy(() => import("./pages/PlannerDocuments"));
 const CommercialDocumentPrint = lazy(() => import("./pages/CommercialDocumentPrint"));
 const CommercialDocumentShare = lazy(() => import("./pages/CommercialDocumentShare"));
+const ProfessionalContractShare = lazy(() => import("./pages/ProfessionalContractShare"));
 const AiChat = lazy(() => import("./pages/AiChat"));
 const ProfileSettings = lazy(() => import("./pages/ProfileSettings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -60,9 +61,19 @@ const queryClient = new QueryClient();
 function RouteLoader() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-6">
-      <div className="text-center">
-        <p className="font-display text-2xl font-semibold text-foreground">Opening wedding workspace...</p>
-        <p className="mt-2 text-sm text-muted-foreground">Loading only the part of the app you need.</p>
+      <div className="w-full max-w-sm text-center">
+        <div className="mx-auto flex w-fit items-center gap-3 rounded-full border border-border/60 bg-card/80 px-5 py-3 shadow-sm backdrop-blur-sm">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/35" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary/75" />
+          </span>
+          <p className="font-display text-xl font-semibold text-foreground">Opening wedding workspace...</p>
+        </div>
+        <div className="mt-5 flex items-center justify-center gap-2" aria-hidden="true">
+          <div className="h-2 w-2 animate-pulse rounded-full bg-muted-foreground/35" />
+          <div className="h-2 w-2 animate-pulse rounded-full bg-muted-foreground/45 [animation-delay:120ms]" />
+          <div className="h-2 w-2 animate-pulse rounded-full bg-muted-foreground/55 [animation-delay:240ms]" />
+        </div>
       </div>
     </div>
   );
@@ -135,6 +146,7 @@ const App = () => (
               <Route path="/planner/:id" element={<PublicPage><PlannerProfile /></PublicPage>} />
               <Route path="/contributions/share/:token" element={<PublicPage><ContributionsShare /></PublicPage>} />
               <Route path="/documents/share/:token" element={<PublicPage><CommercialDocumentShare /></PublicPage>} />
+              <Route path="/contracts/share/:token" element={<PublicPage><ProfessionalContractShare /></PublicPage>} />
               <Route path="/timeline/share/:token" element={<PublicPage><TimelineShare /></PublicPage>} />
               <Route path="/rsvp/:token" element={<PublicPage><GuestRsvp /></PublicPage>} />
               <Route path="/wedding/:token" element={<PublicPage><WeddingPortfolio /></PublicPage>} />

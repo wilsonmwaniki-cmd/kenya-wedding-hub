@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowUpRight, Banknote, Gift, HandCoins, HeartHandshake, Loader2, Users } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 type SharedRound = {
   title: string;
@@ -92,8 +92,7 @@ export default function ContributionsShare() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-6">
         <div className="max-w-md text-center">
-          <HeartHandshake className="mx-auto h-10 w-10 text-primary/60" />
-          <h1 className="mt-4 font-display text-3xl font-bold text-foreground">Contribution summary not found</h1>
+          <h1 className="text-3xl font-bold text-foreground">Contribution summary not found</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             This link may have expired or been removed.
           </p>
@@ -148,46 +147,31 @@ export default function ContributionsShare() {
           <Card className="shadow-card">
             <CardHeader className="pb-2">
               <CardDescription>Wedding target</CardDescription>
-              <CardTitle className="flex items-center gap-2 text-2xl">
-                <Banknote className="h-5 w-5 text-primary" />
-                {formatCurrency(summary.budget_target)}
-              </CardTitle>
+              <CardTitle className="text-2xl">{formatCurrency(summary.budget_target)}</CardTitle>
             </CardHeader>
           </Card>
           <Card className="shadow-card">
             <CardHeader className="pb-2">
               <CardDescription>Pledged cash</CardDescription>
-              <CardTitle className="flex items-center gap-2 text-2xl">
-                <HandCoins className="h-5 w-5 text-primary" />
-                {formatCurrency(summary.pledged_cash)}
-              </CardTitle>
+              <CardTitle className="text-2xl">{formatCurrency(summary.pledged_cash)}</CardTitle>
             </CardHeader>
           </Card>
           <Card className="shadow-card">
             <CardHeader className="pb-2">
               <CardDescription>Collected cash</CardDescription>
-              <CardTitle className="flex items-center gap-2 text-2xl">
-                <ArrowUpRight className="h-5 w-5 text-emerald-600" />
-                {formatCurrency(summary.collected_cash)}
-              </CardTitle>
+              <CardTitle className="text-2xl text-success">{formatCurrency(summary.collected_cash)}</CardTitle>
             </CardHeader>
           </Card>
           <Card className="shadow-card">
             <CardHeader className="pb-2">
               <CardDescription>In-kind support</CardDescription>
-              <CardTitle className="flex items-center gap-2 text-2xl">
-                <Gift className="h-5 w-5 text-primary" />
-                {formatCurrency(summary.in_kind_value)}
-              </CardTitle>
+              <CardTitle className="text-2xl">{formatCurrency(summary.in_kind_value)}</CardTitle>
             </CardHeader>
           </Card>
           <Card className="shadow-card">
             <CardHeader className="pb-2">
               <CardDescription>Still pending</CardDescription>
-              <CardTitle className="flex items-center gap-2 text-2xl">
-                <Users className="h-5 w-5 text-primary" />
-                {formatCurrency(summary.outstanding_pledges)}
-              </CardTitle>
+              <CardTitle className="text-2xl">{formatCurrency(summary.outstanding_pledges)}</CardTitle>
             </CardHeader>
           </Card>
         </div>
@@ -211,7 +195,7 @@ export default function ContributionsShare() {
                         <p className="text-sm font-semibold text-foreground">{round.title}</p>
                         <p className="mt-1 text-xs text-muted-foreground">Goal {formatCurrency(round.goal_amount)}</p>
                       </div>
-                      <Badge variant={round.is_active ? 'default' : 'outline'} className="rounded-full">
+                      <Badge variant={round.is_active ? 'success' : 'outline'} className="rounded-full">
                         {round.is_active ? 'Active' : 'Closed'}
                       </Badge>
                     </div>

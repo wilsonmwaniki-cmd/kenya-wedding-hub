@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, X, Check, LockKeyhole, ShieldCheck, CreditCard, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText, FilePlus2 } from 'lucide-react';
+import { Loader2, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, X, Check, LockKeyhole, ShieldCheck, CreditCard, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText, FilePlus2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { vendorHasFullAccess } from '@/lib/vendorAccess';
 import { getEntitlementDecision } from '@/lib/entitlements';
@@ -1142,10 +1142,7 @@ export default function VendorDashboard() {
 
       <Card className="border-border/70 bg-muted/20">
         <CardHeader>
-          <CardTitle className="font-display text-base flex items-center gap-2">
-            <CreditCard className="h-4 w-4 text-primary" />
-            Business Growth Add-ons
-          </CardTitle>
+          <CardTitle className="text-base">Business Growth Add-ons</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-3">
           {[
@@ -1183,7 +1180,7 @@ export default function VendorDashboard() {
                   <p className="font-medium text-card-foreground">{item.title}</p>
                   <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
                 </div>
-                <Badge variant={item.decision.allowed ? 'default' : 'secondary'}>
+                <Badge variant={item.decision.allowed ? 'success' : 'info'}>
                   {item.decision.allowed ? item.activeLabel : 'Add-on'}
                 </Badge>
               </div>
@@ -1200,7 +1197,7 @@ export default function VendorDashboard() {
         </CardContent>
       </Card>
 
-      <Card className="border-primary/20 bg-primary/5 shadow-card">
+      <Card className="semantic-surface-info shadow-card">
         <CardContent className="flex flex-col gap-4 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="font-display text-xl text-foreground">Commercial documents</p>
@@ -1315,7 +1312,7 @@ export default function VendorDashboard() {
                         {invite.inviteStatus}
                       </Badge>
                       <Badge variant="outline">{invite.vendorCategory}</Badge>
-                      <Badge variant={invite.hasPublicListingConnection ? 'secondary' : 'outline'}>
+                      <Badge variant={invite.hasPublicListingConnection ? 'success' : 'outline'}>
                         {invite.hasPublicListingConnection ? 'Public profile linked' : 'Private workspace link'}
                       </Badge>
                     </div>
@@ -1535,10 +1532,7 @@ export default function VendorDashboard() {
       {/* Bookings list */}
       <Card className="shadow-card">
         <CardHeader>
-          <CardTitle className="font-display flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            Client Bookings
-          </CardTitle>
+          <CardTitle>Client Bookings</CardTitle>
           <p className="text-sm text-muted-foreground">
             See the couple, their wedding context, your payment picture, and whether this booking has already been pushed to Google Calendar.
           </p>
@@ -1957,10 +1951,7 @@ export default function VendorDashboard() {
                   {selectedWorkspaceInvite && (
                     <Card className="shadow-card">
                       <CardHeader className="pb-3">
-                        <CardTitle className="font-display flex items-center gap-2 text-xl">
-                          <MessageSquareText className="h-5 w-5 text-primary" />
-                          Vendor Updates
-                        </CardTitle>
+                        <CardTitle className="text-xl">Vendor Updates</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -2060,10 +2051,7 @@ export default function VendorDashboard() {
 
                   <Card className="shadow-card">
                     <CardHeader className="pb-3">
-                      <CardTitle className="font-display flex items-center gap-2 text-xl">
-                        <MessageSquareText className="h-5 w-5 text-primary" />
-                        Vendor Internal Notes
-                      </CardTitle>
+                    <CardTitle className="text-xl">Vendor Internal Notes</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <p className="text-sm text-muted-foreground">
@@ -2299,7 +2287,7 @@ export default function VendorDashboard() {
                                   <p className={`text-sm font-semibold ${task.completed ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
                                     {task.title}
                                   </p>
-                                  <Badge variant={task.completed ? 'secondary' : 'outline'}>
+                                  <Badge variant={task.completed ? 'success' : 'outline'}>
                                     {task.completed ? 'Completed' : 'Open'}
                                   </Badge>
                                   {task.visibility && <Badge variant="outline">{task.visibility}</Badge>}

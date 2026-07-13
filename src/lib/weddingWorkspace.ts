@@ -196,6 +196,21 @@ export type MyWeddingOwnershipSummary = {
   partnerInviteExpiresAt: string | null;
 };
 
+export async function archiveWeddingWorkspace(weddingId: string) {
+  const { error } = await (supabase as any).rpc('archive_wedding_workspace', {
+    target_wedding_id: weddingId,
+  });
+  if (error) throw error;
+}
+
+export async function deleteWeddingWorkspace(weddingId: string, deletionReason?: string | null) {
+  const { error } = await (supabase as any).rpc('soft_delete_wedding_workspace', {
+    target_wedding_id: weddingId,
+    deletion_reason_input: deletionReason ?? null,
+  });
+  if (error) throw error;
+}
+
 const normalizeEmail = (value: string | null | undefined) => value?.trim().toLowerCase() || null;
 
 const formatInviteWaitTime = (seconds: number) => {
@@ -339,27 +354,31 @@ export async function getMyWeddingOwnershipSummaryFromTables(
     .in('role', ['bride', 'groom'])
     .or(ownerMatch)
     .order('created_at', { ascending: true })
-    .limit(1);
+    .limit(10);
 
   if (ownerMembershipError) {
     throw ownerMembershipError;
   }
 
-  const ownerMembership = ownerMemberships?.[0];
-  if (!ownerMembership) return null;
+  const membershipCandidates = ownerMemberships ?? [];
+  if (membershipCandidates.length === 0) return null;
 
   const { data: weddings, error: weddingError } = await db
     .from('weddings')
-    .select('id, name, wedding_code, wedding_date, location_county, location_town')
-    .eq('id', ownerMembership.wedding_id)
-    .limit(1);
+    .select('id, name, wedding_code, wedding_date, location_county, location_town, status, deleted_at')
+    .in('id', membershipCandidates.map((row: { wedding_id: string }) => row.wedding_id));
 
   if (weddingError) {
     throw weddingError;
   }
 
-  const wedding = weddings?.[0];
+  const wedding = (weddings ?? []).find((row: { id: string; status: string; deleted_at: string | null }) => (
+    row.status === 'active' && !row.deleted_at
+  ));
   if (!wedding) return null;
+
+  const ownerMembership = membershipCandidates.find((row: { wedding_id: string }) => row.wedding_id === wedding.id);
+  if (!ownerMembership) return null;
 
   const { data: partnerMemberships, error: partnerMembershipError } = await db
     .from('wedding_memberships')
@@ -568,10 +587,25 @@ async function ensureNoDuplicateOwnedWedding(userId: string): Promise<string | n
     .eq('is_owner', true)
     .in('membership_status', ['invited', 'active'])
     .order('created_at', { ascending: true })
-    .limit(1);
+    .limit(10);
 
   if (error) throw error;
-  return data?.[0]?.wedding_id ?? null;
+
+  const weddingIds = (data ?? []).map((row: { wedding_id: string }) => row.wedding_id);
+  if (weddingIds.length === 0) return null;
+
+  const { data: weddings, error: weddingError } = await db
+    .from('weddings')
+    .select('id, status, deleted_at')
+    .in('id', weddingIds);
+
+  if (weddingError) throw weddingError;
+
+  const activeWedding = (weddings ?? []).find((row: { id: string; status: string; deleted_at: string | null }) => (
+    row.status === 'active' && !row.deleted_at
+  ));
+
+  return activeWedding?.id ?? null;
 }
 
 export async function reconcilePendingWeddingSetupForExistingWorkspace(user: User): Promise<{

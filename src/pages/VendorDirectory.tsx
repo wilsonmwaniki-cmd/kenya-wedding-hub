@@ -41,6 +41,7 @@ import { vendorHasFullAccess } from '@/lib/vendorAccess';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { DirectoryResultsSkeleton } from '@/components/AppLoadingSkeletons';
 import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
+import PublicSiteFooter from '@/components/PublicSiteFooter';
 
 const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 
@@ -441,7 +442,7 @@ export default function VendorDirectory() {
         <motion.h1
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="font-display text-3xl font-bold text-foreground sm:text-4xl"
+          className="marketing-h2 text-foreground"
         >
           <Store className="mr-2 inline h-8 w-8 text-primary" />
           {headerTitle}
@@ -510,7 +511,7 @@ export default function VendorDirectory() {
           <div className="mb-5 flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/80">Public collections</p>
-              <h2 className="mt-2 font-display text-2xl text-foreground">Browse vendor collections couples can actually share</h2>
+              <h2 className="marketing-h3 mt-2 text-foreground">Browse vendor collections couples can actually share</h2>
             </div>
             <Badge variant="outline" className="hidden md:inline-flex">Built for Google, browsing, and social proof</Badge>
           </div>
@@ -519,7 +520,7 @@ export default function VendorDirectory() {
               <Link key={item.slug} to={`/vendors-directory/collections/${item.slug}`}>
                 <Card className="h-full border-border/70 transition-shadow hover:shadow-warm">
                   <CardHeader>
-                    <CardTitle className="font-display text-xl">{item.title}</CardTitle>
+                    <CardTitle className="marketing-h4">{item.title}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">{item.description}</p>
@@ -738,7 +739,7 @@ export default function VendorDirectory() {
       <Dialog open={suggestDialogOpen} onOpenChange={setSuggestDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Suggest a Vendor</DialogTitle>
+            <DialogTitle className="marketing-h3">Suggest a Vendor</DialogTitle>
             <DialogDescription>
               Help Zania grow the directory with vendors you already trust.
             </DialogDescription>
@@ -808,7 +809,7 @@ export default function VendorDirectory() {
       <Dialog open={Boolean(recommendDialogVendor)} onOpenChange={(open) => !open && setRecommendDialogVendor(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Recommend {recommendDialogVendor?.business_name}</DialogTitle>
+            <DialogTitle className="marketing-h3">Recommend {recommendDialogVendor?.business_name}</DialogTitle>
             <DialogDescription>
               This adds your public Zania recommendation to the vendor profile. Founding planner recommendations show up as trust signals for couples.
             </DialogDescription>
@@ -837,12 +838,7 @@ export default function VendorDirectory() {
         </DialogContent>
       </Dialog>
 
-      <footer className="border-t border-border px-4 py-8 text-center text-sm text-muted-foreground sm:px-6">
-        <div className="flex items-center justify-center">
-          <BrandWordmark size="sm" showUnderline={false} className="origin-center scale-[0.9]" />
-        </div>
-        <p className="mt-2">Zania © {new Date().getFullYear()}</p>
-      </footer>
+      <PublicSiteFooter />
     </div>
   );
 }

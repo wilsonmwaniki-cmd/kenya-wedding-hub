@@ -339,10 +339,7 @@ export default function PlannerDashboard() {
       {!isCommittee && (
         <Card className="border-border/70 bg-muted/20">
           <CardHeader>
-            <CardTitle className="font-display text-base flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-primary" />
-              Professional Growth Add-ons
-            </CardTitle>
+            <CardTitle className="text-base">Professional Growth Add-ons</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 lg:grid-cols-3">
             {[
@@ -380,7 +377,7 @@ export default function PlannerDashboard() {
                     <p className="font-medium text-card-foreground">{item.title}</p>
                     <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
                   </div>
-                  <Badge variant={item.decision?.allowed ? 'default' : 'secondary'}>
+                  <Badge variant={item.decision?.allowed ? 'success' : 'info'}>
                     {item.decision?.allowed ? item.activeLabel : 'Add-on'}
                   </Badge>
                 </div>

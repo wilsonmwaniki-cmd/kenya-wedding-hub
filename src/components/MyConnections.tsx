@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowRight, CheckCircle2, Clock, Copy, HeartHandshake, Link2, Loader2, LockKeyhole, Store, UserPlus, Users, X, XCircle } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock, Copy, Loader2, LockKeyhole, Store, UserPlus, Users, X, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
@@ -560,12 +560,12 @@ export default function MyConnections() {
       <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
         <CardContent className="space-y-6 p-6 sm:p-8">
           <div className="space-y-3">
-            <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-primary">
+            <Badge variant="info" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em]">
               {effectiveCoupleView ? 'Collaboration Hub' : 'Workspace Connections'}
             </Badge>
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <h2 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+              <div className="flex flex-wrap items-start gap-2">
+                <h2 className="workspace-h1 max-w-4xl">
                   {effectiveCoupleView
                     ? 'Bring your partner, planner, and committee into the same wedding workspace'
                     : 'Keep linked planners and vendors in one coordinated workspace'}
@@ -629,10 +629,10 @@ export default function MyConnections() {
                     {committeeHasSeats ? <UserPlus className="h-5 w-5" /> : <LockKeyhole className="h-5 w-5" />}
                   </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
                       Invite your wedding team
                     </p>
-                    <h3 className="mt-1 font-display text-xl font-semibold text-foreground">
+                    <h3 className="workspace-h3 mt-1">
                       {committeeHasSeats
                         ? 'Add a committee member by email'
                         : committeeEnabled
@@ -668,12 +668,9 @@ export default function MyConnections() {
       </Card>
 
       {effectiveCoupleView && ownedWedding && (
-        <Card className="shadow-card border-primary/20 bg-primary/5">
+        <Card className="semantic-surface-info shadow-card">
           <CardHeader>
-            <CardTitle className="font-display text-base flex items-center gap-2">
-              <HeartHandshake className="h-4 w-4 text-primary" />
-              Wedding Ownership
-            </CardTitle>
+            <CardTitle className="text-base">Wedding Ownership</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -683,7 +680,15 @@ export default function MyConnections() {
                   <Badge variant="outline" className="capitalize">
                     {ownedWedding.ownerRole}
                   </Badge>
-                  <Badge variant={ownedWedding.partnerStatus === 'active' ? 'default' : 'secondary'}>
+                  <Badge
+                    variant={
+                      ownedWedding.partnerStatus === 'active'
+                        ? 'success'
+                        : ownedWedding.partnerStatus === 'pending'
+                          ? 'warning'
+                          : 'outline'
+                    }
+                  >
                     {ownedWedding.partnerStatus === 'active'
                       ? 'Partner connected'
                       : ownedWedding.partnerStatus === 'pending'
@@ -692,7 +697,7 @@ export default function MyConnections() {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Wedding code: <span className="font-medium tracking-[0.16em] text-foreground">{ownedWedding.weddingCode}</span>
+                  Wedding code: <span className="break-all font-medium tracking-[0.12em] text-foreground">{ownedWedding.weddingCode}</span>
                 </p>
                 {ownedWedding.partnerInviteExpiresAt && (
                   <p className="text-xs text-muted-foreground">
@@ -732,7 +737,7 @@ export default function MyConnections() {
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-foreground">Committee collaboration</p>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant={committeeEnabled ? 'default' : 'secondary'}>
+                    <Badge variant={committeeEnabled ? 'success' : 'warning'}>
                       {committeeEnabled ? 'Committee bundle active' : 'Committee bundle not active'}
                     </Badge>
                     <Badge variant="outline">
@@ -804,7 +809,7 @@ export default function MyConnections() {
               </div>
 
               {!committeeHasSeats && (
-                <p className="mt-3 rounded-xl border border-dashed border-primary/25 bg-primary/5 px-3 py-2 text-xs leading-5 text-muted-foreground">
+                <p className="mt-3 rounded-xl border border-dashed border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-3 py-2 text-xs leading-5 text-warning">
                   {committeeEnabled
                     ? 'All committee seats are currently used. Add seats or remove an inactive member before sending another invite.'
                     : 'Committee invites unlock when this wedding has an active couple plan with committee collaboration seats.'}
@@ -829,7 +834,7 @@ export default function MyConnections() {
                                 <Badge variant="outline" className="capitalize">
                                   {member.role.replace('_', ' ')}
                                 </Badge>
-                                <Badge variant={member.membership_status === 'active' ? 'default' : 'secondary'}>
+                                <Badge variant={member.membership_status === 'active' ? 'success' : 'warning'}>
                                   {member.membership_status}
                                 </Badge>
                               </div>
@@ -852,7 +857,7 @@ export default function MyConnections() {
                           <div key={invite.id} className="rounded-lg border border-border bg-background p-3 text-sm">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <span className="font-medium text-foreground">{invite.email}</span>
-                              <Badge variant="secondary" className="capitalize">
+                              <Badge variant="info" className="capitalize">
                                 {invite.proposed_role.replace('_', ' ')}
                               </Badge>
                             </div>
@@ -874,19 +879,16 @@ export default function MyConnections() {
       )}
 
       {effectiveCoupleView && collaborationCode && (
-        <Card className="shadow-card border-primary/20 bg-primary/5">
+        <Card className="semantic-surface-info shadow-card">
           <CardHeader>
-            <CardTitle className="font-display text-base flex items-center gap-2">
-              <Link2 className="h-4 w-4 text-primary" />
-              Couple Collaboration Code
-            </CardTitle>
+            <CardTitle className="text-base">Couple Collaboration Code</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm text-muted-foreground">
                 Share this code with your planner to request access.
               </p>
-              <p className="mt-2 font-display text-2xl tracking-[0.2em] text-foreground">{collaborationCode}</p>
+              <p className="mt-2 break-all font-display text-2xl tracking-[0.12em] text-foreground sm:tracking-[0.18em]">{collaborationCode}</p>
             </div>
             <Button variant="outline" className="gap-2" onClick={copyCode}>
               <Copy className="h-4 w-4" />

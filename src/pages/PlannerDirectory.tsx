@@ -14,6 +14,7 @@ import { formatBudgetBand, getBudgetFit, getLocationMatch, getTownsForCounty, ke
 import BrandWordmark from '@/components/BrandWordmark';
 import { DirectoryResultsSkeleton } from '@/components/AppLoadingSkeletons';
 import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
+import PublicSiteFooter from '@/components/PublicSiteFooter';
 
 interface PlannerItem {
   id: string;
@@ -180,7 +181,7 @@ export default function PlannerDirectory() {
         <motion.h1
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="font-display text-3xl font-bold text-foreground sm:text-4xl"
+          className="marketing-h2 text-foreground"
         >
           Find Your Wedding Planner
         </motion.h1>
@@ -356,13 +357,7 @@ export default function PlannerDirectory() {
         )}
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-border px-6 py-8 text-center text-sm text-muted-foreground">
-        <div className="flex items-center justify-center">
-          <BrandWordmark size="sm" showUnderline={false} className="origin-center scale-[0.9]" />
-        </div>
-        <p className="mt-2">Zania © {new Date().getFullYear()}</p>
-      </footer>
+      <PublicSiteFooter />
     </div>
   );
 }

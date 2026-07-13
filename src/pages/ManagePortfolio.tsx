@@ -279,7 +279,7 @@ export default function ManagePortfolio() {
                 Wedding Portfolio
               </Badge>
               <div className="space-y-2">
-                <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+                <h1 className="workspace-h1">
                   Create the public story when the wedding is ready
                 </h1>
                 <p className="max-w-3xl text-sm leading-7 text-muted-foreground sm:text-base">
@@ -334,7 +334,7 @@ export default function ManagePortfolio() {
               <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-primary">
                 Wedding Portfolio
               </Badge>
-              <h1 className="font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">{title || 'Wedding story'}</h1>
+              <h1 className="workspace-h1">{title || 'Wedding story'}</h1>
               <p className="max-w-3xl text-sm leading-7 text-muted-foreground sm:text-base">
                 Keep the public page simple: story first, vendor credits second, reviews when they add trust.
               </p>

@@ -953,7 +953,7 @@ export default function PlannerDocuments() {
               </div>
               <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Outstanding</p>
-                <p className="mt-2 break-words text-lg font-semibold leading-tight text-amber-700">{formatCurrency(stats.outstanding)}</p>
+                <p className="mt-2 break-words text-lg font-semibold leading-tight text-warning">{formatCurrency(stats.outstanding)}</p>
               </div>
             </div>
           </div>
@@ -1068,7 +1068,7 @@ export default function PlannerDocuments() {
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant="secondary">{commercialDocumentTypeLabel(document.documentType)}</Badge>
-                          <Badge variant={document.status === 'paid' || document.status === 'accepted' || document.status === 'issued' ? 'default' : 'outline'}>
+                          <Badge variant={document.status === 'paid' || document.status === 'accepted' || document.status === 'issued' ? 'success' : 'warning'}>
                             {commercialDocumentStatusLabel(document.status)}
                           </Badge>
                         </div>
@@ -1146,7 +1146,7 @@ export default function PlannerDocuments() {
                 </div>
                 <div className="w-full rounded-2xl border border-border/70 bg-muted/10 p-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={selectedShareActive ? 'default' : 'secondary'}>
+                    <Badge variant={selectedShareActive ? 'success' : 'outline'}>
                       {selectedShareActive ? 'Share link active' : 'Share link inactive'}
                     </Badge>
                     {shareState?.expiresAt && (
@@ -1464,7 +1464,7 @@ export default function PlannerDocuments() {
                   </div>
 
                   {selectedDetail.documentType === 'receipt' ? (
-                    <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-muted-foreground">
+                    <div className="rounded-2xl border border-[hsl(var(--info-soft-border))] bg-[hsl(var(--info-soft))] p-4 text-sm text-info">
                       This receipt was generated from a recorded payment. You can keep it in the library as your acknowledgement record.
                     </div>
                   ) : selectedDetail.payments.length === 0 ? (

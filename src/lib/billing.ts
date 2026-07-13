@@ -14,7 +14,10 @@ type StartCheckoutArgs = {
 
 type CheckoutResponse = {
   url: string;
-  sessionId: string;
+  reference: string;
+  provider?: 'pesapal';
+  sessionId?: string;
+  orderTrackingId?: string;
 };
 
 export type CoupleCheckoutSyncResponse = {
@@ -35,7 +38,11 @@ export function withCheckoutSessionId(successPath: string) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-export async function startStripeCheckout({
+export function getCheckoutReferenceFromSearchParams(searchParams: URLSearchParams) {
+  return searchParams.get('OrderTrackingId') || searchParams.get('checkout_session_id');
+}
+
+export async function startCheckout({
   audience,
   feature,
   lookupKey,
@@ -45,15 +52,17 @@ export async function startStripeCheckout({
   weddingId,
 }: StartCheckoutArgs) {
   const origin = window.location.origin;
+  const successUrl = new URL(successPath, 'https://zania.local');
+  successUrl.searchParams.delete('checkout_session_id');
 
-  const { data, error } = await supabase.functions.invoke<CheckoutResponse>('create-stripe-checkout', {
+  const { data, error } = await supabase.functions.invoke<CheckoutResponse>('create-pesapal-checkout', {
     body: {
       audience,
       feature,
       lookupKey,
       cadence,
       weddingId,
-      successUrl: new URL(successPath, origin).toString(),
+      successUrl: new URL(`${successUrl.pathname}${successUrl.search}${successUrl.hash}`, origin).toString(),
       cancelUrl: new URL(cancelPath, origin).toString(),
     },
   });
@@ -64,17 +73,15 @@ export async function startStripeCheckout({
   }
 
   if (!data?.url) {
-    throw new Error('Stripe checkout URL was not returned.');
+    throw new Error('Checkout URL was not returned.');
   }
 
   window.location.assign(data.url);
 }
 
-export async function syncCoupleCheckout(sessionId: string) {
-  const { data, error } = await supabase.functions.invoke<CoupleCheckoutSyncResponse>('sync-couple-checkout', {
-    body: {
-      sessionId,
-    },
+export async function syncCoupleCheckout(reference: string) {
+  const { data, error } = await supabase.functions.invoke<CoupleCheckoutSyncResponse>('sync-pesapal-couple-checkout', {
+    body: { orderTrackingId: reference },
   });
 
   if (error) {
@@ -84,6 +91,29 @@ export async function syncCoupleCheckout(sessionId: string) {
 
   if (!data) {
     throw new Error('Couple checkout sync did not return a response.');
+  }
+
+  return data;
+}
+
+export async function syncProfessionalCheckout(
+  reference: string,
+  audience: Extract<PricingAudience, 'planner' | 'vendor'>,
+) {
+  const { data, error } = await supabase.functions.invoke<{
+    activatedFeatures: string[];
+    seatLimit: number | null;
+  }>('sync-pesapal-professional-checkout', {
+    body: { orderTrackingId: reference, audience },
+  });
+
+  if (error) {
+    const normalized = await normalizeInvokeError(error, 'Could not sync checkout.');
+    throw new Error(describeBillingError('checkout_sync', normalized.statusCode, normalized.message));
+  }
+
+  if (!data) {
+    throw new Error('Professional checkout sync did not return a response.');
   }
 
   return data;

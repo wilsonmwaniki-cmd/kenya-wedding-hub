@@ -113,7 +113,7 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     const RESEND_FROM_EMAIL =
-      Deno.env.get('RESEND_FROM_EMAIL') || 'Zania Weddings <invites@zaniaweddings.com>';
+      Deno.env.get('RESEND_FROM_EMAIL') || 'Zania Weddings <invites@planwithzania.com>';
     const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') || req.headers.get('origin') || 'https://kenya-wedding-hub.vercel.app';
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {

@@ -82,10 +82,10 @@ export interface EntitlementDecision {
   planName: string;
   entitlementCode: string;
   billingCadence: 'one_time' | 'monthly' | 'annual' | 'monthly_or_annual';
-  stripeProductKey: string;
-  stripeMonthlyLookupKey: string | null;
-  stripeAnnualLookupKey: string | null;
-  stripeOneTimeLookupKey: string | null;
+  billingProductKey: string;
+  checkoutMonthlyLookupKey: string | null;
+  checkoutAnnualLookupKey: string | null;
+  checkoutOneTimeLookupKey: string | null;
   pricingHref: string;
   title: string;
   description: string;
@@ -211,8 +211,8 @@ function buildCouplePricingHref(tier: Exclude<CouplePlanTier, 'free'>, feature?:
   });
 
   if (feature) params.set('feature', feature);
-  if (plan.stripeMonthlyLookupKey) params.set('monthlyLookupKey', plan.stripeMonthlyLookupKey);
-  if (plan.stripeAnnualLookupKey) params.set('annualLookupKey', plan.stripeAnnualLookupKey);
+  if (plan.checkoutMonthlyLookupKey) params.set('monthlyLookupKey', plan.checkoutMonthlyLookupKey);
+  if (plan.checkoutAnnualLookupKey) params.set('annualLookupKey', plan.checkoutAnnualLookupKey);
 
   return `/pricing?${params.toString()}`;
 }
@@ -260,10 +260,10 @@ function buildDecision(
     planName: plan.paidTierName,
     entitlementCode: plan.entitlementCode,
     billingCadence: plan.billingCadence,
-    stripeProductKey: plan.stripeProductKey,
-    stripeMonthlyLookupKey: plan.stripeMonthlyLookupKey,
-    stripeAnnualLookupKey: plan.stripeAnnualLookupKey,
-    stripeOneTimeLookupKey: plan.stripeOneTimeLookupKey,
+    billingProductKey: plan.billingProductKey,
+    checkoutMonthlyLookupKey: plan.checkoutMonthlyLookupKey,
+    checkoutAnnualLookupKey: plan.checkoutAnnualLookupKey,
+    checkoutOneTimeLookupKey: plan.checkoutOneTimeLookupKey,
     pricingHref: buildPricingHref(audience, feature),
     title: overrides?.title ?? `Upgrade to ${plan.paidTierName}`,
     description: overrides?.description ?? `Unlock ${plan.paidTierName} to continue.`,
@@ -286,10 +286,10 @@ function buildCoupleDecision(
     planName: plan.title,
     entitlementCode: `couple_${tier}`,
     billingCadence: 'monthly_or_annual',
-    stripeProductKey: `couple_${tier}`,
-    stripeMonthlyLookupKey: plan.stripeMonthlyLookupKey,
-    stripeAnnualLookupKey: plan.stripeAnnualLookupKey,
-    stripeOneTimeLookupKey: null,
+    billingProductKey: `couple_${tier}`,
+    checkoutMonthlyLookupKey: plan.checkoutMonthlyLookupKey,
+    checkoutAnnualLookupKey: plan.checkoutAnnualLookupKey,
+    checkoutOneTimeLookupKey: null,
     pricingHref: buildCouplePricingHref(tier, feature),
     title: overrides?.title ?? `Upgrade to ${plan.title}`,
     description: overrides?.description ?? `Unlock ${plan.title} to continue.`,
@@ -311,11 +311,11 @@ function buildCoupleAddonDecision(
     feature,
     planName: addon.title,
     entitlementCode: code,
-    billingCadence: addon.stripeAnnualLookupKey ? 'monthly_or_annual' : 'monthly',
-    stripeProductKey: code,
-    stripeMonthlyLookupKey: addon.stripeMonthlyLookupKey,
-    stripeAnnualLookupKey: addon.stripeAnnualLookupKey,
-    stripeOneTimeLookupKey: null,
+    billingCadence: addon.checkoutAnnualLookupKey ? 'monthly_or_annual' : 'monthly',
+    billingProductKey: code,
+    checkoutMonthlyLookupKey: addon.checkoutMonthlyLookupKey,
+    checkoutAnnualLookupKey: addon.checkoutAnnualLookupKey,
+    checkoutOneTimeLookupKey: null,
     pricingHref: buildCoupleAddonPricingHref(code, feature),
     title: overrides?.title ?? `Add ${addon.title}`,
     description: overrides?.description ?? `Unlock ${addon.title} for this wedding.`,
@@ -339,10 +339,10 @@ function buildProfessionalAddonDecision(
     planName: addon.title,
     entitlementCode: code,
     billingCadence: 'monthly',
-    stripeProductKey: code,
-    stripeMonthlyLookupKey: addon.stripeMonthlyLookupKey,
-    stripeAnnualLookupKey: addon.stripeAnnualLookupKey,
-    stripeOneTimeLookupKey: null,
+    billingProductKey: code,
+    checkoutMonthlyLookupKey: addon.checkoutMonthlyLookupKey,
+    checkoutAnnualLookupKey: addon.checkoutAnnualLookupKey,
+    checkoutOneTimeLookupKey: null,
     pricingHref: buildProfessionalAddonPricingHref(audience, code, feature),
     title: overrides?.title ?? `Add ${addon.title}`,
     description: overrides?.description ?? `Unlock ${addon.title} for your ${audience} workspace.`,
@@ -388,19 +388,19 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
       });
     case 'couple.connect_vendors':
       return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'basic'), hasWeddingEntitlement(context, 'vendor_collaboration'), {
-        title: 'Upgrade to collaborate with vendors',
-        description: 'You can shortlist and compare vendors for free. Upgrade to Basic to share briefs, coordinate updates, and manage vendor collaboration in one workspace.',
+        title: 'Upgrade to Collaborative',
+        description: 'Your wedding now involves more people and moving parts. Upgrade to Collaborative to invite your planner, committee, family or vendors.',
         reasons: hasWeddingEntitlement(context, 'vendor_collaboration')
           ? []
-          : ['Vendor collaboration is part of Basic.'],
+          : ['Vendor collaboration needs Collaborative access.'],
       });
     case 'couple.connect_planners':
       return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'basic'), hasWeddingEntitlement(context, 'planner_collaboration'), {
-        title: 'Upgrade to work with a planner',
-        description: 'Upgrade to Basic to invite a planner, share your progress, and keep your wedding workspace collaborative.',
+        title: 'Upgrade to Collaborative',
+        description: 'Your wedding now involves more people and moving parts. Upgrade to Collaborative to invite your planner, committee, family or vendors.',
         reasons: hasWeddingEntitlement(context, 'planner_collaboration')
           ? []
-          : ['Planner collaboration is part of Basic.'],
+          : ['Planner collaboration needs Collaborative access.'],
       });
     case 'couple.calendar_sync':
       return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'premium'), hasWeddingEntitlement(context, 'timeline_management'), {

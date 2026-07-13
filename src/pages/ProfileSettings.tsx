@@ -21,7 +21,9 @@ import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import InfoTip from '@/components/InfoTip';
 import { normalizeExternalUrl } from '@/lib/security';
 import {
+  archiveWeddingWorkspace,
   completePendingWeddingSetup,
+  deleteWeddingWorkspace,
   getMyWeddingOwnershipSummary,
   getMyWeddingOwnershipSummaryFromTables,
   getPendingWeddingSetup,
@@ -49,12 +51,20 @@ import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { normalizeHumanName } from '@/lib/names';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
+type AccountPurpose = 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other';
 
 interface OwnedWeddingWorkspace extends MyWeddingOwnershipSummary {}
 
 const committeePermissionOptions = ['chair', 'member', 'viewer'] as const;
+const accountPurposeOptions: Array<{ value: AccountPurpose; label: string }> = [
+  { value: 'planning_my_own_wedding', label: 'I am planning my own wedding' },
+  { value: 'helping_family_or_friend', label: 'I am helping a family member or friend' },
+  { value: 'professional_planner', label: 'I am a professional wedding planner' },
+  { value: 'vendor', label: 'I am a wedding vendor' },
+  { value: 'other', label: 'Other' },
+];
 export default function ProfileSettings() {
-  const { user, profile, updateProfile, signOut } = useAuth();
+  const { user, profile, updateProfile, signOut, deviceSessions, signOutOtherDevices } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -84,12 +94,16 @@ export default function ProfileSettings() {
   const [ownershipLoading, setOwnershipLoading] = useState(false);
   const [ownershipError, setOwnershipError] = useState<string | null>(null);
   const [repairingWeddingSetup, setRepairingWeddingSetup] = useState(false);
+  const [archivingWedding, setArchivingWedding] = useState(false);
+  const [deletingWedding, setDeletingWedding] = useState(false);
+  const [weddingDeletionReason, setWeddingDeletionReason] = useState('');
   const [setupWeddingName, setSetupWeddingName] = useState('');
   const [setupWeddingOwnerRole, setSetupWeddingOwnerRole] = useState<WeddingOwnerRole | null>(null);
   const [professionalSetupRole, setProfessionalSetupRole] = useState<'planner' | 'vendor' | null>(null);
   const [completingProfessionalSetup, setCompletingProfessionalSetup] = useState(false);
   const [privacyAction, setPrivacyAction] = useState<'marketing' | 'directory' | 'delete' | null>(null);
   const [deletePrivacyConfirm, setDeletePrivacyConfirm] = useState('');
+  const [signingOutOtherDevices, setSigningOutOtherDevices] = useState(false);
 
   const isPlanner = profile?.role === 'planner';
   const isVendor = profile?.role === 'vendor';
@@ -155,6 +169,7 @@ export default function ProfileSettings() {
   };
 
   const [form, setForm] = useState({
+    account_purpose: 'planning_my_own_wedding' as AccountPurpose,
     full_name: '',
     partner_name: '',
     wedding_date: '',
@@ -242,6 +257,7 @@ export default function ProfileSettings() {
   useEffect(() => {
     if (profile) {
       setForm({
+        account_purpose: (profile.account_purpose as AccountPurpose | null) ?? 'planning_my_own_wedding',
         full_name: profile.full_name || '',
         partner_name: profile.partner_name || '',
         wedding_date: profile.wedding_date || '',
@@ -459,7 +475,7 @@ export default function ProfileSettings() {
 
     setSaving(true);
     try {
-      const updates: Record<string, any> = { full_name: form.full_name };
+      const updates: Record<string, any> = { full_name: form.full_name, account_purpose: form.account_purpose };
       if (isProfessionalPlanner) {
         updates.company_name = form.company_name;
         updates.company_email = form.company_email;
@@ -605,6 +621,57 @@ export default function ProfileSettings() {
       });
     } finally {
       setCompletingProfessionalSetup(false);
+    }
+  };
+
+  const handleArchiveWedding = async () => {
+    if (!ownedWedding?.weddingId) return;
+    if (!window.confirm('Archive this wedding workspace? You can keep its history without showing it in the active dashboard.')) {
+      return;
+    }
+
+    setArchivingWedding(true);
+    try {
+      await archiveWeddingWorkspace(ownedWedding.weddingId);
+      await loadOwnedWeddingWorkspace();
+      toast({
+        title: 'Wedding archived',
+        description: 'The workspace is hidden from the active dashboard and can be restored later by support or admin review.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not archive wedding',
+        description: error.message ?? 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setArchivingWedding(false);
+    }
+  };
+
+  const handleDeleteWedding = async () => {
+    if (!ownedWedding?.weddingId) return;
+    if (!window.confirm('Delete this wedding workspace? Zania will soft-delete it and preserve limited lifecycle history for support review and abuse prevention.')) {
+      return;
+    }
+
+    setDeletingWedding(true);
+    try {
+      await deleteWeddingWorkspace(ownedWedding.weddingId, weddingDeletionReason.trim() || null);
+      setWeddingDeletionReason('');
+      await loadOwnedWeddingWorkspace();
+      toast({
+        title: 'Wedding deleted',
+        description: 'The workspace is no longer active, but its replacement eligibility and lifecycle history were preserved.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not delete wedding',
+        description: error.message ?? 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingWedding(false);
     }
   };
 
@@ -902,10 +969,40 @@ export default function ProfileSettings() {
     }
   };
 
+  const handleSignOutOtherDevices = async () => {
+    setSigningOutOtherDevices(true);
+
+    try {
+      const signedOutCount = await signOutOtherDevices();
+      toast({
+        title: signedOutCount > 0 ? 'Other devices signed out' : 'No other active devices',
+        description: signedOutCount > 0
+          ? `Signed out ${signedOutCount} other device${signedOutCount === 1 ? '' : 's'}.`
+          : 'This looks like your only active trusted device right now.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Could not sign out other devices',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSigningOutOtherDevices(false);
+    }
+  };
+
   return (
-    <div className={isProfessionalWorkspace ? 'max-w-4xl space-y-6' : 'max-w-xl space-y-6'}>
+    <div
+      className={
+        isCouple
+          ? 'max-w-6xl space-y-6'
+          : isProfessionalWorkspace
+            ? 'max-w-4xl space-y-6'
+            : 'max-w-xl space-y-6'
+      }
+    >
       <div>
-        <h1 className="font-display text-3xl font-bold text-foreground">Settings</h1>
+        <h1 className="workspace-h1">Settings</h1>
         <p className="text-muted-foreground">
           {professionalSetupPending
             ? 'Choose your account type and finish your business profile.'
@@ -925,7 +1022,7 @@ export default function ProfileSettings() {
         <Card className="overflow-hidden border-primary/20 bg-[linear-gradient(180deg,rgba(241,115,64,0.08),rgba(255,255,255,0.96)_48%)] shadow-card">
           <CardHeader className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className="border border-primary/20 bg-background/80 text-foreground">
+              <Badge variant="info" className="border border-primary/20 bg-background/80 text-foreground">
                 Professional onboarding
               </Badge>
               <Badge variant="outline" className="border-primary/25 bg-background/65 text-muted-foreground">
@@ -1022,15 +1119,15 @@ export default function ProfileSettings() {
       )}
 
       {isPlanner && (
-        <Card className="shadow-card border-primary/20 bg-primary/5">
-          <CardContent className="flex items-center gap-3 py-4">
-            <ExternalLink className="h-4 w-4 text-primary shrink-0" />
+        <Card className="semantic-surface-info shadow-card">
+          <CardContent className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center">
+            <ExternalLink className="h-4 w-4 shrink-0 text-info" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground">{isCommittee ? 'Workspace Link' : 'Public Profile'}</p>
               <p className="text-xs text-muted-foreground truncate">{isCommittee ? 'Committee accounts are not listed publicly. This link is private to your workspace.' : profileUrl}</p>
             </div>
             {!isCommittee && (
-              <Button type="button" variant="outline" size="sm" onClick={copyProfileLink}>
+              <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={copyProfileLink}>
                 <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Link
               </Button>
             )}
@@ -1039,10 +1136,10 @@ export default function ProfileSettings() {
       )}
 
       {isPlanner && profile && (
-        <Card className={plannerFullAccess ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
+        <Card className={plannerFullAccess ? 'semantic-surface-success' : 'semantic-surface-warning'}>
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
-              {plannerFullAccess ? <ShieldCheck className="h-5 w-5 text-primary" /> : <LockKeyhole className="h-5 w-5 text-primary" />}
+              {plannerFullAccess ? <ShieldCheck className="h-5 w-5 text-success" /> : <LockKeyhole className="h-5 w-5 text-warning" />}
               Planner Access
             </CardTitle>
             <CardDescription>
@@ -1051,11 +1148,11 @@ export default function ProfileSettings() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Badge variant={plannerSubscriptionActive ? 'secondary' : 'outline'}>
+              <Badge variant={plannerSubscriptionActive ? 'success' : 'outline'}>
                 <CreditCard className="mr-1 h-3 w-3" />
                 {betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'trial' : profile.planner_subscription_status}
               </Badge>
-              <Badge variant={profile.planner_verified ? 'secondary' : 'outline'}>
+              <Badge variant={profile.planner_verified ? 'success' : 'outline'}>
                 <ShieldCheck className="mr-1 h-3 w-3" />
                 {profile.planner_verified ? 'Verified' : profile.planner_verification_requested ? 'Verification requested' : 'Unverified'}
               </Badge>
@@ -1089,7 +1186,7 @@ export default function ProfileSettings() {
                 {profile.planner_verified ? 'Already Verified' : profile.planner_verification_requested ? 'Verification Requested' : 'Request Verification'}
               </Button>
               {!plannerSubscriptionActive && (
-                <div className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <div className="inline-flex items-center gap-2 rounded-md border border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-3 py-2 text-sm text-warning">
                   <AlertTriangle className="h-4 w-4" />
                   {isCommittee ? 'Committee subscription must be activated by admin before verification can be requested.' : 'Subscription must be activated by admin before verification can be requested.'}
                 </div>
@@ -1099,60 +1196,11 @@ export default function ProfileSettings() {
         </Card>
       )}
 
-      {isCouple && profile && coupleExportDecision && (
-        <Card className={coupleExportDecision?.allowed ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              {coupleExportDecision?.allowed ? <ShieldCheck className="h-5 w-5 text-primary" /> : <LockKeyhole className="h-5 w-5 text-primary" />}
-              Wedding Plan & Exports
-            </CardTitle>
-            <CardDescription>
-              Your wedding plan controls exports, collaboration, and the active coordination tools inside your wedding workspace.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={coupleExportDecision?.allowed ? 'secondary' : 'outline'}>
-                <CreditCard className="mr-1 h-3 w-3" />
-                {couplePlanTier ? couplePlanTier.charAt(0).toUpperCase() + couplePlanTier.slice(1) : 'Free'}
-              </Badge>
-              <Badge variant={coupleExportDecision?.allowed ? 'secondary' : 'outline'}>
-                <ShieldCheck className="mr-1 h-3 w-3" />
-                {coupleExportDecision?.allowed ? 'Exports enabled' : 'Exports locked'}
-              </Badge>
-            </div>
-
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">Current access status</p>
-              <p className="mt-1">
-                {coupleExportDecision?.allowed
-                  ? 'Your current wedding plan includes exports. Budget, task, and vendor progress exports are available across your workspace.'
-                  : 'You are still on the free plan. Exports, planner/vendor collaboration, and richer coordination tools unlock with Basic or Premium.'}
-              </p>
-              {profile.planning_pass_expires_at && (
-                <p className="mt-1 text-xs">
-                  Plan expiry: {new Date(profile.planning_pass_expires_at).toLocaleDateString()}
-                </p>
-              )}
-              <p className="mt-1 text-xs">Admins can still manage legacy billing records from the admin portal while the wedding plan model rolls out.</p>
-            </div>
-
-            {!coupleExportDecision?.allowed ? (
-              <InlineUpgradePrompt decision={coupleExportDecision} />
-            ) : (
-              <Button asChild variant="outline">
-                <Link to={coupleExportDecision.pricingHref}>View plan details</Link>
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       {isCommittee && profile && committeeExportDecision && (
-        <Card className={committeeExportDecision.allowed ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
+        <Card className={committeeExportDecision.allowed ? 'semantic-surface-success' : 'semantic-surface-warning'}>
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
-              {committeeExportDecision.allowed ? <ShieldCheck className="h-5 w-5 text-primary" /> : <LockKeyhole className="h-5 w-5 text-primary" />}
+              {committeeExportDecision.allowed ? <ShieldCheck className="h-5 w-5 text-success" /> : <LockKeyhole className="h-5 w-5 text-warning" />}
               Committee Pass & Exports
             </CardTitle>
             <CardDescription>
@@ -1161,15 +1209,15 @@ export default function ProfileSettings() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Badge variant={plannerSubscriptionActive ? 'secondary' : 'outline'}>
+              <Badge variant={plannerSubscriptionActive ? 'success' : 'outline'}>
                 <CreditCard className="mr-1 h-3 w-3" />
                 {betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'trial' : profile.planner_subscription_status}
               </Badge>
-              <Badge variant={profile.planner_verified ? 'secondary' : 'outline'}>
+              <Badge variant={profile.planner_verified ? 'success' : 'outline'}>
                 <ShieldCheck className="mr-1 h-3 w-3" />
                 {profile.planner_verified ? 'Verified' : 'Verification pending'}
               </Badge>
-              <Badge variant={committeeExportDecision.allowed ? 'secondary' : 'outline'}>
+              <Badge variant={committeeExportDecision.allowed ? 'success' : 'outline'}>
                 <ShieldCheck className="mr-1 h-3 w-3" />
                 {committeeExportDecision.allowed ? 'Exports enabled' : 'Exports locked'}
               </Badge>
@@ -1202,148 +1250,233 @@ export default function ProfileSettings() {
       )}
 
       {isCouple && (
-        <Card className="shadow-card border-primary/20 bg-primary/5">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <CardTitle className="font-display">Wedding Ownership</CardTitle>
-              <InfoTip content="Use this section to manage your partner invite, wedding code, and who has shared ownership of the wedding workspace." />
-            </div>
-            <CardDescription>Partner invite, code, and shared ownership.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {ownershipLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading wedding ownership details...
-              </div>
-            ) : ownershipError ? (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">{ownershipError}</p>
-                <Button type="button" variant="outline" onClick={() => void loadOwnedWeddingWorkspace()}>
-                  Try again
-                </Button>
-              </div>
-            ) : ownedWedding ? (
-              <>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">{ownedWedding.weddingName}</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="capitalize">
-                      {ownedWedding.ownerRole}
-                    </Badge>
-                    <Badge variant={ownedWedding.partnerStatus === 'active' ? 'default' : 'secondary'}>
-                      {ownedWedding.partnerStatus === 'active'
-                        ? 'Partner connected'
-                        : ownedWedding.partnerStatus === 'pending'
-                          ? 'Partner invite pending'
-                          : 'Partner not invited'}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Wedding code: <span className="font-medium tracking-[0.16em] text-foreground">{ownedWedding.weddingCode}</span>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] xl:items-start">
+          {profile && coupleExportDecision ? (
+            <Card className={`h-full shadow-card ${coupleExportDecision?.allowed ? 'semantic-surface-success' : 'semantic-surface-warning'}`}>
+              <CardHeader>
+                <CardTitle className="font-display flex items-center gap-2">
+                  {coupleExportDecision?.allowed ? <ShieldCheck className="h-5 w-5 text-success" /> : <LockKeyhole className="h-5 w-5 text-warning" />}
+                  Wedding Plan & Exports
+                </CardTitle>
+                <CardDescription>
+                  Your wedding plan controls exports, collaboration, and the active coordination tools inside your wedding workspace.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={coupleExportDecision?.allowed ? 'info' : 'outline'}>
+                    <CreditCard className="mr-1 h-3 w-3" />
+                    {couplePlanTier ? couplePlanTier.charAt(0).toUpperCase() + couplePlanTier.slice(1) : 'Free'}
+                  </Badge>
+                  <Badge variant={coupleExportDecision?.allowed ? 'success' : 'outline'}>
+                    <ShieldCheck className="mr-1 h-3 w-3" />
+                    {coupleExportDecision?.allowed ? 'Exports enabled' : 'Exports locked'}
+                  </Badge>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">Current access status</p>
+                  <p className="mt-1">
+                    {coupleExportDecision?.allowed
+                      ? 'Your current wedding plan includes exports. Budget, task, and vendor progress exports are available across your workspace.'
+                      : 'You are still on the free plan. Exports, planner/vendor collaboration, and richer coordination tools unlock with Basic or Premium.'}
                   </p>
-                  {ownedWedding.partnerInviteExpiresAt && (
-                    <p className="text-xs text-muted-foreground">
-                      Current partner invite expires on {new Date(ownedWedding.partnerInviteExpiresAt).toLocaleDateString()}.
+                  {profile.planning_pass_expires_at && (
+                    <p className="mt-1 text-xs">
+                      Plan expiry: {new Date(profile.planning_pass_expires_at).toLocaleDateString()}
                     </p>
                   )}
+                  <p className="mt-1 text-xs">Admins can still manage legacy billing records from the admin portal while the wedding plan model rolls out.</p>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="settings-partner-email">Partner email</Label>
-                  <Input
-                    id="settings-partner-email"
-                    type="email"
-                    value={partnerEmailInput}
-                    onChange={(e) => setPartnerEmailInput(e.target.value)}
-                    placeholder={ownedWedding.partnerRole === 'groom' ? 'groom@example.com' : 'bride@example.com'}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Button
-                    type="button"
-                    disabled={partnerInviteSubmitting || !partnerEmailInput.trim() || !ownedWedding.weddingId}
-                    onClick={sendPartnerInvite}
-                  >
-                    {partnerInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    {ownedWedding.partnerStatus === 'pending' ? 'Resend partner invite' : 'Send partner invite'}
+                {!coupleExportDecision?.allowed ? (
+                  <InlineUpgradePrompt decision={coupleExportDecision} />
+                ) : (
+                  <Button asChild variant="outline">
+                    <Link to={coupleExportDecision.pricingHref}>View plan details</Link>
                   </Button>
-                  <p className="text-xs text-muted-foreground">
-                    This is the email your co-owner will use to join the wedding.
-                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card className="semantic-surface-info h-full shadow-card">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <CardTitle className="font-display">Wedding Ownership</CardTitle>
+                <InfoTip content="Use this section to manage your partner invite, wedding code, and who has shared ownership of the wedding workspace." />
+              </div>
+              <CardDescription>Partner invite, code, and shared ownership.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {ownershipLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading wedding ownership details...
                 </div>
-              </>
-            ) : pendingWeddingSetup?.intent === 'create_wedding' ? (
-              <>
-                <div className="rounded-lg border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground">
-                  Your account is ready. Finish the wedding details here and we’ll create the shared wedding workspace for both of you.
+              ) : ownershipError ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">{ownershipError}</p>
+                  <Button type="button" variant="outline" onClick={() => void loadOwnedWeddingWorkspace()}>
+                    Try again
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <Label>Wedding name</Label>
-                  <Input
-                    value={setupWeddingName}
-                    onChange={(e) => setSetupWeddingName(e.target.value)}
-                    placeholder="e.g. Mary & James Wedding"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>I am starting this wedding as</Label>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {([
-                      { value: 'bride', title: 'I am the bride', copy: 'We’ll invite the groom as the second owner.' },
-                      { value: 'groom', title: 'I am the groom', copy: 'We’ll invite the bride as the second owner.' },
-                    ] as const).map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setSetupWeddingOwnerRole(option.value)}
-                        className={`rounded-xl border px-4 py-3 text-left transition-all ${
-                          setupWeddingOwnerRole === option.value
-                            ? 'border-primary bg-primary/5 text-foreground'
-                            : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
-                        }`}
+              ) : ownedWedding ? (
+                <>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">{ownedWedding.weddingName}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="capitalize">
+                        {ownedWedding.ownerRole}
+                      </Badge>
+                      <Badge
+                        variant={
+                          ownedWedding.partnerStatus === 'active'
+                            ? 'success'
+                            : ownedWedding.partnerStatus === 'pending'
+                              ? 'warning'
+                              : 'outline'
+                        }
                       >
-                        <p className="font-medium">{option.title}</p>
-                        <p className="mt-1 text-xs">{option.copy}</p>
-                      </button>
-                    ))}
+                        {ownedWedding.partnerStatus === 'active'
+                          ? 'Partner connected'
+                          : ownedWedding.partnerStatus === 'pending'
+                            ? 'Partner invite pending'
+                            : 'Partner not invited'}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Wedding code: <span className="font-medium tracking-[0.16em] text-foreground">{ownedWedding.weddingCode}</span>
+                    </p>
+                    {ownedWedding.partnerInviteExpiresAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Current partner invite expires on {new Date(ownedWedding.partnerInviteExpiresAt).toLocaleDateString()}.
+                      </p>
+                    )}
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Partner email</Label>
-                  <Input
-                    type="email"
-                    value={partnerEmailInput}
-                    onChange={(e) => setPartnerEmailInput(e.target.value)}
-                    placeholder={setupWeddingOwnerRole === 'bride' ? 'groom@example.com' : 'bride@example.com'}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Use the email your spouse will sign in with.
-                  </p>
-                </div>
-                <Button type="button" onClick={repairWeddingSetup} disabled={repairingWeddingSetup}>
-                  {repairingWeddingSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Create wedding workspace
-                </Button>
-              </>
-            ) : pendingWeddingSetup ? (
-              <>
-                <div className="rounded-lg border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground">
-                  Your signup details were saved, but the shared wedding workspace has not finished setting up yet.
-                </div>
-                <Button type="button" onClick={repairWeddingSetup} disabled={repairingWeddingSetup}>
-                  {repairingWeddingSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Finish wedding setup
-                </Button>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No wedding ownership details are available yet. If you expected a partner invite here, sign out and complete the create-wedding flow again.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="settings-partner-email">Partner email</Label>
+                    <Input
+                      id="settings-partner-email"
+                      type="email"
+                      value={partnerEmailInput}
+                      onChange={(e) => setPartnerEmailInput(e.target.value)}
+                      placeholder={ownedWedding.partnerRole === 'groom' ? 'groom@example.com' : 'bride@example.com'}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Button
+                      type="button"
+                      disabled={partnerInviteSubmitting || !partnerEmailInput.trim() || !ownedWedding.weddingId}
+                      onClick={sendPartnerInvite}
+                    >
+                      {partnerInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      {ownedWedding.partnerStatus === 'pending' ? 'Resend partner invite' : 'Send partner invite'}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      This is the email your co-owner will use to join the wedding.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 rounded-xl border border-border/70 bg-background px-4 py-4">
+                    <p className="text-sm font-medium text-foreground">Wedding lifecycle</p>
+                    <p className="text-xs text-muted-foreground">
+                      If this wedding was created by mistake, you can archive it or delete it. Deletion is soft-deleted and does not automatically reset free-plan eligibility.
+                    </p>
+                    <div className="space-y-2">
+                      <Label htmlFor="wedding-deletion-reason">Reason (optional)</Label>
+                      <Input
+                        id="wedding-deletion-reason"
+                        value={weddingDeletionReason}
+                        onChange={(e) => setWeddingDeletionReason(e.target.value)}
+                        placeholder="Created by mistake, date changed, wedding cancelled..."
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button type="button" variant="outline" onClick={handleArchiveWedding} disabled={archivingWedding || deletingWedding}>
+                        {archivingWedding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Archive wedding
+                      </Button>
+                      <Button type="button" variant="destructive" onClick={handleDeleteWedding} disabled={archivingWedding || deletingWedding}>
+                        {deletingWedding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Delete test wedding
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              ) : pendingWeddingSetup?.intent === 'create_wedding' ? (
+                <>
+                  <div className="rounded-lg border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground">
+                    Your account is ready. Finish the wedding details here and we’ll create the shared wedding workspace for both of you.
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Wedding name</Label>
+                    <Input
+                      value={setupWeddingName}
+                      onChange={(e) => setSetupWeddingName(e.target.value)}
+                      placeholder="e.g. Mary & James Wedding"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>I am starting this wedding as</Label>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {([
+                        { value: 'bride', title: 'I am the bride', copy: 'We’ll invite the groom as the second owner.' },
+                        { value: 'groom', title: 'I am the groom', copy: 'We’ll invite the bride as the second owner.' },
+                      ] as const).map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setSetupWeddingOwnerRole(option.value)}
+                          className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                            setupWeddingOwnerRole === option.value
+                              ? 'border-primary bg-primary/5 text-foreground'
+                              : 'border-border/60 bg-background text-muted-foreground hover:border-primary/40'
+                          }`}
+                        >
+                          <p className="font-medium">{option.title}</p>
+                          <p className="mt-1 text-xs">{option.copy}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Partner email</Label>
+                    <Input
+                      type="email"
+                      value={partnerEmailInput}
+                      onChange={(e) => setPartnerEmailInput(e.target.value)}
+                      placeholder={setupWeddingOwnerRole === 'bride' ? 'groom@example.com' : 'bride@example.com'}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Use the email your spouse will sign in with.
+                    </p>
+                  </div>
+                  <Button type="button" onClick={repairWeddingSetup} disabled={repairingWeddingSetup}>
+                    {repairingWeddingSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Create wedding workspace
+                  </Button>
+                </>
+              ) : pendingWeddingSetup ? (
+                <>
+                  <div className="rounded-lg border border-dashed border-border/70 bg-background px-4 py-4 text-sm text-muted-foreground">
+                    Your signup details were saved, but the shared wedding workspace has not finished setting up yet.
+                  </div>
+                  <Button type="button" onClick={repairWeddingSetup} disabled={repairingWeddingSetup}>
+                    {repairingWeddingSetup ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Finish wedding setup
+                  </Button>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No wedding ownership details are available yet. If you expected a partner invite here, sign out and complete the create-wedding flow again.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       <form onSubmit={handleSave} className="space-y-6">
@@ -1374,11 +1507,72 @@ export default function ProfileSettings() {
               <FormFieldError message={formErrors.full_name} />
             </div>
             <div className="space-y-2">
+              <Label>Account purpose</Label>
+              <Select value={form.account_purpose} onValueChange={(value: AccountPurpose) => setForm((current) => ({ ...current, account_purpose: value }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose how you use Zania" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accountPurposeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                This helps Zania guide you into the right workspace and collaboration plan.
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label>Sign-in Email</Label>
               <Input value={user?.email || ''} readOnly />
               <p className="text-xs text-muted-foreground">
                 This is the email currently tied to your account sign-in.
               </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="font-display">Device Sessions</CardTitle>
+            <CardDescription>See where your account is active and sign out old devices.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">Current trusted devices</p>
+                <p className="text-xs text-muted-foreground">
+                  Free Intimate accounts stay limited to one active trusted device at a time.
+                </p>
+              </div>
+              <Button type="button" variant="outline" onClick={handleSignOutOtherDevices} disabled={signingOutOtherDevices}>
+                {signingOutOtherDevices ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Sign out other devices
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              {deviceSessions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No device sessions have been recorded yet.</p>
+              ) : deviceSessions.map((device) => (
+                <div key={device.id} className="rounded-lg border border-border/70 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-medium text-foreground">{device.device_name || `${device.browser || 'Browser'} on ${device.platform || 'device'}`}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Last active {new Date(device.last_seen_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {device.is_current && !device.revoked_at ? <Badge variant="secondary">Current</Badge> : null}
+                      {device.trusted_at && !device.revoked_at ? <Badge variant="outline">Trusted</Badge> : null}
+                      {device.revoked_at ? <Badge variant="destructive">Signed out</Badge> : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -1482,7 +1676,7 @@ export default function ProfileSettings() {
                   {form.specialties.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
                       {form.specialties.map(s => (
-                        <Badge key={s} variant="secondary" className="gap-1 pr-1">
+                        <Badge key={s} variant="info" className="gap-1 pr-1">
                           {s}
                           <button type="button" onClick={() => removeSpecialty(s)} className="ml-1 rounded-full hover:bg-muted p-0.5">
                             <X className="h-3 w-3" />
@@ -1518,7 +1712,7 @@ export default function ProfileSettings() {
                   {form.service_areas.length > 0 && (
                     <div className="flex flex-wrap gap-2">
                       {form.service_areas.map((county) => (
-                        <Badge key={county} variant="secondary" className="gap-1 pr-1">
+                        <Badge key={county} variant="info" className="gap-1 pr-1">
                           {county}
                           <button type="button" onClick={() => removeServiceArea(county)} className="ml-1 rounded-full hover:bg-muted p-0.5">
                             <X className="h-3 w-3" />
@@ -1618,10 +1812,7 @@ export default function ProfileSettings() {
 
             <Card className="shadow-card">
               <CardHeader>
-                <CardTitle className="font-display flex items-center gap-2">
-                  <UserCog className="h-5 w-5 text-primary" />
-                  Committee Members
-                </CardTitle>
+                <CardTitle>Committee Members</CardTitle>
                 <CardDescription>
                   Add members, assign wedding responsibilities, and store the phone numbers attached to each role.
                 </CardDescription>
@@ -1729,7 +1920,7 @@ export default function ProfileSettings() {
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Badge variant="outline">{member.responsibility}</Badge>
-                          <Badge variant="secondary">{member.permission_level}</Badge>
+                          <Badge variant="info">{member.permission_level}</Badge>
                         </div>
                       </div>
                       <Button
@@ -1896,10 +2087,7 @@ export default function ProfileSettings() {
 
       <Card className="shadow-card border-border/70">
         <CardHeader>
-          <CardTitle className="font-display flex items-center gap-2">
-            <LockKeyhole className="h-5 w-5 text-primary" />
-            Privacy & Communications
-          </CardTitle>
+          <CardTitle>Privacy &amp; Communications</CardTitle>
           <CardDescription>
             Control how Zania contacts you, whether your public business profile is visible, and whether your own profile-facing information stays on the platform.
           </CardDescription>

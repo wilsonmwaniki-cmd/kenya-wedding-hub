@@ -19,6 +19,7 @@ import { kenyaCounties } from '@/lib/kenyaLocations';
 import heroImage from '@/assets/hero-wedding.jpg';
 import BrandWordmark from '@/components/BrandWordmark';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
+import PublicSiteFooter from '@/components/PublicSiteFooter';
 
 const heroStats = [
   { index: '01', title: 'Planning workspace', desc: 'Keep guests, budgets, tasks, documents, and vendor notes in one place.' },
@@ -114,61 +115,63 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-        <Card className="border-white/18 bg-[linear-gradient(180deg,rgba(30,22,19,0.92),rgba(42,30,25,0.88))] shadow-[0_28px_80px_rgba(20,12,10,0.3)] backdrop-blur-md">
-        <CardContent className="space-y-4 p-5 sm:space-y-5 sm:p-7">
-          <div className="flex items-start gap-3">
+      <Card className="border-white/16 bg-[linear-gradient(180deg,rgba(30,22,19,0.94),rgba(38,28,24,0.9))] shadow-[0_30px_90px_rgba(14,9,7,0.34)] backdrop-blur-md">
+        <CardContent className="space-y-6 p-6 sm:space-y-7 sm:p-8">
+          <div className="flex items-start gap-4">
             <div className="rounded-xl border border-[#ead7c4]/18 bg-[#c9a96e]/10 px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#ead4aa]">
               Estimator
             </div>
-            <div>
-              <h3 className="font-editorial text-[1.7rem] font-medium leading-none text-[#f7efe7] sm:text-[2.2rem]">Quick Cost Estimate</h3>
-              <p className="mt-2 text-xs font-medium uppercase tracking-[0.24em] text-[#dcb188]">Free, instant, and no sign-up required</p>
+            <div className="space-y-2">
+              <h3 className="marketing-h3 text-[#f7efe7]">Quick Cost Estimate</h3>
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-[#dcb188]">Free, instant, and no sign-up required</p>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]">Number of guests</Label>
-            <Select value={guestCount} onValueChange={setGuestCount}>
-              <SelectTrigger className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="50">Up to 50 guests</SelectItem>
-                <SelectItem value="80">50 - 100 guests</SelectItem>
-                <SelectItem value="120">100 - 150 guests</SelectItem>
-                <SelectItem value="180">150 - 220 guests</SelectItem>
-                <SelectItem value="260">220+ guests</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]">Number of guests</Label>
+              <Select value={guestCount} onValueChange={setGuestCount}>
+                <SelectTrigger className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="50">Up to 50 guests</SelectItem>
+                  <SelectItem value="80">50 - 100 guests</SelectItem>
+                  <SelectItem value="120">100 - 150 guests</SelectItem>
+                  <SelectItem value="180">150 - 220 guests</SelectItem>
+                  <SelectItem value="260">220+ guests</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="hero-county" className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]">County</Label>
-            <Select value={county} onValueChange={setCounty}>
-              <SelectTrigger id="hero-county" className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12">
-                <SelectValue placeholder="Choose a county" />
-              </SelectTrigger>
-              <SelectContent>
-                {kenyaCounties.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="hero-county" className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]">County</Label>
+              <Select value={county} onValueChange={setCounty}>
+                <SelectTrigger id="hero-county" className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12">
+                  <SelectValue placeholder="Choose a county" />
+                </SelectTrigger>
+                <SelectContent>
+                  {kenyaCounties.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]">Wedding style</Label>
-            <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
-              <SelectTrigger className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="intimate">Intimate & Simple</SelectItem>
-                <SelectItem value="classic">Classic</SelectItem>
-                <SelectItem value="garden">Garden</SelectItem>
-                <SelectItem value="luxury">Luxury</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]">Wedding style</Label>
+              <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
+                <SelectTrigger className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="intimate">Intimate & Simple</SelectItem>
+                  <SelectItem value="classic">Classic</SelectItem>
+                  <SelectItem value="garden">Garden</SelectItem>
+                  <SelectItem value="luxury">Luxury</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <Button onClick={() => void loadEstimate()} className="h-11 w-full gap-2 border border-[#ce7d57] bg-[#c2724f] text-[#fff8f1] hover:bg-[#a85c3c] sm:h-12" disabled={loadingEstimate}>
@@ -176,21 +179,33 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
             Get Estimate
           </Button>
 
-          <div className="rounded-2xl border border-[#ead7c4]/14 bg-[rgba(15,10,8,0.28)] p-4">
-            <p className="text-sm font-medium text-[#f7efe7]">Estimated total budget</p>
-            <p className="mt-1 font-editorial text-3xl font-semibold text-[#fff8f1]">{formatCurrency(totals.suggested)}</p>
-            <p className="mt-2 text-xs font-medium text-[#f7efe7]">
-              Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
-            </p>
+          <div className="grid gap-4 sm:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-[24px] border border-[#ead7c4]/14 bg-[rgba(15,10,8,0.28)] p-5">
+              <p className="text-sm font-medium text-[#f7efe7]">Estimated total budget</p>
+              <p className="marketing-h3 mt-2 text-[#fff8f1]">{formatCurrency(totals.suggested)}</p>
+              <p className="mt-3 text-xs font-medium text-[#f7efe7]">
+                Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
+              </p>
+            </div>
+
+            <div className="rounded-[24px] border border-[#ead7c4]/14 bg-[rgba(255,255,255,0.05)] p-5">
+              <p className="text-sm font-medium text-[#f7efe7]">Estimate confidence</p>
+              <p className="mt-2 text-[28px] font-semibold tracking-[-0.03em] text-[#fff8f1]">
+                {totals.marketCount}/{estimateRows.length || 0}
+              </p>
+              <p className="mt-3 text-xs font-medium text-[#f7efe7]/78">
+                categories using live market observations
+              </p>
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-[#ead7c4]/14 bg-[rgba(255,255,255,0.05)] p-4">
+          <div className="rounded-[24px] border border-[#ead7c4]/14 bg-[rgba(255,255,255,0.05)] p-5">
             <p className="text-sm font-medium text-[#f7efe7]">What your estimate includes</p>
-            <div className="mt-3 grid gap-2 text-xs text-[#f7efe7]/85 sm:grid-cols-2">
+            <div className="mt-4 grid gap-3 text-xs text-[#f7efe7]/85 sm:grid-cols-2">
               {estimateRows.slice(0, 4).map((row) => (
-                <div key={row.category} className="rounded-xl border border-[#ead7c4]/12 bg-[rgba(13,10,8,0.24)] px-3 py-2">
+                <div key={row.category} className="rounded-2xl border border-[#ead7c4]/12 bg-[rgba(13,10,8,0.24)] px-4 py-3">
                   <p className="font-medium text-[#fff8f1]">{row.category}</p>
-                  <p className="font-medium text-[#f4dfc8]">{formatCurrency(row.suggested_amount)}</p>
+                  <p className="mt-1 font-medium text-[#f4dfc8]">{formatCurrency(row.suggested_amount)}</p>
                 </div>
               ))}
             </div>
@@ -214,7 +229,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">Cost Estimator</p>
-            <h3 className="mt-1 font-display text-2xl font-semibold text-foreground">
+            <h3 className="marketing-h3 mt-1 text-foreground">
               Start with a realistic budget
             </h3>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -280,7 +295,7 @@ function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
         <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-2xl bg-primary/5 p-5">
             <p className="text-sm font-medium text-muted-foreground">Estimated total budget</p>
-            <p className="mt-2 font-display text-3xl font-bold text-foreground">{formatCurrency(totals.suggested)}</p>
+            <p className="marketing-h3 mt-2 text-foreground">{formatCurrency(totals.suggested)}</p>
             <p className="mt-2 text-sm text-muted-foreground">
               Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
             </p>
@@ -341,25 +356,25 @@ function QuickSignupChooser() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: 0.4 }}
     >
-      <div className="rounded-[30px] border border-[#ead7c4]/32 bg-[linear-gradient(180deg,#f8f2ea,#f1e5d7)] p-5 shadow-[0_28px_60px_rgba(42,25,20,0.16)] backdrop-blur-sm">
-        <div className="space-y-1">
+      <div className="rounded-[30px] border border-[#ead7c4]/32 bg-[linear-gradient(180deg,#f8f2ea,#f1e5d7)] p-6 shadow-[0_28px_60px_rgba(42,25,20,0.16)] backdrop-blur-sm sm:p-8 lg:p-10">
+        <div className="max-w-3xl space-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#c2724f]">Start here</p>
-          <h3 className="font-editorial text-[2rem] font-medium leading-none text-[#201814]">Start planning before anyone else joins.</h3>
-          <p className="text-sm leading-relaxed text-[#6f5747]">
+          <h3 className="marketing-h2 text-[#201814]">Start planning before anyone else joins.</h3>
+          <p className="max-w-2xl text-sm leading-7 text-[#6f5747]">
             Create your account once, open your wedding workspace, and start adding the guests, budgets, and vendors you already have. Planners and vendors can join later.
           </p>
         </div>
 
-        <div className="mt-4 grid gap-4">
-          <div className="rounded-[24px] border border-[#d9b79d] bg-[rgba(255,255,255,0.45)] p-4 shadow-[0_12px_28px_rgba(194,114,79,0.1)]">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-[#201814]">Create your Zania account</p>
-              <p className="text-xs leading-relaxed text-[#6f5747]">
+        <div className="mt-6 grid gap-4 lg:max-w-3xl">
+          <div className="rounded-[24px] border border-[#d9b79d] bg-[rgba(255,255,255,0.45)] p-5 shadow-[0_12px_28px_rgba(194,114,79,0.1)] sm:p-6">
+            <div className="space-y-2">
+              <p className="marketing-h4 text-[#201814]">Create your Zania account</p>
+              <p className="max-w-2xl text-sm leading-7 text-[#6f5747]">
                 Start with your name, email, and password. Couples can begin planning immediately, even if their vendors are still off-platform.
               </p>
             </div>
 
-            <div className="mt-4 grid gap-2">
+            <div className="mt-6 grid gap-3 sm:max-w-md">
               <Button
                 className="gap-2"
                 onClick={() => navigate('/auth?mode=signup')}
@@ -375,7 +390,7 @@ function QuickSignupChooser() {
               </Button>
             </div>
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <Button
                 type="button"
                 variant="ghost"
@@ -442,7 +457,7 @@ export default function Landing() {
         </div>
 
         <nav className="relative z-20">
-          <div className="mx-auto flex max-w-[1680px] items-center justify-between gap-3 px-6 py-7 sm:px-8 lg:px-12 xl:px-16">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-6 py-7 sm:px-8 lg:px-12 xl:px-16">
             <BrandWordmark light size="lg" />
             <Link to={user ? workspaceRoute : signInRoute} className="inline-flex h-11 items-center rounded-sm border border-[#e4cf9e]/40 bg-[#d4bb7d]/95 px-5 text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#201814] transition-colors hover:bg-[#c2724f] hover:text-[#fffaf4] md:hidden">
               {secondaryCtaLabel}
@@ -459,9 +474,9 @@ export default function Landing() {
           </div>
         </nav>
 
-        <div className="relative z-10 mx-auto grid min-h-[860px] max-w-[1680px] gap-10 px-6 pb-14 pt-12 sm:px-8 lg:grid-cols-[1.18fr_0.82fr] lg:px-12 lg:pb-16 lg:pt-10 xl:px-16">
+        <div className="relative z-10 mx-auto grid min-h-[900px] max-w-[1600px] gap-12 px-6 pb-16 pt-12 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14 lg:px-12 lg:pb-20 lg:pt-10 xl:px-16">
           <div className="flex flex-col justify-between">
-            <div className="max-w-[780px] pt-10 lg:pt-16">
+            <div className="max-w-[700px] pt-10 lg:pt-18">
               <motion.div
                 initial={{ opacity: 0, scaleX: 0 }}
                 animate={{ opacity: 1, scaleX: 1 }}
@@ -480,11 +495,11 @@ export default function Landing() {
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.7, delay: 0.28 }}
-                className="mt-7 max-w-[9.3ch] font-editorial text-[3.7rem] font-medium leading-[0.86] tracking-[-0.03em] text-[#fbf4ec] sm:text-[5.2rem] lg:text-[6.3rem] xl:text-[7.4rem]"
+                className="marketing-h1 mt-7 max-w-[9.3ch] text-[#fbf4ec]"
               >
                 Plan your wedding,
                 <br />
-                <span className="italic font-normal text-[#d4bb7d]">all in one</span>
+                <span className="font-semibold text-[#d4bb7d]">all in one</span>
                 <br />
                 place.
               </motion.h1>
@@ -492,7 +507,7 @@ export default function Landing() {
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.44 }}
-                className="mt-8 max-w-2xl text-lg leading-[1.9] text-[#f6eee6]/74 sm:text-[1.17rem]"
+                className="mt-10 max-w-[34rem] text-base leading-8 text-[#f6eee6]/74 sm:text-[17px]"
               >
                 Zania gives couples one wedding workspace for budgets, guests, tasks, documents, payments, and vendor coordination. Your vendors do not need to be on Zania yet. Add them yourself now and invite them later if you want.
               </motion.p>
@@ -500,7 +515,7 @@ export default function Landing() {
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.58 }}
-                className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center"
+                className="mt-12 flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-center"
               >
                 <Link
                   to={user ? workspaceRoute : '/auth?mode=signup'}
@@ -524,7 +539,7 @@ export default function Landing() {
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.66 }}
-                className="mt-6 inline-flex w-fit items-center gap-3 rounded-full border border-[#ead7b5]/18 bg-[#fff7eb]/10 px-4 py-2 text-[#f8ead9] shadow-[0_18px_40px_rgba(10,6,4,0.18)] backdrop-blur-sm"
+                className="mt-8 inline-flex w-fit items-center gap-3 rounded-full border border-[#ead7b5]/18 bg-[#fff7eb]/10 px-5 py-3 text-[#f8ead9] shadow-[0_18px_40px_rgba(10,6,4,0.18)] backdrop-blur-sm"
                 aria-live="polite"
               >
                 <span className="h-2 w-2 rounded-full bg-[#d4bb7d] shadow-[0_0_18px_rgba(212,187,125,0.9)]" />
@@ -539,15 +554,15 @@ export default function Landing() {
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.74 }}
-              className="mt-12 grid gap-5 border-t border-[#f3e4ce]/12 pt-8 sm:grid-cols-3"
+              className="mt-16 grid gap-6 border-t border-[#f3e4ce]/12 pt-10 sm:grid-cols-3"
             >
               {heroStats.map((stat) => (
-                <div key={stat.title} className="space-y-3">
-                  <p className="font-editorial text-[1.35rem] leading-none text-[#f5dfbb]">
-                    <span className="mr-2 text-[1rem] italic text-[#d4bb7d]/9">{stat.index}</span>
+                <div key={stat.title} className="space-y-3 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-5 backdrop-blur-[2px]">
+                  <p className="marketing-h4 text-[#f5dfbb]">
+                    <span className="mr-2 text-sm text-[#d4bb7d]/50">{stat.index}</span>
                     {stat.title}
                   </p>
-                  <p className="max-w-xs text-sm leading-7 text-[#f6eee6]/58">{stat.desc}</p>
+                  <p className="max-w-[16rem] text-sm leading-7 text-[#f6eee6]/58">{stat.desc}</p>
                 </div>
               ))}
             </motion.div>
@@ -560,35 +575,20 @@ export default function Landing() {
             transition={{ duration: 0.7, delay: 0.62 }}
             className="flex items-end lg:justify-end"
           >
-            <div className="w-full max-w-[600px] rounded-[30px] border border-[#ecd9c7]/12 bg-[linear-gradient(180deg,rgba(32,23,19,0.9),rgba(28,20,17,0.96))] p-4 shadow-[0_28px_85px_rgba(8,5,4,0.38)] backdrop-blur-md sm:p-5 lg:mb-8">
+            <div className="w-full max-w-[540px] rounded-[34px] border border-[#ecd9c7]/12 bg-[linear-gradient(180deg,rgba(32,23,19,0.9),rgba(28,20,17,0.96))] p-4 shadow-[0_28px_85px_rgba(8,5,4,0.38)] backdrop-blur-md sm:p-5 lg:mb-10">
               <PublicBudgetEstimator compact />
             </div>
           </motion.div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1500px] px-6 py-14 sm:px-8 sm:py-18 lg:px-12">
+      <section className="mx-auto max-w-[1500px] px-6 py-16 sm:px-8 sm:py-20 lg:px-12 lg:py-24">
         <div>
           <QuickSignupChooser />
         </div>
       </section>
 
-      <footer className="bg-[#1c1612] px-6 py-8 text-[#f6eee6]">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-sm sm:flex-row lg:px-2">
-          <BrandWordmark light size="md" />
-          <div className="flex flex-col items-center gap-2 text-center text-[#f6eee6]/72 sm:items-end sm:text-right">
-            <div className="flex items-center gap-4 text-xs uppercase tracking-[0.18em]">
-              <Link to="/pricing" className="transition-opacity hover:opacity-100">
-                Pricing
-              </Link>
-              <Link to={user ? workspaceRoute : signInRoute} className="transition-opacity hover:opacity-100">
-                {secondaryCtaLabel}
-              </Link>
-            </div>
-            © {new Date().getFullYear()} Zania. Wedding planning for Kenya and the diaspora.
-          </div>
-        </div>
-      </footer>
+      <PublicSiteFooter dark />
     </div>
   );
 }

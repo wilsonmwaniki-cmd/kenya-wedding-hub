@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Send, Wand2, Wallet, CalendarClock, Users, Store, BriefcaseBusiness, CheckSquare2, BellRing, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Loader2, Send, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import SafeMarkdown from '@/components/SafeMarkdown';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
@@ -39,7 +39,6 @@ interface AssistantExperience {
   inputPlaceholder: string;
   starterActions: string[];
   capabilityCards: Array<{
-    icon: typeof Wand2;
     title: string;
     description: string;
   }>;
@@ -167,17 +166,14 @@ function getAssistantExperience(
       starterActions,
       capabilityCards: [
         {
-          icon: Store,
           title: 'Listing and positioning guidance',
           description: 'Spot weak profile details, missing trust signals, and listing improvements that help more couples convert.',
         },
         {
-          icon: BellRing,
           title: 'Follow-up reminders',
           description: 'Create private reminders so booking follow-ups, callbacks, and delivery prep do not get lost.',
         },
         {
-          icon: Wallet,
           title: 'Booking and payment clarity',
           description: 'Summarize booking value, payment history, balances, and next commercial actions at a glance.',
         },
@@ -200,17 +196,14 @@ function getAssistantExperience(
       starterActions,
       capabilityCards: [
         {
-          icon: Users,
           title: 'Delegation support',
           description: 'Recommend who should own the next actions and where the committee should focus first.',
         },
         {
-          icon: CheckSquare2,
           title: 'Execution coordination',
           description: 'Turn next steps into practical, delegated work across tasks, vendors, and budget decisions.',
         },
         {
-          icon: CalendarClock,
           title: 'Timeline awareness',
           description: 'See what is overdue, what is coming up next, and where the wedding could slip.',
         },
@@ -238,17 +231,14 @@ function getAssistantExperience(
       starterActions,
       capabilityCards: [
         {
-          icon: BriefcaseBusiness,
           title: 'Client operations view',
           description: 'See blockers, priorities, vendor pressure points, and execution risk in one assistant flow.',
         },
         {
-          icon: Wallet,
           title: 'Budget and payment actions',
           description: 'Record payments, update budget lines, and keep the client workspace commercially accurate.',
         },
         {
-          icon: CalendarClock,
           title: 'Execution pacing',
           description: 'Plan the next week clearly, spot overdue work, and keep the wedding moving on schedule.',
         },
@@ -270,17 +260,14 @@ function getAssistantExperience(
     starterActions,
     capabilityCards: [
       {
-        icon: Wand2,
         title: 'Advice tied to your real wedding workspace',
         description: 'Answer based on your tasks, vendors, budget, payments, guests, and timelines instead of generic wedding advice.',
       },
       {
-        icon: Wallet,
         title: 'Hands-on planning actions',
         description: 'Create tasks, add vendors, update budgets, and record payment activity when you ask for concrete help.',
       },
       {
-        icon: CalendarClock,
         title: 'Execution support',
         description: 'Help you understand what comes next, what is overdue, and what needs attention before the wedding day.',
       },
@@ -717,7 +704,7 @@ export default function AiChat() {
           </div>
 
           {profile?.role === 'planner' && selectedClient && (
-            <Card className="rounded-2xl border-primary/15 bg-primary/5 px-4 py-3 text-sm">
+            <Card className="semantic-surface-info rounded-2xl border px-4 py-3 text-sm">
               <p className="font-medium text-foreground">Active wedding</p>
               <p className="text-muted-foreground">
                 AI actions will apply to {selectedClient.client_name}
@@ -769,13 +756,9 @@ export default function AiChat() {
 
         <div className="grid gap-4 md:grid-cols-3">
           {experience.capabilityCards.map((card) => {
-            const Icon = card.icon;
             return (
               <Card key={card.title} className="rounded-3xl border-border/70 p-5 shadow-card">
-                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h2 className="font-display text-xl font-semibold text-foreground">{card.title}</h2>
+                <h2 className="text-xl font-semibold text-foreground">{card.title}</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.description}</p>
               </Card>
             );
@@ -789,14 +772,14 @@ export default function AiChat() {
             {decision && <InlineUpgradePrompt decision={decision} />}
           </Card>
         ) : aiDisabledByAdmin ? (
-          <Card className="rounded-3xl border-amber-300/70 bg-amber-50/80 p-5 shadow-card">
-            <p className="font-medium text-amber-950">AI assistant is currently disabled for this plan</p>
-            <p className="mt-2 text-sm text-amber-900/80">
+          <Card className="semantic-surface-warning rounded-3xl border p-5 shadow-card">
+            <p className="font-medium text-warning">AI assistant is currently disabled for this plan</p>
+            <p className="mt-2 text-sm text-foreground/75">
               An admin has temporarily switched off AI access for this audience. You can still use the rest of your Zania workspace normally.
             </p>
           </Card>
         ) : (
-          <Card className="flex h-[calc(100vh-theme(spacing.36))] min-h-[28rem] flex-col overflow-hidden rounded-3xl shadow-card">
+          <Card className="flex min-h-[28rem] flex-col overflow-hidden rounded-3xl shadow-card md:h-[calc(100vh-theme(spacing.36))]">
             <div className="space-y-4 border-b border-border px-5 py-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
@@ -805,7 +788,7 @@ export default function AiChat() {
                     Ask for guidance, summaries, or actions across the real parts of your Zania workspace.
                   </p>
                 </div>
-                <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm lg:min-w-72">
+                <div className="w-full rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm lg:min-w-72 lg:max-w-[22rem]">
                   <div className="flex items-center justify-between gap-4">
                     <span className="font-medium text-foreground">Monthly AI usage</span>
                     <span className="text-muted-foreground">
@@ -892,19 +875,19 @@ export default function AiChat() {
 
               {pendingActions.length > 0 && (
                 <div className="flex justify-start">
-                  <Card className="max-w-[88%] rounded-3xl border-amber-300/70 bg-amber-50/80 p-4 shadow-card">
+                  <Card className="semantic-surface-warning max-w-[88%] rounded-3xl border p-4 shadow-card">
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 rounded-full bg-amber-100 p-2 text-amber-700">
+                      <div className="mt-0.5 rounded-full border border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] p-2 text-warning">
                         <AlertTriangle className="h-4 w-4" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-medium text-amber-950">Review these write actions before we run them</p>
-                        <p className="mt-1 text-sm text-amber-900/80">
+                        <p className="font-medium text-warning">Review these write actions before we run them</p>
+                        <p className="mt-1 text-sm text-foreground/75">
                           Nothing has been changed yet. Confirm once this looks right.
                         </p>
                         <div className="mt-3 space-y-2">
                           {pendingActions.map((action, index) => (
-                            <div key={`${action.toolName}-${index}`} className="rounded-2xl border border-amber-200/80 bg-white/70 px-3 py-2">
+                            <div key={`${action.toolName}-${index}`} className="rounded-2xl border border-[hsl(var(--warning-soft-border))] bg-background/80 px-3 py-2">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
                                   <p className="text-sm font-medium text-foreground">{action.summary}</p>

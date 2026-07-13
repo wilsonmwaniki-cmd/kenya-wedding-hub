@@ -2406,7 +2406,7 @@ export default function Vendors() {
         ) : (
           <form onSubmit={addVendor} className="space-y-4">
             <FormSubmitError message={vendorSubmitError} />
-            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
+            <div className="semantic-surface-info rounded-lg border p-3 text-sm text-muted-foreground">
               Add the vendor you are already working with. This starts as a <span className="font-medium text-foreground">private vendor record</span> inside your wedding workspace. It does <span className="font-medium text-foreground">not</span> create a public Zania profile, and the details stay private unless the vendor later joins and opts in.
             </div>
             <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
@@ -2535,7 +2535,7 @@ export default function Vendors() {
               <p className="truncate text-xl font-semibold text-foreground">{vendor.name}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <Badge variant="outline">{vendor.category}</Badge>
-                <Badge variant={vendor.vendor_listing_id ? 'secondary' : 'outline'}>
+                <Badge variant={vendor.vendor_listing_id ? 'success' : 'outline'}>
                   {vendor.vendor_listing_id ? 'Linked to Zania' : 'Private vendor record'}
                 </Badge>
                 {vendor.selection_status === 'final' && <Badge>Final choice</Badge>}
@@ -2581,15 +2581,15 @@ export default function Vendors() {
         {!selectedVendor ? (
           <>
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_360px]">
-              <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
+              <Card className="overflow-hidden border-border/70 bg-gradient-to-br from-background via-background to-muted/30 shadow-card">
                 <CardContent className="p-6 sm:p-8">
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-primary">
+                    <Badge variant="info" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.14em]">
                       Vendor Workspace
                     </Badge>
                     <InfoTip content="Shortlist vendors, compare options, lock final choices, and stay on top of contracts, payments, and follow-up tasks." />
                   </div>
-                  <h1 className="mt-4 font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+                  <h1 className="workspace-h1 mt-4">
                     Decide who to book next
                   </h1>
                   <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
@@ -2624,7 +2624,7 @@ export default function Vendors() {
                 <CardContent className="flex h-full flex-col justify-between gap-5 p-6">
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Next Best Move</p>
+                      <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Next Best Move</p>
                       <InfoTip content="This suggestion changes based on shortlist gaps, final choices, payment deadlines, and open vendor follow-up tasks." />
                     </div>
                     <h2 className="mt-3 text-2xl font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
@@ -2720,7 +2720,7 @@ export default function Vendors() {
             </Card>
 
             {vendorWorkspaceVendors.length === 0 ? (
-              <Card className="border-dashed border-primary/25 bg-primary/5 shadow-card">
+              <Card className="semantic-surface-info border-dashed shadow-card">
                 <CardContent className="flex flex-col items-start gap-4 p-6 sm:p-8">
                   <div className="space-y-2">
                     <h2 className="text-2xl font-semibold text-foreground">
@@ -2784,7 +2784,7 @@ export default function Vendors() {
 
               <div className="space-y-4 px-6 pb-6">
                 {!vendorsNudgeDismissed && vendorsNudge && assistantPanel && (
-                  <Card className="border-primary/20 bg-primary/5 shadow-card">
+                  <Card className="semantic-surface-info shadow-card">
                     <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-semibold text-foreground">{vendorsNudge.title}</p>
@@ -2835,7 +2835,7 @@ export default function Vendors() {
           </>
         ) : (
           <>
-            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-background via-background to-primary/5 shadow-card">
+            <Card className="overflow-hidden border-border/70 bg-gradient-to-br from-background via-background to-muted/30 shadow-card">
               <CardContent className="p-6 sm:p-8">
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -2854,7 +2854,7 @@ export default function Vendors() {
                       </Button>
                       <div>
                         <Badge variant="outline" className="rounded-full">{selectedVendor.category}</Badge>
-                        <h1 className="mt-3 font-display text-4xl font-bold tracking-tight text-foreground">
+                        <h1 className="workspace-h1 mt-3">
                           {selectedVendor.name}
                         </h1>
                         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -2871,21 +2871,21 @@ export default function Vendors() {
                       </div>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2 xl:w-[520px] xl:grid-cols-4">
+                    <div className="grid w-full min-w-0 gap-3 sm:grid-cols-2 xl:w-[520px] xl:grid-cols-4">
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Quote</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Quote</p>
                         <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(selectedVendor.price)}</p>
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Paid</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Paid</p>
                         <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(selectedVendorPaymentSummary.totalPaid)}</p>
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Open Tasks</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Open Tasks</p>
                         <p className="mt-2 text-2xl font-semibold text-foreground">{selectedVendorTaskCounts.open.length}</p>
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Milestones</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Milestones</p>
                         <p className="mt-2 text-2xl font-semibold text-foreground">
                           {selectedVendorCompletedMilestones}/{selectedVendorMilestones.length || 4}
                         </p>
@@ -3534,7 +3534,7 @@ export default function Vendors() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Vendors</h1>
+          <h1 className="workspace-h1">Vendors</h1>
           <p className="text-muted-foreground">{vendors.length} vendors tracked</p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -4411,7 +4411,7 @@ export default function Vendors() {
                         <div key={task.id} className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
                           <div className="flex items-center justify-between gap-2">
                             <p className="text-sm font-medium text-foreground">{task.title}</p>
-                            <Badge variant={task.completed ? 'secondary' : 'outline'} className="text-[10px]">
+                            <Badge variant={task.completed ? 'success' : 'outline'} className="text-[10px]">
                               {task.completed ? 'Done' : 'Open'}
                             </Badge>
                           </div>

@@ -26,7 +26,7 @@ import InfoTip from '@/components/InfoTip';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
-import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
+import { getCheckoutReferenceFromSearchParams, startCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
@@ -450,24 +450,24 @@ export default function Guests() {
   const guestAddon = getCoupleAddonDefinition('guest_rsvp_management_addon');
   const isFocusedGuestUpgrade = searchParams.get('intent') === 'upgrade';
   const guestUpgradeState = searchParams.get('upgrade');
-  const checkoutSessionId = searchParams.get('checkout_session_id');
+  const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
 
   useEffect(() => {
     if (
       guestUpgradeState !== 'success'
-      || !checkoutSessionId
-      || processedCheckoutSessionId === checkoutSessionId
+      || !checkoutReference
+      || processedCheckoutSessionId === checkoutReference
       || !profile
     ) {
       return;
     }
 
     let cancelled = false;
-    setProcessedCheckoutSessionId(checkoutSessionId);
+    setProcessedCheckoutSessionId(checkoutReference);
 
     const runSync = async () => {
       try {
-        await syncCoupleCheckout(checkoutSessionId);
+        await syncCoupleCheckout(checkoutReference);
         if (cancelled) return;
 
         await refresh();
@@ -493,7 +493,7 @@ export default function Guests() {
     return () => {
       cancelled = true;
     };
-  }, [checkoutSessionId, guestUpgradeState, navigate, processedCheckoutSessionId, profile, refresh, toast]);
+  }, [checkoutReference, guestUpgradeState, navigate, processedCheckoutSessionId, profile, refresh, toast]);
 
   const handleGuestAddonCheckout = async () => {
     if (!profile) return;
@@ -516,10 +516,10 @@ export default function Guests() {
       return;
     }
 
-    if (!guestAddon.stripeMonthlyLookupKey) {
+    if (!guestAddon.checkoutMonthlyLookupKey) {
       toast({
         title: 'Checkout is not configured',
-        description: 'This add-on does not have a Stripe price configured yet.',
+        description: 'This add-on does not have a checkout mapping configured yet.',
         variant: 'destructive',
       });
       return;
@@ -527,10 +527,10 @@ export default function Guests() {
 
     setGuestAddonCheckoutLoading(true);
     try {
-      await startStripeCheckout({
+      await startCheckout({
         audience: 'couple',
         feature: 'guest_rsvp_management',
-        lookupKey: guestAddon.stripeMonthlyLookupKey,
+        lookupKey: guestAddon.checkoutMonthlyLookupKey,
         cadence: 'monthly',
         weddingId,
         successPath: withCheckoutSessionId('/guests?upgrade=success'),
@@ -539,7 +539,7 @@ export default function Guests() {
     } catch (error: any) {
       toast({
         title: 'Could not start checkout',
-        description: error?.message || 'There was a problem creating your Stripe checkout session.',
+        description: error?.message || 'There was a problem starting your payment session.',
         variant: 'destructive',
       });
       setGuestAddonCheckoutLoading(false);
@@ -733,9 +733,9 @@ export default function Guests() {
   return (
     <div className="space-y-6">
       {(!guestRsvpDecision.allowed || guestUpgradeState) && (isFocusedGuestUpgrade || guestUpgradeState) && (
-        <Card className={`border ${guestUpgradeState === 'success' ? 'border-primary/25 bg-primary/10' : guestUpgradeState === 'cancelled' ? 'border-accent/35 bg-accent/15' : 'border-primary/20 bg-primary/5'}`}>
+        <Card className={`border ${guestUpgradeState === 'success' ? 'semantic-surface-success' : guestUpgradeState === 'cancelled' ? 'semantic-surface-warning' : 'semantic-surface-info'}`}>
           <CardContent className="px-6 py-5">
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Guest add-on</p>
+            <p className={`text-sm font-semibold uppercase tracking-[0.14em] ${guestUpgradeState === 'success' ? 'text-success' : guestUpgradeState === 'cancelled' ? 'text-warning' : 'text-info'}`}>Guest add-on</p>
             <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">
               {guestUpgradeState === 'success'
                 ? 'RSVP & Guest Management unlocked'
@@ -769,7 +769,7 @@ export default function Guests() {
                 <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Guest Workspace</p>
                 <InfoTip content="Manage your guest list, RSVP replies, contact details, groups, and invite follow-up in one place." />
               </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Build the guest list one step at a time</h1>
+              <h1 className="workspace-h1 mt-2">Build the guest list one step at a time</h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
                 Start with names, then add contact details, send invites, and use RSVP/check-in tools when the list is ready.
               </p>
@@ -827,7 +827,7 @@ export default function Guests() {
               </div>
             </details>
 
-            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+            <div className="semantic-surface-info mt-4 rounded-2xl border p-4">
               <p className="text-sm font-medium text-foreground">
                 {guests.length === 0
                   ? 'Start light, then enrich the details'
@@ -938,7 +938,7 @@ export default function Guests() {
                   <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest list</p>
                   <InfoTip content="Keep the list in focus here. Invite analytics and deeper coordination stay tucked away until needed." />
                 </div>
-                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Who still needs action?</h2>
+                <h2 className="workspace-h2 mt-2">Who still needs action?</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Search the list, clean contact details, and update RSVP status without leaving the workspace.
                 </p>
@@ -1006,7 +1006,7 @@ export default function Guests() {
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium text-foreground">{g.name}</p>
                               <div className="mt-2 flex flex-wrap items-center gap-2">
-                                <Badge variant={g.rsvp_status === 'confirmed' ? 'default' : g.rsvp_status === 'declined' ? 'destructive' : 'secondary'} className="capitalize">
+                                <Badge variant={g.rsvp_status === 'confirmed' ? 'success' : g.rsvp_status === 'declined' ? 'destructive' : 'warning'} className="capitalize">
                                   {g.rsvp_status || 'pending'}
                                 </Badge>
                                 {g.category && g.category !== 'general' && (
@@ -1046,7 +1046,7 @@ export default function Guests() {
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant={selectedGuest.rsvp_status === 'confirmed' ? 'default' : selectedGuest.rsvp_status === 'declined' ? 'destructive' : 'secondary'} className="capitalize">
+                            <Badge variant={selectedGuest.rsvp_status === 'confirmed' ? 'success' : selectedGuest.rsvp_status === 'declined' ? 'destructive' : 'warning'} className="capitalize">
                               {selectedGuest.rsvp_status || 'pending'}
                             </Badge>
                             {selectedGuest.category && selectedGuest.category !== 'general' && (
@@ -1057,7 +1057,7 @@ export default function Guests() {
                             )}
                           </div>
                           <div>
-                            <h2 className="font-display text-2xl font-semibold text-foreground">{guestEditor.name}</h2>
+                            <h2 className="workspace-h2">{guestEditor.name}</h2>
                             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
                               Everything for this guest, in one place.
                             </p>
@@ -1201,8 +1201,8 @@ export default function Guests() {
                                   {plannerNeedsApproval ? 'RSVP links, invite sending, and public guest access controls stay on the couple side.' : 'Update status, then send or copy the invite.'}
                                 </p>
                               </div>
-                              <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2 text-right">
-                                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-primary">Readiness</p>
+                              <div className="semantic-surface-info rounded-2xl border px-3 py-2 text-left sm:text-right">
+                                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-info">Readiness</p>
                                 <p className="mt-1 text-sm font-medium text-foreground">
                                   {!selectedGuest.email && !selectedGuest.phone
                                     ? 'Needs contact'
@@ -1232,14 +1232,14 @@ export default function Guests() {
                               </div>
 
                               {plannerNeedsApproval ? (
-                                <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3 text-sm text-muted-foreground">
+                                <div className="semantic-surface-info rounded-2xl border p-3 text-sm text-muted-foreground">
                                   Couples keep RSVP links, invite sending, link refresh, revoke controls, and check-in access. You can still request guest detail updates above.
                                 </div>
                               ) : (
                                 <>
                                   <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <Badge variant={selectedGuestRsvpActive ? 'default' : 'secondary'}>
+                                      <Badge variant={selectedGuestRsvpActive ? 'success' : 'outline'}>
                                         {selectedGuestRsvpActive ? 'Link active' : 'Link inactive'}
                                       </Badge>
                                       {selectedGuest.rsvp_token_expires_at && (
@@ -1301,8 +1301,8 @@ export default function Guests() {
                                 </>
                               )}
                             </div>
-                            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                              <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">What to do next</p>
+                            <div className="semantic-surface-info mt-4 rounded-2xl border p-4">
+                              <p className="text-xs font-medium uppercase tracking-[0.12em] text-info">What to do next</p>
                               <p className="mt-2 text-sm text-muted-foreground">
                               {!selectedGuest.email && !selectedGuest.phone
                                 ? 'This guest still needs at least one contact method before outreach gets easier.'
@@ -1321,7 +1321,7 @@ export default function Guests() {
                   <div className="flex min-h-[420px] items-center justify-center p-8">
                     <div className="max-w-md text-center">
                       <Users className="mx-auto h-10 w-10 text-muted-foreground" />
-                      <h2 className="mt-4 font-display text-2xl font-semibold text-foreground">No guest selected</h2>
+                      <h2 className="workspace-h2 mt-4">No guest selected</h2>
                       <p className="mt-2 text-sm text-muted-foreground">
                         Pick a guest to manage details and RSVP actions.
                       </p>
@@ -1338,7 +1338,7 @@ export default function Guests() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest reports</p>
-                <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Invite analytics and deeper coordination</h3>
+                <h3 className="workspace-h3 mt-2">Invite analytics and deeper coordination</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Open this when you need RSVP intelligence, response patterns, and fuller guest reporting.
                 </p>
@@ -1353,7 +1353,7 @@ export default function Guests() {
             {guestRsvpDecision.allowed ? (
               <GuestInsights guests={guests as any} />
             ) : (
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">
+              <div className="semantic-surface-info rounded-2xl border p-4 text-sm text-muted-foreground">
                 Unlock RSVP & Guest Management to open guest insights, invite analytics, and deeper reporting.
               </div>
             )}

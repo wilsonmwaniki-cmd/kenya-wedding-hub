@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ExternalLink, Gift, Loader2, ShoppingBag, Trash2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Gift, Loader2, Trash2 } from 'lucide-react';
 import { WorkspacePageSkeleton, ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +13,7 @@ import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
-import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
+import { getCheckoutReferenceFromSearchParams, startCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
@@ -106,7 +106,7 @@ export default function GiftRegistry() {
   const addon = getCoupleAddonDefinition('gift_registry_addon');
   const isFocusedUpgradeFlow = searchParams.get('intent') === 'upgrade';
   const upgradeState = searchParams.get('upgrade');
-  const checkoutSessionId = searchParams.get('checkout_session_id');
+  const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
 
   const statusMessage = useMemo(() => {
     if (upgradeState === 'success') {
@@ -131,19 +131,19 @@ export default function GiftRegistry() {
   useEffect(() => {
     if (
       upgradeState !== 'success'
-      || !checkoutSessionId
-      || processedCheckoutSessionId === checkoutSessionId
+      || !checkoutReference
+      || processedCheckoutSessionId === checkoutReference
       || !profile
     ) {
       return;
     }
 
     let cancelled = false;
-    setProcessedCheckoutSessionId(checkoutSessionId);
+    setProcessedCheckoutSessionId(checkoutReference);
 
     const runSync = async () => {
       try {
-        await syncCoupleCheckout(checkoutSessionId);
+        await syncCoupleCheckout(checkoutReference);
         if (cancelled) return;
 
         await refresh();
@@ -169,7 +169,7 @@ export default function GiftRegistry() {
     return () => {
       cancelled = true;
     };
-  }, [checkoutSessionId, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
+  }, [checkoutReference, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
 
   useEffect(() => {
     if (!canAccessRegistry || !weddingId) {
@@ -253,10 +253,10 @@ export default function GiftRegistry() {
       return;
     }
 
-    if (!addon.stripeMonthlyLookupKey) {
+    if (!addon.checkoutMonthlyLookupKey) {
       toast({
         title: 'Checkout is not configured',
-        description: 'This add-on does not have a Stripe price configured yet.',
+        description: 'This add-on does not have a checkout mapping configured yet.',
         variant: 'destructive',
       });
       return;
@@ -264,10 +264,10 @@ export default function GiftRegistry() {
 
     setCheckoutLoading(true);
     try {
-      await startStripeCheckout({
+      await startCheckout({
         audience: 'couple',
         feature: 'gift_registry',
-        lookupKey: addon.stripeMonthlyLookupKey,
+        lookupKey: addon.checkoutMonthlyLookupKey,
         cadence: 'monthly',
         weddingId,
         successPath: withCheckoutSessionId('/gift-registry?upgrade=success'),
@@ -276,7 +276,7 @@ export default function GiftRegistry() {
     } catch (error: any) {
       toast({
         title: 'Could not start checkout',
-        description: error?.message || 'There was a problem creating your Stripe checkout session.',
+        description: error?.message || 'There was a problem starting your payment session.',
         variant: 'destructive',
       });
       setCheckoutLoading(false);
@@ -422,10 +422,16 @@ export default function GiftRegistry() {
   return (
     <div className="space-y-6">
       {statusMessage && (
-        <Card className={`border ${statusMessage.tone === 'success' ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`}>
+        <Card
+          className={`border ${
+            statusMessage.tone === 'success'
+              ? 'border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))]/60'
+              : 'border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))]/60'
+          }`}
+        >
           <CardContent className="px-6 py-5">
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Registry status</p>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">{statusMessage.title}</h2>
+            <p className={`text-sm font-semibold uppercase tracking-[0.14em] ${statusMessage.tone === 'success' ? 'text-success' : 'text-warning'}`}>Registry status</p>
+            <h2 className="workspace-h2 mt-2">{statusMessage.title}</h2>
             <p className="mt-2 text-sm leading-7 text-muted-foreground">{statusMessage.body}</p>
           </CardContent>
         </Card>
@@ -439,10 +445,7 @@ export default function GiftRegistry() {
         <div className="max-w-4xl">
           <Card className="border-primary/10 shadow-card">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 font-display text-2xl">
-                <ShoppingBag className="h-5 w-5 text-primary" />
-                Add Gift Registry to this wedding
-              </CardTitle>
+              <CardTitle className="workspace-h2">Add Gift Registry to this wedding</CardTitle>
               <CardDescription>
                 This add-on unlocks a dedicated registry space for gifts, tracking, and guest sharing.
               </CardDescription>
@@ -483,7 +486,7 @@ export default function GiftRegistry() {
                     <Badge variant="secondary">Gift registry</Badge>
                   </div>
                   <div>
-                    <h1 className="font-display text-3xl font-bold text-foreground">Make gifting easy for guests</h1>
+                    <h1 className="workspace-h1">Make gifting easy for guests</h1>
                     <p className="mt-2 text-muted-foreground">
                       Start with the gifts that matter most, then keep the list current so guests can see what is still needed.
                     </p>
@@ -514,7 +517,7 @@ export default function GiftRegistry() {
 
           <Card className="border-border/70 shadow-card">
             <CardHeader>
-              <CardTitle className="font-display text-2xl">Add a gift</CardTitle>
+              <CardTitle className="workspace-h2">Add a gift</CardTitle>
               <CardDescription>
                 Add each item once, then mark it as bought when it gets claimed or purchased.
               </CardDescription>
@@ -596,7 +599,7 @@ export default function GiftRegistry() {
 
           <Card className="border-border/70 shadow-card">
             <CardHeader>
-              <CardTitle className="font-display text-2xl">Registry items</CardTitle>
+              <CardTitle className="workspace-h2">Registry items</CardTitle>
               <CardDescription>
                 Keep this list current so guests and collaborators can see what is still needed.
               </CardDescription>
@@ -635,10 +638,10 @@ export default function GiftRegistry() {
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className={`font-display text-2xl font-semibold ${item.is_purchased ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                            <h3 className={`workspace-h2 ${item.is_purchased ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                               {item.title}
                             </h3>
-                            <Badge variant={item.is_purchased ? 'secondary' : 'outline'}>
+                            <Badge variant={item.is_purchased ? 'success' : 'outline'}>
                               {item.is_purchased ? 'Bought' : 'Needed'}
                             </Badge>
                             {item.category ? (

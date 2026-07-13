@@ -12,6 +12,7 @@ import type {
 
 export interface AuthEntrySignUpOptions {
   signupIntent?: WeddingSignupIntent | null;
+  accountPurpose?: 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other' | null;
   weddingOwnerRole?: WeddingOwnerRole | null;
   partnerEmail?: string | null;
   weddingName?: string | null;
@@ -51,6 +52,7 @@ export async function performAuthEntrySignUp(input: {
   const primaryCounty = input.options?.primaryCounty?.trim() || null;
   const primaryTown = input.options?.primaryTown?.trim() || null;
   const professionalRoleLocked = input.options?.professionalRoleLocked ?? null;
+  const accountPurpose = input.options?.accountPurpose ?? null;
   const partnerEmail = input.options?.partnerEmail?.trim().toLowerCase() || null;
   const weddingName = input.options?.weddingName?.trim() || null;
   const weddingCode = input.options?.weddingCode?.trim().toUpperCase() || null;
@@ -68,6 +70,7 @@ export async function performAuthEntrySignUp(input: {
       data: {
         full_name: normalizedFullName,
         role: isCommittee ? 'planner' : input.role,
+        account_purpose: accountPurpose,
         signup_target_role: isCommittee ? 'committee' : input.role,
         professional_signup_role: signupIntent === 'professional' ? (isCommittee ? 'planner' : input.role) : null,
         planner_type: isCommittee ? 'committee' : input.role === 'planner' ? 'professional' : null,

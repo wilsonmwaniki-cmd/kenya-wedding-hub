@@ -17,7 +17,7 @@ export default function DocumentMomentumCard({ title, subtitle, summary }: Props
           <p className="text-sm font-semibold text-foreground">{title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
         </div>
-        <Badge variant="secondary">{summary.readinessLabel}</Badge>
+        <Badge variant="info">{summary.readinessLabel}</Badge>
       </div>
 
       <div className="mt-4 space-y-2">
@@ -30,7 +30,7 @@ export default function DocumentMomentumCard({ title, subtitle, summary }: Props
 
       <div className="mt-4 flex flex-wrap gap-2">
         {summary.milestones.map((milestone) => (
-          <Badge key={milestone.key} variant={milestone.active ? 'default' : 'secondary'}>
+          <Badge key={milestone.key} variant={milestone.active ? 'success' : 'info'}>
             {milestone.label}
           </Badge>
         ))}
@@ -42,11 +42,11 @@ export default function DocumentMomentumCard({ title, subtitle, summary }: Props
             key={check.key}
             className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
               check.complete
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                ? 'border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))] text-success'
                 : 'border-border bg-white/70 text-muted-foreground'
             }`}
           >
-            <BadgeCheck className={`h-4 w-4 ${check.complete ? 'text-emerald-600' : 'text-muted-foreground/50'}`} />
+            <BadgeCheck className={`h-4 w-4 ${check.complete ? 'text-success' : 'text-muted-foreground/50'}`} />
             <span>{check.label}</span>
           </div>
         ))}

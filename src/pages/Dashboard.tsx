@@ -24,7 +24,6 @@ import { getMyWeddingOwnershipSummary, type MyWeddingOwnershipSummary } from '@/
 import { summarizeContributions, type ContributionSummaryRow } from '@/lib/contributions';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
-import { cn } from '@/lib/utils';
 import { buildConciergeContext } from '@/lib/conciergeContext';
 
 interface DashboardStats {
@@ -763,8 +762,6 @@ export default function Dashboard() {
         : 'Start with the next planning task so the workspace has an obvious rhythm.',
       href: '/tasks',
       cta: stats.totalTasks > 0 ? 'Open tasks' : 'Create first task',
-      icon: CheckSquare,
-      tone: 'border-[#d9ead7] bg-[#f4fbf3] text-[#2f6f3c]',
     },
     {
       title: vendorDecisionsPending[0]
@@ -777,8 +774,6 @@ export default function Dashboard() {
           : 'Keep bookings, costs, and follow-up tasks tied to the same wedding workspace.',
       href: '/vendors',
       cta: vendorDecisionsPending[0] ? 'Review vendors' : 'Open vendor hub',
-      icon: Store,
-      tone: 'border-[#d9e5f4] bg-[#f4f8fd] text-[#315f8f]',
     },
     {
       title: upcomingEvents[0]?.title ?? (stats.totalBudget > 0 ? 'Check the funding gap' : 'Start your wedding timeline'),
@@ -789,8 +784,6 @@ export default function Dashboard() {
           : 'Create the day-of sequence so the plan has a real shape.',
       href: upcomingEvents[0] ? '/timeline' : (stats.totalBudget > 0 ? '/contributions' : '/timeline'),
       cta: upcomingEvents[0] ? 'Open timeline' : (stats.totalBudget > 0 ? 'Open contributions' : 'Create timeline'),
-      icon: upcomingEvents[0] ? Clock : HandCoins,
-      tone: 'border-[#f0dfc5] bg-[#fff8ec] text-[#9a5d1c]',
     },
   ];
 
@@ -800,7 +793,6 @@ export default function Dashboard() {
       value: daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : `${daysUntil} days`,
       detail: weddingDate ? 'Until the wedding day arrives.' : 'Set a wedding date to unlock the live countdown.',
       href: !isPlanner && !weddingDate ? '/settings' : '/timeline',
-      icon: Clock,
     },
     {
       label: 'Budget health',
@@ -809,7 +801,6 @@ export default function Dashboard() {
         ? `KES ${(stats.totalBudget - stats.totalSpent).toLocaleString()} still available.`
         : 'Create budget categories and totals.',
       href: '/budget',
-      icon: Wallet,
     },
     {
       label: 'Task progress',
@@ -818,7 +809,6 @@ export default function Dashboard() {
         ? `${pendingTasks.length} task${pendingTasks.length === 1 ? '' : 's'} still open.`
         : 'Build the first checklist items.',
       href: '/tasks',
-      icon: CheckSquare,
     },
     {
       label: 'Guest response',
@@ -827,7 +817,6 @@ export default function Dashboard() {
         ? `${stats.confirmedGuests} confirmed of ${stats.totalGuests}.`
         : 'Start the guest list to unlock invites and seating.',
       href: '/guests',
-      icon: Users,
     },
   ];
 
@@ -854,7 +843,7 @@ export default function Dashboard() {
                 <p className="text-xs font-medium uppercase tracking-[0.3em] text-primary">Wedding Home</p>
                 <InfoTip content="This overview keeps your next actions, guests, budget, vendors, and timeline in one place so you can see what needs attention fastest." />
               </div>
-              <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.95] text-foreground sm:text-5xl">
+              <h1 className="workspace-h1 mt-3">
                 {weddingTitle}
               </h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-lg">
@@ -925,12 +914,12 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-primary">
+                      <Badge variant="info" className="rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.16em]">
                         Live
                       </Badge>
-                      <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary/70">Workspace tool</p>
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary/70">Workspace tool</p>
                     </div>
-                    <h2 className="font-display text-2xl text-foreground">Open the Space &amp; Table Plan</h2>
+                    <h2 className="workspace-h2">Open the Space &amp; Table Plan</h2>
                     <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                       Map tables, stage flow, guest seating, and ceremony zones directly inside the main wedding workspace.
                     </p>
@@ -962,8 +951,8 @@ export default function Dashboard() {
                   {completedHomeSetupCount} of {homeSetupChecklist.length} foundations complete.
                 </p>
               </div>
-              <div className="rounded-2xl border border-primary/20 bg-[linear-gradient(180deg,rgba(255,250,245,0.96),rgba(252,243,235,0.88))] px-3 py-2 text-right shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">Location</p>
+              <div className="rounded-2xl border border-primary/20 bg-[linear-gradient(180deg,rgba(255,250,245,0.96),rgba(252,243,235,0.88))] px-3 py-2 text-left shadow-sm sm:text-right">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-primary">Location</p>
                 <p className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
                   <MapPin className="h-4 w-4 text-primary" />
                   {weddingLocation || 'Add location'}
@@ -1002,7 +991,7 @@ export default function Dashboard() {
               )}
             </div>
 
-            <div className="mt-4 rounded-2xl border border-primary/15 bg-[linear-gradient(180deg,rgba(255,249,242,0.98),rgba(250,239,228,0.9))] p-4">
+            <div className="semantic-surface-info mt-4 rounded-2xl border p-4">
               <p className="text-sm font-medium text-foreground">{homePrimaryAction.label}</p>
               <p className="mt-1 text-sm text-muted-foreground">Best next move right now.</p>
             </div>
@@ -1014,7 +1003,7 @@ export default function Dashboard() {
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.28em] text-primary">Next Best Moves</p>
           <div className="mt-2 flex items-center gap-2">
-            <h2 className="font-display text-4xl font-semibold leading-none text-foreground">Keep the wedding moving</h2>
+            <h2 className="workspace-h2">Keep the wedding moving</h2>
             <InfoTip content="These suggested actions update as your workspace changes, so the list reflects what looks most useful right now." />
           </div>
         </div>
@@ -1022,18 +1011,12 @@ export default function Dashboard() {
           {homeActionCards.map((action, index) => (
             <motion.div
               key={action.title}
-              initial={{ opacity: 0, y: 15 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1], delay: index * 0.035 }}
             >
               <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.88))] shadow-[0_18px_40px_rgba(28,22,18,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(28,22,18,0.07)]">
                 <CardContent className="flex h-full flex-col gap-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className={cn('rounded-2xl border p-3', action.tone)}>
-                      <action.icon className="h-5 w-5 text-current" />
-                    </div>
-                    <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground" />
-                  </div>
                   <div className="space-y-2">
                     <p className="text-lg font-semibold text-foreground">{action.title}</p>
                     <p className="text-sm text-muted-foreground">{action.body}</p>
@@ -1049,7 +1032,7 @@ export default function Dashboard() {
       </div>
 
       {!dashboardNudgeDismissed && dashboardNudge && assistantPanel && (
-        <Card className="border-primary/20 bg-primary/5 shadow-card">
+        <Card className="semantic-surface-info shadow-card">
           <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-foreground">{dashboardNudge.title}</p>
@@ -1062,7 +1045,6 @@ export default function Dashboard() {
                 className="gap-2"
                 onClick={() => assistantPanel.openAssistant(dashboardNudge.prompt)}
               >
-                <AlertTriangle className="h-4 w-4" />
                 Review with AI
               </Button>
               <Button
@@ -1104,7 +1086,7 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Reports</p>
               <InfoTip content="Open this when you want the deeper operational view: progress signals, workspace shortcuts, vendor commitments, and planning risks." />
             </div>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Open the deeper wedding reports</h2>
+            <h2 className="workspace-h2 mt-2">Open the deeper wedding reports</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Keep the home screen focused, then open the detailed reports only when you need the full picture.
             </p>
@@ -1121,7 +1103,7 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Wedding pulse</p>
               <InfoTip content="Use this strip when you want the quickest read on progress before opening a specific workspace." />
             </div>
-            <CardTitle className="font-display text-2xl">One quick read of the whole plan</CardTitle>
+            <CardTitle className="workspace-h2">One quick read of the whole plan</CardTitle>
             <p className="text-sm text-muted-foreground">
               Four signals that tell you whether the wedding is moving cleanly.
             </p>
@@ -1130,10 +1112,7 @@ export default function Dashboard() {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {homePulseCards.map((card) => (
                 <Link key={card.label} to={card.href} className="group rounded-2xl border border-border/70 bg-white/72 p-4 transition-all hover:-translate-y-0.5 hover:border-primary/30">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.label}</p>
-                    <card.icon className="h-4 w-4 text-primary/80" />
-                  </div>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.label}</p>
                   <p className="mt-2 text-xl font-semibold text-foreground">{card.value}</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">{card.detail}</p>
                 </Link>
@@ -1148,7 +1127,7 @@ export default function Dashboard() {
               <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Workspaces</p>
               <InfoTip content="Jump straight to the area you need without scanning a full card grid." />
             </div>
-            <CardTitle className="font-display text-2xl">Open the right workspace fast</CardTitle>
+            <CardTitle className="workspace-h2">Open the right workspace fast</CardTitle>
             <p className="text-sm text-muted-foreground">
               Quick links to the six places couples need most often.
             </p>
@@ -1174,7 +1153,7 @@ export default function Dashboard() {
 
       {/* Linked planner info for couples */}
       {linkedPlanner && !isPlanner && (
-        <Card className="border-primary/20 bg-primary/5">
+        <Card className="semantic-surface-info">
           <CardContent className="flex items-center gap-3 py-4">
             <LinkIcon className="h-5 w-5 text-primary shrink-0" />
             <div className="flex-1">
@@ -1205,7 +1184,7 @@ export default function Dashboard() {
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <CardTitle className="font-display text-2xl">Vendor Watch</CardTitle>
+                <CardTitle className="workspace-h2">Vendor Watch</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Track booked vendors, what is still owed, and the next action tied to each final decision.
                 </p>
@@ -1293,9 +1272,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-primary/20 bg-primary/5 shadow-card">
+        <Card className="semantic-surface-info shadow-card">
           <CardHeader className="pb-3">
-            <CardTitle className="font-display text-xl">Timeline And Support</CardTitle>
+            <CardTitle className="workspace-h3">Timeline And Support</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
@@ -1353,8 +1332,7 @@ export default function Dashboard() {
         {upcomingEvents.length > 0 && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Clock className="h-4 w-4" />
+              <CardTitle className="text-sm font-medium text-muted-foreground">
                 What Happens Next
                 {upcomingEvents[0]?.timeline_date && (
                   <Badge variant="outline" className="text-[10px] font-normal ml-1">
@@ -1383,7 +1361,7 @@ export default function Dashboard() {
                       key={ev.id}
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.05 }}
+                      transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1], delay: i * 0.03 }}
                       className="flex items-center gap-3 py-1.5"
                     >
                       <span className="text-sm font-semibold text-primary font-display min-w-[70px]">{formatTime(ev.event_time)}</span>
@@ -1398,7 +1376,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         )}
-        <Card className="border-primary/20 bg-primary/5">
+        <Card className="semantic-surface-info">
           <CardContent className="space-y-3 py-5">
             <div className="flex items-start gap-4">
               <Heart className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
@@ -1432,7 +1410,7 @@ export default function Dashboard() {
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <CardTitle className="font-display text-2xl">Planning Digest</CardTitle>
+                  <CardTitle className="workspace-h2">Planning Digest</CardTitle>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Budget pressure, open vendor choices, payment deadlines, and private versus shared work in one place.
                   </p>
@@ -1590,9 +1568,9 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="border-primary/20 bg-primary/5">
+          <Card className="semantic-surface-info">
             <CardHeader className="pb-3">
-              <CardTitle className="font-display text-xl">What your side should handle next</CardTitle>
+              <CardTitle className="workspace-h3">What your side should handle next</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-2xl border border-border/70 bg-background/70 p-4">

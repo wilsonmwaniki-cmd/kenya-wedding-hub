@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowRight, Loader2, Send, X } from 'lucide-react';
+import { Loader2, Send, X } from 'lucide-react';
 import SafeMarkdown from '@/components/SafeMarkdown';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
@@ -579,7 +579,6 @@ export default function AssistantPanel({
                   <Button asChild variant="ghost" className="h-auto gap-2 px-1 py-0 text-[#fff6e8]/76 hover:bg-transparent hover:text-[#fff6e8]">
                     <Link to="/ai-chat" onClick={() => assistantPanel.setOpen(false)}>
                       Open full assistant
-                      <ArrowRight className="h-4 w-4" />
                     </Link>
                   </Button>
                 </footer>

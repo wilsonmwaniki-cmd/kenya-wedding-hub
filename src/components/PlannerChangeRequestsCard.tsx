@@ -122,17 +122,17 @@ export default function PlannerChangeRequestsCard() {
   if (!user) return null;
 
   return (
-    <Card className="border-primary/20 bg-primary/5 shadow-card">
+    <Card className="semantic-surface-info shadow-card">
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.22em] text-primary">Planner moderation</p>
-            <CardTitle className="mt-2 font-display text-2xl">Approve planner changes</CardTitle>
+            <CardTitle className="workspace-h2 mt-2">Approve planner changes</CardTitle>
             <p className="mt-2 text-sm text-muted-foreground">
               Planner edits to sensitive couple-owned areas stay pending until you approve or decline them.
             </p>
           </div>
-          <Badge variant={pendingCount > 0 ? 'default' : 'outline'} className="rounded-full px-3 py-1">
+          <Badge variant={pendingCount > 0 ? 'warning' : 'outline'} className="rounded-full px-3 py-1">
             {pendingCount} pending
           </Badge>
         </div>
@@ -176,7 +176,7 @@ export default function PlannerChangeRequestsCard() {
                         <Badge variant="outline" className="rounded-full capitalize">
                           {request.target_table.replace('_', ' ')}
                         </Badge>
-                        <Badge variant="secondary" className="rounded-full capitalize">
+                        <Badge variant="info" className="rounded-full capitalize">
                           {request.change_type}
                         </Badge>
                       </div>
@@ -216,7 +216,7 @@ export default function PlannerChangeRequestsCard() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-primary/15 bg-background/70 p-4 text-sm text-muted-foreground">
+        <div className="rounded-2xl border border-[hsl(var(--info-soft-border))] bg-background/80 p-4 text-sm text-muted-foreground">
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 h-4 w-4 text-primary" />
             <p>

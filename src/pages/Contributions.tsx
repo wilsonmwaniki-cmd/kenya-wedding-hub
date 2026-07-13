@@ -26,7 +26,7 @@ import {
   summarizeContributions,
 } from '@/lib/contributions';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
-import { ArrowUpRight, Banknote, CalendarDays, Copy, Download, ExternalLink, Gift, HandCoins, Loader2, MessageCircle, Plus, Printer, RotateCw, Share2, ShieldOff, Trash2, Users } from 'lucide-react';
+import { CalendarDays, Copy, Download, ExternalLink, Loader2, MessageCircle, Plus, Printer, RotateCw, Share2, ShieldOff, Trash2 } from 'lucide-react';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
@@ -722,12 +722,12 @@ export default function Contributions() {
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-primary/20 shadow-card print:hidden">
+      <Card className="overflow-hidden border-border/70 shadow-card print:hidden">
         <CardContent className="grid gap-5 bg-[radial-gradient(circle_at_top_left,rgba(222,92,43,0.14),transparent_42%),linear-gradient(180deg,rgba(255,249,246,0.96),rgba(255,255,255,0.98))] p-6 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="space-y-5">
             <div>
-            <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Committee Contributions</p>
-            <h1 className="mt-2 font-display text-3xl font-bold text-foreground">See what support still needs follow-up</h1>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-info">Committee Contributions</p>
+            <h1 className="workspace-h1 mt-2">See what support still needs follow-up</h1>
             <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
               Track pledges, paid support, in-kind help, and the remaining funding gap without turning the page into a committee spreadsheet.
             </p>
@@ -822,7 +822,7 @@ export default function Contributions() {
 
       <Card className="shadow-card print:hidden">
         <CardHeader>
-          <CardTitle className="font-display text-2xl">Contribution tracker</CardTitle>
+          <CardTitle className="workspace-h2">Contribution tracker</CardTitle>
           <CardDescription>
             Log pledges, fulfilled payments, and in-kind support so the couple and committee always know the real funding position.
           </CardDescription>
@@ -909,7 +909,7 @@ export default function Contributions() {
                           ) : null}
                         </div>
                       </div>
-                      <div className="grid min-w-[250px] gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                      <div className="grid w-full min-w-0 gap-3 sm:grid-cols-3 xl:w-auto xl:min-w-[250px] xl:grid-cols-1">
                         <div className="rounded-2xl border border-border/60 bg-muted/10 p-3">
                           <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Pledged</p>
                           <p className="mt-1 text-sm font-semibold text-foreground">{formatCurrency(row.pledged_amount)}</p>
@@ -946,7 +946,7 @@ export default function Contributions() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Rounds and campaigns</p>
-              <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Separate family meetings, committee drives, and special collections</h3>
+              <h3 className="workspace-h3 mt-2">Separate family meetings, committee drives, and special collections</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 Open this only when you need to split the funding tracker into distinct rounds.
               </p>
@@ -998,7 +998,7 @@ export default function Contributions() {
                         Goal {formatCurrency(round.goal_amount)}
                       </p>
                     </div>
-                    <Badge variant={round.is_active ? 'default' : 'outline'} className="rounded-full">
+                    <Badge variant={round.is_active ? 'success' : 'outline'} className="rounded-full">
                       {round.is_active ? 'Active' : 'Closed'}
                     </Badge>
                   </div>
@@ -1029,7 +1029,7 @@ export default function Contributions() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contribution reports</p>
-              <h3 className="mt-2 font-display text-xl font-semibold text-foreground">Meeting prep and deeper funding signals</h3>
+              <h3 className="workspace-h3 mt-2">Meeting prep and deeper funding signals</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 Open this when you need the detailed funding breakdown, pending pledge follow-up, or public summary link controls.
               </p>
@@ -1045,50 +1045,35 @@ export default function Contributions() {
             <Card className="shadow-none">
               <CardHeader className="pb-2">
                 <CardDescription>Wedding target</CardDescription>
-                <CardTitle className="flex items-center gap-2 text-2xl">
-                  <Banknote className="h-5 w-5 text-primary" />
-                  {formatCurrency(budgetTarget)}
-                </CardTitle>
+                <CardTitle className="text-2xl">{formatCurrency(budgetTarget)}</CardTitle>
                 <p className="text-xs text-muted-foreground">Current wedding budget target</p>
               </CardHeader>
             </Card>
             <Card className="shadow-none">
               <CardHeader className="pb-2">
                 <CardDescription>Pledged cash</CardDescription>
-                <CardTitle className="flex items-center gap-2 text-2xl">
-                  <HandCoins className="h-5 w-5 text-primary" />
-                  {formatCurrency(summary.pledgedCash)}
-                </CardTitle>
+                <CardTitle className="text-2xl">{formatCurrency(summary.pledgedCash)}</CardTitle>
                 <p className="text-xs text-muted-foreground">Promises recorded so far</p>
               </CardHeader>
             </Card>
             <Card className="shadow-none">
               <CardHeader className="pb-2">
                 <CardDescription>Collected cash</CardDescription>
-                <CardTitle className="flex items-center gap-2 text-2xl">
-                  <ArrowUpRight className="h-5 w-5 text-emerald-600" />
-                  {formatCurrency(summary.collectedCash)}
-                </CardTitle>
+                <CardTitle className="text-2xl text-success">{formatCurrency(summary.collectedCash)}</CardTitle>
                 <p className="text-xs text-muted-foreground">Money already received</p>
               </CardHeader>
             </Card>
             <Card className="shadow-none">
               <CardHeader className="pb-2">
                 <CardDescription>In-kind value</CardDescription>
-                <CardTitle className="flex items-center gap-2 text-2xl">
-                  <Gift className="h-5 w-5 text-primary" />
-                  {formatCurrency(summary.inKindValue)}
-                </CardTitle>
+                <CardTitle className="text-2xl">{formatCurrency(summary.inKindValue)}</CardTitle>
                 <p className="text-xs text-muted-foreground">Goods and services pledged</p>
               </CardHeader>
             </Card>
             <Card className="shadow-none">
               <CardHeader className="pb-2">
                 <CardDescription>Supporters tracked</CardDescription>
-                <CardTitle className="flex items-center gap-2 text-2xl">
-                  <Users className="h-5 w-5 text-primary" />
-                  {summary.contributorCount}
-                </CardTitle>
+                <CardTitle className="text-2xl">{summary.contributorCount}</CardTitle>
                 <p className="text-xs text-muted-foreground">Unique contributors recorded</p>
               </CardHeader>
             </Card>
@@ -1096,7 +1081,7 @@ export default function Contributions() {
 
           <Card className="shadow-none">
             <CardHeader>
-              <CardTitle className="font-display text-2xl">Meeting summary</CardTitle>
+              <CardTitle className="workspace-h2">Meeting summary</CardTitle>
               <CardDescription>
                 Use this to follow up pending pledges, open the public summary, or print a clean committee-ready summary.
               </CardDescription>
@@ -1127,7 +1112,7 @@ export default function Contributions() {
                     <div className="mt-4 rounded-xl border border-border/60 bg-background/75 p-3">
                       <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Public summary link</p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <Badge variant={shareIsActive ? 'default' : 'secondary'}>
+                        <Badge variant={shareIsActive ? 'success' : 'outline'}>
                           {shareIsActive ? 'Link active' : 'Link inactive'}
                         </Badge>
                         {shareState?.expiresAt && (
@@ -1169,7 +1154,7 @@ export default function Contributions() {
                       </div>
                     </div>
                   ) : plannerNeedsApproval ? (
-                    <div className="mt-4 rounded-xl border border-primary/15 bg-primary/5 p-3 text-sm text-muted-foreground">
+                    <div className="semantic-surface-info mt-4 rounded-xl border p-3 text-sm text-muted-foreground">
                       Public contribution summary links, refresh, and revoke controls stay on the couple side.
                     </div>
                   ) : null}
@@ -1231,8 +1216,8 @@ export default function Contributions() {
       <section className="hidden print:block">
         <div className="space-y-6">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Wedding contributions</p>
-            <h1 className="mt-2 font-display text-3xl font-bold text-foreground">{workspaceName}</h1>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-info">Wedding contributions</p>
+            <h1 className="workspace-h1 mt-2">{workspaceName}</h1>
             <p className="mt-2 text-sm text-muted-foreground">Meeting summary • {selectedRoundLabel}</p>
           </div>
 
@@ -1256,7 +1241,7 @@ export default function Contributions() {
           </div>
 
           <div className="rounded-2xl border border-border p-4">
-            <h2 className="font-display text-2xl font-semibold text-foreground">Rounds overview</h2>
+            <h2 className="workspace-h2">Rounds overview</h2>
             {rounds.length ? (
               <div className="mt-4 space-y-3">
                 {rounds.map((round) => (
@@ -1277,7 +1262,7 @@ export default function Contributions() {
           </div>
 
           <div className="rounded-2xl border border-border p-4">
-            <h2 className="font-display text-2xl font-semibold text-foreground">Pending pledge follow-up</h2>
+            <h2 className="workspace-h2">Pending pledge follow-up</h2>
             {pendingRows.length ? (
               <div className="mt-4 overflow-hidden rounded-xl border border-border/70">
                 <table className="w-full text-left text-sm">

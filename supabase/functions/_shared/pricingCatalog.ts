@@ -28,6 +28,101 @@ export type PricingCatalogCheckoutConfig = {
   professionalCheckoutMap: Record<string, ProfessionalCheckoutMapping>;
 };
 
+export type PricingPaymentCatalogItem = {
+  title: string;
+  amountKes: number | null;
+  audience: 'couple' | 'planner' | 'vendor';
+  cadence: 'one_time' | 'monthly' | 'annual';
+  feature: string | null;
+};
+
+const defaultPaymentCatalog: Record<string, PricingPaymentCatalogItem> = {
+  planning_pass_one_time: {
+    title: 'Planning Pass',
+    amountKes: null,
+    audience: 'couple',
+    cadence: 'one_time',
+    feature: null,
+  },
+  couple_basic_monthly: {
+    title: 'Couple Basic',
+    amountKes: 750,
+    audience: 'couple',
+    cadence: 'monthly',
+    feature: null,
+  },
+  couple_basic_annual: {
+    title: 'Couple Basic',
+    amountKes: 5000,
+    audience: 'couple',
+    cadence: 'annual',
+    feature: null,
+  },
+  couple_premium_monthly: {
+    title: 'Couple Premium',
+    amountKes: 2000,
+    audience: 'couple',
+    cadence: 'monthly',
+    feature: null,
+  },
+  couple_premium_annual: {
+    title: 'Couple Premium',
+    amountKes: 15000,
+    audience: 'couple',
+    cadence: 'annual',
+    feature: null,
+  },
+  gift_registry_addon: {
+    title: 'Gift Registry',
+    amountKes: null,
+    audience: 'couple',
+    cadence: 'monthly',
+    feature: 'gift_registry',
+  },
+  guest_rsvp_management_addon: {
+    title: 'Guest RSVP & Management',
+    amountKes: null,
+    audience: 'couple',
+    cadence: 'monthly',
+    feature: 'guest_rsvp_management',
+  },
+  media_addon: {
+    title: 'Media Add-on',
+    amountKes: null,
+    audience: 'planner',
+    cadence: 'monthly',
+    feature: 'media_portfolio',
+  },
+  advertising_addon: {
+    title: 'Advertising Add-on',
+    amountKes: null,
+    audience: 'planner',
+    cadence: 'monthly',
+    feature: 'advertising',
+  },
+  team_workspace_bundle_3: {
+    title: 'Team Workspace Bundle (3)',
+    amountKes: null,
+    audience: 'planner',
+    cadence: 'monthly',
+    feature: 'team_workspace',
+  },
+  team_workspace_bundle_5: {
+    title: 'Team Workspace Bundle (5)',
+    amountKes: null,
+    audience: 'planner',
+    cadence: 'monthly',
+    feature: 'team_workspace',
+  },
+  team_workspace_bundle_10: {
+    title: 'Team Workspace Bundle (10)',
+    amountKes: null,
+    audience: 'planner',
+    cadence: 'monthly',
+    feature: 'team_workspace',
+  },
+};
+
 const defaultAllowedLookupKeys = [
   'planning_pass_one_time',
   'committee_pass_one_time',
@@ -297,5 +392,148 @@ export async function loadPricingCheckoutConfig(serviceClient: {
   } catch (error) {
     console.warn('Unexpected pricing checkout config error. Falling back to defaults.', error);
     return buildConfigFromOverrides(null);
+  }
+}
+
+function getObject(value: unknown) {
+  return isObject(value) ? value : null;
+}
+
+function getNullableNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function getNullableString(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function getLookupKey(
+  value: Record<string, unknown>,
+  primaryKey: string,
+  legacyKey: string,
+) {
+  return getNullableString(value[primaryKey]) ?? getNullableString(value[legacyKey]);
+}
+
+function upsertPaymentCatalogItem(
+  catalog: Record<string, PricingPaymentCatalogItem>,
+  lookupKey: string | null,
+  item: PricingPaymentCatalogItem,
+) {
+  if (!lookupKey) return;
+  catalog[lookupKey] = item;
+}
+
+export async function loadPricingPaymentCatalog(serviceClient: {
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: unknown) => {
+        order: (column: string, options: { ascending: boolean }) => {
+          limit: (count: number) => {
+            maybeSingle: () => Promise<{ data: { config?: unknown } | null; error: { message?: string } | null }>;
+          };
+        };
+      };
+    };
+  };
+}) {
+  const catalog: Record<string, PricingPaymentCatalogItem> = { ...defaultPaymentCatalog };
+
+  try {
+    const { data, error } = await serviceClient
+      .from('pricing_catalog')
+      .select('config')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Could not load pricing payment catalog from Supabase. Falling back to defaults.', error.message ?? error);
+      return catalog;
+    }
+
+    const config = getObject(data?.config);
+    const couplePlans = getObject(config?.couplePlans);
+    const coupleAddons = getObject(config?.coupleAddons);
+    const professionalPlans = getObject(config?.professionalPlans);
+    const professionalAddons = getObject(config?.professionalAddons);
+
+    for (const [tier, value] of Object.entries(couplePlans ?? {})) {
+      const plan = getObject(value);
+      if (!plan) continue;
+
+      upsertPaymentCatalogItem(catalog, getLookupKey(plan, 'checkoutMonthlyLookupKey', 'stripeMonthlyLookupKey'), {
+        title: getNullableString(plan.title) ?? `Couple ${tier}`,
+        amountKes: getNullableNumber(plan.monthlyPriceKes),
+        audience: 'couple',
+        cadence: 'monthly',
+        feature: null,
+      });
+
+      upsertPaymentCatalogItem(catalog, getLookupKey(plan, 'checkoutAnnualLookupKey', 'stripeAnnualLookupKey'), {
+        title: getNullableString(plan.title) ?? `Couple ${tier}`,
+        amountKes: getNullableNumber(plan.annualPriceKes),
+        audience: 'couple',
+        cadence: 'annual',
+        feature: null,
+      });
+    }
+
+    for (const [code, value] of Object.entries(coupleAddons ?? {})) {
+      const addon = getObject(value);
+      if (!addon) continue;
+      upsertPaymentCatalogItem(catalog, getLookupKey(addon, 'checkoutMonthlyLookupKey', 'stripeMonthlyLookupKey'), {
+        title: getNullableString(addon.title) ?? code,
+        amountKes: getNullableNumber(addon.monthlyPriceKes),
+        audience: 'couple',
+        cadence: 'monthly',
+        feature: code,
+      });
+    }
+
+    for (const [audience, value] of Object.entries(professionalPlans ?? {})) {
+      const plans = getObject(value);
+      if (!plans || (audience !== 'planner' && audience !== 'vendor')) continue;
+
+      for (const [tier, planValue] of Object.entries(plans)) {
+        const plan = getObject(planValue);
+        if (!plan) continue;
+
+        upsertPaymentCatalogItem(catalog, getLookupKey(plan, 'checkoutMonthlyLookupKey', 'stripeMonthlyLookupKey'), {
+          title: getNullableString(plan.title) ?? `${audience} ${tier}`,
+          amountKes: getNullableNumber(plan.monthlyPriceKes),
+          audience,
+          cadence: 'monthly',
+          feature: null,
+        });
+
+        upsertPaymentCatalogItem(catalog, getLookupKey(plan, 'checkoutAnnualLookupKey', 'stripeAnnualLookupKey'), {
+          title: getNullableString(plan.title) ?? `${audience} ${tier}`,
+          amountKes: getNullableNumber(plan.annualPriceKes),
+          audience,
+          cadence: 'annual',
+          feature: null,
+        });
+      }
+    }
+
+    for (const [code, value] of Object.entries(professionalAddons ?? {})) {
+      const addon = getObject(value);
+      if (!addon) continue;
+      const audience = getNullableString(addon.audience);
+      upsertPaymentCatalogItem(catalog, getLookupKey(addon, 'checkoutMonthlyLookupKey', 'stripeMonthlyLookupKey'), {
+        title: getNullableString(addon.title) ?? code,
+        amountKes: getNullableNumber(addon.monthlyPriceKes),
+        audience: audience === 'vendor' ? 'vendor' : 'planner',
+        cadence: 'monthly',
+        feature: code,
+      });
+    }
+
+    return catalog;
+  } catch (error) {
+    console.warn('Unexpected pricing payment catalog error. Falling back to defaults.', error);
+    return catalog;
   }
 }

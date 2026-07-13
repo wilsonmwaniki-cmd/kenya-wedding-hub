@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Armchair,
   CakeSlice,
+  Camera,
   CircleHelp,
   Copy,
   Download,
@@ -16,7 +17,6 @@ import {
   Music4,
   Plus,
   Save,
-  Sparkles,
   Square,
   Trash2,
   Users,
@@ -214,7 +214,7 @@ const paletteItems: CanvasPaletteItem[] = [
     type: 'high_table',
     label: 'High table',
     description: 'Add a cocktail-height table for mingling zones.',
-    icon: Sparkles,
+    icon: Square,
     width: 180,
     height: 84,
     tableShape: 'high_table',
@@ -290,7 +290,7 @@ const paletteItems: CanvasPaletteItem[] = [
     type: 'photo_booth',
     label: 'Photo booth',
     description: 'Add a guest photo booth corner.',
-    icon: Sparkles,
+    icon: Camera,
     width: 150,
     height: 84,
     toneClassName: 'border-fuchsia-300 bg-fuchsia-100/80 text-fuchsia-900',
@@ -317,7 +317,7 @@ const paletteItems: CanvasPaletteItem[] = [
     type: 'decor_zone',
     label: 'Decor zone',
     description: 'Reserve styling space for decor features.',
-    icon: Sparkles,
+    icon: Square,
     width: 180,
     height: 96,
     toneClassName: 'border-rose-200 bg-rose-50/90 text-rose-900',
@@ -805,7 +805,7 @@ function TutorialCard({
       <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-primary/70">
         Quick guide · Step {stepIndex + 1} of {tutorialSteps.length}
       </p>
-      <h3 className="mt-2 font-display text-xl text-foreground">{tutorialSteps[stepIndex].title}</h3>
+      <h3 className="workspace-h3 mt-2">{tutorialSteps[stepIndex].title}</h3>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{tutorialSteps[stepIndex].body}</p>
       <div className="mt-4 flex items-center justify-between gap-3">
         <Button type="button" variant="ghost" size="sm" className="text-xs" onClick={onSkip}>
@@ -2082,7 +2082,7 @@ export default function SpaceTablePlan() {
             </Badge>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary/75">{weddingContext.audienceLabel}</p>
-              <h1 className="mt-1 font-display text-3xl text-foreground md:text-[2.2rem]">Space &amp; Table Plan</h1>
+              <h1 className="workspace-h1 mt-1">Space &amp; Table Plan</h1>
             </div>
           </div>
 
@@ -2130,7 +2130,7 @@ export default function SpaceTablePlan() {
                 <div className="space-y-3">
                 <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
                   <div>
-                    <CardTitle className="font-display text-xl sm:text-2xl">{weddingContext.weddingName}</CardTitle>
+                    <CardTitle className="workspace-h3">{weddingContext.weddingName}</CardTitle>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
@@ -2527,7 +2527,7 @@ export default function SpaceTablePlan() {
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="max-w-md rounded-[28px] border border-dashed border-primary/25 bg-white/85 px-8 py-8 text-center shadow-sm">
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary/70">Blank canvas</p>
-                        <h3 className="mt-3 font-display text-3xl text-foreground">Start with the room essentials</h3>
+                        <h3 className="workspace-h3 mt-3">Start with the room essentials</h3>
                         <p className="mt-3 text-sm leading-6 text-muted-foreground">
                           Add tables, stage, dance floor, buffet, and the key guest-flow zones first. We only need the strongest planning moves in this preview.
                         </p>

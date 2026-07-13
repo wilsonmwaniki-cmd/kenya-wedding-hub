@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2, Building2, Ruler, Users2 } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2, Building2, Ruler, Users2 } from 'lucide-react';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { vendorAccessMessage, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
@@ -699,13 +699,13 @@ export default function VendorSettings() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Badge variant={listing.is_approved ? 'secondary' : 'outline'}>
+              <Badge variant={listing.is_approved ? 'success' : 'warning'}>
                 {listing.is_approved ? 'Approved' : 'Approval pending'}
               </Badge>
-              <Badge variant={subscriptionActive ? 'secondary' : 'outline'}>
+              <Badge variant={subscriptionActive ? 'success' : 'outline'}>
                 Subscription: {subscriptionActive && listing.subscription_status === 'inactive' ? 'trial' : listing.subscription_status}
               </Badge>
-              <Badge variant={listing.is_verified ? 'secondary' : 'outline'}>
+              <Badge variant={listing.is_verified ? 'success' : 'outline'}>
                 {listing.is_verified ? 'Verified' : verificationRequestOpen ? 'Verification requested' : 'Unverified'}
               </Badge>
             </div>
@@ -735,7 +735,7 @@ export default function VendorSettings() {
                 {listing.is_verified ? 'Already Verified' : verificationRequestOpen ? 'Verification Requested' : 'Request Verification'}
               </Button>
               {!subscriptionActive && (
-                <div className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <div className="semantic-surface-warning inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-warning">
                   <CreditCard className="h-4 w-4" />
                   Subscription must be activated by admin before verification can be requested.
                 </div>
@@ -758,12 +758,12 @@ export default function VendorSettings() {
           </CardHeader>
           <CardContent>
             {!fullAccess ? (
-              <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+              <div className="semantic-surface-warning rounded-lg border px-4 py-4 text-sm text-warning">
                 <div className="flex items-center gap-2 font-medium">
                   <AlertTriangle className="h-4 w-4" />
                   Trust metrics are locked
                 </div>
-                <p className="mt-2">
+                <p className="mt-2 text-foreground/75">
                   Planner connection requests, backend statistics, and trust benchmarks unlock only after active subscription and verification.
                 </p>
               </div>
@@ -832,10 +832,7 @@ export default function VendorSettings() {
 
       <Card className="shadow-card">
         <CardHeader>
-          <CardTitle className="font-display flex items-center gap-2">
-            <Store className="h-5 w-5 text-primary" />
-            Business Details
-          </CardTitle>
+          <CardTitle>Business Details</CardTitle>
           <CardDescription>Fill in your business information. This will be shown in the public directory.</CardDescription>
         </CardHeader>
         <CardContent>

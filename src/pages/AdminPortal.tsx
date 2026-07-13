@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -107,6 +108,70 @@ interface AdminCouplePassRow {
   email: string | null;
 }
 
+interface AdminFreeTierRiskSummary {
+  flagged_accounts: number;
+  high_risk_accounts: number;
+  medium_risk_accounts: number;
+  pending_reviews: number;
+  restricted_reviews: number;
+  deleted_weddings: number;
+}
+
+interface AdminFreeTierRiskAccountRow {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  role: string;
+  account_purpose: string | null;
+  verified_couple: boolean;
+  professional_use_risk_score: number;
+  professional_use_risk_level: "low" | "medium" | "high";
+  last_risk_calculated_at: string | null;
+  support_review_status: "none" | "pending" | "approved" | "restricted";
+  support_review_notes: string | null;
+  lifetime_wedding_count: number;
+  active_wedding_count: number;
+  deleted_wedding_count: number;
+  archived_wedding_count: number;
+  device_count: number;
+  current_trusted_device_count: number;
+  device_switches_last_90_days: number;
+  otp_requests_last_30_days: number;
+  otp_failures_last_30_days: number;
+  collaborator_invite_attempts: number;
+  export_count: number;
+  last_wedding_created_at: string | null;
+  last_deleted_wedding_at: string | null;
+}
+
+interface AdminWeddingLifecycleRow {
+  wedding_id: string;
+  created_at: string;
+  deleted_at: string | null;
+  archived_at: string | null;
+  restored_at: string | null;
+  wedding_date: string | null;
+  status: string;
+  is_meaningful: boolean;
+  became_meaningful_at: string | null;
+  workspace_lifetime_days: number | null;
+  guest_count_at_deletion: number | null;
+  vendor_count_at_deletion: number | null;
+  export_count: number | null;
+  collaborator_invite_count: number | null;
+  created_wedding_name: string | null;
+  deletion_reason: string | null;
+}
+
+interface AdminRiskEventRow {
+  id: string;
+  created_at: string;
+  wedding_id: string | null;
+  device_session_id: string | null;
+  event_type: string;
+  metadata: Record<string, unknown> | null;
+}
+
 interface AdminBetaReadinessSnapshot {
   active_beta_trials: number;
   active_couple_passes: number;
@@ -141,6 +206,8 @@ type ReputationVisibilityFilter = "all" | "private" | "planner_network" | "admin
 type AiAudience = "couple" | "committee" | "planner" | "vendor";
 type AiAudienceFilter = "all" | AiAudience;
 type VendorSuggestionFilter = "all" | "pending" | "reviewed" | "converted" | "rejected";
+type FreeTierRiskLevelFilter = "all" | "low" | "medium" | "high";
+type FreeTierReviewFilter = "all" | "none" | "pending" | "approved" | "restricted";
 
 interface AdminReputationMetrics {
   total_reviews: number;
@@ -240,16 +307,16 @@ type AdminPricingPlanCard = {
   monthlyPriceKes?: number | null;
   annualPriceKes?: number | null;
   ctaLabel?: string;
-  stripeMonthlyLookupKey?: string | null;
-  stripeAnnualLookupKey?: string | null;
+  checkoutMonthlyLookupKey?: string | null;
+  checkoutAnnualLookupKey?: string | null;
   includedFeatures?: string[];
 };
 
 type AdminPricingAddonCard = {
   title?: string;
   supportCopy?: string;
-  stripeMonthlyLookupKey?: string | null;
-  stripeAnnualLookupKey?: string | null;
+  checkoutMonthlyLookupKey?: string | null;
+  checkoutAnnualLookupKey?: string | null;
   seatLimit?: number | null;
 };
 
@@ -262,9 +329,9 @@ type AdminAudiencePricingCard = {
   displayOneTimePriceKes?: number | null;
   displayMonthlyPriceKes?: number | null;
   displayAnnualPriceKes?: number | null;
-  stripeOneTimeLookupKey?: string | null;
-  stripeMonthlyLookupKey?: string | null;
-  stripeAnnualLookupKey?: string | null;
+  checkoutOneTimeLookupKey?: string | null;
+  checkoutMonthlyLookupKey?: string | null;
+  checkoutAnnualLookupKey?: string | null;
 };
 
 interface AdminPricingCatalogConfig {
@@ -327,7 +394,79 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function asAdminPricingCatalogConfig(value: Json): AdminPricingCatalogConfig {
   if (!isObjectRecord(value)) return {};
-  return value as unknown as AdminPricingCatalogConfig;
+
+  const normalizeLookupFields = (input: Record<string, unknown>) => {
+    const next = { ...input };
+    next.checkoutOneTimeLookupKey = getTrimmedOrNull(
+      (next.checkoutOneTimeLookupKey as string | undefined) ?? (next.stripeOneTimeLookupKey as string | undefined),
+    );
+    next.checkoutMonthlyLookupKey = getTrimmedOrNull(
+      (next.checkoutMonthlyLookupKey as string | undefined) ?? (next.stripeMonthlyLookupKey as string | undefined),
+    );
+    next.checkoutAnnualLookupKey = getTrimmedOrNull(
+      (next.checkoutAnnualLookupKey as string | undefined) ?? (next.stripeAnnualLookupKey as string | undefined),
+    );
+    delete next.stripeOneTimeLookupKey;
+    delete next.stripeMonthlyLookupKey;
+    delete next.stripeAnnualLookupKey;
+    return next;
+  };
+
+  const next = { ...value } as Record<string, unknown>;
+
+  if (isObjectRecord(next.audiencePlans)) {
+    next.audiencePlans = Object.fromEntries(
+      Object.entries(next.audiencePlans).map(([key, plan]) => [
+        key,
+        isObjectRecord(plan) ? normalizeLookupFields(plan) : plan,
+      ]),
+    );
+  }
+
+  if (isObjectRecord(next.couplePlans)) {
+    next.couplePlans = Object.fromEntries(
+      Object.entries(next.couplePlans).map(([key, plan]) => [
+        key,
+        isObjectRecord(plan) ? normalizeLookupFields(plan) : plan,
+      ]),
+    );
+  }
+
+  if (isObjectRecord(next.coupleAddons)) {
+    next.coupleAddons = Object.fromEntries(
+      Object.entries(next.coupleAddons).map(([key, addon]) => [
+        key,
+        isObjectRecord(addon) ? normalizeLookupFields(addon) : addon,
+      ]),
+    );
+  }
+
+  if (isObjectRecord(next.professionalPlans)) {
+    next.professionalPlans = Object.fromEntries(
+      Object.entries(next.professionalPlans).map(([audience, plans]) => [
+        audience,
+        isObjectRecord(plans)
+          ? Object.fromEntries(
+              Object.entries(plans).map(([tier, plan]) => [
+                tier,
+                isObjectRecord(plan) ? normalizeLookupFields(plan) : plan,
+              ]),
+            )
+          : plans,
+      ]),
+    );
+  }
+
+  if (isObjectRecord(next.professionalAddons)) {
+    next.professionalAddons = Object.fromEntries(
+      Object.entries(next.professionalAddons).map(([key, addon]) => [
+        key,
+        isObjectRecord(addon) ? normalizeLookupFields(addon) : addon,
+      ]),
+    );
+  }
+
+  return next as unknown as AdminPricingCatalogConfig;
 }
 
 function getTrimmedOrNull(value: string | undefined) {
@@ -346,31 +485,31 @@ function deriveAllowedLookupKeys(config: AdminPricingCatalogConfig) {
   };
 
   Object.values(config.audiencePlans ?? {}).forEach((plan) => {
-    collect(plan.stripeOneTimeLookupKey);
-    collect(plan.stripeMonthlyLookupKey);
-    collect(plan.stripeAnnualLookupKey);
+    collect(plan.checkoutOneTimeLookupKey);
+    collect(plan.checkoutMonthlyLookupKey);
+    collect(plan.checkoutAnnualLookupKey);
   });
 
   Object.values(config.couplePlans ?? {}).forEach((plan) => {
-    collect(plan.stripeMonthlyLookupKey);
-    collect(plan.stripeAnnualLookupKey);
+    collect(plan.checkoutMonthlyLookupKey);
+    collect(plan.checkoutAnnualLookupKey);
   });
 
   Object.values(config.coupleAddons ?? {}).forEach((addon) => {
-    collect(addon.stripeMonthlyLookupKey);
-    collect(addon.stripeAnnualLookupKey);
+    collect(addon.checkoutMonthlyLookupKey);
+    collect(addon.checkoutAnnualLookupKey);
   });
 
   Object.values(config.professionalPlans ?? {}).forEach((tiers) => {
     Object.values(tiers ?? {}).forEach((plan) => {
-      collect(plan.stripeMonthlyLookupKey);
-      collect(plan.stripeAnnualLookupKey);
+      collect(plan.checkoutMonthlyLookupKey);
+      collect(plan.checkoutAnnualLookupKey);
     });
   });
 
   Object.values(config.professionalAddons ?? {}).forEach((addon) => {
-    collect(addon.stripeMonthlyLookupKey);
-    collect(addon.stripeAnnualLookupKey);
+    collect(addon.checkoutMonthlyLookupKey);
+    collect(addon.checkoutAnnualLookupKey);
   });
 
   return Array.from(keys);
@@ -391,7 +530,7 @@ function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): Admin
     },
   };
 
-  const coupleAudienceOneTimeKey = next.audiencePlans?.couple?.stripeOneTimeLookupKey?.trim();
+  const coupleAudienceOneTimeKey = next.audiencePlans?.couple?.checkoutOneTimeLookupKey?.trim();
   if (coupleAudienceOneTimeKey) {
     next.checkout!.coupleCheckoutMap![coupleAudienceOneTimeKey] = {
       bundleCode: "planning_pass_one_time",
@@ -412,10 +551,10 @@ function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): Admin
   }
 
   const couplePlans = [
-    { key: next.couplePlans?.basic?.stripeMonthlyLookupKey, bundleCode: "couple_basic_monthly", tier: "basic", committee: 10, family: 10, cadence: "monthly" },
-    { key: next.couplePlans?.basic?.stripeAnnualLookupKey, bundleCode: "couple_basic_annual", tier: "basic", committee: 10, family: 10, cadence: "annual" },
-    { key: next.couplePlans?.premium?.stripeMonthlyLookupKey, bundleCode: "couple_premium_monthly", tier: "premium", committee: 20, family: 20, cadence: "monthly" },
-    { key: next.couplePlans?.premium?.stripeAnnualLookupKey, bundleCode: "couple_premium_annual", tier: "premium", committee: 20, family: 20, cadence: "annual" },
+    { key: next.couplePlans?.basic?.checkoutMonthlyLookupKey, bundleCode: "couple_basic_monthly", tier: "basic", committee: 10, family: 10, cadence: "monthly" },
+    { key: next.couplePlans?.basic?.checkoutAnnualLookupKey, bundleCode: "couple_basic_annual", tier: "basic", committee: 10, family: 10, cadence: "annual" },
+    { key: next.couplePlans?.premium?.checkoutMonthlyLookupKey, bundleCode: "couple_premium_monthly", tier: "premium", committee: 20, family: 20, cadence: "monthly" },
+    { key: next.couplePlans?.premium?.checkoutAnnualLookupKey, bundleCode: "couple_premium_annual", tier: "premium", committee: 20, family: 20, cadence: "annual" },
   ] as const;
 
   couplePlans.forEach((plan) => {
@@ -447,7 +586,7 @@ function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): Admin
     };
   });
 
-  const giftRegistryKey = next.coupleAddons?.gift_registry_addon?.stripeMonthlyLookupKey?.trim();
+  const giftRegistryKey = next.coupleAddons?.gift_registry_addon?.checkoutMonthlyLookupKey?.trim();
   if (giftRegistryKey) {
     next.checkout!.coupleCheckoutMap![giftRegistryKey] = {
       bundleCode: "gift_registry_addon",
@@ -459,7 +598,7 @@ function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): Admin
     };
   }
 
-  const guestRsvpKey = next.coupleAddons?.guest_rsvp_management_addon?.stripeMonthlyLookupKey?.trim();
+  const guestRsvpKey = next.coupleAddons?.guest_rsvp_management_addon?.checkoutMonthlyLookupKey?.trim();
   if (guestRsvpKey) {
     next.checkout!.coupleCheckoutMap![guestRsvpKey] = {
       bundleCode: "guest_rsvp_management_addon",
@@ -472,11 +611,11 @@ function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): Admin
   }
 
   const professionalAddons = [
-    { key: next.professionalAddons?.media_addon?.stripeMonthlyLookupKey, feature: "media_portfolio", seatLimit: null },
-    { key: next.professionalAddons?.advertising_addon?.stripeMonthlyLookupKey, feature: "advertising", seatLimit: null },
-    { key: next.professionalAddons?.team_workspace_bundle_3?.stripeMonthlyLookupKey, feature: "team_workspace", seatLimit: 3 },
-    { key: next.professionalAddons?.team_workspace_bundle_5?.stripeMonthlyLookupKey, feature: "team_workspace", seatLimit: 5 },
-    { key: next.professionalAddons?.team_workspace_bundle_10?.stripeMonthlyLookupKey, feature: "team_workspace", seatLimit: 10 },
+    { key: next.professionalAddons?.media_addon?.checkoutMonthlyLookupKey, feature: "media_portfolio", seatLimit: null },
+    { key: next.professionalAddons?.advertising_addon?.checkoutMonthlyLookupKey, feature: "advertising", seatLimit: null },
+    { key: next.professionalAddons?.team_workspace_bundle_3?.checkoutMonthlyLookupKey, feature: "team_workspace", seatLimit: 3 },
+    { key: next.professionalAddons?.team_workspace_bundle_5?.checkoutMonthlyLookupKey, feature: "team_workspace", seatLimit: 5 },
+    { key: next.professionalAddons?.team_workspace_bundle_10?.checkoutMonthlyLookupKey, feature: "team_workspace", seatLimit: 10 },
   ] as const;
 
   professionalAddons.forEach((addon) => {
@@ -495,6 +634,91 @@ function countLabel(value?: number) {
   return Number(value ?? 0).toLocaleString();
 }
 
+function formatAccountPurposeLabel(value: string | null | undefined) {
+  if (!value) return "purpose not set";
+  return value.replace(/_/g, " ");
+}
+
+function formatRiskEventType(eventType: string) {
+  return eventType
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function summarizeRiskEvent(event: AdminRiskEventRow) {
+  const metadata = event.metadata ?? {};
+
+  switch (event.event_type) {
+    case "EXPORT_GENERATED":
+      return "User exported planning data from a workspace.";
+    case "DEVICE_SWITCHED":
+      return "User switched to a different device session.";
+    case "COLLABORATOR_INVITE_ATTEMPTED":
+      return "User attempted to add collaborators on a free-tier workspace.";
+    case "PLANNER_ROLE_ATTEMPTED":
+      return "User attempted to access planner-only capabilities.";
+    case "SECOND_WEDDING_ATTEMPTED":
+      return "User tried to create or retain an extra wedding workspace.";
+    case "COLLABORATIVE_PLAN_REQUIRED":
+      return "Feature access was blocked because the current plan does not allow collaboration.";
+    case "SUPPORT_REVIEW_UPDATED":
+      return `Support review set to ${String(metadata.support_review_status ?? "updated")}.`;
+    case "AUTOMATED_REVIEW_QUEUED":
+      return `Automatically queued for review at risk score ${String(metadata.risk_score ?? "unknown")}.`;
+    default:
+      return "Account activity recorded for review.";
+  }
+}
+
+function formatRiskEventMetadata(metadata: Record<string, unknown> | null) {
+  if (!metadata) return null;
+
+  const entries = Object.entries(metadata)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .slice(0, 3);
+
+  if (entries.length === 0) return null;
+
+  return entries
+    .map(([key, value]) => `${key.replace(/_/g, " ")}: ${String(value)}`)
+    .join(" · ");
+}
+
+function buildRiskSignals(account: AdminFreeTierRiskAccountRow | null) {
+  if (!account) return [];
+
+  const signals: string[] = [];
+
+  if (account.account_purpose === "professional_planner") {
+    signals.push("Account purpose explicitly set to professional planner");
+  }
+  if (account.lifetime_wedding_count > 2) {
+    signals.push(`${account.lifetime_wedding_count} total wedding workspaces created`);
+  }
+  if (account.deleted_wedding_count > 0 && account.active_wedding_count > 0) {
+    signals.push("Deleted workspaces while keeping an active workspace");
+  }
+  if (account.export_count >= 3) {
+    signals.push(`${account.export_count} exports recorded across workspaces`);
+  }
+  if (account.device_switches_last_90_days > 3) {
+    signals.push(`${account.device_switches_last_90_days} device switches in the last 90 days`);
+  }
+  if (account.collaborator_invite_attempts > 0) {
+    signals.push(`${account.collaborator_invite_attempts} collaborator or planner access attempts`);
+  }
+  if (account.otp_failures_last_30_days >= 3) {
+    signals.push(`${account.otp_failures_last_30_days} OTP failures in the last 30 days`);
+  }
+  if (account.deleted_wedding_count > 1) {
+    signals.push(`${account.deleted_wedding_count} deleted wedding workspaces on record`);
+  }
+
+  return signals;
+}
+
 export default function AdminPortal() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -507,6 +731,11 @@ export default function AdminPortal() {
   const [planners, setPlanners] = useState<AdminPlannerRow[]>([]);
   const [vendorSuggestions, setVendorSuggestions] = useState<AdminVendorSuggestionRow[]>([]);
   const [couples, setCouples] = useState<AdminCouplePassRow[]>([]);
+  const [freeTierRiskSummary, setFreeTierRiskSummary] = useState<AdminFreeTierRiskSummary | null>(null);
+  const [freeTierRiskAccounts, setFreeTierRiskAccounts] = useState<AdminFreeTierRiskAccountRow[]>([]);
+  const [selectedRiskUserId, setSelectedRiskUserId] = useState<string | null>(null);
+  const [selectedRiskLifecycle, setSelectedRiskLifecycle] = useState<AdminWeddingLifecycleRow[]>([]);
+  const [selectedRiskEvents, setSelectedRiskEvents] = useState<AdminRiskEventRow[]>([]);
   const [betaSnapshot, setBetaSnapshot] = useState<AdminBetaReadinessSnapshot | null>(null);
   const [functionEvents, setFunctionEvents] = useState<AdminFunctionEventRow[]>([]);
   const [reputationMetrics, setReputationMetrics] = useState<AdminReputationMetrics | null>(null);
@@ -549,6 +778,9 @@ export default function AdminPortal() {
   const [vendorClaimEmailDrafts, setVendorClaimEmailDrafts] = useState<Record<string, string>>({});
   const [vendorClaimLinkDrafts, setVendorClaimLinkDrafts] = useState<Record<string, string>>({});
   const [planningPassExpiryDrafts, setPlanningPassExpiryDrafts] = useState<Record<string, string>>({});
+  const [riskReviewStatusDrafts, setRiskReviewStatusDrafts] = useState<Record<string, FreeTierReviewFilter>>({});
+  const [riskReviewNotesDrafts, setRiskReviewNotesDrafts] = useState<Record<string, string>>({});
+  const [riskVerifiedCoupleDrafts, setRiskVerifiedCoupleDrafts] = useState<Record<string, boolean>>({});
   const [reviewVisibilityDrafts, setReviewVisibilityDrafts] = useState<Record<string, ReputationVisibilityFilter>>({});
   const [aiCapDrafts, setAiCapDrafts] = useState<Record<string, string>>({});
   const [aiEnabledDrafts, setAiEnabledDrafts] = useState<Record<string, boolean>>({});
@@ -559,6 +791,9 @@ export default function AdminPortal() {
   const [savingVendorId, setSavingVendorId] = useState<string | null>(null);
   const [savingReviewId, setSavingReviewId] = useState<string | null>(null);
   const [savingAiAudience, setSavingAiAudience] = useState<string | null>(null);
+  const [savingRiskUserId, setSavingRiskUserId] = useState<string | null>(null);
+  const [restoringRiskWeddingId, setRestoringRiskWeddingId] = useState<string | null>(null);
+  const [resettingRiskDeviceUserId, setResettingRiskDeviceUserId] = useState<string | null>(null);
 
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState<UserRoleFilter>("all");
@@ -570,6 +805,9 @@ export default function AdminPortal() {
   const [plannerVerificationFilter, setPlannerVerificationFilter] = useState<PlannerVerificationFilter>("all");
   const [coupleSearch, setCoupleSearch] = useState("");
   const [planningPassFilter, setPlanningPassFilter] = useState<PlanningPassFilter>("all");
+  const [freeTierRiskSearch, setFreeTierRiskSearch] = useState("");
+  const [freeTierRiskLevelFilter, setFreeTierRiskLevelFilter] = useState<FreeTierRiskLevelFilter>("all");
+  const [freeTierReviewFilter, setFreeTierReviewFilter] = useState<FreeTierReviewFilter>("all");
   const [reputationSearch, setReputationSearch] = useState("");
   const [reputationIssueFilter, setReputationIssueFilter] = useState<ReputationIssueFilter>("flagged");
   const [reputationVisibilityFilter, setReputationVisibilityFilter] = useState<ReputationVisibilityFilter>("all");
@@ -749,6 +987,63 @@ export default function AdminPortal() {
     });
   };
 
+  const loadFreeTierRiskSummary = async () => {
+    const { data, error } = await supabase.rpc("admin_free_tier_risk_summary" as any);
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    setFreeTierRiskSummary((row ?? null) as unknown as AdminFreeTierRiskSummary | null);
+  };
+
+  const loadFreeTierRiskAccounts = async () => {
+    const { data, error } = await supabase.rpc("admin_list_free_tier_risk_accounts" as any, {
+      search_query: freeTierRiskSearch.trim() || null,
+      risk_level_filter: freeTierRiskLevelFilter,
+      review_status_filter: freeTierReviewFilter,
+      limit_rows: 100,
+      offset_rows: 0,
+    });
+    if (error) throw error;
+
+    const rows = (data ?? []) as unknown as AdminFreeTierRiskAccountRow[];
+    setFreeTierRiskAccounts(rows);
+    setRiskReviewStatusDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.support_review_status;
+      return next;
+    });
+    setRiskReviewNotesDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) {
+        if (!(row.user_id in next)) next[row.user_id] = row.support_review_notes ?? "";
+      }
+      return next;
+    });
+    setRiskVerifiedCoupleDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.verified_couple;
+      return next;
+    });
+    setSelectedRiskUserId((current) => current ?? rows[0]?.user_id ?? null);
+  };
+
+  const loadSelectedRiskDetails = async (targetUserId: string) => {
+    const [{ data: lifecycleData, error: lifecycleError }, { data: eventsData, error: eventsError }] = await Promise.all([
+      supabase.rpc("admin_list_user_wedding_lifecycle" as any, {
+        target_user_id: targetUserId,
+      }),
+      supabase.rpc("admin_list_user_account_audit_events" as any, {
+        target_user_id: targetUserId,
+        limit_rows: 30,
+      }),
+    ]);
+
+    if (lifecycleError) throw lifecycleError;
+    if (eventsError) throw eventsError;
+
+    setSelectedRiskLifecycle((lifecycleData ?? []) as unknown as AdminWeddingLifecycleRow[]);
+    setSelectedRiskEvents((eventsData ?? []) as unknown as AdminRiskEventRow[]);
+  };
+
   const loadBetaSnapshot = async () => {
     const { data, error } = await supabase.rpc("admin_beta_readiness_snapshot" as any);
     if (error) throw error;
@@ -871,6 +1166,8 @@ export default function AdminPortal() {
         loadVendorSuggestions(),
         loadPlanners(),
         loadCouples(),
+        loadFreeTierRiskSummary(),
+        loadFreeTierRiskAccounts(),
         loadBetaSnapshot(),
         loadFunctionEvents(),
         loadReputationMetrics(),
@@ -897,6 +1194,22 @@ export default function AdminPortal() {
   useEffect(() => {
     void loadAll(true);
   }, []);
+
+  useEffect(() => {
+    if (!selectedRiskUserId) {
+      setSelectedRiskLifecycle([]);
+      setSelectedRiskEvents([]);
+      return;
+    }
+
+    void loadSelectedRiskDetails(selectedRiskUserId).catch((error: any) => {
+      toast({
+        title: "Failed to load account risk details",
+        description: error.message,
+        variant: "destructive",
+      });
+    });
+  }, [selectedRiskUserId]);
 
   const applyUserFilters = async () => {
     try {
@@ -946,6 +1259,18 @@ export default function AdminPortal() {
     }
   };
 
+  const applyFreeTierRiskFilters = async () => {
+    try {
+      await Promise.all([loadFreeTierRiskSummary(), loadFreeTierRiskAccounts()]);
+    } catch (error: any) {
+      toast({
+        title: "Failed to load free-tier risk queue",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const applyReputationFilters = async () => {
     try {
       await loadReputationReviews();
@@ -978,6 +1303,16 @@ export default function AdminPortal() {
 
     return { missingNames, pendingVendorCount, noLocationCount, flaggedReviews };
   }, [users, vendors, reputationMetrics]);
+
+  const selectedRiskAccount = useMemo(
+    () => freeTierRiskAccounts.find((item) => item.user_id === selectedRiskUserId) ?? null,
+    [freeTierRiskAccounts, selectedRiskUserId],
+  );
+
+  const selectedRiskSignals = useMemo(
+    () => buildRiskSignals(selectedRiskAccount),
+    [selectedRiskAccount],
+  );
 
   const updateAudiencePricingDraft = (
     audienceKey: string,
@@ -1422,6 +1757,102 @@ export default function AdminPortal() {
     }
   };
 
+  const handleFreeTierReviewSave = async (targetUserId: string) => {
+    const nextReviewStatus = riskReviewStatusDrafts[targetUserId];
+    const nextReviewNotes = riskReviewNotesDrafts[targetUserId] ?? "";
+    const nextVerifiedCouple = riskVerifiedCoupleDrafts[targetUserId];
+
+    if (!nextReviewStatus || nextVerifiedCouple === undefined) return;
+
+    setSavingRiskUserId(targetUserId);
+    try {
+      const { error } = await supabase.rpc("admin_set_free_tier_review_state" as any, {
+        target_user_id: targetUserId,
+        new_review_status: nextReviewStatus,
+        new_review_notes: nextReviewNotes.trim() || null,
+        new_verified_couple: nextVerifiedCouple,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Review state updated",
+        description: "The free-tier review status and notes were saved.",
+      });
+
+      await Promise.all([
+        loadFreeTierRiskSummary(),
+        loadFreeTierRiskAccounts(),
+        selectedRiskUserId === targetUserId ? loadSelectedRiskDetails(targetUserId) : Promise.resolve(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "Review update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingRiskUserId(null);
+    }
+  };
+
+  const handleRestoreDeletedWedding = async (weddingId: string) => {
+    setRestoringRiskWeddingId(weddingId);
+    try {
+      const { error } = await supabase.rpc("admin_restore_deleted_wedding" as any, {
+        target_wedding_id: weddingId,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Wedding restored",
+        description: "The deleted wedding workspace was restored into an archived state.",
+      });
+
+      await Promise.all([
+        loadFreeTierRiskSummary(),
+        loadFreeTierRiskAccounts(),
+        selectedRiskUserId ? loadSelectedRiskDetails(selectedRiskUserId) : Promise.resolve(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "Restore failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setRestoringRiskWeddingId(null);
+    }
+  };
+
+  const handleResetRiskDevices = async (targetUserId: string) => {
+    setResettingRiskDeviceUserId(targetUserId);
+    try {
+      const { data, error } = await supabase.rpc("admin_reset_free_tier_device_sessions" as any, {
+        target_user_id: targetUserId,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Trusted devices reset",
+        description: `Revoked ${Number(data ?? 0)} active device session${Number(data ?? 0) === 1 ? "" : "s"}. The user can verify a device again on next sign-in.`,
+      });
+
+      await Promise.all([
+        loadFreeTierRiskSummary(),
+        loadFreeTierRiskAccounts(),
+        selectedRiskUserId === targetUserId ? loadSelectedRiskDetails(targetUserId) : Promise.resolve(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "Device reset failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setResettingRiskDeviceUserId(null);
+    }
+  };
+
   const handleReputationVisibilityUpdate = async (reviewId: string) => {
     const nextVisibility = reviewVisibilityDrafts[reviewId];
     const target = reputationReviews.find((item) => item.review_id === reviewId);
@@ -1704,6 +2135,7 @@ export default function AdminPortal() {
           <TabsTrigger value="estimator">Estimator Seeding</TabsTrigger>
           <TabsTrigger value="users">Users & Roles</TabsTrigger>
           <TabsTrigger value="couples">Wedding Plans</TabsTrigger>
+          <TabsTrigger value="risk">Free-tier Risk</TabsTrigger>
           <TabsTrigger value="planners">Planner Moderation</TabsTrigger>
           <TabsTrigger value="vendors">Vendor Moderation</TabsTrigger>
           <TabsTrigger value="ai">AI Controls</TabsTrigger>
@@ -1741,25 +2173,25 @@ export default function AdminPortal() {
               <CardContent className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span>Profiles missing names</span>
-                  <Badge variant={healthSummary.missingNames > 0 ? "destructive" : "secondary"}>
+                  <Badge variant={healthSummary.missingNames > 0 ? "destructive" : "success"}>
                     {healthSummary.missingNames}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Listings pending approval</span>
-                  <Badge variant={healthSummary.pendingVendorCount > 0 ? "outline" : "secondary"}>
+                  <Badge variant={healthSummary.pendingVendorCount > 0 ? "warning" : "success"}>
                     {healthSummary.pendingVendorCount}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Listings without location</span>
-                  <Badge variant={healthSummary.noLocationCount > 0 ? "outline" : "secondary"}>
+                  <Badge variant={healthSummary.noLocationCount > 0 ? "warning" : "success"}>
                     {healthSummary.noLocationCount}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Flagged reputation reviews</span>
-                  <Badge variant={healthSummary.flaggedReviews > 0 ? "destructive" : "secondary"}>
+                  <Badge variant={healthSummary.flaggedReviews > 0 ? "destructive" : "success"}>
                     {healthSummary.flaggedReviews}
                   </Badge>
                 </div>
@@ -1879,7 +2311,7 @@ export default function AdminPortal() {
             <CardHeader>
               <CardTitle className="text-base">Live Pricing Catalog</CardTitle>
               <CardDescription>
-                Change plan names, copy, displayed prices, and Stripe lookup keys here. Zania saves this to Supabase and the pricing page reads it live.
+                Change plan names, copy, displayed prices, and checkout lookup keys here. Zania saves this to Supabase and the pricing page reads it live.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -2035,24 +2467,24 @@ export default function AdminPortal() {
                       <Input type="number" value={plan.displayOneTimePriceKes ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "displayOneTimePriceKes", e.target.value ? Number(e.target.value) : null)} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">One-time lookup key</label>
-                      <Input value={plan.stripeOneTimeLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "stripeOneTimeLookupKey", getTrimmedOrNull(e.target.value))} />
+                      <label className="text-sm font-medium">One-time checkout key</label>
+                      <Input value={plan.checkoutOneTimeLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "checkoutOneTimeLookupKey", getTrimmedOrNull(e.target.value))} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Display monthly price</label>
                       <Input type="number" value={plan.displayMonthlyPriceKes ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "displayMonthlyPriceKes", e.target.value ? Number(e.target.value) : null)} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Monthly lookup key</label>
-                      <Input value={plan.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                      <label className="text-sm font-medium">Monthly checkout key</label>
+                      <Input value={plan.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Display annual price</label>
                       <Input type="number" value={plan.displayAnnualPriceKes ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "displayAnnualPriceKes", e.target.value ? Number(e.target.value) : null)} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Annual lookup key</label>
-                      <Input value={plan.stripeAnnualLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "stripeAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
+                      <label className="text-sm font-medium">Annual checkout key</label>
+                      <Input value={plan.checkoutAnnualLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "checkoutAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
                     </div>
                   </CardContent>
                 </Card>
@@ -2091,12 +2523,12 @@ export default function AdminPortal() {
                         <Input type="number" value={plan.annualPriceKes ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "annualPriceKes", e.target.value ? Number(e.target.value) : null)} />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Monthly lookup key</label>
-                        <Input value={plan.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                        <label className="text-sm font-medium">Monthly checkout key</label>
+                        <Input value={plan.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Annual lookup key</label>
-                        <Input value={plan.stripeAnnualLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "stripeAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
+                        <label className="text-sm font-medium">Annual checkout key</label>
+                        <Input value={plan.checkoutAnnualLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "checkoutAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
                       </div>
                       <div className="space-y-2 md:col-span-2">
                         <label className="text-sm font-medium">CTA label</label>
@@ -2148,12 +2580,12 @@ export default function AdminPortal() {
                         <Input type="number" value={plan.annualPriceKes ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "annualPriceKes", e.target.value ? Number(e.target.value) : null)} />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Monthly lookup key</label>
-                        <Input value={plan.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                        <label className="text-sm font-medium">Monthly checkout key</label>
+                        <Input value={plan.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Annual lookup key</label>
-                        <Input value={plan.stripeAnnualLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "stripeAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
+                        <label className="text-sm font-medium">Annual checkout key</label>
+                        <Input value={plan.checkoutAnnualLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "checkoutAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
                       </div>
                       <div className="space-y-2 md:col-span-2">
                         <label className="text-sm font-medium">CTA label</label>
@@ -2188,8 +2620,8 @@ export default function AdminPortal() {
                       <Input value={addon.title ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "title", e.target.value)} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Monthly lookup key</label>
-                      <Input value={addon.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                      <label className="text-sm font-medium">Monthly checkout key</label>
+                      <Input value={addon.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
                     </div>
                     <div className="space-y-2 md:col-span-2">
                       <label className="text-sm font-medium">Support copy</label>
@@ -2213,8 +2645,8 @@ export default function AdminPortal() {
                       <Input value={addon.title ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "title", e.target.value)} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Monthly lookup key</label>
-                      <Input value={addon.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                      <label className="text-sm font-medium">Monthly checkout key</label>
+                      <Input value={addon.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
                     </div>
                     <div className="space-y-2 md:col-span-2">
                       <label className="text-sm font-medium">Support copy</label>
@@ -2635,7 +3067,7 @@ export default function AdminPortal() {
                         {new Date(item.updated_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Badge variant={item.planning_pass_status === "active" ? "secondary" : "outline"}>
+                        <Badge variant={item.planning_pass_status === "active" ? "success" : "outline"}>
                           {item.planning_pass_status}
                         </Badge>
                       </TableCell>
@@ -2645,6 +3077,361 @@ export default function AdminPortal() {
               </Table>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="risk" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Flagged Accounts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(freeTierRiskSummary?.flagged_accounts)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">High Risk</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(freeTierRiskSummary?.high_risk_accounts)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Pending Reviews</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(freeTierRiskSummary?.pending_reviews)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="space-y-3">
+              <CardTitle className="text-base">Free-tier Risk Queue</CardTitle>
+              <CardDescription>
+                Review couples showing professional-use signals, repeated workspace churn, or support follow-up needs.
+              </CardDescription>
+              <div className="flex flex-col gap-3 lg:flex-row">
+                <Input
+                  value={freeTierRiskSearch}
+                  onChange={(e) => setFreeTierRiskSearch(e.target.value)}
+                  placeholder="Search by name, email, or account purpose"
+                />
+                <Select value={freeTierRiskLevelFilter} onValueChange={(value) => setFreeTierRiskLevelFilter(value as FreeTierRiskLevelFilter)}>
+                  <SelectTrigger className="w-full lg:w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All risk levels</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={freeTierReviewFilter} onValueChange={(value) => setFreeTierReviewFilter(value as FreeTierReviewFilter)}>
+                  <SelectTrigger className="w-full lg:w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All reviews</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="restricted">Restricted</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={() => applyFreeTierRiskFilters()}>
+                  Apply
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Account</TableHead>
+                    <TableHead>Risk</TableHead>
+                    <TableHead>Wedding History</TableHead>
+                    <TableHead>Devices & OTP</TableHead>
+                    <TableHead>Review</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {freeTierRiskAccounts.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        No accounts matched your current risk filters.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {freeTierRiskAccounts.map((item) => (
+                    <TableRow
+                      key={item.user_id}
+                      className={selectedRiskUserId === item.user_id ? "bg-muted/40" : undefined}
+                      onClick={() => setSelectedRiskUserId(item.user_id)}
+                    >
+                      <TableCell>
+                        <p className="font-medium">{item.full_name || "Unnamed Couple"}</p>
+                        <p className="text-xs text-muted-foreground">{item.email || item.user_id}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {item.account_purpose?.replace(/_/g, " ") || "purpose not set"}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <Badge
+                            variant={
+                              item.professional_use_risk_level === "high"
+                                ? "destructive"
+                                : item.professional_use_risk_level === "medium"
+                                  ? "warning"
+                                  : "outline"
+                            }
+                          >
+                            {item.professional_use_risk_level} · {item.professional_use_risk_score}
+                          </Badge>
+                          <p className="text-xs text-muted-foreground">
+                            {item.last_risk_calculated_at
+                              ? `Updated ${new Date(item.last_risk_calculated_at).toLocaleString()}`
+                              : "Risk not calculated yet"}
+                          </p>
+                          {buildRiskSignals(item)[0] ? (
+                            <p className="text-xs text-muted-foreground">{buildRiskSignals(item)[0]}</p>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        <p>{item.lifetime_wedding_count} lifetime</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.active_wedding_count} active · {item.deleted_wedding_count} deleted · {item.archived_wedding_count} archived
+                        </p>
+                        <p className="text-xs text-muted-foreground">{item.export_count} exports recorded</p>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        <p>{item.device_count} devices · {item.current_trusted_device_count} trusted</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.device_switches_last_90_days} switches / 90d · {item.otp_failures_last_30_days} OTP failures / 30d
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={item.support_review_status === "restricted" ? "destructive" : item.support_review_status === "pending" ? "warning" : item.support_review_status === "approved" ? "success" : "outline"}>
+                          {item.support_review_status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {selectedRiskAccount && (
+            <div className="grid gap-4 xl:grid-cols-[1.1fr,0.9fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Review Actions</CardTitle>
+                  <CardDescription>
+                    Manage support review state, verify a genuine couple, and restore deleted weddings when needed.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Support review status</Label>
+                      <Select
+                        value={riskReviewStatusDrafts[selectedRiskAccount.user_id] ?? selectedRiskAccount.support_review_status}
+                        onValueChange={(value) =>
+                          setRiskReviewStatusDrafts((prev) => ({
+                            ...prev,
+                            [selectedRiskAccount.user_id]: value as FreeTierReviewFilter,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">none</SelectItem>
+                          <SelectItem value="pending">pending</SelectItem>
+                          <SelectItem value="approved">approved</SelectItem>
+                          <SelectItem value="restricted">restricted</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Verified couple</Label>
+                      <Select
+                        value={(riskVerifiedCoupleDrafts[selectedRiskAccount.user_id] ?? selectedRiskAccount.verified_couple) ? "true" : "false"}
+                        onValueChange={(value) =>
+                          setRiskVerifiedCoupleDrafts((prev) => ({
+                            ...prev,
+                            [selectedRiskAccount.user_id]: value === "true",
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">Verified</SelectItem>
+                          <SelectItem value="false">Not verified</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Internal review notes</Label>
+                    <Textarea
+                      value={riskReviewNotesDrafts[selectedRiskAccount.user_id] ?? ""}
+                      onChange={(e) =>
+                        setRiskReviewNotesDrafts((prev) => ({
+                          ...prev,
+                          [selectedRiskAccount.user_id]: e.target.value,
+                        }))
+                      }
+                      rows={4}
+                      placeholder="Summarize why this account is approved, pending, or restricted."
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                    <span>{selectedRiskAccount.collaborator_invite_attempts} collaboration attempts</span>
+                    <span>{selectedRiskAccount.export_count} exports</span>
+                    <span>{selectedRiskAccount.otp_requests_last_30_days} OTP requests / 30d</span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      disabled={savingRiskUserId === selectedRiskAccount.user_id}
+                      onClick={() => handleFreeTierReviewSave(selectedRiskAccount.user_id)}
+                    >
+                      {savingRiskUserId === selectedRiskAccount.user_id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save review state
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={resettingRiskDeviceUserId === selectedRiskAccount.user_id}
+                      onClick={() => handleResetRiskDevices(selectedRiskAccount.user_id)}
+                    >
+                      {resettingRiskDeviceUserId === selectedRiskAccount.user_id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Reset trusted devices
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Risk Signals</CardTitle>
+                    <CardDescription>
+                      Interpreted reasons this account is appearing in the free-tier review queue.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant={selectedRiskAccount.professional_use_risk_level === "high" ? "destructive" : selectedRiskAccount.professional_use_risk_level === "medium" ? "warning" : "outline"}>
+                        {selectedRiskAccount.professional_use_risk_level} risk
+                      </Badge>
+                      <Badge variant={selectedRiskAccount.verified_couple ? "success" : "outline"}>
+                        {selectedRiskAccount.verified_couple ? "verified couple" : "not verified"}
+                      </Badge>
+                      <Badge variant="outline">{formatAccountPurposeLabel(selectedRiskAccount.account_purpose)}</Badge>
+                    </div>
+                    {selectedRiskSignals.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No standout signals beyond the stored risk score yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedRiskSignals.map((signal) => (
+                          <div key={signal} className="rounded-lg border border-border/70 px-3 py-2 text-sm">
+                            {signal}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Wedding Lifecycle</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {selectedRiskLifecycle.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No wedding lifecycle records found for this account.</p>
+                    ) : selectedRiskLifecycle.map((item) => (
+                      <div key={item.wedding_id} className="rounded-lg border border-border/70 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{item.created_wedding_name || "Unnamed wedding"}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Created {new Date(item.created_at).toLocaleDateString()}
+                              {item.wedding_date ? ` · Wedding date ${new Date(item.wedding_date).toLocaleDateString()}` : ""}
+                            </p>
+                          </div>
+                          <Badge variant={item.status === "deleted" ? "destructive" : item.status === "archived" ? "warning" : "outline"}>
+                            {item.status}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                          <p>{item.workspace_lifetime_days ?? 0} lifetime days · {item.guest_count_at_deletion ?? 0} guests at deletion · {item.export_count ?? 0} exports</p>
+                          <p>{item.is_meaningful ? "Meaningful workspace" : "Low-activity workspace"}{item.deletion_reason ? ` · Reason: ${item.deletion_reason}` : ""}</p>
+                        </div>
+                        {item.status === "deleted" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-3"
+                            disabled={restoringRiskWeddingId === item.wedding_id}
+                            onClick={() => handleRestoreDeletedWedding(item.wedding_id)}
+                          >
+                            {restoringRiskWeddingId === item.wedding_id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                            Restore as archived
+                          </Button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Recent Account Activity</CardTitle>
+                    <CardDescription>
+                      Latest audit events for exports, device changes, support actions, and blocked plan behavior.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {selectedRiskEvents.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No recent audit events found for this account.</p>
+                    ) : selectedRiskEvents.map((event) => (
+                      <div key={event.id} className="rounded-lg border border-border/70 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{formatRiskEventType(event.event_type)}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(event.created_at).toLocaleString()}
+                            </p>
+                          </div>
+                          <Badge variant="outline">{event.wedding_id ? "workspace-linked" : "account-level"}</Badge>
+                        </div>
+                        <p className="mt-3 text-sm">{summarizeRiskEvent(event)}</p>
+                        {formatRiskEventMetadata(event.metadata) ? (
+                          <p className="mt-2 text-xs text-muted-foreground">{formatRiskEventMetadata(event.metadata)}</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="vendors" className="space-y-4">
@@ -2711,7 +3498,7 @@ export default function AdminPortal() {
                         <p className="text-xs text-muted-foreground">{[item.suggester_role, item.suggester_email].filter(Boolean).join(" • ")}</p>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={item.status === "pending" ? "outline" : item.status === "converted" ? "secondary" : item.status === "rejected" ? "destructive" : "outline"}>
+                        <Badge variant={item.status === "pending" ? "warning" : item.status === "converted" ? "success" : item.status === "rejected" ? "destructive" : "outline"}>
                           {item.status}
                         </Badge>
                       </TableCell>
@@ -3111,11 +3898,11 @@ export default function AdminPortal() {
                           {item.planner_type === 'committee' ? 'Committee' : 'Professional'}
                         </Badge>
                         {item.planner_type === 'committee' && (
-                          <Badge variant={item.planner_subscription_status === "active" && item.planner_verified ? "secondary" : "outline"}>
+                          <Badge variant={item.planner_subscription_status === "active" && item.planner_verified ? "success" : "outline"}>
                             {item.planner_subscription_status === "active" && item.planner_verified ? 'Exports enabled' : 'Exports locked'}
                           </Badge>
                         )}
-                        <Badge variant={item.planner_verified ? "secondary" : "outline"}>
+                        <Badge variant={item.planner_verified ? "success" : "outline"}>
                           {item.planner_verified ? "Verified" : "Unverified"}
                         </Badge>
                         {item.planner_verification_requested && !item.planner_verified && (
@@ -3244,7 +4031,7 @@ export default function AdminPortal() {
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 <p>
                   AI usage is counted per user message and resets monthly. Each audience can have its own cap,
-                  can be disabled, and can be marked as Stripe-ready for a separate add-on later.
+                  can be disabled, and can be marked as payment-ready for a separate add-on later.
                 </p>
                 <p>
                   Separate add-on lookup keys are optional right now. Leaving them blank keeps AI bundled into the

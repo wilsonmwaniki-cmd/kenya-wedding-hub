@@ -18,7 +18,7 @@ function parseSampleRate(value: string | undefined, fallback: number) {
 function createTraceTargets() {
   const targets: (string | RegExp)[] = [
     "localhost",
-    /^https:\/\/(www\.)?zaniaweddings\.com/,
+    /^https:\/\/([a-z0-9-]+\.)?(zaniaweddings|planwithzania)\.com/,
   ];
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;

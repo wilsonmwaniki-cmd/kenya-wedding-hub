@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { motion } from 'framer-motion';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
+import PublicSiteFooter from '@/components/PublicSiteFooter';
 
 interface PortfolioData {
   id: string;
@@ -220,12 +221,7 @@ export default function WeddingPortfolio() {
         )}
       </div>
 
-      <footer className="border-t border-border px-6 py-8 text-center text-sm text-muted-foreground">
-        <div className="flex items-center justify-center gap-2">
-          <Heart className="h-4 w-4 text-primary" fill="currentColor" />
-          <span>Zania © {new Date().getFullYear()}</span>
-        </div>
-      </footer>
+      <PublicSiteFooter />
     </div>
   );
 }

@@ -1,35 +1,41 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import Stripe from 'https://esm.sh/stripe@14.25.0?target=denonext';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { AbuseProtectionError, assertRecentFunctionEventLimit } from '../_shared/abuseProtection.ts';
-import { loadPricingCheckoutConfig } from '../_shared/pricingCatalog.ts';
+import {
+  buildPesapalMerchantReference,
+  fetchPesapalToken,
+  loadPesapalConfig,
+  submitPesapalOrder,
+} from '../_shared/pesapal.ts';
+import { loadPricingCheckoutConfig, loadPricingPaymentCatalog } from '../_shared/pricingCatalog.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
 import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
 
-function mergeAllowedLookupKeys(baseLookupKeys: string[]) {
-  const envValue = Deno.env.get('STRIPE_ALLOWED_LOOKUP_KEYS')?.trim();
-  if (!envValue) return new Set(baseLookupKeys);
-
-  try {
-    const parsed = envValue.startsWith('[')
-      ? JSON.parse(envValue)
-      : envValue.split(',').map((item) => item.trim()).filter(Boolean);
-
-    if (!Array.isArray(parsed)) {
-      console.warn('STRIPE_ALLOWED_LOOKUP_KEYS is not an array-like value. Falling back to Supabase/default lookup keys.');
-      return new Set(baseLookupKeys);
-    }
-
-    const normalized = parsed
-      .map((item) => typeof item === 'string' ? item.trim() : '')
-      .filter(Boolean);
-
-    return new Set([...baseLookupKeys, ...normalized]);
-  } catch (error) {
-    console.warn('Could not parse STRIPE_ALLOWED_LOOKUP_KEYS. Falling back to Supabase/default lookup keys.', error);
-    return new Set(baseLookupKeys);
+function splitName(fullName: string | null | undefined) {
+  const normalized = fullName?.trim();
+  if (!normalized) {
+    return {
+      firstName: '',
+      middleName: '',
+      lastName: '',
+    };
   }
+
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return {
+      firstName: parts[0],
+      middleName: '',
+      lastName: '',
+    };
+  }
+
+  return {
+    firstName: parts[0],
+    middleName: parts.slice(1, -1).join(' '),
+    lastName: parts.at(-1) ?? '',
+  };
 }
 
 serve(async (req) => {
@@ -53,9 +59,8 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY || !STRIPE_SECRET_KEY) {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
       return new Response(JSON.stringify({ error: 'Billing environment variables are not fully configured.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -67,7 +72,7 @@ serve(async (req) => {
     });
     const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const pricingCheckoutConfig = await loadPricingCheckoutConfig(serviceClient);
-    const allowedLookupKeys = mergeAllowedLookupKeys(pricingCheckoutConfig.allowedLookupKeys);
+    const paymentCatalog = await loadPricingPaymentCatalog(serviceClient);
 
     const {
       audience,
@@ -79,8 +84,8 @@ serve(async (req) => {
       cancelUrl,
     } = await req.json();
 
-    if (!lookupKey || typeof lookupKey !== 'string' || !allowedLookupKeys.has(lookupKey)) {
-      return new Response(JSON.stringify({ error: 'Invalid Stripe price lookup key.' }), {
+    if (!lookupKey || typeof lookupKey !== 'string' || !pricingCheckoutConfig.allowedLookupKeys.includes(lookupKey)) {
+      return new Response(JSON.stringify({ error: 'Invalid pricing lookup key.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -88,6 +93,14 @@ serve(async (req) => {
 
     if (!successUrl || !cancelUrl) {
       return new Response(JSON.stringify({ error: 'Missing success or cancel URL.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const pricingItem = paymentCatalog[lookupKey];
+    if (!pricingItem || pricingItem.amountKes == null || pricingItem.amountKes <= 0) {
+      return new Response(JSON.stringify({ error: 'This product is not fully priced for Pesapal yet.' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -108,7 +121,7 @@ serve(async (req) => {
     await assertActiveAuthSession(serviceClient, authHeader, user.id);
 
     await assertRecentFunctionEventLimit(serviceClient, {
-      functionName: 'create-stripe-checkout',
+      functionName: 'create-pesapal-checkout',
       userId: user.id,
       eventType: 'checkout_start_requested',
       lookbackMs: 10 * 60 * 1000,
@@ -117,25 +130,9 @@ serve(async (req) => {
       retryAfterSeconds: 5 * 60,
     });
 
-    await logFunctionEvent({
-      functionName: 'create-stripe-checkout',
-      severity: 'info',
-      status: 'success',
-      eventType: 'checkout_start_requested',
-      message: 'Checkout session creation requested.',
-      userId: user.id,
-      audience: typeof audience === 'string' ? audience : null,
-      entityId: typeof weddingId === 'string' ? weddingId : null,
-      requestId,
-      details: {
-        lookupKey,
-        feature: typeof feature === 'string' ? feature : null,
-      },
-    });
-
     const { data: profile, error: profileError } = await serviceClient
       .from('profiles')
-      .select('id, role, full_name, company_name, stripe_customer_id')
+      .select('id, role, full_name, company_name, company_email, company_phone')
       .eq('user_id', user.id)
       .maybeSingle();
 
@@ -183,103 +180,129 @@ serve(async (req) => {
       }
     }
 
-    const stripe = new Stripe(STRIPE_SECRET_KEY, {
-      apiVersion: '2024-06-20',
-    });
+    const config = loadPesapalConfig();
+    const merchantReference = buildPesapalMerchantReference('pzania');
+    const { firstName, middleName, lastName } = splitName(profile.full_name);
 
-    const prices = await stripe.prices.list({
-      lookup_keys: [lookupKey],
-      active: true,
-      limit: 1,
-    });
-
-    const price = prices.data[0];
-    if (!price?.id) {
-      return new Response(JSON.stringify({ error: 'The requested Stripe price could not be found.' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    let customerId = profile.stripe_customer_id;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        name: profile.company_name || profile.full_name || user.email || undefined,
-        metadata: {
-          user_id: user.id,
-          role: profile.role,
-        },
-      });
-
-      customerId = customer.id;
-
-      await serviceClient
-        .from('profiles')
-        .update({ stripe_customer_id: customerId })
-        .eq('user_id', user.id);
-    }
-
-    const mode = price.type === 'recurring' ? 'subscription' : 'payment';
-    const metadata = {
-      audience: String(audience || ''),
-      feature: String(feature || ''),
-      cadence: String(cadence || ''),
-      entitlement_code: lookupKey,
-      user_id: user.id,
-      wedding_id: typeof weddingId === 'string' ? weddingId : '',
+    const orderPayload = {
+      id: merchantReference,
+      currency: 'KES',
+      amount: pricingItem.amountKes,
+      description: pricingItem.title.slice(0, 100),
+      callback_url: successUrl,
+      cancellation_url: cancelUrl,
+      notification_id: config.notificationId,
+      billing_address: {
+        email_address: profile.company_email || user.email || '',
+        phone_number: profile.company_phone || user.phone || '',
+        country_code: 'KE',
+        first_name: firstName,
+        middle_name: middleName,
+        last_name: lastName,
+        line_1: profile.company_name || profile.full_name || '',
+        line_2: '',
+        city: '',
+        state: '',
+        postal_code: '',
+        zip_code: '',
+      },
     };
 
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      client_reference_id: user.id,
-      mode,
-      allow_promotion_codes: true,
-      line_items: [{ price: price.id, quantity: 1 }],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata,
-      ...(mode === 'subscription'
-        ? { subscription_data: { metadata } }
-        : { payment_intent_data: { metadata } }),
-    });
+    const { data: insertedRows, error: insertError } = await serviceClient
+      .from('payment_transactions')
+      .insert({
+        provider: 'pesapal',
+        user_id: user.id,
+        wedding_id: typeof weddingId === 'string' ? weddingId : null,
+        audience: typeof audience === 'string' ? audience : pricingItem.audience,
+        feature: typeof feature === 'string' ? feature : pricingItem.feature,
+        lookup_key: lookupKey,
+        merchant_reference: merchantReference,
+        status: 'processing',
+        currency: 'KES',
+        amount: pricingItem.amountKes,
+        callback_url: successUrl,
+        cancel_url: cancelUrl,
+        notification_id: config.notificationId,
+        raw_request: orderPayload,
+        metadata: {
+          cadence: typeof cadence === 'string' ? cadence : pricingItem.cadence,
+          request_id: requestId,
+        },
+      })
+      .select('id')
+      .limit(1);
+
+    if (insertError) {
+      throw insertError;
+    }
+
+    const transactionId = insertedRows?.[0]?.id ?? null;
 
     await logFunctionEvent({
-      functionName: 'create-stripe-checkout',
+      functionName: 'create-pesapal-checkout',
       severity: 'info',
       status: 'success',
-      eventType: 'checkout_session_created',
-      message: 'Checkout session created successfully.',
+      eventType: 'checkout_start_requested',
+      message: 'Pesapal checkout creation requested.',
       userId: user.id,
       audience: typeof audience === 'string' ? audience : null,
       entityId: typeof weddingId === 'string' ? weddingId : null,
       requestId,
       details: {
         lookupKey,
-        sessionId: session.id,
+        feature: typeof feature === 'string' ? feature : null,
+        transactionId,
       },
     });
 
-    return new Response(JSON.stringify({ url: session.url, sessionId: session.id }), {
+    const token = await fetchPesapalToken(config);
+    const order = await submitPesapalOrder(config, token.token, orderPayload);
+
+    await serviceClient
+      .from('payment_transactions')
+      .update({
+        provider_reference: order.orderTrackingId,
+        redirect_url: order.redirectUrl,
+        raw_response: {
+          auth: token.raw,
+          order: order.raw,
+        },
+      })
+      .eq('merchant_reference', merchantReference);
+
+    await logFunctionEvent({
+      functionName: 'create-pesapal-checkout',
+      severity: 'info',
+      status: 'success',
+      eventType: 'checkout_session_created',
+      message: 'Pesapal order created successfully.',
+      userId: user.id,
+      audience: typeof audience === 'string' ? audience : null,
+      entityId: typeof weddingId === 'string' ? weddingId : null,
+      requestId,
+      details: {
+        lookupKey,
+        orderTrackingId: order.orderTrackingId,
+        transactionId,
+      },
+    });
+
+    return new Response(JSON.stringify({
+      url: order.redirectUrl,
+      reference: order.orderTrackingId,
+      provider: 'pesapal',
+      orderTrackingId: order.orderTrackingId,
+    }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('create-stripe-checkout error:', error);
+    console.error('create-pesapal-checkout error:', error);
+
     if (error instanceof AbuseProtectionError) {
-      await logFunctionEvent({
-        functionName: 'create-stripe-checkout',
-        severity: 'warn',
-        status: 'failure',
-        eventType: 'checkout_rate_limited',
-        message: error.message,
-        requestId,
-        details: {
-          retryAfterSeconds: error.retryAfterSeconds,
-        },
-      });
       return new Response(JSON.stringify({ error: error.message }), {
-        status: error.status,
+        status: 429,
         headers: {
           ...corsHeaders,
           'Content-Type': 'application/json',
@@ -295,18 +318,7 @@ serve(async (req) => {
       });
     }
 
-    await logFunctionEvent({
-      functionName: 'create-stripe-checkout',
-      severity: 'error',
-      status: 'failure',
-      eventType: 'checkout_start_failed',
-      message: error instanceof Error ? error.message : 'Unknown checkout start error',
-      requestId,
-      details: {
-        error: error instanceof Error ? error.stack ?? error.message : String(error),
-      },
-    });
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown Pesapal checkout error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

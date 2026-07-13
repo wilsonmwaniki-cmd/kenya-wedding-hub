@@ -87,7 +87,19 @@ export function useWeddingEntitlements() {
           .limit(10);
 
         if (membershipError) throw membershipError;
-        activeWeddingId = memberships?.[0]?.wedding_id ?? null;
+        const weddingIds = (memberships ?? []).map((row: { wedding_id: string }) => row.wedding_id);
+        if (weddingIds.length > 0) {
+          const { data: weddings, error: weddingsError } = await db
+            .from('weddings')
+            .select('id, status, deleted_at')
+            .in('id', weddingIds);
+
+          if (weddingsError) throw weddingsError;
+
+          activeWeddingId = (weddings ?? []).find((row: { id: string; status: string; deleted_at: string | null }) => (
+            row.status === 'active' && !row.deleted_at
+          ))?.id ?? null;
+        }
       }
 
       if (!activeWeddingId) {

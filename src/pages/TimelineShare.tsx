@@ -323,7 +323,6 @@ export default function TimelineShare() {
           {timeline.events.length === 0 ? (
             <Card className="shadow-card">
               <CardContent className="py-12 text-center text-muted-foreground">
-                <Clock className="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
                 <p>No events scheduled yet</p>
               </CardContent>
             </Card>

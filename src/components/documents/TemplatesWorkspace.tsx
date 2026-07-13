@@ -411,7 +411,7 @@ export default function TemplatesWorkspace({ role }: Props) {
                           <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{template.description || 'No description yet'}</p>
                         </div>
                         <div>
-                          <Badge variant="secondary">{professionalTemplateTypeLabel(template.templateType)}</Badge>
+                          <Badge variant="info">{professionalTemplateTypeLabel(template.templateType)}</Badge>
                         </div>
                         <div className="min-w-0 break-words text-sm leading-5 text-muted-foreground">{template.defaultTitle || 'No default title yet'}</div>
                       </button>
@@ -454,13 +454,13 @@ export default function TemplatesWorkspace({ role }: Props) {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">{professionalTemplateTypeLabel(detailDraft.templateType)}</Badge>
+                      <Badge variant="info">{professionalTemplateTypeLabel(detailDraft.templateType)}</Badge>
                       <Badge variant="outline">Used {selectedTemplateUseCount} time{selectedTemplateUseCount === 1 ? '' : 's'}</Badge>
                     </div>
                   </div>
                 </div>
                 {typeof selectedTemplate.metadata?.legalNote === 'string' && selectedTemplate.metadata.legalNote.trim().length > 0 && (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                  <div className="rounded-2xl border border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-4 py-3 text-sm leading-6 text-warning">
                     {selectedTemplate.metadata.legalNote}
                   </div>
                 )}
@@ -584,7 +584,7 @@ export default function TemplatesWorkspace({ role }: Props) {
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <div className="space-y-5">
               {selectedStarter && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                <div className="rounded-2xl border border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-4 py-3 text-sm leading-6 text-warning">
                   {selectedStarter.legalNote}
                 </div>
               )}

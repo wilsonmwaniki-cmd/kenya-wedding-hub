@@ -19,7 +19,7 @@ const SUPABASE_ANON_KEY =
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') ?? 'https://kenya-wedding-hub.vercel.app';
 const RESEND_FROM_EMAIL =
-  Deno.env.get('RESEND_FROM_EMAIL') ?? 'Zania Weddings <invites@zaniaweddings.com>';
+  Deno.env.get('RESEND_FROM_EMAIL') ?? 'Zania Weddings <invites@planwithzania.com>';
 
 type GuestInviteRow = {
   id: string;

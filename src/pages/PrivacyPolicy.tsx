@@ -306,7 +306,7 @@ const sections = [
   {
     title: "Account Deletion",
     body: [
-      "You may request deletion of your Zania account by contacting us at hello@zaniaweddings.com or through any account deletion feature made available in the platform.",
+      "You may request deletion of your Zania account by contacting us at hello@planwithzania.com or through any account deletion feature made available in the platform.",
       "When you request account deletion, we will take reasonable steps to delete or anonymise your personal data, unless we are required or permitted to retain certain information for legal, tax, accounting, dispute resolution, fraud prevention, platform security, or legitimate business purposes.",
       "If your data appears in a shared wedding workspace, deletion may affect only your account and personal profile, while some shared planning records may remain available to other authorised workspace users where necessary for continuity of the wedding project.",
     ],
@@ -413,7 +413,7 @@ const sections = [
     body: [
       "If you have any questions about this Privacy Policy, wish to exercise your data protection rights, submit a complaint, or contact us regarding the processing of your personal data, please contact Zania using the details below:",
       "Data Controller: Scarlet Plume (Zania)",
-      "Email: hello@zaniaweddings.com",
+      "Email: hello@planwithzania.com",
       "For privacy, account, or data protection requests, you can contact us through that address.",
     ],
   },

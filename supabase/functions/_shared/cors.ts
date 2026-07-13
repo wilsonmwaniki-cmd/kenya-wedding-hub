@@ -1,4 +1,8 @@
 const allowedExactOrigins = new Set([
+  'https://www.planwithzania.com',
+  'https://planwithzania.com',
+  'https://staging.planwithzania.com',
+  'https://app.planwithzania.com',
   'https://www.zaniaweddings.com',
   'https://zaniaweddings.com',
   'https://labs.zaniaweddings.com',
@@ -13,7 +17,7 @@ const allowedHeaders =
   'authorization, x-client-info, apikey, content-type, x-request-id, x-cron-secret, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version';
 
 function resolveAllowedOrigin(origin: string | null) {
-  if (!origin) return allowedExactOrigins.values().next().value ?? 'https://www.zaniaweddings.com';
+  if (!origin) return 'https://www.planwithzania.com';
 
   if (allowedExactOrigins.has(origin)) return origin;
 

@@ -9,7 +9,7 @@ const SUPABASE_ANON_KEY =
   Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ??
   '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const APP_BASE_URL = Deno.env.get('PUBLIC_APP_URL') ?? Deno.env.get('SITE_URL') ?? 'https://www.zaniaweddings.com';
+const APP_BASE_URL = Deno.env.get('PUBLIC_APP_URL') ?? Deno.env.get('SITE_URL') ?? 'https://www.planwithzania.com';
 
 function htmlEscape(value: string) {
   return value
