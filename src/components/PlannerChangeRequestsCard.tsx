@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Loader2, ShieldCheck, X } from 'lucide-react';
+import { Check, Loader2, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -126,7 +126,7 @@ export default function PlannerChangeRequestsCard() {
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.22em] text-primary">Planner moderation</p>
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-info">Planner moderation</p>
             <CardTitle className="workspace-h2 mt-2">Approve planner changes</CardTitle>
             <p className="mt-2 text-sm text-muted-foreground">
               Planner edits to sensitive couple-owned areas stay pending until you approve or decline them.
@@ -216,14 +216,11 @@ export default function PlannerChangeRequestsCard() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-[hsl(var(--info-soft-border))] bg-background/80 p-4 text-sm text-muted-foreground">
-          <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 h-4 w-4 text-primary" />
-            <p>
-              Couple ownership, invite sending, and public-share controls stay with the couple side. Planners can still prepare edits,
-              but those changes wait here for approval before they affect the live wedding workspace.
-            </p>
-          </div>
+        <div className="rounded-xl border border-[hsl(var(--info-soft-border))] bg-background/80 p-4 text-sm text-muted-foreground">
+          <p>
+            Couple ownership, invite sending, and public-share controls stay with the couple side. Planners can still prepare edits,
+            but those changes wait here for approval before they affect the live wedding workspace.
+          </p>
         </div>
       </CardContent>
     </Card>

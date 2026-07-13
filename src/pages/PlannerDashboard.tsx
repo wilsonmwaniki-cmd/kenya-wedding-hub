@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircle2, XCircle, LockKeyhole, CreditCard, ShieldCheck, NotebookPen } from 'lucide-react';
+import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircle2, XCircle, NotebookPen } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -120,11 +120,11 @@ export default function PlannerDashboard() {
     try {
       const result = await requestPlannerLinkByCode(collabCode, collabNote);
       if (result.status === 'already_linked') {
-        toast({ title: 'Already linked', description: `${result.couple_name || 'This couple'} is already in your workspace.` });
+        toast({ title: 'Already linked', description: `${result.couple_name || 'This couple'} is already in your workspace.`, variant: 'info' });
       } else if (result.status === 'already_pending') {
-        toast({ title: 'Request already sent', description: `We’re still waiting for ${result.couple_name || 'the couple'} to approve it.` });
+        toast({ title: 'Request already sent', description: `We’re still waiting for ${result.couple_name || 'the couple'} to approve it.`, variant: 'warning' });
       } else {
-        toast({ title: 'Request sent', description: `${result.couple_name || 'The couple'} can now approve you from their account.` });
+        toast({ title: 'Request sent', description: `${result.couple_name || 'The couple'} can now approve you from their account.`, variant: 'success' });
       }
       setCodeDialogOpen(false);
       setCollabCode('');
@@ -176,7 +176,11 @@ export default function PlannerDashboard() {
     setForm({ client_name: '', partner_name: '', wedding_date: '', wedding_location: '', email: '', phone: '' });
     setOpen(false);
     loadClients();
-    toast({ title: 'Client added!' });
+    toast({
+      title: 'Client added',
+      description: 'The wedding workspace is ready in your client list.',
+      variant: 'success',
+    });
     setAddingClient(false);
   };
 
@@ -198,6 +202,7 @@ export default function PlannerDashboard() {
       description: released
         ? 'That unused test workspace released your one free-tier replacement.'
         : 'This planner workspace is now archived and kept in history.',
+      variant: 'success',
     });
   };
 
@@ -264,7 +269,7 @@ export default function PlannerDashboard() {
       )}
 
       {plannerPreviewMode && (
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className="semantic-surface-info">
           <CardContent className="py-4 text-sm text-muted-foreground">
             You are previewing the {isCommittee ? 'committee' : 'planner'} workspace with admin bypass enabled. Any weddings
             or linked records you create here will be saved against your current account for testing.
@@ -274,12 +279,9 @@ export default function PlannerDashboard() {
 
       {/* Pending Link Requests */}
       {fullPlannerAccess && incomingLinkRequests.length > 0 && (
-        <Card className="border-primary/20 bg-primary/5">
+        <Card className="semantic-surface-warning">
           <CardHeader>
-            <CardTitle className="font-display text-base flex items-center gap-2">
-              <LinkIcon className="h-4 w-4 text-primary" />
-              Pending Link Requests
-            </CardTitle>
+            <CardTitle className="font-display text-base">Pending Link Requests</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {incomingLinkRequests.map(req => (

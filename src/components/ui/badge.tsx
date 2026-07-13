@@ -14,7 +14,7 @@ const badgeVariants = cva(
         success: "border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))] text-success hover:bg-[hsl(var(--success-soft-border))]",
         warning: "border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] text-warning hover:bg-[hsl(var(--warning-soft-border))]",
         new: "border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))] text-success hover:bg-[hsl(var(--success-soft-border))]",
-        destructive: "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
+        destructive: "border-[hsl(var(--destructive-soft-border))] bg-[hsl(var(--destructive-soft))] text-destructive hover:bg-[hsl(var(--destructive-soft-border))]",
         outline: "border-[#d9c4a2] bg-[rgba(255,251,246,0.92)] text-[#5f4c40]",
       },
     },

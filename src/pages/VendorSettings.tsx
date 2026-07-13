@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle2, Clock, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2, Building2, Ruler, Users2 } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, X, Instagram, Facebook, AlertTriangle, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { vendorAccessMessage, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
@@ -524,7 +524,13 @@ export default function VendorSettings() {
         }
       }
 
-      toast({ title: 'Saved!', description: listing ? 'Listing updated.' : 'Listing submitted for review.' });
+      toast({
+        title: listing ? 'Listing updated' : 'Listing submitted',
+        description: listing
+          ? 'Your latest business details are now saved to your vendor listing.'
+          : 'Your listing is saved and has entered the approval queue.',
+        variant: 'success',
+      });
       // Reload
       const { data } = await supabase.from('vendor_listings').select('*').eq('user_id', user.id).maybeSingle();
       if (data) setListing(data as any);
@@ -601,6 +607,7 @@ export default function VendorSettings() {
       toast({
         title: 'Verification requested',
         description: 'Your verification request has been sent to the admin review queue.',
+        variant: 'success',
       });
 
       if (!user) return;
@@ -651,7 +658,7 @@ export default function VendorSettings() {
       </div>
 
       {vendorPreviewMode && !listing && (
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className="semantic-surface-info">
           <CardContent className="py-4 text-sm text-muted-foreground">
             Admin preview is giving this account full vendor access for testing. Saving this form will create a real vendor
             listing tied to your email so you can test the full vendor journey with live data.
@@ -661,21 +668,21 @@ export default function VendorSettings() {
 
       {/* Status banner */}
       {listing && (
-        <Card className={listing.is_approved ? 'border-primary/30 bg-primary/5' : 'border-yellow-500/30 bg-yellow-500/5'}>
+        <Card className={listing.is_approved ? 'semantic-surface-success' : 'semantic-surface-warning'}>
           <CardContent className="flex items-center gap-3 py-4">
             {listing.is_approved ? (
               <>
-                <CheckCircle2 className="h-5 w-5 text-primary" />
+                <CheckCircle2 aria-hidden="true" className="h-5 w-5 text-success" strokeWidth={1.8} />
                 <div>
                   <p className="text-sm font-medium text-foreground">
-                    Your listing is live {listing.is_verified && '& verified ✓'}
+                    Your listing is live{listing.is_verified ? ' and verified' : ''}
                   </p>
                   <p className="text-xs text-muted-foreground">Visible in the vendor directory.</p>
                 </div>
               </>
             ) : (
               <>
-                <Clock className="h-5 w-5 text-yellow-600" />
+                <Clock aria-hidden="true" className="h-5 w-5 text-warning" strokeWidth={1.8} />
                 <div>
                   <p className="text-sm font-medium text-foreground">Pending Approval</p>
                   <p className="text-xs text-muted-foreground">Your listing is under review. You'll be notified once approved.</p>
@@ -687,12 +694,9 @@ export default function VendorSettings() {
       )}
 
       {listing && (
-        <Card className={fullAccess ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
+        <Card className={fullAccess ? 'semantic-surface-success' : 'semantic-surface-warning'}>
           <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              {fullAccess ? <ShieldCheck className="h-5 w-5 text-primary" /> : <LockKeyhole className="h-5 w-5 text-primary" />}
-              Vendor Access
-            </CardTitle>
+            <CardTitle>Vendor Access</CardTitle>
             <CardDescription>
               Full planner connections and vendor analytics unlock only after approval, active subscription, and verification.
             </CardDescription>
@@ -702,10 +706,10 @@ export default function VendorSettings() {
               <Badge variant={listing.is_approved ? 'success' : 'warning'}>
                 {listing.is_approved ? 'Approved' : 'Approval pending'}
               </Badge>
-              <Badge variant={subscriptionActive ? 'success' : 'outline'}>
+              <Badge variant={subscriptionActive ? 'success' : 'warning'}>
                 Subscription: {subscriptionActive && listing.subscription_status === 'inactive' ? 'trial' : listing.subscription_status}
               </Badge>
-              <Badge variant={listing.is_verified ? 'success' : 'outline'}>
+              <Badge variant={listing.is_verified ? 'success' : verificationRequestOpen ? 'info' : 'warning'}>
                 {listing.is_verified ? 'Verified' : verificationRequestOpen ? 'Verification requested' : 'Unverified'}
               </Badge>
             </div>
@@ -725,18 +729,17 @@ export default function VendorSettings() {
               )}
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
               <Button
                 type="button"
                 onClick={handleRequestVerification}
                 disabled={!listing.is_approved || !subscriptionActive || listing.is_verified || verificationRequestOpen || requestingVerification}
               >
-                {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {listing.is_verified ? 'Already Verified' : verificationRequestOpen ? 'Verification Requested' : 'Request Verification'}
               </Button>
               {!subscriptionActive && (
-                <div className="semantic-surface-warning inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-warning">
-                  <CreditCard className="h-4 w-4" />
+                <div className="semantic-surface-warning flex w-full items-start rounded-md border px-3 py-2 text-sm leading-5 text-warning sm:w-auto">
                   Subscription must be activated by admin before verification can be requested.
                 </div>
               )}
@@ -748,10 +751,7 @@ export default function VendorSettings() {
       {listing && (
         <Card className="shadow-card">
           <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              Vendor Trust Overview
-            </CardTitle>
+            <CardTitle>Vendor Trust Overview</CardTitle>
             <CardDescription>
               Planner reputation data from structured post-event scorecards. Only aggregate, threshold-safe data is shown here.
             </CardDescription>
@@ -760,7 +760,7 @@ export default function VendorSettings() {
             {!fullAccess ? (
               <div className="semantic-surface-warning rounded-lg border px-4 py-4 text-sm text-warning">
                 <div className="flex items-center gap-2 font-medium">
-                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTriangle aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
                   Trust metrics are locked
                 </div>
                 <p className="mt-2 text-foreground/75">
@@ -816,10 +816,7 @@ export default function VendorSettings() {
             )}
 
             <div className="mt-4 rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2 text-foreground">
-                <TrendingUp className="h-4 w-4 text-primary" />
-                Market position signal
-              </div>
+              <p className="font-medium text-foreground">Market position signal</p>
               <p className="mt-1">
                 {reputationOverview?.benchmark_visible
                   ? 'Your planner trust metrics are visible because the minimum review threshold has been met.'
@@ -1065,13 +1062,10 @@ export default function VendorSettings() {
             </div>
 
             {isVenueCategory && (
-              <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4 space-y-4">
+              <div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-1">
-                    <Label className="flex items-center gap-2 text-base text-foreground">
-                      <Building2 className="h-4 w-4 text-primary" />
-                      Venue spaces
-                    </Label>
+                    <Label className="text-base text-foreground">Venue spaces</Label>
                     <p className="text-xs leading-6 text-muted-foreground">
                       Add each wedding-ready space you want couples and planners to plan against. These presets will appear inside Space Plan so users can pick a real venue footprint instead of starting from a blank room.
                     </p>
@@ -1150,15 +1144,15 @@ export default function VendorSettings() {
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                           <div className="space-y-2">
-                            <Label className="flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5" /> Width (m)</Label>
+                            <Label>Width (m)</Label>
                             <Input type="number" min="1" step="0.1" value={space.width_meters} onChange={(e) => updateVenueSpace(space.id, { width_meters: e.target.value })} />
                           </div>
                           <div className="space-y-2">
-                            <Label className="flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5" /> Length (m)</Label>
+                            <Label>Length (m)</Label>
                             <Input type="number" min="1" step="0.1" value={space.length_meters} onChange={(e) => updateVenueSpace(space.id, { length_meters: e.target.value })} />
                           </div>
                           <div className="space-y-2">
-                            <Label className="flex items-center gap-1.5"><Users2 className="h-3.5 w-3.5" /> Seated cap</Label>
+                            <Label>Seated capacity</Label>
                             <Input type="number" min="1" value={space.max_seated_capacity} onChange={(e) => updateVenueSpace(space.id, { max_seated_capacity: e.target.value })} />
                           </div>
                           <div className="space-y-2">
@@ -1234,10 +1228,7 @@ export default function VendorSettings() {
                 </DialogTrigger>
                 <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
                   <DialogHeader>
-                    <DialogTitle className="font-display flex items-center gap-2">
-                      <Eye className="h-5 w-5 text-primary" />
-                      Directory Listing Preview
-                    </DialogTitle>
+                    <DialogTitle className="font-display">Directory Listing Preview</DialogTitle>
                     <DialogDescription>
                       This preview uses your current draft so you can see how couples will experience your listing before you save it.
                     </DialogDescription>
@@ -1256,7 +1247,7 @@ export default function VendorSettings() {
                               </AvatarFallback>
                             </Avatar>
                             {(listing?.is_verified || vendorPreviewMode) && (
-                              <CheckCircle2 className="absolute -bottom-1 -right-1 h-5 w-5 text-primary fill-background" />
+                              <CheckCircle2 className="absolute -bottom-1 -right-1 h-5 w-5 fill-background text-success" />
                             )}
                           </div>
                           <h3 className="mt-4 font-display text-lg font-semibold text-card-foreground">
@@ -1287,7 +1278,7 @@ export default function VendorSettings() {
                             </div>
                           )}
                           {(listing?.is_verified || vendorPreviewMode) && (
-                            <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
+                            <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-success">
                               <CheckCircle2 className="h-3 w-3" /> Verified Vendor
                             </span>
                           )}
@@ -1462,16 +1453,14 @@ export default function VendorSettings() {
       <Dialog open={submissionSuccessOpen} onOpenChange={setSubmissionSuccessOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader className="items-center text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <CheckCircle2 className="h-8 w-8" />
-            </div>
+            <CheckCircle2 className="h-9 w-9 text-success" aria-hidden="true" strokeWidth={1.8} />
             <DialogTitle className="font-display text-2xl">Review Request Sent</DialogTitle>
             <DialogDescription className="max-w-sm">
               Your vendor listing has been submitted successfully. We&apos;re taking you back to your dashboard now.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="rounded-2xl border border-primary/15 bg-primary/5 px-4 py-4 text-center">
+          <div className="semantic-surface-success rounded-xl border px-4 py-4 text-center">
             <p className="text-sm font-medium text-foreground">Redirecting to dashboard</p>
             <p className="mt-1 text-sm text-muted-foreground">
               In {dashboardRedirectCountdown} second{dashboardRedirectCountdown === 1 ? '' : 's'}.

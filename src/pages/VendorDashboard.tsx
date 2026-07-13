@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, X, Check, LockKeyhole, ShieldCheck, CreditCard, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText, FilePlus2 } from 'lucide-react';
+import { Loader2, CalendarDays, CheckCircle2, Clock, Phone, Mail, X, Check, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText, FilePlus2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { vendorHasFullAccess } from '@/lib/vendorAccess';
 import { getEntitlementDecision } from '@/lib/entitlements';
@@ -674,10 +674,16 @@ export default function VendorDashboard() {
 
   const statusColor = (status: string | null) => {
     switch (status) {
-      case 'booked': return 'bg-primary/10 text-primary border border-primary/20';
-      case 'contacted': return 'bg-accent/20 text-foreground border border-accent/35';
-      case 'rejected': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
-      default: return 'bg-muted text-muted-foreground';
+      case 'booked':
+      case 'completed':
+        return 'border border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))] text-success';
+      case 'contacted':
+      case 'quoted':
+        return 'border border-[hsl(var(--info-soft-border))] bg-[hsl(var(--info-soft))] text-info';
+      case 'rejected':
+        return 'border border-[hsl(var(--destructive-soft-border))] bg-[hsl(var(--destructive-soft))] text-destructive';
+      default:
+        return 'border border-border bg-muted text-muted-foreground';
     }
   };
   const formatShortDate = (value: string | null) => {
@@ -1087,9 +1093,11 @@ export default function VendorDashboard() {
     switch (type) {
       case 'waiting_on_couple':
       case 'need_approval':
-        return 'secondary' as const;
+        return 'warning' as const;
       case 'delivered':
-        return 'default' as const;
+        return 'success' as const;
+      case 'on_track':
+        return 'info' as const;
       default:
         return 'outline' as const;
     }
@@ -1103,7 +1111,7 @@ export default function VendorDashboard() {
       </div>
 
       {claimedWorkspaceInvite && (
-        <Card className="border-primary/30 bg-primary/5 shadow-card">
+        <Card className="semantic-surface-success shadow-card">
           <CardContent className="flex flex-col gap-3 py-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="font-display text-lg text-foreground">Workspace invite accepted</p>
@@ -1125,7 +1133,7 @@ export default function VendorDashboard() {
       )}
 
       {vendorPreviewMode && (
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className="semantic-surface-info">
           <CardContent className="py-4 text-sm text-muted-foreground">
             You are previewing the vendor dashboard with admin bypass enabled. Create a real vendor listing in
             <Link to="/vendor-settings" className="ml-1 font-medium text-primary underline-offset-4 hover:underline">
@@ -1217,49 +1225,29 @@ export default function VendorDashboard() {
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-4">
         <Card className="shadow-card">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="rounded-xl bg-primary/10 p-3">
-              <CheckCircle2 className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground">{bookedCount}</p>
-              <p className="text-sm text-muted-foreground">Confirmed Bookings</p>
-            </div>
+          <CardContent className="py-5">
+            <p className="text-2xl font-bold text-foreground">{bookedCount}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Confirmed bookings</p>
           </CardContent>
         </Card>
         <Card className="shadow-card">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="rounded-xl bg-accent p-3">
-              <Clock className="h-5 w-5 text-accent-foreground" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground">{contactedCount}</p>
-              <p className="text-sm text-muted-foreground">Inquiries</p>
-            </div>
+          <CardContent className="py-5">
+            <p className="text-2xl font-bold text-foreground">{contactedCount}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Inquiries</p>
           </CardContent>
         </Card>
         <Card className="shadow-card">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              Live
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground">{workspaceInvites.length}</p>
-              <p className="text-sm text-muted-foreground">Workspace Invites</p>
-            </div>
+          <CardContent className="py-5">
+            <p className="text-2xl font-bold text-foreground">{workspaceInvites.length}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Workspace invites</p>
           </CardContent>
         </Card>
         <Card className="shadow-card">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="rounded-xl bg-primary/10 p-3">
-              <TrendingUp className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground">
-                KES {totalRevenue.toLocaleString()}
-              </p>
-              <p className="text-sm text-muted-foreground">Quoted Revenue</p>
-            </div>
+          <CardContent className="py-5">
+            <p className="text-2xl font-bold text-foreground">
+              KES {totalRevenue.toLocaleString()}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">Quoted revenue</p>
           </CardContent>
         </Card>
       </div>
@@ -1273,12 +1261,9 @@ export default function VendorDashboard() {
       )}
 
       {workspaceInvites.length > 0 && (
-        <Card className="shadow-card border-primary/20">
+        <Card className="shadow-card">
           <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              Wedding Workspace Invites
-            </CardTitle>
+            <CardTitle>Wedding Workspace Invites</CardTitle>
             <p className="text-sm text-muted-foreground">
               These couples or planners added you into their Zania workspace first. You can collaborate here even before your public vendor listing is fully set up.
             </p>
@@ -1308,7 +1293,7 @@ export default function VendorDashboard() {
                       <p className="font-display text-xl text-foreground">
                         {invite.weddingName || 'Wedding workspace'}
                       </p>
-                      <Badge className="bg-primary/10 text-primary border border-primary/20">
+                      <Badge variant={invite.inviteStatus === 'claimed' ? 'success' : 'warning'}>
                         {invite.inviteStatus}
                       </Badge>
                       <Badge variant="outline">{invite.vendorCategory}</Badge>
@@ -1472,17 +1457,17 @@ export default function VendorDashboard() {
                 <div
                   key={r.id}
                   className={`rounded-lg border p-4 transition-colors ${
-                    r.status === 'pending' ? 'border-primary/30 bg-primary/5' : 'border-border'
+                    r.status === 'pending' ? 'border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))]' : 'border-border'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-foreground">{r.requester_name}</span>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          r.status === 'pending' ? 'bg-accent/20 text-foreground border border-accent/35' :
-                          r.status === 'accepted' ? 'bg-primary/10 text-primary border border-primary/20' :
-                          'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
+                          r.status === 'pending' ? 'border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] text-warning' :
+                          r.status === 'accepted' ? 'border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))] text-success' :
+                          'border-destructive/25 bg-destructive/8 text-destructive'
                         }`}>
                           {r.status}
                         </span>
@@ -1747,14 +1732,13 @@ export default function VendorDashboard() {
                   <Badge variant="outline">{selectedBooking.category}</Badge>
                   <Badge className={statusColor(selectedBooking.status)}>{selectedBooking.status || 'unknown'}</Badge>
                   {selectedWorkspaceInvite && (
-                    <Badge variant="secondary" className="gap-1">
-                      <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                    <Badge variant="info">
                       Workspace invite
                     </Badge>
                   )}
                   {selectedBooking.vendor_calendar_synced_at && (
-                    <Badge variant="secondary" className="gap-1">
-                      <CheckCheck className="h-3.5 w-3.5 text-primary" />
+                    <Badge variant="success" className="gap-1">
+                      <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
                       In Google Calendar
                     </Badge>
                   )}

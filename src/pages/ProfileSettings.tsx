@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Plus, Copy, ExternalLink, ShieldCheck, CreditCard, LockKeyhole, AlertTriangle, UserCog, Phone, BriefcaseBusiness, Store, CheckCircle2 } from 'lucide-react';
+import { Loader2, X, Plus, Copy, ExternalLink, AlertTriangle, UserCog, Phone, BriefcaseBusiness, Store, CheckCircle2 } from 'lucide-react';
 import AvatarUpload from '@/components/AvatarUpload';
 import { committeeResponsibilityOptions } from '@/lib/committeeRoles';
 import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
@@ -522,7 +522,11 @@ export default function ProfileSettings() {
       if (isCouple) {
         await loadOwnedWeddingWorkspace();
       }
-      toast({ title: 'Profile updated!' });
+      toast({
+        title: 'Profile updated',
+        description: 'Your latest account and business details are now saved.',
+        variant: 'success',
+      });
 
       if (isProfessionalPlanner && plannerProfileSetupMode) {
         searchParams.delete('setup');
@@ -1138,22 +1142,17 @@ export default function ProfileSettings() {
       {isPlanner && profile && (
         <Card className={plannerFullAccess ? 'semantic-surface-success' : 'semantic-surface-warning'}>
           <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              {plannerFullAccess ? <ShieldCheck className="h-5 w-5 text-success" /> : <LockKeyhole className="h-5 w-5 text-warning" />}
-              Planner Access
-            </CardTitle>
+            <CardTitle>Planner Access</CardTitle>
             <CardDescription>
               Full planner access unlocks only after active subscription and verification.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Badge variant={plannerSubscriptionActive ? 'success' : 'outline'}>
-                <CreditCard className="mr-1 h-3 w-3" />
+              <Badge variant={plannerSubscriptionActive ? 'success' : 'warning'}>
                 {betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'trial' : profile.planner_subscription_status}
               </Badge>
-              <Badge variant={profile.planner_verified ? 'success' : 'outline'}>
-                <ShieldCheck className="mr-1 h-3 w-3" />
+              <Badge variant={profile.planner_verified ? 'success' : profile.planner_verification_requested ? 'info' : 'warning'}>
                 {profile.planner_verified ? 'Verified' : profile.planner_verification_requested ? 'Verification requested' : 'Unverified'}
               </Badge>
             </div>
@@ -1176,19 +1175,19 @@ export default function ProfileSettings() {
               )}
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
               <Button
                 type="button"
                 onClick={handleRequestPlannerVerification}
                 disabled={!plannerSubscriptionActive || profile.planner_verified || profile.planner_verification_requested || requestingVerification}
               >
-                {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {profile.planner_verified ? 'Already Verified' : profile.planner_verification_requested ? 'Verification Requested' : 'Request Verification'}
               </Button>
               {!plannerSubscriptionActive && (
-                <div className="inline-flex items-center gap-2 rounded-md border border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-3 py-2 text-sm text-warning">
-                  <AlertTriangle className="h-4 w-4" />
-                  {isCommittee ? 'Committee subscription must be activated by admin before verification can be requested.' : 'Subscription must be activated by admin before verification can be requested.'}
+                <div className="semantic-surface-warning flex w-full items-start gap-2 rounded-md border px-3 py-2 text-sm leading-5 text-warning sm:w-auto">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{isCommittee ? 'Committee subscription must be activated by admin before verification can be requested.' : 'Subscription must be activated by admin before verification can be requested.'}</span>
                 </div>
               )}
             </div>
@@ -1199,26 +1198,20 @@ export default function ProfileSettings() {
       {isCommittee && profile && committeeExportDecision && (
         <Card className={committeeExportDecision.allowed ? 'semantic-surface-success' : 'semantic-surface-warning'}>
           <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              {committeeExportDecision.allowed ? <ShieldCheck className="h-5 w-5 text-success" /> : <LockKeyhole className="h-5 w-5 text-warning" />}
-              Committee Pass & Exports
-            </CardTitle>
+            <CardTitle>Committee Pass & Exports</CardTitle>
             <CardDescription>
               Committee exports and calendar sync are tied to your Committee Pass, which is controlled through subscription and verification.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <Badge variant={plannerSubscriptionActive ? 'success' : 'outline'}>
-                <CreditCard className="mr-1 h-3 w-3" />
+              <Badge variant={plannerSubscriptionActive ? 'success' : 'warning'}>
                 {betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'trial' : profile.planner_subscription_status}
               </Badge>
-              <Badge variant={profile.planner_verified ? 'success' : 'outline'}>
-                <ShieldCheck className="mr-1 h-3 w-3" />
+              <Badge variant={profile.planner_verified ? 'success' : 'warning'}>
                 {profile.planner_verified ? 'Verified' : 'Verification pending'}
               </Badge>
-              <Badge variant={committeeExportDecision.allowed ? 'success' : 'outline'}>
-                <ShieldCheck className="mr-1 h-3 w-3" />
+              <Badge variant={committeeExportDecision.allowed ? 'success' : 'warning'}>
                 {committeeExportDecision.allowed ? 'Exports enabled' : 'Exports locked'}
               </Badge>
             </div>
@@ -1254,22 +1247,17 @@ export default function ProfileSettings() {
           {profile && coupleExportDecision ? (
             <Card className={`h-full shadow-card ${coupleExportDecision?.allowed ? 'semantic-surface-success' : 'semantic-surface-warning'}`}>
               <CardHeader>
-                <CardTitle className="font-display flex items-center gap-2">
-                  {coupleExportDecision?.allowed ? <ShieldCheck className="h-5 w-5 text-success" /> : <LockKeyhole className="h-5 w-5 text-warning" />}
-                  Wedding Plan & Exports
-                </CardTitle>
+                <CardTitle>Wedding Plan & Exports</CardTitle>
                 <CardDescription>
                   Your wedding plan controls exports, collaboration, and the active coordination tools inside your wedding workspace.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant={coupleExportDecision?.allowed ? 'info' : 'outline'}>
-                    <CreditCard className="mr-1 h-3 w-3" />
+                  <Badge variant={coupleExportDecision?.allowed ? 'info' : 'warning'}>
                     {couplePlanTier ? couplePlanTier.charAt(0).toUpperCase() + couplePlanTier.slice(1) : 'Free'}
                   </Badge>
-                  <Badge variant={coupleExportDecision?.allowed ? 'success' : 'outline'}>
-                    <ShieldCheck className="mr-1 h-3 w-3" />
+                  <Badge variant={coupleExportDecision?.allowed ? 'success' : 'warning'}>
                     {coupleExportDecision?.allowed ? 'Exports enabled' : 'Exports locked'}
                   </Badge>
                 </div>

@@ -77,9 +77,9 @@ interface CommitteeWorkspaceAccess {
 }
 
 const statusConfig: Record<string, { label: string; icon: typeof Clock; className: string }> = {
-  pending: { label: 'Pending', icon: Clock, className: 'text-muted-foreground' },
-  approved: { label: 'Connected', icon: CheckCircle2, className: 'text-primary' },
-  accepted: { label: 'Connected', icon: CheckCircle2, className: 'text-primary' },
+  pending: { label: 'Pending', icon: Clock, className: 'text-warning' },
+  approved: { label: 'Connected', icon: CheckCircle2, className: 'text-success' },
+  accepted: { label: 'Connected', icon: CheckCircle2, className: 'text-success' },
   rejected: { label: 'Declined', icon: XCircle, className: 'text-destructive' },
   declined: { label: 'Declined', icon: XCircle, className: 'text-destructive' },
 };
@@ -915,13 +915,6 @@ export default function MyConnections() {
               const plannerNeedsApproval = plannerConn?.request_source === 'planner_code' && plannerConn.status === 'pending';
               return (
                 <div key={conn.id} className="flex flex-col gap-3 rounded-xl border border-border p-4 sm:flex-row sm:items-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 shrink-0">
-                    {conn.type === 'planner' ? (
-                      <Users className="h-4 w-4 text-primary" />
-                    ) : (
-                      <Store className="h-4 w-4 text-primary" />
-                    )}
-                  </div>
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium text-card-foreground truncate">{conn.name}</p>
@@ -936,7 +929,7 @@ export default function MyConnections() {
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                       <div className={`flex items-center gap-1 ${config.className}`}>
-                        <StatusIcon className="h-3.5 w-3.5" />
+                        <StatusIcon aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.8} />
                         {config.label}
                       </div>
                       <span>Added {new Date(conn.created_at).toLocaleDateString()}</span>
