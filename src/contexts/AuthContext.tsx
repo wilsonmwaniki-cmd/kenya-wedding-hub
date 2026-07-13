@@ -958,7 +958,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (registration.status === 'verification_required') {
       setDeviceVerificationRequired(true);
-      setDeviceVerificationMessage(registration.message ?? 'We noticed a sign-in from a new device. Enter the OTP sent to your email to continue.');
+      setDeviceVerificationMessage('We noticed a sign-in from a new device. Enter the code sent to your email to continue.');
       setDeviceVerificationEmailHint(registration.emailHint ?? nextSession.user.email ?? null);
       try {
         const otpResult = await sendDeviceVerificationOtp();
@@ -968,11 +968,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error('Could not send device verification OTP:', error);
-        setDeviceVerificationMessage(
-          error instanceof Error
-            ? error.message
-            : 'We noticed a sign-in from a new device. Request a verification code to continue.',
-        );
+        setDeviceVerificationMessage('Request a verification code to continue.');
       }
     } else {
       setDeviceVerificationRequired(false);
@@ -990,7 +986,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await sendDeviceVerificationOtp();
       setDeviceVerificationChallengeId(result.challengeId);
       setDeviceVerificationEmailHint(result.emailHint ?? deviceVerificationEmailHint);
-      setDeviceVerificationMessage('We noticed a sign-in from a new device. Enter the OTP sent to your email to continue.');
+      setDeviceVerificationMessage('We noticed a sign-in from a new device. Enter the code sent to your email to continue.');
     } finally {
       setDeviceVerificationSubmitting(false);
     }

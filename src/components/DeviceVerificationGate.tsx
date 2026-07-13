@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,7 +24,8 @@ export function DeviceVerificationGate() {
       await verifyCurrentDeviceVerificationCode(otpCode);
       setOtpCode('');
     } catch (verificationError) {
-      setError(verificationError instanceof Error ? verificationError.message : 'Could not verify this device right now.');
+      console.error('Device verification failed:', verificationError);
+      setError('We could not verify that code. Check it and try again.');
     }
   };
 
@@ -34,7 +35,8 @@ export function DeviceVerificationGate() {
     try {
       await sendCurrentDeviceVerificationCode();
     } catch (resendError) {
-      setError(resendError instanceof Error ? resendError.message : 'Could not resend the code right now.');
+      console.error('Device verification code request failed:', resendError);
+      setError('We could not send a new code right now. Please try again shortly.');
     }
   };
 
@@ -43,12 +45,9 @@ export function DeviceVerificationGate() {
       <div className="mx-auto max-w-lg">
         <Card className="shadow-card">
           <CardHeader>
-            <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <ShieldCheck className="h-6 w-6" />
-            </div>
-            <CardTitle className="font-display">Verify this device</CardTitle>
+            <CardTitle>Verify this device</CardTitle>
             <CardDescription>
-              {deviceVerificationMessage ?? 'We noticed a sign-in from a new device. Enter the OTP sent to your email to continue.'}
+              {deviceVerificationMessage ?? 'We noticed a sign-in from a new device. Enter the code sent to your email to continue.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">

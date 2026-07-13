@@ -54,14 +54,16 @@ serve(async (req) => {
       Deno.env.get('RESEND_FROM_EMAIL') || 'Zania Weddings <security@planwithzania.com>';
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
-      return new Response(JSON.stringify({ error: 'Supabase environment is not fully configured.' }), {
+      console.error('send-device-verification-otp configuration error: Supabase environment is incomplete');
+      return new Response(JSON.stringify({ error: 'We could not send a verification code right now.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     if (!RESEND_API_KEY) {
-      return new Response(JSON.stringify({ error: 'RESEND_API_KEY not configured.' }), {
+      console.error('send-device-verification-otp configuration error: RESEND_API_KEY is missing');
+      return new Response(JSON.stringify({ error: 'We could not send a verification code right now.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -108,15 +110,22 @@ serve(async (req) => {
     });
 
     if (error) {
-      return new Response(JSON.stringify({ error: error.message || 'Could not create a verification code right now.' }), {
-        status: 400,
+      console.error('send-device-verification-otp challenge error:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      return new Response(JSON.stringify({ error: 'We could not send a verification code right now.' }), {
+        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const challenge = Array.isArray(data) ? data[0] : data;
     if (!challenge) {
-      return new Response(JSON.stringify({ error: 'Could not create a verification challenge right now.' }), {
+      console.error('send-device-verification-otp challenge error: RPC returned no challenge');
+      return new Response(JSON.stringify({ error: 'We could not send a verification code right now.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -160,8 +169,8 @@ serve(async (req) => {
     const resendPayload = await resendResponse.json();
     if (!resendResponse.ok) {
       console.error('send-device-verification-otp resend error:', resendPayload);
-      return new Response(JSON.stringify({ error: resendPayload.message || 'Could not send the verification email right now.' }), {
-        status: resendResponse.status,
+      return new Response(JSON.stringify({ error: 'We could not send a verification code right now.' }), {
+        status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -178,7 +187,7 @@ serve(async (req) => {
     });
   } catch (error) {
     console.error('send-device-verification-otp failed:', error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unexpected error.' }), {
+    return new Response(JSON.stringify({ error: 'We could not send a verification code right now.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -539,7 +539,7 @@ begin
     device_row.id,
     target_auth_session_id,
     'new_device_login',
-    encode(digest(raw_code, 'sha256'), 'hex'),
+    encode(extensions.digest(raw_code, 'sha256'), 'hex'),
     now() + make_interval(mins => expiry_minutes),
     now() + make_interval(secs => cooldown_seconds),
     max_attempts,
