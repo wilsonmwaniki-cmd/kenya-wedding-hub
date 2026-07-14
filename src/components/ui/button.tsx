@@ -1,11 +1,12 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { CheckCircle2, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[1rem] text-sm font-medium ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "ease-zania inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[1rem] text-sm font-medium ring-offset-background transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:active:scale-100 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -39,12 +40,46 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  status?: "idle" | "loading" | "success";
+  loadingText?: string;
+  successText?: string;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button";
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+  ({ className, variant, size, asChild = false, status = "idle", loadingText = "Saving", successText = "Saved", children, disabled, ...props }, ref) => {
+    if (asChild) {
+      return (
+        <Slot className={cn(buttonVariants({ variant, size, className }))} ref={ref} data-status={status} {...props}>
+          {children}
+        </Slot>
+      );
+    }
+
+    const Comp = "button";
+    const busy = status === "loading";
+    const successful = status === "success";
+
+    return (
+      <Comp
+        className={cn(
+          buttonVariants({ variant, size, className }),
+          successful && "border-success/45 bg-success text-success-foreground hover:bg-success",
+        )}
+        ref={ref}
+        disabled={disabled || busy}
+        aria-busy={busy || undefined}
+        data-status={status}
+        {...props}
+      >
+        {busy ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+        {successful ? <CheckCircle2 className="animate-in zoom-in-75 duration-200" aria-hidden="true" /> : null}
+        {busy || successful ? (
+          <span className="transition-opacity duration-150" aria-live="polite">
+            {busy ? loadingText : successText}
+          </span>
+        ) : children}
+      </Comp>
+    );
   },
 );
 Button.displayName = "Button";

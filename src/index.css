@@ -38,6 +38,11 @@
 
     --radius: 0.75rem;
 
+    --motion-fast: 150ms;
+    --motion-standard: 220ms;
+    --motion-reveal: 300ms;
+    --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
     --sidebar-background: 20 20% 14%;
     --sidebar-foreground: 30 15% 90%;
     --sidebar-primary: 19 50% 54%;
@@ -148,16 +153,16 @@
 @media (prefers-reduced-motion: no-preference) {
   [data-page-shell] > * {
     opacity: 0;
-    transform: translate3d(0, 14px, 0);
-    animation: zania-section-enter 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    transform: translate3d(0, 10px, 0);
+    animation: zania-section-enter var(--motion-reveal) var(--motion-ease) forwards;
   }
 
-  [data-page-shell] > *:nth-child(1) { animation-delay: 40ms; }
-  [data-page-shell] > *:nth-child(2) { animation-delay: 90ms; }
-  [data-page-shell] > *:nth-child(3) { animation-delay: 140ms; }
-  [data-page-shell] > *:nth-child(4) { animation-delay: 190ms; }
-  [data-page-shell] > *:nth-child(5) { animation-delay: 240ms; }
-  [data-page-shell] > *:nth-child(6) { animation-delay: 290ms; }
+  [data-page-shell] > *:nth-child(1) { animation-delay: 30ms; }
+  [data-page-shell] > *:nth-child(2) { animation-delay: 60ms; }
+  [data-page-shell] > *:nth-child(3) { animation-delay: 90ms; }
+  [data-page-shell] > *:nth-child(4) { animation-delay: 120ms; }
+  [data-page-shell] > *:nth-child(5) { animation-delay: 150ms; }
+  [data-page-shell] > *:nth-child(n + 6) { animation-delay: 170ms; }
 }
 
 @layer utilities {
@@ -290,7 +295,15 @@
   }
 
   .zania-subtle-slide {
-    animation: zania-section-enter 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: zania-section-enter var(--motion-reveal) var(--motion-ease) both;
+  }
+
+  .ease-zania {
+    transition-timing-function: var(--motion-ease);
+  }
+
+  .zania-status-pulse {
+    animation: zania-status-pulse 420ms var(--motion-ease) both;
   }
 
   .semantic-surface-info {
@@ -314,10 +327,31 @@
   }
 }
 
+@keyframes zania-status-pulse {
+  0% { transform: scale(0.92); opacity: 0; }
+  70% { transform: scale(1.03); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @keyframes zania-section-enter {
   from {
     opacity: 0;
-    transform: translate3d(0, 14px, 0);
+    transform: translate3d(0, 10px, 0);
   }
 
   to {

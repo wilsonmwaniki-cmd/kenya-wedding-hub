@@ -25,6 +25,7 @@ import { summarizeContributions, type ContributionSummaryRow } from '@/lib/contr
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 import { buildConciergeContext } from '@/lib/conciergeContext';
+import AnimatedNumber from '@/components/AnimatedNumber';
 
 interface DashboardStats {
   totalBudget: number;
@@ -867,13 +868,13 @@ export default function Dashboard() {
               <div className="rounded-[24px] border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Countdown</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : `${daysUntil} days`}
+                  {daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : <AnimatedNumber value={daysUntil} suffix=" days" />}
                 </p>
               </div>
               <div className="rounded-[24px] border border-[#d9ead7] bg-[#f4fbf3]/90 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Funding gap</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
-                  KES {contributionGap.toLocaleString()}
+                  <AnimatedNumber value={contributionGap} prefix="KES " />
                 </p>
               </div>
               <div className="rounded-[24px] border border-[#f0dfc5] bg-[#fff8ec]/95 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">

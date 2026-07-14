@@ -1441,8 +1441,14 @@ export default function VendorSettings() {
                 </DialogContent>
               </Dialog>
 
-              <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
-                {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              <Button
+                type="submit"
+                className="w-full sm:w-auto"
+                disabled={saving}
+                status={saving ? 'loading' : submissionSuccessOpen ? 'success' : 'idle'}
+                loadingText="Saving listing"
+                successText="Listing saved"
+              >
                 {listing ? 'Update Listing' : 'Submit for Review'}
               </Button>
             </div>

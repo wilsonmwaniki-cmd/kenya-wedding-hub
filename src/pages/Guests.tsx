@@ -914,8 +914,14 @@ export default function Guests() {
                         <Input value={mealPreference} onChange={e => setMealPreference(e.target.value)} placeholder="Optional meal or dietary note" />
                       </div>
                     </div>
-                    <Button type="submit" className="w-full" disabled={savingGuest}>
-                      {savingGuest ? 'Saving...' : plannerNeedsApproval ? 'Send for approval' : 'Add Guest'}
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={savingGuest}
+                      status={savingGuest ? 'loading' : 'idle'}
+                      loadingText={plannerNeedsApproval ? 'Sending for approval' : 'Adding guest'}
+                    >
+                      {plannerNeedsApproval ? 'Send for approval' : 'Add Guest'}
                     </Button>
                   </form>
                 </DialogContent>

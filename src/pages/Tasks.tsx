@@ -1178,8 +1178,14 @@ export default function Tasks() {
                   <Label>Description (optional)</Label>
                   <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add contract, deposit, or logistics notes..." rows={3} />
                 </div>
-                <Button type="submit" className="w-full" disabled={submittingTask}>
-                  {submittingTask ? 'Saving...' : 'Add Task'}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={submittingTask}
+                  status={submittingTask ? 'loading' : 'idle'}
+                  loadingText="Adding task"
+                >
+                  Add Task
                 </Button>
               </form>
             </DialogContent>

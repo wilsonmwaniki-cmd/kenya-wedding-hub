@@ -1247,7 +1247,17 @@ export default function Timeline() {
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {instances.map((t, i) => (
                   <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                    <Card className="cursor-pointer hover:shadow-md transition-shadow group" onClick={() => selectTimeline(t)}>
+                    <Card
+                      interactive
+                      className="group relative"
+                    >
+                      <button
+                        type="button"
+                        className="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        onClick={() => selectTimeline(t)}
+                      >
+                        <span className="sr-only">Open {t.title}</span>
+                      </button>
                       <CardHeader className="pb-2">
                         <div className="flex items-start justify-between">
                           <CardTitle className="text-base">{t.title}</CardTitle>
@@ -1260,7 +1270,7 @@ export default function Timeline() {
                           </CardDescription>
                         )}
                       </CardHeader>
-                      <CardContent className="pb-4">
+                      <CardContent className="relative z-10 pb-4 pointer-events-none [&_button]:pointer-events-auto">
                         <div className="flex items-center justify-between">
                           <Button variant="ghost" size="sm" className="text-xs gap-1 text-muted-foreground p-0 h-auto" onClick={e => { e.stopPropagation(); copyToClipboard(`${baseUrl}/timeline/share/${t.share_token}`); }}>
                             <Link2 className="h-3 w-3" /> Copy link
@@ -1310,7 +1320,17 @@ export default function Timeline() {
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {templates.map((t, i) => (
                   <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                    <Card className="cursor-pointer hover:shadow-md transition-shadow group" onClick={() => selectTimeline(t)}>
+                    <Card
+                      interactive
+                      className="group relative"
+                    >
+                      <button
+                        type="button"
+                        className="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        onClick={() => selectTimeline(t)}
+                      >
+                        <span className="sr-only">Open {t.title} template</span>
+                      </button>
                       <CardHeader className="pb-2">
                         <div className="flex items-start justify-between">
                           <CardTitle className="text-base flex items-center gap-2">
@@ -1320,7 +1340,7 @@ export default function Timeline() {
                           <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
                       </CardHeader>
-                      <CardContent className="pb-4">
+                      <CardContent className="relative z-10 pb-4 pointer-events-none [&_button]:pointer-events-auto">
                         <div className="flex items-center justify-between">
                           <Button
                             variant="outline" size="sm" className="text-xs gap-1"

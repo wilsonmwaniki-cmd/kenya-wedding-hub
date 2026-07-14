@@ -70,6 +70,7 @@ export default function ProfileSettings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const [saving, setSaving] = useState(false);
+  const [saveSucceeded, setSaveSucceeded] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [newSpecialty, setNewSpecialty] = useState('');
@@ -87,6 +88,12 @@ export default function ProfileSettings() {
     responsibility: committeeResponsibilityOptions[0],
     permission_level: 'member' as CommitteeMember['permission_level'],
   });
+
+  useEffect(() => {
+    if (!saveSucceeded) return;
+    const timeout = window.setTimeout(() => setSaveSucceeded(false), 1800);
+    return () => window.clearTimeout(timeout);
+  }, [saveSucceeded]);
   const [serviceAreaDraft, setServiceAreaDraft] = useState('');
   const [ownedWedding, setOwnedWedding] = useState<OwnedWeddingWorkspace | null>(null);
   const [partnerEmailInput, setPartnerEmailInput] = useState('');
@@ -473,6 +480,7 @@ export default function ProfileSettings() {
     setSubmitError(null);
     if (Object.keys(nextErrors).length > 0) return;
 
+    setSaveSucceeded(false);
     setSaving(true);
     try {
       const updates: Record<string, any> = { full_name: form.full_name, account_purpose: form.account_purpose };
@@ -527,6 +535,7 @@ export default function ProfileSettings() {
         description: 'Your latest account and business details are now saved.',
         variant: 'success',
       });
+      setSaveSucceeded(true);
 
       if (isProfessionalPlanner && plannerProfileSetupMode) {
         searchParams.delete('setup');
@@ -2066,8 +2075,14 @@ export default function ProfileSettings() {
         ) : null}
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={saving} className="w-full sm:min-w-[240px] sm:w-auto">
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          <Button
+            type="submit"
+            disabled={saving}
+            status={saving ? 'loading' : saveSucceeded ? 'success' : 'idle'}
+            loadingText="Saving changes"
+            successText="Changes saved"
+            className="w-full sm:min-w-[240px] sm:w-auto"
+          >
             Save Changes
           </Button>
         </div>

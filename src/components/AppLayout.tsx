@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, type RolePreview } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { useNotifications } from '@/contexts/NotificationContext';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
   MessageSquare, Settings, LogOut, Menu, X, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown, HeartHandshake, FlaskConical, Map
@@ -119,6 +119,7 @@ function AssistantPanelSlot({
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedNavItems, setExpandedNavItems] = useState<Record<string, boolean>>({});
+  const prefersReducedMotion = useReducedMotion();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -370,22 +371,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         }));
                       }}
                       className={`
-                        flex w-full items-center gap-3 rounded-[1.15rem] border px-4 py-3 text-sm font-medium text-left transition-all lg:px-3 lg:py-2.5
+                        ease-zania relative isolate flex w-full items-center gap-3 overflow-hidden rounded-[1.15rem] border px-4 py-3 text-left text-sm font-medium transition-[color,border-color,background-color,transform] duration-200 active:scale-[0.985] motion-reduce:transition-none lg:px-3 lg:py-2.5
                         ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
                         ${isActive
-                          ? 'border-primary/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_16px_32px_rgba(15,8,6,0.24)]'
+                          ? 'border-primary/45 bg-transparent text-white'
                           : 'border-transparent bg-[linear-gradient(180deg,rgba(0,0,0,0.16),rgba(255,255,255,0.03))] text-white/90 hover:border-white/10 hover:bg-white/[0.12] hover:text-white'
                         }
                       `}
                     >
-                      <item.icon className={`h-4.5 w-4.5 ${isActive ? 'text-primary' : 'text-white/80'}`} />
-                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {isActive ? (
+                        <motion.span
+                          layoutId="zania-sidebar-active"
+                          className="absolute inset-0 z-0 rounded-[inherit] bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_16px_32px_rgba(15,8,6,0.24)]"
+                          transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38, mass: 0.8 }}
+                        />
+                      ) : null}
+                      <item.icon className={`relative z-10 h-4.5 w-4.5 transition-colors duration-200 ${isActive ? 'text-primary' : 'text-white/80'}`} />
+                      <span className="relative z-10 min-w-0 flex-1 truncate">{item.label}</span>
                       {(badgeCounts[item.path] || 0) > 0 && (
-                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                        <span className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[10px] font-bold text-warning-foreground">
                           {badgeCounts[item.path]}
                         </span>
                       )}
-                      <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180 text-white/80' : 'text-white/55'}`} />
+                      <ChevronDown className={`relative z-10 h-4 w-4 transition-transform duration-200 motion-reduce:transition-none ${isExpanded ? 'rotate-180 text-white/80' : 'text-white/55'}`} />
                     </button>
                   ) : (
                     <Link
@@ -395,29 +403,39 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         setSidebarOpen(false);
                       }}
                       className={`
-                        flex items-center gap-3 rounded-[1.15rem] border px-4 py-3 text-sm font-medium transition-all lg:px-3 lg:py-2.5
+                        ease-zania relative isolate flex items-center gap-3 overflow-hidden rounded-[1.15rem] border px-4 py-3 text-sm font-medium transition-[color,border-color,background-color,transform] duration-200 active:scale-[0.985] motion-reduce:transition-none lg:px-3 lg:py-2.5
                         ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
                         ${isActive
-                          ? 'border-primary/45 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_16px_32px_rgba(15,8,6,0.24)]'
+                          ? 'border-primary/45 bg-transparent text-white'
                           : 'border-transparent bg-[linear-gradient(180deg,rgba(0,0,0,0.16),rgba(255,255,255,0.03))] text-white/90 hover:border-white/10 hover:bg-white/[0.12] hover:text-white'
                         }
                       `}
                     >
-                      <item.icon className={`h-4.5 w-4.5 ${isActive ? 'text-primary' : 'text-white/80'}`} />
-                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {isActive ? (
+                        <motion.span
+                          layoutId="zania-sidebar-active"
+                          className="absolute inset-0 z-0 rounded-[inherit] bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_16px_32px_rgba(15,8,6,0.24)]"
+                          transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38, mass: 0.8 }}
+                        />
+                      ) : null}
+                      <item.icon className={`relative z-10 h-4.5 w-4.5 transition-colors duration-200 ${isActive ? 'text-primary' : 'text-white/80'}`} />
+                      <span className="relative z-10 min-w-0 flex-1 truncate">{item.label}</span>
                       {(badgeCounts[item.path] || 0) > 0 && (
-                        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                        <span className="relative z-10 ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[10px] font-bold text-warning-foreground">
                           {badgeCounts[item.path]}
                         </span>
                       )}
                     </Link>
                   )}
+                  <AnimatePresence initial={false}>
                   {hasChildren && isExpanded ? (
                     <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="space-y-1 overflow-hidden pl-4"
+                      key={`${item.path}-children`}
+                      initial={{ opacity: 0, height: 0, y: -4 }}
+                      animate={{ opacity: 1, height: 'auto', y: 0 }}
+                      exit={{ opacity: 0, height: 0, y: -4 }}
+                      transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                      className="space-y-1 overflow-hidden pl-4 motion-reduce:transition-none"
                     >
                       {item.children.map((child) => {
                         const childActive = location.pathname === child.path;
@@ -426,7 +444,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             key={child.path}
                             to={child.path}
                             onClick={() => setSidebarOpen(false)}
-                            className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
+                            className={`relative block rounded-lg px-3 py-2 text-sm transition-[color,background-color,transform] duration-150 active:scale-[0.985] motion-reduce:transition-none ${
                               childActive
                                 ? 'bg-white/[0.12] text-white'
                                 : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
@@ -438,6 +456,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       })}
                     </motion.div>
                   ) : null}
+                  </AnimatePresence>
                 </div>
               );
             })}
@@ -447,7 +466,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="shrink-0 border-t border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
             <button
               onClick={handleSignOut}
-              className="flex w-full items-center gap-3 rounded-[1.15rem] border border-transparent bg-[linear-gradient(180deg,rgba(0,0,0,0.16),rgba(255,255,255,0.03))] px-4 py-3 text-sm font-medium text-white/90 transition-all hover:border-white/12 hover:bg-white/[0.12] hover:text-white"
+              className="flex w-full items-center gap-3 rounded-[1.15rem] border border-transparent bg-[linear-gradient(180deg,rgba(0,0,0,0.16),rgba(255,255,255,0.03))] px-4 py-3 text-sm font-medium text-white/90 transition-[color,border-color,background-color,transform] duration-200 hover:border-white/12 hover:bg-white/[0.12] hover:text-white active:scale-[0.985] motion-reduce:transition-none"
             >
               <LogOut className="h-4.5 w-4.5" />
               Sign Out

@@ -538,7 +538,7 @@ export default function PlannerDashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
             >
-              <Card className="shadow-card hover:shadow-warm transition-shadow cursor-pointer group">
+              <Card className="group shadow-card">
                 <CardHeader className="flex flex-row items-start justify-between pb-2">
                   <div>
                     <CardTitle className="text-lg font-display">
