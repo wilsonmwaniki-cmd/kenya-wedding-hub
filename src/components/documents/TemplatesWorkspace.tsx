@@ -577,18 +577,18 @@ export default function TemplatesWorkspace({ role }: Props) {
           setSelectedStarter(null);
         }
       }}>
-        <DialogContent className="flex max-h-[88vh] w-[min(92vw,56rem)] max-w-[56rem] flex-col overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-5">
-            <DialogTitle>Create template</DialogTitle>
+        <DialogContent className="inset-0 flex h-[100dvh] max-h-none w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden border-0 p-0 sm:left-1/2 sm:top-1/2 sm:h-auto sm:max-h-[88vh] sm:w-[min(92vw,56rem)] sm:max-w-[56rem] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border">
+          <DialogHeader className="shrink-0 border-b border-border/70 px-4 py-4 pr-12 text-left sm:px-6 sm:py-5">
+            <DialogTitle className="leading-tight">Create template</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            <div className="space-y-5">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+            <div className="space-y-4 sm:space-y-5">
               {selectedStarter && (
                 <div className="rounded-2xl border border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-4 py-3 text-sm leading-6 text-warning">
                   {selectedStarter.legalNote}
                 </div>
               )}
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid min-w-0 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Template name</Label>
                   <Input value={createDraft.name} onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. Standard photography quote" />
@@ -606,7 +606,7 @@ export default function TemplatesWorkspace({ role }: Props) {
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Description</Label>
-                  <Textarea rows={2} value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} placeholder="When should you reach for this starter?" />
+                  <Textarea className="min-h-24 resize-y" rows={2} value={createDraft.description} onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))} placeholder="When should you reach for this starter?" />
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Default title</Label>
@@ -614,7 +614,7 @@ export default function TemplatesWorkspace({ role }: Props) {
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Default terms</Label>
-                  <Textarea rows={6} value={createDraft.defaultTerms} onChange={(event) => setCreateDraft((current) => ({ ...current, defaultTerms: event.target.value }))} />
+                  <Textarea className="min-h-28 resize-y sm:min-h-36" rows={4} value={createDraft.defaultTerms} onChange={(event) => setCreateDraft((current) => ({ ...current, defaultTerms: event.target.value }))} />
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Default notes</Label>
@@ -653,8 +653,8 @@ export default function TemplatesWorkspace({ role }: Props) {
               </div>
             </div>
           </div>
-          <div className="flex shrink-0 justify-end border-t border-border/70 bg-background px-6 py-4">
-            <Button className="gap-2" onClick={handleCreate} disabled={creating}>
+          <div className="flex shrink-0 border-t border-border/70 bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:justify-end sm:px-6 sm:py-4">
+            <Button className="w-full gap-2 sm:w-auto" onClick={handleCreate} disabled={creating}>
               <FilePlus2 className="h-4 w-4" />
               {creating ? 'Creating...' : 'Create template'}
             </Button>

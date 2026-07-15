@@ -1226,19 +1226,19 @@ export default function VendorSettings() {
                     Preview Listing
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-                  <DialogHeader>
-                    <DialogTitle className="font-display">Directory Listing Preview</DialogTitle>
-                    <DialogDescription>
+                <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-x-hidden overflow-y-auto rounded-2xl p-4 sm:max-h-[90vh] sm:max-w-3xl sm:p-6">
+                  <DialogHeader className="pr-7 text-left">
+                    <DialogTitle className="break-words font-display leading-tight">Directory Listing Preview</DialogTitle>
+                    <DialogDescription className="leading-6">
                       This preview uses your current draft so you can see how couples will experience your listing before you save it.
                     </DialogDescription>
                   </DialogHeader>
 
-                  <div className="space-y-6">
-                    <div>
+                  <div className="min-w-0 space-y-6">
+                    <div className="min-w-0">
                       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Directory card</p>
-                      <Card className="shadow-card">
-                        <CardContent className="flex flex-col items-center p-6 text-center">
+                      <Card className="min-w-0 overflow-hidden shadow-card">
+                        <CardContent className="flex min-w-0 flex-col items-center px-4 py-5 text-center sm:p-6">
                           <div className="relative">
                             <Avatar className="h-16 w-16 border-2 border-border">
                               <AvatarImage src={listing?.logo_url ?? undefined} alt={form.business_name || 'Vendor preview'} />
@@ -1250,27 +1250,28 @@ export default function VendorSettings() {
                               <CheckCircle2 className="absolute -bottom-1 -right-1 h-5 w-5 fill-background text-success" />
                             )}
                           </div>
-                          <h3 className="mt-4 font-display text-lg font-semibold text-card-foreground">
+                          <h3 className="mt-4 max-w-full break-words font-display text-lg font-semibold text-card-foreground">
                             {form.business_name || 'Your business name'}
                           </h3>
-                          <Badge variant="outline" className="mt-1 text-xs">{form.category}</Badge>
+                          <Badge variant="outline" className="mt-1 max-w-full whitespace-normal break-words text-center text-xs leading-5">{form.category}</Badge>
                           {previewLocation && (
-                            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                              <MapPin className="h-3 w-3" /> {previewLocation}
+                            <p className="mt-1 flex max-w-full items-start justify-center gap-1 text-xs text-muted-foreground">
+                              <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+                              <span className="min-w-0 break-words">{previewLocation}</span>
                             </p>
                           )}
                           {previewBudgetBand && (
-                            <p className="mt-2 text-xs text-muted-foreground">
+                            <p className="mt-2 max-w-full break-words text-xs text-muted-foreground">
                               Typical budget: {previewBudgetBand}
                             </p>
                           )}
                           {form.description && (
-                            <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{form.description}</p>
+                            <p className="mt-2 max-w-full break-words text-sm text-muted-foreground sm:line-clamp-3">{form.description}</p>
                           )}
                           {form.services.length > 0 && (
-                            <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                            <div className="mt-3 flex w-full min-w-0 flex-wrap justify-center gap-1.5">
                               {form.services.slice(0, 3).map((service) => (
-                                <Badge key={service} variant="secondary" className="text-xs">{service}</Badge>
+                                <Badge key={service} variant="secondary" className="max-w-full whitespace-normal break-words px-2.5 py-1 text-center text-xs leading-4">{service}</Badge>
                               ))}
                               {form.services.length > 3 && (
                                 <Badge variant="secondary" className="text-xs">+{form.services.length - 3}</Badge>
@@ -1286,43 +1287,43 @@ export default function VendorSettings() {
                       </Card>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Expanded details</p>
-                      <Card className="shadow-card">
-                        <CardHeader>
-                          <CardTitle className="font-display text-2xl">{form.business_name || 'Your business name'}</CardTitle>
-                          <CardDescription>
+                      <Card className="min-w-0 overflow-hidden shadow-card">
+                        <CardHeader className="px-4 sm:px-6">
+                          <CardTitle className="break-words font-display text-xl sm:text-2xl">{form.business_name || 'Your business name'}</CardTitle>
+                          <CardDescription className="break-words">
                             {form.category} {previewLocation ? `· ${previewLocation}` : ''}
                           </CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-5">
+                        <CardContent className="min-w-0 space-y-5 px-4 sm:px-6">
                           <div className="grid gap-3 sm:grid-cols-2">
                             {form.phone && (
-                              <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <div className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-muted/20 p-4">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Phone</p>
                                 <a
                                   href={previewPhoneHref}
-                                  className="mt-2 flex items-center gap-2 text-sm text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                                  className="mt-2 flex min-w-0 items-center gap-2 break-all text-sm text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
                                 >
-                                  <Phone className="h-4 w-4 text-primary" />
-                                  {form.phone}
+                                  <Phone className="h-4 w-4 shrink-0 text-primary" />
+                                  <span className="min-w-0">{form.phone}</span>
                                 </a>
                               </div>
                             )}
                             {form.email && (
-                              <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                              <div className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-muted/20 p-4">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email</p>
                                 <a
                                   href={previewEmailHref}
                                   className="mt-2 flex items-center gap-2 break-all text-sm text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
                                 >
-                                  <Mail className="h-4 w-4 text-primary" />
+                                  <Mail className="h-4 w-4 shrink-0 text-primary" />
                                   {form.email}
                                 </a>
                               </div>
                             )}
                             {form.website && (
-                              <div className="rounded-xl border border-border/70 bg-muted/20 p-4 sm:col-span-2">
+                              <div className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-muted/20 p-4 sm:col-span-2">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website</p>
                                 <a
                                   href={previewWebsiteHref}
@@ -1330,7 +1331,7 @@ export default function VendorSettings() {
                                   rel="noreferrer"
                                   className="mt-2 flex items-center gap-2 break-all text-sm text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
                                 >
-                                  <Globe className="h-4 w-4 text-primary" />
+                                  <Globe className="h-4 w-4 shrink-0 text-primary" />
                                   {displayUrl(previewWebsiteHref)}
                                 </a>
                               </div>
@@ -1340,7 +1341,7 @@ export default function VendorSettings() {
                           {form.description && (
                             <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">About this vendor</p>
-                              <p className="mt-2 text-sm leading-7 text-foreground/85">{form.description}</p>
+                              <p className="mt-2 break-words text-sm leading-7 text-foreground/85">{form.description}</p>
                             </div>
                           )}
 
@@ -1350,7 +1351,7 @@ export default function VendorSettings() {
                               <div className="mt-3 flex flex-wrap gap-2">
                                 {form.service_areas.length > 0 ? (
                                   form.service_areas.map((county) => (
-                                    <Badge key={county} variant="secondary">{county}</Badge>
+                                    <Badge key={county} variant="secondary" className="max-w-full whitespace-normal break-words text-center">{county}</Badge>
                                   ))
                                 ) : (
                                   <p className="text-sm text-muted-foreground">No service areas added yet.</p>
@@ -1373,7 +1374,7 @@ export default function VendorSettings() {
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Services & tags</p>
                               <div className="mt-3 flex flex-wrap gap-2">
                                 {form.services.map((service) => (
-                                  <Badge key={service} variant="secondary">{service}</Badge>
+                                  <Badge key={service} variant="secondary" className="max-w-full whitespace-normal break-words text-center">{service}</Badge>
                                 ))}
                               </div>
                             </div>
@@ -1384,10 +1385,10 @@ export default function VendorSettings() {
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Venue spaces</p>
                               <div className="mt-3 space-y-3">
                                 {venueSpaces.map((space) => (
-                                  <div key={space.id} className="rounded-xl border border-border/60 bg-background/80 p-4">
+                                  <div key={space.id} className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-background/80 p-4">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <p className="font-medium text-foreground">{space.space_name || 'Untitled venue space'}</p>
-                                      <Badge variant="outline">{space.space_type}</Badge>
+                                      <p className="min-w-0 break-words font-medium text-foreground">{space.space_name || 'Untitled venue space'}</p>
+                                      <Badge variant="outline" className="max-w-full whitespace-normal break-words text-center">{space.space_type}</Badge>
                                       {space.is_featured && <Badge>Featured</Badge>}
                                     </div>
                                     <p className="mt-2 text-sm text-muted-foreground">
@@ -1396,7 +1397,7 @@ export default function VendorSettings() {
                                       {space.max_standing_capacity ? ` · standing ${space.max_standing_capacity}` : ''}
                                     </p>
                                     {space.location_notes && (
-                                      <p className="mt-2 text-sm text-foreground/80">{space.location_notes}</p>
+                                      <p className="mt-2 break-words text-sm text-foreground/80">{space.location_notes}</p>
                                     )}
                                   </div>
                                 ))}
