@@ -54,6 +54,8 @@ import { createVendorTask, createVendorTaskBundle } from '@/lib/vendorTasks';
 import { getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 import { getEntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
+import { useMilestoneCelebration } from '@/hooks/useMilestoneCelebration';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
@@ -70,6 +72,12 @@ import {
   vendorWorkspaceUpdateLabel,
   type VendorWorkspaceUpdate,
 } from '@/lib/vendorWorkspaceUpdates';
+import {
+  acceptVendorTaskSuggestion,
+  dismissVendorTaskSuggestion,
+  listVendorTaskSuggestions,
+  type VendorTaskSuggestion,
+} from '@/lib/vendorTaskSuggestions';
 
 interface Vendor {
   amount_paid: number;
@@ -392,6 +400,7 @@ export default function Vendors() {
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const queryClient = useQueryClient();
   const assistantPanel = useAssistantPanel();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
@@ -418,6 +427,7 @@ export default function Vendors() {
   const [savingNotesId, setSavingNotesId] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [savingSelectionId, setSavingSelectionId] = useState<string | null>(null);
+  const [selectionSucceededId, setSelectionSucceededId] = useState<string | null>(null);
   const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, WorkflowDraft>>({});
   const [notesDrafts, setNotesDrafts] = useState<Record<string, string>>({});
   const [comparisonCategory, setComparisonCategory] = useState<string>('all');
@@ -471,6 +481,10 @@ export default function Vendors() {
   const [vendorWorkspaceUpdates, setVendorWorkspaceUpdates] = useState<Record<string, VendorWorkspaceUpdate[]>>({});
   const [vendorWorkspaceUpdatesLoadingId, setVendorWorkspaceUpdatesLoadingId] = useState<string | null>(null);
   const [archivingVendorWorkspaceUpdateId, setArchivingVendorWorkspaceUpdateId] = useState<string | null>(null);
+  const [vendorTaskSuggestions, setVendorTaskSuggestions] = useState<Record<string, VendorTaskSuggestion[]>>({});
+  const [vendorTaskSuggestionsLoadingId, setVendorTaskSuggestionsLoadingId] = useState<string | null>(null);
+  const [resolvingVendorTaskSuggestionId, setResolvingVendorTaskSuggestionId] = useState<string | null>(null);
+  const [acceptedVendorTaskSuggestionId, setAcceptedVendorTaskSuggestionId] = useState<string | null>(null);
   const [reviewForm, setReviewForm] = useState({
     overallRating: '5',
     reliabilityRating: '5',
@@ -1220,11 +1234,27 @@ export default function Vendors() {
       });
       return;
     }
-    await supabase.from('vendors').delete().eq('id', id);
-    await refreshVendorsWorkspace();
+    const vendor = vendors.find((item) => item.id === id);
+    if (!vendor) return;
+    const wasSelected = selectedVendorId === id;
+    if (wasSelected) setSelectedVendorId(null);
+    scheduleDelete({
+      id,
+      title: 'Vendor removed',
+      description: `${vendor.name} was removed from the wedding workspace.`,
+      commit: async () => {
+        const { error } = await supabase.from('vendors').delete().eq('id', id);
+        if (error) throw error;
+      },
+      onCommit: refreshVendorsWorkspace,
+      onUndo: () => {
+        if (wasSelected) setSelectedVendorId(id);
+      },
+    });
   };
 
   const updateSelection = async (vendor: Vendor, selectionStatus: VendorSelectionStatus) => {
+    setSelectionSucceededId(null);
     setSavingSelectionId(vendor.id);
     if (plannerNeedsApproval && selectedClient?.linked_user_id) {
       try {
@@ -1251,6 +1281,7 @@ export default function Vendors() {
     }
     try {
       await setVendorSelectionStatus(vendor.id, selectionStatus);
+      setSelectionSucceededId(vendor.id);
       toast({
         title: selectionStatus === 'final' ? 'Final vendor selected' : 'Vendor selection updated',
         description:
@@ -1590,9 +1621,14 @@ export default function Vendors() {
       }));
   }, [vendors, categoryReputationBenchmarks]);
 
+  const visibleVendors = useMemo(
+    () => vendors.filter((vendor) => !pendingDeleteIds.has(vendor.id)),
+    [pendingDeleteIds, vendors],
+  );
+
   const sortedVendors = useMemo(
     () =>
-      [...vendors].sort((left, right) => {
+      [...visibleVendors].sort((left, right) => {
         const categoryCompare = left.category.localeCompare(right.category);
         if (categoryCompare !== 0) return categoryCompare;
 
@@ -1603,7 +1639,7 @@ export default function Vendors() {
 
         return left.name.localeCompare(right.name);
       }),
-    [vendors],
+    [visibleVendors],
   );
 
   const selectionCounts = useMemo(() => {
@@ -1737,8 +1773,8 @@ export default function Vendors() {
   );
 
   const selectedVendor = useMemo(
-    () => vendors.find((vendor) => vendor.id === selectedVendorId) ?? null,
-    [vendors, selectedVendorId],
+    () => visibleVendors.find((vendor) => vendor.id === selectedVendorId) ?? null,
+    [selectedVendorId, visibleVendors],
   );
 
   const vendorTaskSuggestedOptions = useMemo(() => {
@@ -1812,6 +1848,21 @@ export default function Vendors() {
     () => selectedVendorMilestones.filter((milestone) => milestone.status === 'complete').length,
     [selectedVendorMilestones],
   );
+  const selectedVendorMilestoneLabels = useMemo(
+    () => selectedVendorMilestones.map((milestone) => milestone.label),
+    [selectedVendorMilestones],
+  );
+  const { celebrating: selectedVendorMilestoneCelebrating } = useMilestoneCelebration({
+    entityKey: selectedVendor?.id,
+    completedCount: selectedVendorCompletedMilestones,
+    milestoneLabels: selectedVendorMilestoneLabels,
+    onReached: ({ milestoneLabel }) => {
+      toast({
+        title: 'Vendor milestone reached',
+        description: `${milestoneLabel} is complete. Zania has updated the next action for this vendor.`,
+      });
+    },
+  });
 
   const selectedVendorPaymentSummary = useMemo(() => {
     if (!selectedVendor) {
@@ -1848,6 +1899,10 @@ export default function Vendors() {
     if (!selectedVendorId) return [];
     return vendorWorkspaceUpdates[selectedVendorId] ?? [];
   }, [selectedVendorId, vendorWorkspaceUpdates]);
+  const selectedVendorTaskSuggestions = useMemo(() => {
+    if (!selectedVendorId) return [];
+    return vendorTaskSuggestions[selectedVendorId] ?? [];
+  }, [selectedVendorId, vendorTaskSuggestions]);
   const vendorsAssistantFeature = useMemo(
     () => getVendorsAssistantFeature(profile?.role, profile?.planner_type),
     [profile?.planner_type, profile?.role],
@@ -2074,12 +2129,20 @@ export default function Vendors() {
     let cancelled = false;
     setVendorWorkspaceUpdatesLoadingId(selectedVendor.id);
 
-    void listVendorWorkspaceUpdates(selectedVendor.id)
-      .then((updates) => {
+    setVendorTaskSuggestionsLoadingId(selectedVendor.id);
+    void Promise.all([
+      listVendorWorkspaceUpdates(selectedVendor.id),
+      listVendorTaskSuggestions(selectedVendor.id),
+    ])
+      .then(([updates, suggestions]) => {
         if (cancelled) return;
         setVendorWorkspaceUpdates((current) => ({
           ...current,
           [selectedVendor.id]: updates.filter((update) => !update.is_archived),
+        }));
+        setVendorTaskSuggestions((current) => ({
+          ...current,
+          [selectedVendor.id]: suggestions,
         }));
       })
       .catch((error: any) => {
@@ -2091,7 +2154,10 @@ export default function Vendors() {
         });
       })
       .finally(() => {
-        if (!cancelled) setVendorWorkspaceUpdatesLoadingId((current) => (current === selectedVendor.id ? null : current));
+        if (!cancelled) {
+          setVendorWorkspaceUpdatesLoadingId((current) => (current === selectedVendor.id ? null : current));
+          setVendorTaskSuggestionsLoadingId((current) => (current === selectedVendor.id ? null : current));
+        }
       });
 
     return () => {
@@ -2162,6 +2228,47 @@ export default function Vendors() {
       });
     } finally {
       setArchivingVendorWorkspaceUpdateId(null);
+    }
+  };
+
+  const resolveSelectedVendorTaskSuggestion = async (suggestion: VendorTaskSuggestion, action: 'accept' | 'dismiss') => {
+    if (!selectedVendorId) return;
+
+    setResolvingVendorTaskSuggestionId(suggestion.id);
+    try {
+      const resolved = action === 'accept'
+        ? await acceptVendorTaskSuggestion(suggestion.id)
+        : await dismissVendorTaskSuggestion(suggestion.id);
+
+      setVendorTaskSuggestions((current) => ({
+        ...current,
+        [selectedVendorId]: (current[selectedVendorId] ?? []).map((item) => (
+          item.id === resolved.id ? resolved : item
+        )),
+      }));
+
+      if (action === 'accept') {
+        setAcceptedVendorTaskSuggestionId(suggestion.id);
+        await refreshVendorsWorkspace();
+        window.setTimeout(() => setAcceptedVendorTaskSuggestionId((current) => current === suggestion.id ? null : current), 1600);
+        toast({
+          title: 'Suggestion added to the plan',
+          description: 'The vendor suggestion is now a real vendor-linked task in your shared wedding workspace.',
+        });
+      } else {
+        toast({
+          title: 'Suggestion dismissed',
+          description: 'It remains in the relationship history but was not added to the wedding plan.',
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: `Could not ${action} suggestion`,
+        description: error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setResolvingVendorTaskSuggestionId(null);
     }
   };
 
@@ -2835,7 +2942,11 @@ export default function Vendors() {
           </>
         ) : (
           <>
-            <Card className="overflow-hidden border-border/70 bg-gradient-to-br from-background via-background to-muted/30 shadow-card">
+            <Card className={`overflow-hidden bg-gradient-to-br from-background via-background to-muted/30 shadow-card transition-[border-color,box-shadow] duration-300 ease-zania motion-reduce:transition-none ${
+              selectedVendorMilestoneCelebrating
+                ? 'border-[#dfbd79] shadow-[0_0_0_5px_rgba(223,189,121,0.14),0_22px_52px_rgba(74,51,30,0.10)]'
+                : 'border-border/70'
+            }`}>
               <CardContent className="p-6 sm:p-8">
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -3211,6 +3322,91 @@ export default function Vendors() {
                     </p>
                   </summary>
                   <div className="space-y-6 px-6 pb-6">
+                    <Card className="shadow-none">
+                      <CardContent className="space-y-4 py-6">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">Vendor task suggestions</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Review proposed actions before they become part of the shared wedding plan.
+                            </p>
+                          </div>
+                          <Badge variant="info">Vendor suggestion</Badge>
+                        </div>
+                        {vendorTaskSuggestionsLoadingId === selectedVendor.id ? (
+                          <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading suggestions...
+                          </div>
+                        ) : selectedVendorTaskSuggestions.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                            No task suggestions from this vendor yet.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {selectedVendorTaskSuggestions.map((suggestion) => {
+                              const accepting = resolvingVendorTaskSuggestionId === suggestion.id;
+                              const accepted = suggestion.status === 'accepted';
+                              const dismissed = suggestion.status === 'dismissed';
+                              return (
+                                <div
+                                  key={suggestion.id}
+                                  className={`rounded-xl border p-4 transition-[background-color,border-color,box-shadow,transform] duration-200 ease-zania motion-reduce:transition-none ${
+                                    accepted || acceptedVendorTaskSuggestionId === suggestion.id
+                                      ? 'border-success/35 bg-[hsl(var(--success-soft))] shadow-[0_0_0_4px_hsl(var(--success)/0.06)]'
+                                      : dismissed
+                                        ? 'border-border/60 bg-muted/20 opacity-70'
+                                        : 'border-border/70 bg-background'
+                                  }`}
+                                >
+                                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0 space-y-2">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Badge variant={accepted ? 'success' : dismissed ? 'outline' : 'warning'}>
+                                          {accepted ? 'Added to plan' : dismissed ? 'Dismissed' : 'Needs review'}
+                                        </Badge>
+                                        <span className="text-xs text-muted-foreground">
+                                          {new Date(suggestion.created_at).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                      <p className="font-semibold text-foreground">{suggestion.title}</p>
+                                      {suggestion.description ? <p className="text-sm leading-6 text-muted-foreground">{suggestion.description}</p> : null}
+                                      {suggestion.suggested_due_date ? (
+                                        <p className="text-xs text-muted-foreground">
+                                          Suggested due {new Date(`${suggestion.suggested_due_date}T00:00:00`).toLocaleDateString()}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                    {suggestion.status === 'pending' ? (
+                                      <div className="flex shrink-0 flex-wrap gap-2">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => resolveSelectedVendorTaskSuggestion(suggestion, 'dismiss')}
+                                          disabled={accepting}
+                                        >
+                                          Dismiss
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          status={accepting ? 'loading' : 'idle'}
+                                          loadingText="Adding task"
+                                          onClick={() => resolveSelectedVendorTaskSuggestion(suggestion, 'accept')}
+                                        >
+                                          Accept as task
+                                        </Button>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
                     <Card className="shadow-none">
                       <CardContent className="space-y-4 py-6">
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -3796,6 +3992,9 @@ export default function Vendors() {
                             variant={vendor.selection_status === 'final' ? 'secondary' : 'default'}
                             onClick={() => updateSelection(vendor, 'final')}
                             disabled={savingSelectionId === vendor.id || vendor.selection_status === 'final'}
+                            status={savingSelectionId === vendor.id ? 'loading' : selectionSucceededId === vendor.id ? 'success' : 'idle'}
+                            loadingText="Updating"
+                            successText="Confirmed"
                           >
                             {vendor.selection_status === 'final' ? 'Final choice' : 'Make final'}
                           </Button>
@@ -4514,8 +4713,11 @@ export default function Vendors() {
                       className="gap-2"
                       onClick={() => updateSelection(vendor, 'final')}
                       disabled={savingSelectionId === vendor.id || vendor.selection_status === 'final'}
+                      status={savingSelectionId === vendor.id ? 'loading' : selectionSucceededId === vendor.id ? 'success' : 'idle'}
+                      loadingText="Updating choice"
+                      successText="Final choice confirmed"
                     >
-                      {savingSelectionId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      <CheckCircle2 className="h-4 w-4" />
                       {vendor.selection_status === 'final' ? 'Final choice locked' : 'Make final choice'}
                     </Button>
                     {vendor.selection_status === 'final' && (

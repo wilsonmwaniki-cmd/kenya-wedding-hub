@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
@@ -223,6 +223,8 @@ export default function Budget() {
   const [spendSubmitError, setSpendSubmitError] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [recordingPaymentMade, setRecordingPaymentMade] = useState(false);
+  const [paymentRecorded, setPaymentRecorded] = useState(false);
+  const paymentSuccessTimerRef = useRef<number | null>(null);
   const [paymentFormErrors, setPaymentFormErrors] = useState<{ categorySelection?: string; payeeName?: string; amount?: string }>({});
   const [paymentSubmitError, setPaymentSubmitError] = useState<string | null>(null);
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
@@ -274,6 +276,10 @@ export default function Budget() {
   const categories = categoriesQuery.data ?? [];
   const vendorOptions = vendorOptionsQuery.data ?? [];
   const paymentRecords = paymentRecordsQuery.data ?? [];
+
+  useEffect(() => () => {
+    if (paymentSuccessTimerRef.current != null) window.clearTimeout(paymentSuccessTimerRef.current);
+  }, []);
   const finalVendorPayments = useMemo(
     () => vendorOptions.filter((row) => row.selection_status === 'final') as FinalVendorPayment[],
     [vendorOptions],
@@ -358,6 +364,7 @@ export default function Budget() {
 
   useEffect(() => {
     if (paymentDialogOpen) {
+      setPaymentRecorded(false);
       setPaymentLog((prev) => ({
         ...prev,
         budgetScope: activeBudgetScope,
@@ -1085,7 +1092,12 @@ export default function Budget() {
           description: `${formatCurrency(amount)} is waiting on the couple before it affects the budget.`,
         });
 
-        setPaymentDialogOpen(false);
+        setPaymentRecorded(true);
+        if (paymentSuccessTimerRef.current != null) window.clearTimeout(paymentSuccessTimerRef.current);
+        paymentSuccessTimerRef.current = window.setTimeout(() => {
+          setPaymentRecorded(false);
+          setPaymentDialogOpen(false);
+        }, 800);
         return;
       }
 
@@ -1137,8 +1149,13 @@ export default function Budget() {
         description: `${formatCurrency(amount)} added to ${selectedCategory.name}.`,
       });
 
-      setPaymentDialogOpen(false);
       await refreshBudgetWorkspace();
+      setPaymentRecorded(true);
+      if (paymentSuccessTimerRef.current != null) window.clearTimeout(paymentSuccessTimerRef.current);
+      paymentSuccessTimerRef.current = window.setTimeout(() => {
+        setPaymentRecorded(false);
+        setPaymentDialogOpen(false);
+      }, 800);
     } catch (error: any) {
       setPaymentSubmitError(error.message || 'We could not record this payment right now.');
       toast({
@@ -1691,8 +1708,15 @@ export default function Budget() {
                     placeholder="Deposit, second payment, balance, etc."
                   />
                 </div>
-                <Button type="submit" className="w-full gap-2" disabled={recordingPaymentMade}>
-                  {recordingPaymentMade ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                <Button
+                  type="submit"
+                  className="w-full gap-2"
+                  disabled={recordingPaymentMade}
+                  status={recordingPaymentMade ? 'loading' : paymentRecorded ? 'success' : 'idle'}
+                  loadingText="Recording payment"
+                  successText={plannerNeedsApproval ? 'Request sent' : 'Payment recorded'}
+                >
+                  <Receipt className="h-4 w-4" />
                   Record Payment
                 </Button>
               </form>

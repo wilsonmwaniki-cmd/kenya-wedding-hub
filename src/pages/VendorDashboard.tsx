@@ -28,6 +28,11 @@ import {
   type VendorWorkspaceUpdate,
   type VendorWorkspaceUpdateType,
 } from '@/lib/vendorWorkspaceUpdates';
+import {
+  createVendorTaskSuggestion,
+  listVendorTaskSuggestions,
+  type VendorTaskSuggestion,
+} from '@/lib/vendorTaskSuggestions';
 
 interface Booking {
   id: string;
@@ -186,6 +191,7 @@ export default function VendorDashboard() {
   const [taskDetailsByBookingId, setTaskDetailsByBookingId] = useState<Record<string, VendorTaskDetail[]>>({});
   const [paymentDetailsByBookingId, setPaymentDetailsByBookingId] = useState<Record<string, VendorPaymentDetail[]>>({});
   const [workspaceUpdatesByBookingId, setWorkspaceUpdatesByBookingId] = useState<Record<string, VendorWorkspaceUpdate[]>>({});
+  const [taskSuggestionsByBookingId, setTaskSuggestionsByBookingId] = useState<Record<string, VendorTaskSuggestion[]>>({});
   const [internalNoteDrafts, setInternalNoteDrafts] = useState<Record<string, string>>({});
   const [statusDrafts, setStatusDrafts] = useState<Record<string, VendorWorkspaceStatus>>({});
   const [paymentStateDrafts, setPaymentStateDrafts] = useState<Record<string, {
@@ -200,6 +206,12 @@ export default function VendorDashboard() {
   }>>({});
   const [loadingWorkspaceUpdatesId, setLoadingWorkspaceUpdatesId] = useState<string | null>(null);
   const [savingWorkspaceUpdateId, setSavingWorkspaceUpdateId] = useState<string | null>(null);
+  const [savingTaskSuggestionId, setSavingTaskSuggestionId] = useState<string | null>(null);
+  const [taskSuggestionDrafts, setTaskSuggestionDrafts] = useState<Record<string, {
+    title: string;
+    description: string;
+    dueDate: string;
+  }>>({});
   const { entitlements: professionalEntitlements, teamSeatLimit: professionalTeamSeatLimit } = useProfessionalEntitlements('vendor');
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
@@ -703,6 +715,7 @@ export default function VendorDashboard() {
     ? workspaceInvites.find((invite) => invite.vendorId === selectedBooking.id) ?? null
     : null;
   const selectedWorkspaceUpdates = selectedBooking ? workspaceUpdatesByBookingId[selectedBooking.id] ?? [] : [];
+  const selectedTaskSuggestions = selectedBooking ? taskSuggestionsByBookingId[selectedBooking.id] ?? [] : [];
 
   useEffect(() => {
     if (!selectedBooking) return;
@@ -728,6 +741,14 @@ export default function VendorDashboard() {
         noteMessage: '',
       },
     }));
+    setTaskSuggestionDrafts((prev) => ({
+      ...prev,
+      [selectedBooking.id]: prev[selectedBooking.id] ?? {
+        title: '',
+        description: '',
+        dueDate: '',
+      },
+    }));
   }, [selectedBooking]);
 
   useEffect(() => {
@@ -736,12 +757,19 @@ export default function VendorDashboard() {
     let cancelled = false;
     setLoadingWorkspaceUpdatesId(selectedWorkspaceInvite.vendorId);
 
-    void listVendorWorkspaceUpdates(selectedWorkspaceInvite.vendorId)
-      .then((updates) => {
+    void Promise.all([
+      listVendorWorkspaceUpdates(selectedWorkspaceInvite.vendorId),
+      listVendorTaskSuggestions(selectedWorkspaceInvite.vendorId),
+    ])
+      .then(([updates, suggestions]) => {
         if (cancelled) return;
         setWorkspaceUpdatesByBookingId((prev) => ({
           ...prev,
           [selectedWorkspaceInvite.vendorId]: updates.filter((update) => !update.is_archived),
+        }));
+        setTaskSuggestionsByBookingId((prev) => ({
+          ...prev,
+          [selectedWorkspaceInvite.vendorId]: suggestions,
         }));
       })
       .catch((error) => {
@@ -1086,6 +1114,48 @@ export default function VendorDashboard() {
       });
     } finally {
       setSavingWorkspaceUpdateId(null);
+    }
+  };
+
+  const handleCreateTaskSuggestion = async (bookingId: string) => {
+    const draft = taskSuggestionDrafts[bookingId] ?? { title: '', description: '', dueDate: '' };
+    if (draft.title.trim().length < 3) {
+      toast({
+        title: 'Add a task title',
+        description: 'Describe the action you need from the couple in at least three characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingTaskSuggestionId(bookingId);
+    try {
+      const created = await createVendorTaskSuggestion({
+        vendorId: bookingId,
+        title: draft.title.trim(),
+        description: draft.description.trim() || null,
+        suggestedDueDate: draft.dueDate || null,
+      });
+      setTaskSuggestionsByBookingId((prev) => ({
+        ...prev,
+        [bookingId]: [created, ...(prev[bookingId] ?? []).filter((item) => item.id !== created.id)],
+      }));
+      setTaskSuggestionDrafts((prev) => ({
+        ...prev,
+        [bookingId]: { title: '', description: '', dueDate: '' },
+      }));
+      toast({
+        title: 'Task suggested',
+        description: 'The couple can review this suggestion before it becomes part of their wedding plan.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Could not suggest task',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingTaskSuggestionId(null);
     }
   };
 
@@ -2028,6 +2098,90 @@ export default function VendorDashboard() {
                               </div>
                             ))
                           )}
+                        </div>
+                        <div className="border-t border-border/70 pt-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-foreground">Suggest a planning task</p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                Propose an action for review. It does not change the wedding plan until the couple accepts it.
+                              </p>
+                            </div>
+                            <Badge variant="info">Vendor suggestion</Badge>
+                          </div>
+                          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2 sm:col-span-2">
+                              <Label htmlFor={`task-suggestion-title-${selectedBooking.id}`}>Task title</Label>
+                              <Input
+                                id={`task-suggestion-title-${selectedBooking.id}`}
+                                value={taskSuggestionDrafts[selectedBooking.id]?.title ?? ''}
+                                onChange={(event) => setTaskSuggestionDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? { title: '', description: '', dueDate: '' }),
+                                    title: event.target.value,
+                                  },
+                                }))}
+                                maxLength={160}
+                                placeholder="Approve the final floral palette"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`task-suggestion-due-${selectedBooking.id}`}>Suggested due date</Label>
+                              <Input
+                                id={`task-suggestion-due-${selectedBooking.id}`}
+                                type="date"
+                                value={taskSuggestionDrafts[selectedBooking.id]?.dueDate ?? ''}
+                                onChange={(event) => setTaskSuggestionDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? { title: '', description: '', dueDate: '' }),
+                                    dueDate: event.target.value,
+                                  },
+                                }))}
+                              />
+                            </div>
+                            <div className="space-y-2 sm:col-span-2">
+                              <Label htmlFor={`task-suggestion-description-${selectedBooking.id}`}>Context</Label>
+                              <Textarea
+                                id={`task-suggestion-description-${selectedBooking.id}`}
+                                value={taskSuggestionDrafts[selectedBooking.id]?.description ?? ''}
+                                onChange={(event) => setTaskSuggestionDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? { title: '', description: '', dueDate: '' }),
+                                    description: event.target.value,
+                                  },
+                                }))}
+                                maxLength={2000}
+                                rows={3}
+                                placeholder="Explain what is needed and why it matters now."
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-4 flex justify-end">
+                            <Button
+                              type="button"
+                              status={savingTaskSuggestionId === selectedBooking.id ? 'loading' : 'idle'}
+                              loadingText="Sending suggestion"
+                              onClick={() => handleCreateTaskSuggestion(selectedBooking.id)}
+                            >
+                              <FilePlus2 className="h-4 w-4" />
+                              Suggest task
+                            </Button>
+                          </div>
+                          {selectedTaskSuggestions.length > 0 ? (
+                            <div className="mt-4 space-y-2">
+                              {selectedTaskSuggestions.slice(0, 4).map((suggestion) => (
+                                <div key={suggestion.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-2">
+                                  <span className="text-sm text-foreground">{suggestion.title}</span>
+                                  <Badge variant={suggestion.status === 'accepted' ? 'success' : suggestion.status === 'dismissed' ? 'outline' : 'warning'}>
+                                    {suggestion.status === 'pending' ? 'Waiting for review' : suggestion.status}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       </CardContent>
                     </Card>

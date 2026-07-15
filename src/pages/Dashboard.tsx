@@ -1016,7 +1016,7 @@ export default function Dashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1], delay: index * 0.035 }}
             >
-              <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.88))] shadow-[0_18px_40px_rgba(28,22,18,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(28,22,18,0.07)]">
+              <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.88))] shadow-[0_18px_40px_rgba(28,22,18,0.05)]">
                 <CardContent className="flex h-full flex-col gap-4 p-5">
                   <div className="space-y-2">
                     <p className="text-lg font-semibold text-foreground">{action.title}</p>

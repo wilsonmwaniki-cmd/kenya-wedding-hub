@@ -575,7 +575,7 @@ export default function VendorDirectory() {
                   viewport={{ once: true }}
                   transition={{ delay: index * 0.05 }}
                 >
-                  <Card className="group h-full shadow-card transition-shadow hover:shadow-warm">
+                  <Card className="group h-full shadow-card">
                     <CardContent className="flex h-full flex-col p-6">
                       <div className="flex items-start gap-4">
                         <div className="relative shrink-0">

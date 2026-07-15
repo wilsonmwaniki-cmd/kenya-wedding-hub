@@ -18,7 +18,7 @@ import {
   Plus, Trash2, Users, Upload, Download, Mail, Send, Loader2, Eye, EyeOff,
   Link2, Copy, UserCheck, BarChart3, Search, RotateCw, ShieldOff,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import GuestInsights from '@/components/guests/GuestInsights';
@@ -29,8 +29,10 @@ import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
 import { getCheckoutReferenceFromSearchParams, startCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
-import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { FormFieldError, FormFieldSuccess, FormSubmitError } from '@/components/FormFeedback';
 import { sanitizeHtml } from '@/lib/security';
+import { ToastAction } from '@/components/ui/toast';
+import AnimatedNumber from '@/components/AnimatedNumber';
 
 const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
 
@@ -152,6 +154,7 @@ export default function Guests() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const prefersReducedMotion = useReducedMotion();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
   const [open, setOpen] = useState(false);
@@ -187,6 +190,8 @@ export default function Guests() {
   const [guestAddonCheckoutLoading, setGuestAddonCheckoutLoading] = useState(false);
   const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
   const [savingGuest, setSavingGuest] = useState(false);
+  const [guestAdded, setGuestAdded] = useState(false);
+  const guestSuccessTimerRef = useRef<number | null>(null);
   const [guestFormErrors, setGuestFormErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
   const [guestSubmitError, setGuestSubmitError] = useState<string | null>(null);
   const [selectedGuestDraft, setSelectedGuestDraft] = useState<Guest | null>(null);
@@ -199,6 +204,20 @@ export default function Guests() {
     staleTime: 30_000,
   });
   const guests = guestsQuery.data ?? [];
+
+  useEffect(() => () => {
+    if (guestSuccessTimerRef.current != null) window.clearTimeout(guestSuccessTimerRef.current);
+  }, []);
+
+  const finishGuestCreation = () => {
+    if (guestSuccessTimerRef.current != null) window.clearTimeout(guestSuccessTimerRef.current);
+    setGuestAdded(true);
+    guestSuccessTimerRef.current = window.setTimeout(() => {
+      setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general'); setMealPreference(''); setPlusOne('no');
+      setGuestAdded(false);
+      setOpen(false);
+    }, 700);
+  };
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
@@ -316,8 +335,7 @@ export default function Guests() {
             wedding_id: selectedClient.wedding_id ?? null,
           },
         });
-        setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general'); setMealPreference(''); setPlusOne('no');
-        setOpen(false);
+        finishGuestCreation();
         toast({
           title: 'Guest request sent to the couple',
           description: 'This guest will stay pending until the couple approves the change.',
@@ -332,10 +350,9 @@ export default function Guests() {
     }
     const { error } = await supabase.from('guests').insert(insert);
     if (error) { setGuestSubmitError(error.message || 'Could not save this guest right now.'); setSavingGuest(false); toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general'); setMealPreference(''); setPlusOne('no');
-    setOpen(false);
     await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
     setSavingGuest(false);
+    finishGuestCreation();
   };
 
   const updateRsvp = async (id: string, status: string) => {
@@ -368,9 +385,10 @@ export default function Guests() {
   };
 
   const deleteGuest = async (id: string) => {
+    const guest = guests.find((row) => row.id === id);
+    if (!guest) return;
+
     if (plannerNeedsApproval && selectedClient?.linked_user_id) {
-      const guest = guests.find((row) => row.id === id);
-      if (!guest) return;
       try {
         await submitPlannerChangeRequest({
           clientId: selectedClient.id,
@@ -394,8 +412,36 @@ export default function Guests() {
       }
       return;
     }
-    await supabase.from('guests').delete().eq('id', id);
-    await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+
+    queryClient.setQueryData<Guest[]>(guestsQueryKey, (current = []) => current.filter((row) => row.id !== id));
+    setSelectedGuestId(null);
+    const deletionTimer = window.setTimeout(async () => {
+      const { error } = await supabase.from('guests').delete().eq('id', id);
+      if (error) {
+        await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+        toast({ title: 'Could not remove guest', description: error.message, variant: 'destructive' });
+      }
+    }, 5_500);
+
+    toast({
+      title: 'Guest removed',
+      description: `${guest.name} was removed from this wedding.`,
+      variant: 'info',
+      duration: 6_000,
+      action: (
+        <ToastAction
+          altText={`Restore ${guest.name}`}
+          onClick={() => {
+            window.clearTimeout(deletionTimer);
+            queryClient.setQueryData<Guest[]>(guestsQueryKey, (current = []) => [...current, guest].sort((left, right) => left.name.localeCompare(right.name)));
+            setSelectedGuestId(guest.id);
+            toast({ title: 'Guest restored', description: `${guest.name} is back on the guest list.`, variant: 'success' });
+          }}
+        >
+          Undo
+        </ToastAction>
+      ),
+    });
   };
 
   const saveGuestDetails = async (guest: Guest, updates: Partial<Guest>) => {
@@ -846,7 +892,7 @@ export default function Guests() {
 
             <div className="mt-4">
               <Dialog open={open} onOpenChange={setOpen}>
-                <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
+                <Button type="button" className="gap-2" onClick={() => { setGuestAdded(false); setOpen(true); }}>
                   <Plus className="h-4 w-4" />
                   {plannerNeedsApproval ? 'Request Guest' : 'Add Guest'}
                 </Button>
@@ -862,8 +908,9 @@ export default function Guests() {
                       </div>
                       <div className="space-y-2">
                         <Label>Email</Label>
-                        <Input type="email" value={email} onChange={e => { setEmail(e.target.value); setGuestFormErrors((current) => ({ ...current, email: undefined })); setGuestSubmitError(null); }} placeholder="guest@example.com" aria-invalid={!!guestFormErrors.email} />
+                        <Input type="email" value={email} onChange={e => { setEmail(e.target.value); setGuestFormErrors((current) => ({ ...current, email: undefined })); setGuestSubmitError(null); }} placeholder="guest@example.com" aria-invalid={!!guestFormErrors.email} data-valid={email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? 'true' : undefined} />
                         <FormFieldError message={guestFormErrors.email} />
+                        <FormFieldSuccess message={!guestFormErrors.email && email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? 'Email looks ready for an invitation.' : null} />
                       </div>
                       <div className="space-y-2">
                         <Label>Phone</Label>
@@ -918,8 +965,9 @@ export default function Guests() {
                       type="submit"
                       className="w-full"
                       disabled={savingGuest}
-                      status={savingGuest ? 'loading' : 'idle'}
+                      status={savingGuest ? 'loading' : guestAdded ? 'success' : 'idle'}
                       loadingText={plannerNeedsApproval ? 'Sending for approval' : 'Adding guest'}
+                      successText={plannerNeedsApproval ? 'Request sent' : 'Guest added'}
                     >
                       {plannerNeedsApproval ? 'Send for approval' : 'Add Guest'}
                     </Button>
@@ -975,19 +1023,19 @@ export default function Guests() {
             <div className="grid gap-3 md:grid-cols-4">
               <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Visible</p>
-                <p className="mt-2 text-xl font-semibold text-foreground">{visibleGuests.length}</p>
+                <AnimatedNumber value={visibleGuests.length} className="mt-2 block text-xl font-semibold text-foreground" />
               </div>
               <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Invite ready</p>
-                <p className="mt-2 text-xl font-semibold text-foreground">{pendingWithEmail.length}</p>
+                <AnimatedNumber value={pendingWithEmail.length} className="mt-2 block text-xl font-semibold text-foreground" />
               </div>
               <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Missing contact</p>
-                <p className="mt-2 text-xl font-semibold text-foreground">{guestsMissingContact}</p>
+                <AnimatedNumber value={guestsMissingContact} className="mt-2 block text-xl font-semibold text-foreground" />
               </div>
               <div className="rounded-2xl border border-[#f1d6d3] bg-[#fff4f2]/90 px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Unseated</p>
-                <p className="mt-2 text-xl font-semibold text-foreground">{guestsWithoutTables}</p>
+                <AnimatedNumber value={guestsWithoutTables} className="mt-2 block text-xl font-semibold text-foreground" />
               </div>
             </div>
 
@@ -995,11 +1043,17 @@ export default function Guests() {
               <div className="border-b border-border/70 bg-muted/20 lg:border-b-0 lg:border-r">
                 <div className="max-h-[620px] space-y-2 overflow-y-auto p-3">
                   {visibleGuests.length > 0 ? (
-                    visibleGuests.map((g) => {
+                    <AnimatePresence initial={false} mode="popLayout">
+                    {visibleGuests.map((g) => {
                       const isSelected = selectedGuest?.id === g.id;
                       return (
-                        <button
+                        <motion.button
                           key={g.id}
+                          layout
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
                           type="button"
                           onClick={() => setSelectedGuestId(g.id)}
                           className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
@@ -1028,9 +1082,10 @@ export default function Guests() {
                           <p className="mt-3 truncate text-xs text-muted-foreground">
                             {g.email || g.phone || 'No contact details yet'}
                           </p>
-                        </button>
+                        </motion.button>
                       );
-                    })
+                    })}
+                    </AnimatePresence>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
                       <p className="text-sm font-medium text-foreground">

@@ -20,6 +20,7 @@ import {
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { normalizeInvokeError } from '@/lib/invokeErrors';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 
 const VENDOR_ROLES = [
   { value: 'photographer', label: 'Photographer', icon: '📸' },
@@ -111,6 +112,7 @@ export default function Timeline() {
   const { user } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const assistantPanel = useAssistantPanel();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
@@ -157,8 +159,9 @@ export default function Timeline() {
   const selectedTimelineShareActive = selectedTimeline
     ? isTokenActive(selectedTimeline.share_expires_at, selectedTimeline.share_revoked_at)
     : false;
-  const templates = timelines.filter(t => t.is_template);
-  const instances = timelines.filter(t => !t.is_template);
+  const templates = timelines.filter(t => t.is_template && !pendingDeleteIds.has(t.id));
+  const instances = timelines.filter(t => !t.is_template && !pendingDeleteIds.has(t.id));
+  const visibleEvents = events.filter((event) => !pendingDeleteIds.has(event.id));
   const timelineHeroAction = instances.length === 0
     ? 'Build the first timeline'
     : selectedTimeline
@@ -388,10 +391,23 @@ export default function Timeline() {
       });
       return;
     }
-    await supabase.from('timelines').delete().eq('id', id);
-    if (selectedTimeline?.id === id) { setSelectedTimeline(null); setEvents([]); }
-    loadTimelines();
-    toast({ title: 'Deleted' });
+    const timeline = timelines.find((row) => row.id === id);
+    if (!timeline) return;
+    const wasSelected = selectedTimeline?.id === id;
+    if (wasSelected) { setSelectedTimeline(null); setEvents([]); }
+    scheduleDelete({
+      id,
+      title: 'Timeline removed',
+      description: `${timeline.title} was removed.`,
+      commit: async () => {
+        const { error } = await supabase.from('timelines').delete().eq('id', id);
+        if (error) throw error;
+      },
+      onCommit: loadTimelines,
+      onUndo: () => {
+        if (wasSelected) selectTimeline(timeline);
+      },
+    });
   };
 
   // Event CRUD
@@ -496,20 +512,24 @@ export default function Timeline() {
       });
       return;
     }
-    const idempotencyKey = window.crypto?.randomUUID?.() ?? `${id}-${Date.now()}`;
-    try {
-      await invokeTimelineOperation({
-        action: 'delete_event',
-        timelineId: selectedTimeline.id,
-        timelineEventId: id,
-        idempotencyKey,
-      });
-    } catch (error) {
-      const normalized = await normalizeInvokeError(error, 'Could not remove this timeline event.');
-      toast({ title: 'Timeline update failed', description: normalized.message, variant: 'destructive' });
-      return;
-    }
-    loadEvents(selectedTimeline.id);
+    const event = events.find((row) => row.id === id);
+    if (!event) return;
+    const timelineId = selectedTimeline.id;
+    scheduleDelete({
+      id,
+      title: 'Timeline event removed',
+      description: `${event.title} was removed from the timeline.`,
+      commit: async () => {
+        const idempotencyKey = window.crypto?.randomUUID?.() ?? `${id}-${Date.now()}`;
+        await invokeTimelineOperation({
+          action: 'delete_event',
+          timelineId,
+          timelineEventId: id,
+          idempotencyKey,
+        });
+      },
+      onCommit: () => loadEvents(timelineId),
+    });
   };
 
   const copyToClipboard = (text: string) => {
@@ -645,7 +665,7 @@ export default function Timeline() {
     toast({ title: `Shifted all events ${shiftMinutes} min ${direction}` });
   };
 
-  const handleDrop = async (fromIdx: number, toIdx: number) => {
+  const handleDrop = async (fromId: string, toId: string) => {
     if (plannerNeedsApproval) {
       toast({
         title: 'Timeline reordering stays with the couple',
@@ -654,8 +674,11 @@ export default function Timeline() {
       });
       return;
     }
-    if (fromIdx === toIdx || !selectedTimeline) return;
+    if (fromId === toId || !selectedTimeline || pendingDeleteIds.size > 0) return;
     const reordered = [...events];
+    const fromIdx = reordered.findIndex((event) => event.id === fromId);
+    const toIdx = reordered.findIndex((event) => event.id === toId);
+    if (fromIdx === -1 || toIdx === -1) return;
     const [moved] = reordered.splice(fromIdx, 1);
     reordered.splice(toIdx, 0, moved);
     // Optimistic update
@@ -705,7 +728,7 @@ export default function Timeline() {
               </p>
             )}
           </div>
-          {events.length > 0 && (
+          {visibleEvents.length > 0 && (
             <>
               <Button variant="outline" size="sm" className="gap-1.5 print:hidden" onClick={() => window.print()}>
                 <Printer className="h-4 w-4" /> Print
@@ -724,7 +747,7 @@ export default function Timeline() {
         </div>
 
         {/* Category filter bar */}
-        {events.length > 0 && (
+        {visibleEvents.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 print:hidden">
             <span className="text-xs text-muted-foreground font-medium">Filter:</span>
             <button
@@ -733,7 +756,7 @@ export default function Timeline() {
             >
               All
             </button>
-            {EVENT_CATEGORIES.filter(c => events.some(e => e.category === c.value)).map(c => (
+            {EVENT_CATEGORIES.filter(c => visibleEvents.some(e => e.category === c.value)).map(c => (
               <button
                 key={c.value}
                 onClick={() => setFilterCategory(filterCategory === c.value ? null : c.value)}
@@ -747,7 +770,7 @@ export default function Timeline() {
 
         {/* Visual timeline */}
         <div className="relative">
-          {events.length === 0 ? (
+          {visibleEvents.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Clock className="h-10 w-10 text-muted-foreground/40 mb-3" />
@@ -776,13 +799,21 @@ export default function Timeline() {
             </Card>
           ) : (
             <div className="relative ml-4 border-l-2 border-primary/20 pl-6 space-y-1">
-                {events.filter(ev => !filterCategory || ev.category === filterCategory).map((ev, i) => (
+                {visibleEvents.filter(ev => !filterCategory || ev.category === filterCategory).map((ev, i, filteredEvents) => (
                   <div
                     key={ev.id}
-                    draggable
+                    draggable={pendingDeleteIds.size === 0}
                     onDragStart={() => setDragIndex(i)}
                     onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
-                    onDragEnd={() => { if (dragIndex !== null && dragOverIndex !== null) handleDrop(dragIndex, dragOverIndex); setDragIndex(null); setDragOverIndex(null); }}
+                    onDragEnd={() => {
+                      if (dragIndex !== null && dragOverIndex !== null) {
+                        const fromEvent = filteredEvents[dragIndex];
+                        const toEvent = filteredEvents[dragOverIndex];
+                        if (fromEvent && toEvent) void handleDrop(fromEvent.id, toEvent.id);
+                      }
+                      setDragIndex(null);
+                      setDragOverIndex(null);
+                    }}
                     className={`relative group transition-all ${dragIndex === i ? 'opacity-40 scale-[0.98]' : ''} ${dragOverIndex === i && dragIndex !== null && dragIndex !== i ? 'border-t-2 border-primary pt-1' : ''}`}
                   >
                     {/* Dot on the timeline */}

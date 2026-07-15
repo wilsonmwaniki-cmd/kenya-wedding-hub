@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, type RolePreview } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
@@ -17,6 +17,19 @@ import AccountReviewBanner from '@/components/AccountReviewBanner';
 import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isProfessionalNetworkEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 
 const AssistantPanel = lazy(() => import('@/components/AssistantPanel'));
+
+const SIDEBAR_EXPANSION_KEY = 'zania:sidebar-expanded';
+const SIDEBAR_SCROLL_KEY = 'zania:sidebar-scroll';
+
+function readExpandedNavItems() {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    return JSON.parse(window.sessionStorage.getItem(SIDEBAR_EXPANSION_KEY) ?? '{}') as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
 
 type NavItem = {
   path: string;
@@ -118,7 +131,8 @@ function AssistantPanelSlot({
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expandedNavItems, setExpandedNavItems] = useState<Record<string, boolean>>({});
+  const [expandedNavItems, setExpandedNavItems] = useState<Record<string, boolean>>(readExpandedNavItems);
+  const navScrollRef = useRef<HTMLElement | null>(null);
   const prefersReducedMotion = useReducedMotion();
   const location = useLocation();
   const navigate = useNavigate();
@@ -126,6 +140,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname, location.search, location.hash]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(SIDEBAR_EXPANSION_KEY, JSON.stringify(expandedNavItems));
+  }, [expandedNavItems]);
+
+  useEffect(() => {
+    const nav = navScrollRef.current;
+    if (!nav) return;
+
+    const savedPosition = Number(window.sessionStorage.getItem(SIDEBAR_SCROLL_KEY) ?? 0);
+    nav.scrollTop = Number.isFinite(savedPosition) ? savedPosition : 0;
+  }, []);
   const { user, signOut, profile, baseProfile, isSuperAdmin, rolePreview, setRolePreview } = useAuth();
   const { isPlanner, selectedClient, selectClient, plannerClientHydrating } = usePlanner();
   const { vendorRequestCount, plannerRequestCount } = useNotifications();
@@ -351,7 +377,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 [-webkit-overflow-scrolling:touch]">
+          <nav
+            ref={navScrollRef}
+            onScroll={(event) => window.sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(event.currentTarget.scrollTop))}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 [-webkit-overflow-scrolling:touch]"
+          >
             <div className="space-y-2 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
             {navItems.map((item) => {
               const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
@@ -383,13 +413,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         <motion.span
                           layoutId="zania-sidebar-active"
                           className="absolute inset-0 z-0 rounded-[inherit] bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_16px_32px_rgba(15,8,6,0.24)]"
-                          transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38, mass: 0.8 }}
+                          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                         />
                       ) : null}
                       <item.icon className={`relative z-10 h-4.5 w-4.5 transition-colors duration-200 ${isActive ? 'text-primary' : 'text-white/80'}`} />
                       <span className="relative z-10 min-w-0 flex-1 truncate">{item.label}</span>
                       {(badgeCounts[item.path] || 0) > 0 && (
-                        <span className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[10px] font-bold text-warning-foreground">
+                        <span
+                          className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-info/30 bg-info/15 px-1.5 text-[10px] font-bold text-info"
+                          aria-label={`${badgeCounts[item.path]} new ${item.label.toLowerCase()} notification${badgeCounts[item.path] === 1 ? '' : 's'}`}
+                        >
                           {badgeCounts[item.path]}
                         </span>
                       )}
@@ -415,13 +448,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         <motion.span
                           layoutId="zania-sidebar-active"
                           className="absolute inset-0 z-0 rounded-[inherit] bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.1))] shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_16px_32px_rgba(15,8,6,0.24)]"
-                          transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 38, mass: 0.8 }}
+                          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                         />
                       ) : null}
                       <item.icon className={`relative z-10 h-4.5 w-4.5 transition-colors duration-200 ${isActive ? 'text-primary' : 'text-white/80'}`} />
                       <span className="relative z-10 min-w-0 flex-1 truncate">{item.label}</span>
                       {(badgeCounts[item.path] || 0) > 0 && (
-                        <span className="relative z-10 ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[10px] font-bold text-warning-foreground">
+                        <span
+                          className="relative z-10 ml-auto flex h-5 min-w-5 items-center justify-center rounded-full border border-info/30 bg-info/15 px-1.5 text-[10px] font-bold text-info"
+                          aria-label={`${badgeCounts[item.path]} new ${item.label.toLowerCase()} notification${badgeCounts[item.path] === 1 ? '' : 's'}`}
+                        >
                           {badgeCounts[item.path]}
                         </span>
                       )}

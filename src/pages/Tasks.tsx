@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
@@ -30,6 +30,8 @@ import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { buildConciergeContext } from '@/lib/conciergeContext';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { ToastAction } from '@/components/ui/toast';
 
 interface Task {
   id: string;
@@ -205,6 +207,7 @@ export default function Tasks() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const prefersReducedMotion = useReducedMotion();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -222,6 +225,8 @@ export default function Tasks() {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [submittingTask, setSubmittingTask] = useState(false);
+  const [taskAdded, setTaskAdded] = useState(false);
+  const taskSuccessTimerRef = useRef<number | null>(null);
   const [taskFormErrors, setTaskFormErrors] = useState<{ title?: string }>({});
   const [taskSubmitError, setTaskSubmitError] = useState<string | null>(null);
 
@@ -232,6 +237,10 @@ export default function Tasks() {
     enabled: Boolean(dataOrFilter),
     staleTime: 30_000,
   });
+
+  useEffect(() => () => {
+    if (taskSuccessTimerRef.current != null) window.clearTimeout(taskSuccessTimerRef.current);
+  }, []);
   const tasks = tasksQuery.data?.tasks ?? [];
   const vendorOptions = tasksQuery.data?.vendorOptions ?? [];
   const budgetCategories = tasksQuery.data?.budgetCategories ?? [];
@@ -396,16 +405,21 @@ export default function Tasks() {
         templateSource: selectedTaskTemplate?.key ? 'planner_spreadsheet_picker_v1' : selectedCategoryDefaults ? 'manual_category_template_v1' : null,
       });
       }
-      setTitle('');
-      setDescription('');
-      setDueDate('');
-      setAssignedTo('');
-      setTaskCategory('none');
-      setTaskTemplateKey('none');
-      setTaskPickerMode('suggested');
-      setSourceVendorId('none');
-      setOpen(false);
       await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+      setTaskAdded(true);
+      if (taskSuccessTimerRef.current != null) window.clearTimeout(taskSuccessTimerRef.current);
+      taskSuccessTimerRef.current = window.setTimeout(() => {
+        setTitle('');
+        setDescription('');
+        setDueDate('');
+        setAssignedTo('');
+        setTaskCategory('none');
+        setTaskTemplateKey('none');
+        setTaskPickerMode('suggested');
+        setSourceVendorId('none');
+        setTaskAdded(false);
+        setOpen(false);
+      }, 700);
     } catch (error: any) {
       setTaskSubmitError(error.message || 'Could not save this task right now.');
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -434,14 +448,52 @@ export default function Tasks() {
       });
       return;
     }
-    await supabase.from('tasks').update({ completed: !completed }).eq('id', id);
+    const task = tasks.find((row) => row.id === id);
+    if (!task) return;
+    const nextCompleted = !completed;
+    const { error } = await supabase.from('tasks').update({ completed: nextCompleted }).eq('id', id);
+    if (error) {
+      toast({ title: 'Could not update task', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
+      ...current,
+      tasks: current.tasks.map((row) => row.id === id ? { ...row, completed: nextCompleted } : row),
+    } : current);
+
+    if (nextCompleted) {
+      toast({
+        title: 'Task completed',
+        description: task.title,
+        variant: 'success',
+        action: (
+          <ToastAction
+            altText={`Reopen ${task.title}`}
+            onClick={async () => {
+              const { error: undoError } = await supabase.from('tasks').update({ completed: false }).eq('id', id);
+              if (undoError) {
+                toast({ title: 'Could not reopen task', description: undoError.message, variant: 'destructive' });
+                return;
+              }
+              await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+              toast({ title: 'Task reopened', description: task.title, variant: 'info' });
+            }}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
+    }
+
     await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
   };
 
   const deleteTask = async (id: string) => {
+    const task = tasks.find((row) => row.id === id);
+    if (!task) return;
+
     if (plannerNeedsApproval && selectedClient?.linked_user_id) {
-      const task = tasks.find((row) => row.id === id);
-      if (!task) return;
       await submitPlannerChangeRequest({
         clientId: selectedClient.id,
         coupleUserId: selectedClient.linked_user_id,
@@ -458,8 +510,40 @@ export default function Tasks() {
       });
       return;
     }
-    await supabase.from('tasks').delete().eq('id', id);
-    await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+    queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
+      ...current,
+      tasks: current.tasks.filter((row) => row.id !== id),
+    } : current);
+    const deletionTimer = window.setTimeout(async () => {
+      const { error } = await supabase.from('tasks').delete().eq('id', id);
+      if (error) {
+        await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+        toast({ title: 'Could not remove task', description: error.message, variant: 'destructive' });
+      }
+    }, 5_500);
+
+    toast({
+      title: 'Task removed',
+      description: task.title,
+      variant: 'info',
+      duration: 6_000,
+      action: (
+        <ToastAction
+          altText={`Restore ${task.title}`}
+          onClick={() => {
+            window.clearTimeout(deletionTimer);
+            queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
+              ...current,
+              tasks: [...current.tasks, task],
+            } : current);
+            setSelectedTaskId(task.id);
+            toast({ title: 'Task restored', description: task.title, variant: 'success' });
+          }}
+        >
+          Undo
+        </ToastAction>
+      ),
+    });
   };
 
   const pending = tasks.filter((task) => !task.completed);
@@ -768,7 +852,12 @@ export default function Tasks() {
     const isUrgent = isUrgentTask(t);
 
     return (
-      <button
+      <motion.button
+        layout
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
         type="button"
         onClick={() => setSelectedTaskId(t.id)}
         className={cn(
@@ -838,7 +927,7 @@ export default function Tasks() {
             </div>
           </div>
         </div>
-      </button>
+      </motion.button>
     );
   };
 
@@ -1182,8 +1271,9 @@ export default function Tasks() {
                   type="submit"
                   className="w-full"
                   disabled={submittingTask}
-                  status={submittingTask ? 'loading' : 'idle'}
+                  status={submittingTask ? 'loading' : taskAdded ? 'success' : 'idle'}
                   loadingText="Adding task"
+                  successText={plannerNeedsApproval ? 'Request sent' : 'Task added'}
                 >
                   Add Task
                 </Button>
@@ -1324,9 +1414,11 @@ export default function Tasks() {
                       <Badge variant="outline" className="rounded-full">{group.tasks.length}</Badge>
                     </div>
                     <div className="space-y-3">
+                      <AnimatePresence initial={false} mode="popLayout">
                       {group.tasks.map((task) => (
                         <TaskRow key={task.id} t={task} isDone={task.completed} />
                       ))}
+                      </AnimatePresence>
                     </div>
                   </div>
                 ))}

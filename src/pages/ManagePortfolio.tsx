@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { useToast } from '@/hooks/use-toast';
 import { Heart, Plus, Trash2, Copy, ExternalLink, Star, Loader2, Eye, Tag, X } from 'lucide-react';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 
 const STYLE_SUGGESTIONS = ['Garden', 'Church', 'Beach', 'Traditional', 'Modern', 'Rustic', 'Luxury', 'Intimate', 'Outdoor', 'Cultural'];
 
@@ -52,6 +53,7 @@ export default function ManagePortfolio() {
   const { user, profile } = useAuth();
   const { selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [vendors, setVendors] = useState<PortfolioVendor[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -208,9 +210,19 @@ export default function ManagePortfolio() {
     }
   };
 
-  const removeVendor = async (id: string) => {
-    await supabase.from('portfolio_vendors').delete().eq('id', id);
-    setVendors(vendors.filter(v => v.id !== id));
+  const removeVendor = (id: string) => {
+    const vendor = vendors.find((item) => item.id === id);
+    if (!vendor) return;
+    scheduleDelete({
+      id,
+      title: 'Portfolio vendor removed',
+      description: `${vendor.vendor_name} was removed from this portfolio.`,
+      commit: async () => {
+        const { error } = await supabase.from('portfolio_vendors').delete().eq('id', id);
+        if (error) throw error;
+      },
+      onCommit: () => setVendors((current) => current.filter((item) => item.id !== id)),
+    });
   };
 
   const submitReview = async () => {
@@ -236,9 +248,19 @@ export default function ManagePortfolio() {
     }
   };
 
-  const deleteReview = async (id: string) => {
-    await supabase.from('vendor_reviews').delete().eq('id', id);
-    setReviews(reviews.filter(r => r.id !== id));
+  const deleteReview = (id: string) => {
+    const review = reviews.find((item) => item.id === id);
+    if (!review) return;
+    scheduleDelete({
+      id,
+      title: 'Review removed',
+      description: 'The vendor review was removed from this portfolio.',
+      commit: async () => {
+        const { error } = await supabase.from('vendor_reviews').delete().eq('id', id);
+        if (error) throw error;
+      },
+      onCommit: () => setReviews((current) => current.filter((item) => item.id !== id)),
+    });
   };
 
   const copyShareLink = () => {
@@ -529,7 +551,7 @@ export default function ManagePortfolio() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {vendors.map(v => (
+                  {vendors.filter((vendor) => !pendingDeleteIds.has(vendor.id)).map(v => (
                     <div key={v.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                       <div>
                         <p className="font-medium text-card-foreground text-sm">{v.vendor_name}</p>
@@ -599,7 +621,7 @@ export default function ManagePortfolio() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {reviews.map(r => {
+                  {reviews.filter((review) => !pendingDeleteIds.has(review.id)).map(r => {
                     const vendor = vendors.find(v => v.vendor_listing_id === r.vendor_listing_id);
                     return (
                       <div key={r.id} className="rounded-lg border border-border p-4">

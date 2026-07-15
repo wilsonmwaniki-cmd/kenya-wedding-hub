@@ -49,6 +49,7 @@ import { hasActiveBetaTrial } from '@/lib/betaTrial';
 import { readPendingVendorClaim } from '@/lib/vendorClaimState';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { normalizeHumanName } from '@/lib/names';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 
 type CommitteeMember = Tables<'wedding_committee_members'>;
 type AccountPurpose = 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other';
@@ -66,6 +67,7 @@ const accountPurposeOptions: Array<{ value: AccountPurpose; label: string }> = [
 export default function ProfileSettings() {
   const { user, profile, updateProfile, signOut, deviceSessions, signOutOtherDevices } = useAuth();
   const { toast } = useToast();
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
@@ -80,7 +82,6 @@ export default function ProfileSettings() {
   const [savingCommitteeMember, setSavingCommitteeMember] = useState(false);
   const [committeeFormErrors, setCommitteeFormErrors] = useState<Record<string, string>>({});
   const [committeeSubmitError, setCommitteeSubmitError] = useState<string | null>(null);
-  const [deletingCommitteeMemberId, setDeletingCommitteeMemberId] = useState<string | null>(null);
   const [committeeMemberForm, setCommitteeMemberForm] = useState({
     full_name: '',
     phone: '',
@@ -761,18 +762,19 @@ export default function ProfileSettings() {
     }
   };
 
-  const removeCommitteeMember = async (memberId: string) => {
-    setDeletingCommitteeMemberId(memberId);
-    try {
-      const { error } = await supabase.from('wedding_committee_members').delete().eq('id', memberId);
-      if (error) throw error;
-      await loadCommitteeMembers();
-      toast({ title: 'Committee member removed' });
-    } catch (err: any) {
-      toast({ title: 'Failed to remove committee member', description: err.message, variant: 'destructive' });
-    } finally {
-      setDeletingCommitteeMemberId(null);
-    }
+  const removeCommitteeMember = (memberId: string) => {
+    const member = committeeMembers.find((item) => item.id === memberId);
+    if (!member) return;
+    scheduleDelete({
+      id: memberId,
+      title: 'Committee member removed',
+      description: `${member.full_name} was removed from the committee.`,
+      commit: async () => {
+        const { error } = await supabase.from('wedding_committee_members').delete().eq('id', memberId);
+        if (error) throw error;
+      },
+      onCommit: loadCommitteeMembers,
+    });
   };
 
   const repairWeddingSetup = async () => {
@@ -1902,12 +1904,12 @@ export default function ProfileSettings() {
 
                 <div className="space-y-3">
                   {committeeLoading && <p className="text-sm text-muted-foreground">Loading committee members...</p>}
-                  {!committeeLoading && committeeMembers.length === 0 && (
+                  {!committeeLoading && committeeMembers.filter((member) => !pendingDeleteIds.has(member.id)).length === 0 && (
                     <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
                       No committee members added yet.
                     </div>
                   )}
-                  {committeeMembers.map((member) => (
+                  {committeeMembers.filter((member) => !pendingDeleteIds.has(member.id)).map((member) => (
                     <div key={member.id} className="flex items-start justify-between gap-4 rounded-lg border border-border/70 bg-background px-4 py-3">
                       <div className="space-y-1">
                         <p className="font-medium text-foreground">{member.full_name}</p>
@@ -1925,9 +1927,9 @@ export default function ProfileSettings() {
                         variant="ghost"
                         size="icon"
                         onClick={() => removeCommitteeMember(member.id)}
-                        disabled={deletingCommitteeMemberId === member.id}
+                        aria-label={`Remove ${member.full_name}`}
                       >
-                        {deletingCommitteeMemberId === member.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ))}

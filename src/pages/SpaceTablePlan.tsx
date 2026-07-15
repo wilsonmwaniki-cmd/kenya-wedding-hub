@@ -39,6 +39,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { getMyWeddingOwnershipSummaryFromTables } from '@/lib/weddingWorkspace';
@@ -830,6 +831,7 @@ export default function SpaceTablePlan() {
   const { user, profile } = useAuth();
   const { selectedClient } = usePlanner();
   const { toast } = useToast();
+  const { scheduleDelete } = useDeferredDelete();
   const assistantPanel = useAssistantPanel();
   const db = supabase as any;
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -839,6 +841,7 @@ export default function SpaceTablePlan() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [contextError, setContextError] = useState<string | null>(null);
   const [weddingContext, setWeddingContext] = useState<WeddingContext | null>(null);
@@ -1016,6 +1019,20 @@ export default function SpaceTablePlan() {
       setTutorialStepIndex(0);
     }
   }, []);
+
+  useEffect(() => {
+    setSaved(false);
+  }, [
+    canvasSize.height,
+    canvasSize.width,
+    eventLabel,
+    objects,
+    planName,
+    planNotes,
+    planStatus,
+    selectedVenueSpaceId,
+    spaceType,
+  ]);
 
   const closeTutorial = (markSeen = true) => {
     if (typeof window !== 'undefined' && markSeen) {
@@ -1559,6 +1576,41 @@ export default function SpaceTablePlan() {
     );
   };
 
+  const assignGuestToSelectedSeat = (guestId: string) => {
+    if (!selectedObjectId || !selectedSeatLabel) return;
+
+    setObjects((current) => current.map((object) => {
+      if (!isTableObject(object)) return object;
+
+      if (guestId === 'unassigned') {
+        if (object.id !== selectedObjectId) return object;
+        return {
+          ...object,
+          tableDetails: {
+            ...object.tableDetails,
+            assignments: object.tableDetails.assignments.filter((assignment) => assignment.seatLabel !== selectedSeatLabel),
+          },
+        };
+      }
+
+      const assignmentsWithoutGuest = object.tableDetails.assignments.filter((assignment) => assignment.guestId !== guestId);
+      if (object.id !== selectedObjectId) {
+        return { ...object, tableDetails: { ...object.tableDetails, assignments: assignmentsWithoutGuest } };
+      }
+
+      return {
+        ...object,
+        tableDetails: {
+          ...object.tableDetails,
+          assignments: [
+            ...assignmentsWithoutGuest.filter((assignment) => assignment.seatLabel !== selectedSeatLabel),
+            { id: makeId(), guestId, seatLabel: selectedSeatLabel, notes: '' },
+          ],
+        },
+      };
+    }));
+  };
+
   const setZoomByDirection = (direction: 'in' | 'out') => {
     setZoom((current) => {
       const currentIndex = direction === 'in'
@@ -1618,9 +1670,29 @@ export default function SpaceTablePlan() {
 
   const deleteSelectedObject = () => {
     if (!selectedObjectId) return;
+    const objectId = selectedObjectId;
+    const objectIndex = objects.findIndex((object) => object.id === objectId);
+    const removedObject = objects[objectIndex];
+    if (!removedObject) return;
 
-    setObjects((current) => current.filter((object) => object.id !== selectedObjectId));
+    setObjects((current) => current.filter((object) => object.id !== objectId));
     setSelectedObjectId(null);
+    setSelectedSeatLabel(null);
+    scheduleDelete({
+      id: objectId,
+      title: `${removedObject.label} removed`,
+      description: 'The layout object was removed from this draft.',
+      commit: async () => undefined,
+      onUndo: () => {
+        setObjects((current) => {
+          if (current.some((object) => object.id === objectId)) return current;
+          const next = [...current];
+          next.splice(Math.min(objectIndex, next.length), 0, removedObject);
+          return normalizeObjectOrder(next);
+        });
+        setSelectedObjectId(objectId);
+      },
+    });
   };
 
   const duplicateSelectedObject = () => {
@@ -1891,6 +1963,7 @@ export default function SpaceTablePlan() {
   const savePlan = async () => {
     if (!user?.id || !weddingContext?.weddingId) return;
 
+    setSaved(false);
     setSaving(true);
 
     try {
@@ -2034,6 +2107,7 @@ export default function SpaceTablePlan() {
       if (refreshError) throw refreshError;
 
       setPlans((refreshedPlans as PlanSummary[] | null) ?? []);
+      setSaved(true);
 
       toast({
         title: 'Plan saved',
@@ -2116,8 +2190,16 @@ export default function SpaceTablePlan() {
               </Button>
             </HoverTip>
             <HoverTip content="Save your latest changes to this draft.">
-              <Button size="sm" className="h-8 gap-1.5 px-3 text-xs" onClick={savePlan} disabled={saving}>
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 px-3 text-xs"
+                onClick={savePlan}
+                disabled={saving}
+                status={saving ? 'loading' : saved ? 'success' : 'idle'}
+                loadingText="Saving"
+                successText="Saved"
+              >
+                <Save className="h-3.5 w-3.5" />
                 Save draft
               </Button>
             </HoverTip>
@@ -2413,6 +2495,34 @@ export default function SpaceTablePlan() {
                         placeholder="Setup note for decorators, ushers, or vendors"
                       />
                     </div>
+
+                    {isTableObject(selectedObject) && selectedSeatLabel ? (() => {
+                      const currentAssignment = selectedObject.tableDetails.assignments.find((assignment) => assignment.seatLabel === selectedSeatLabel);
+                      const currentGuest = currentAssignment ? guestLookup.get(currentAssignment.guestId) : null;
+                      return (
+                        <div className="semantic-surface-info space-y-2 rounded-2xl border p-3 xl:col-span-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Seat {selectedSeatLabel}</p>
+                              <p className="text-xs text-muted-foreground">Assigning a guest updates table capacity immediately.</p>
+                            </div>
+                            <Badge variant={currentGuest ? 'success' : 'info'}>{currentGuest ? 'Assigned' : 'Open seat'}</Badge>
+                          </div>
+                          <Select value={currentAssignment?.guestId ?? 'unassigned'} onValueChange={assignGuestToSelectedSeat}>
+                            <SelectTrigger className="bg-background">
+                              <SelectValue placeholder="Choose a guest" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">Leave seat open</SelectItem>
+                              {currentGuest ? <SelectItem value={currentGuest.id}>{currentGuest.name}</SelectItem> : null}
+                              {planHealth.unassignedGuests.map((guest) => (
+                                <SelectItem key={guest.id} value={guest.id}>{guest.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })() : null}
                   </div>
                 )}
                 {showTutorial && tutorialStepIndex === 2 ? (
@@ -2620,9 +2730,9 @@ export default function SpaceTablePlan() {
                                     setSelectedSeatLabel(seat.label);
                                   }}
                                   className={cn(
-                                    'absolute h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border text-[10px] font-semibold shadow-sm transition',
+                                    'absolute h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border text-[10px] font-semibold shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ease-zania motion-reduce:transition-none',
                                     assignment
-                                      ? 'border-emerald-400 bg-emerald-100 text-emerald-950'
+                                      ? 'scale-105 border-emerald-400 bg-emerald-100 text-emerald-950'
                                       : 'border-white/90 bg-white/90 text-stone-600',
                                     selectedObjectId === object.id && selectedSeatLabel === seat.label ? 'ring-2 ring-primary/40' : '',
                                   )}

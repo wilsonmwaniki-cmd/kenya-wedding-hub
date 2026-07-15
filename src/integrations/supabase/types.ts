@@ -1409,6 +1409,76 @@ export type Database = {
           },
         ]
       }
+      workspace_vendor_task_suggestions: {
+        Row: {
+          accepted_task_id: string | null
+          created_at: string
+          created_by_user_id: string
+          description: string | null
+          id: string
+          resolved_at: string | null
+          resolved_by_user_id: string | null
+          status: string
+          suggested_due_date: string | null
+          title: string
+          updated_at: string
+          vendor_id: string
+          wedding_id: string
+        }
+        Insert: {
+          accepted_task_id?: string | null
+          created_at?: string
+          created_by_user_id: string
+          description?: string | null
+          id?: string
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          status?: string
+          suggested_due_date?: string | null
+          title: string
+          updated_at?: string
+          vendor_id: string
+          wedding_id: string
+        }
+        Update: {
+          accepted_task_id?: string | null
+          created_at?: string
+          created_by_user_id?: string
+          description?: string | null
+          id?: string
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          status?: string
+          suggested_due_date?: string | null
+          title?: string
+          updated_at?: string
+          vendor_id?: string
+          wedding_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_vendor_task_suggestions_accepted_task_id_fkey"
+            columns: ["accepted_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_vendor_task_suggestions_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_vendor_task_suggestions_wedding_id_fkey"
+            columns: ["wedding_id"]
+            isOneToOne: false
+            referencedRelation: "weddings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspace_vendor_updates: {
         Row: {
           archived_at: string | null
@@ -1686,6 +1756,10 @@ export type Database = {
       }
     }
     Functions: {
+      accept_vendor_workspace_task_suggestion: {
+        Args: { target_suggestion_id: string }
+        Returns: Database["public"]["Tables"]["workspace_vendor_task_suggestions"]["Row"]
+      }
       admin_dashboard_metrics: { Args: never; Returns: Json }
       admin_list_vendor_reputation_reviews: {
         Args: {
@@ -1773,6 +1847,19 @@ export type Database = {
           _source_vendor_id: string | null
         }
         Returns: boolean
+      }
+      create_vendor_workspace_task_suggestion: {
+        Args: {
+          description_input?: string | null
+          suggested_due_date_input?: string | null
+          target_vendor_id: string
+          title_input: string
+        }
+        Returns: Database["public"]["Tables"]["workspace_vendor_task_suggestions"]["Row"]
+      }
+      dismiss_vendor_workspace_task_suggestion: {
+        Args: { target_suggestion_id: string }
+        Returns: Database["public"]["Tables"]["workspace_vendor_task_suggestions"]["Row"]
       }
       ensure_my_collaboration_code: {
         Args: never

@@ -30,6 +30,7 @@ import { CalendarDays, Copy, Download, ExternalLink, Loader2, MessageCircle, Plu
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 
 type ContributionRound = {
   id: string;
@@ -153,6 +154,7 @@ export default function Contributions() {
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const db = supabase as any;
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
@@ -261,10 +263,11 @@ export default function Contributions() {
   }, [user, dataOrFilter]);
 
   const filteredRows = useMemo(() => {
-    if (selectedRoundId === 'all') return rows;
-    if (selectedRoundId === 'unassigned') return rows.filter((row) => !row.round_id);
-    return rows.filter((row) => row.round_id === selectedRoundId);
-  }, [rows, selectedRoundId]);
+    const visibleRows = rows.filter((row) => !pendingDeleteIds.has(row.id));
+    if (selectedRoundId === 'all') return visibleRows;
+    if (selectedRoundId === 'unassigned') return visibleRows.filter((row) => !row.round_id);
+    return visibleRows.filter((row) => row.round_id === selectedRoundId);
+  }, [pendingDeleteIds, rows, selectedRoundId]);
 
   const summary = useMemo(() => summarizeContributions(filteredRows), [filteredRows]);
   const currentRound = useMemo(
@@ -687,13 +690,18 @@ export default function Contributions() {
       }
       return;
     }
-    const { error } = await db.from('wedding_contributions').delete().eq('id', id);
-    if (error) {
-      toast({ title: 'Could not delete contribution', description: error.message, variant: 'destructive' });
-      return;
-    }
-    toast({ title: 'Contribution removed' });
-    await load();
+    const row = rows.find((item) => item.id === id);
+    if (!row) return;
+    scheduleDelete({
+      id,
+      title: 'Contribution removed',
+      description: `${row.contributor_name}'s contribution was removed.`,
+      commit: async () => {
+        const { error } = await db.from('wedding_contributions').delete().eq('id', id);
+        if (error) throw error;
+      },
+      onCommit: load,
+    });
   };
 
   const exportContributions = () => {

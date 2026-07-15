@@ -63,10 +63,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <Comp
         className={cn(
           buttonVariants({ variant, size, className }),
-          successful && "border-success/45 bg-success text-success-foreground hover:bg-success",
+          successful && "border-success/45 bg-success text-success-foreground hover:bg-success disabled:opacity-100",
         )}
         ref={ref}
-        disabled={disabled || busy}
+        disabled={disabled || busy || successful}
         aria-busy={busy || undefined}
         data-status={status}
         {...props}

@@ -14,6 +14,8 @@ import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import InfoTip from '@/components/InfoTip';
+import { FormFieldSuccess } from '@/components/FormFeedback';
+import AnimatedNumber from '@/components/AnimatedNumber';
 import { getWeddingInviteDeliveryFailureMessage, sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
 import {
   approvePlannerCodeLinkRequest,
@@ -97,10 +99,12 @@ export default function MyConnections() {
   const [ownedWedding, setOwnedWedding] = useState<OwnedWeddingWorkspace | null>(null);
   const [partnerEmailInput, setPartnerEmailInput] = useState('');
   const [partnerInviteSubmitting, setPartnerInviteSubmitting] = useState(false);
+  const [partnerInviteSent, setPartnerInviteSent] = useState(false);
   const [committeeWorkspace, setCommitteeWorkspace] = useState<CommitteeWorkspaceAccess | null>(null);
   const [committeeEmailInput, setCommitteeEmailInput] = useState('');
   const [committeeInviteRole, setCommitteeInviteRole] = useState<CommitteeInviteRole>('committee_member');
   const [committeeInviteSubmitting, setCommitteeInviteSubmitting] = useState(false);
+  const [committeeInviteSent, setCommitteeInviteSent] = useState(false);
   const committeeInviteInputRef = useRef<HTMLInputElement | null>(null);
 
   const effectiveCoupleView = profile?.role === 'couple' || (isSuperAdmin && rolePreview === 'couple');
@@ -495,6 +499,7 @@ export default function MyConnections() {
       }
 
       await loadOwnedWeddingWorkspace();
+      setPartnerInviteSent(true);
       toast({
         title: ownedWedding.partnerStatus === 'pending' ? 'Partner invite refreshed' : 'Partner invite sent',
         description: deliveryDescription,
@@ -540,6 +545,7 @@ export default function MyConnections() {
 
       setCommitteeEmailInput('');
       await loadCommitteeWorkspaceAccess(ownedWedding.weddingId);
+      setCommitteeInviteSent(true);
       toast({
         title: committeeInviteRole === 'committee_chair' ? 'Committee chair invited' : 'Committee member invited',
         description,
@@ -581,12 +587,12 @@ export default function MyConnections() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Connected</p>
-              <p className="mt-2 text-3xl font-semibold text-foreground">{activeConnections}</p>
+              <AnimatedNumber value={activeConnections} className="mt-2 block text-3xl font-semibold text-foreground" />
               <p className="mt-1 text-sm text-muted-foreground">active workspace relationships</p>
             </div>
             <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Pending</p>
-              <p className="mt-2 text-3xl font-semibold text-foreground">{pendingConnections + pendingCommitteeInvites}</p>
+              <AnimatedNumber value={pendingConnections + pendingCommitteeInvites} className="mt-2 block text-3xl font-semibold text-foreground" />
               <p className="mt-1 text-sm text-muted-foreground">requests or invites still waiting</p>
             </div>
             <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
@@ -712,23 +718,29 @@ export default function MyConnections() {
                     id="partner-email-input"
                     type="email"
                     value={partnerEmailInput}
-                    onChange={(event) => setPartnerEmailInput(event.target.value)}
+                    onChange={(event) => {
+                      setPartnerEmailInput(event.target.value);
+                      setPartnerInviteSent(false);
+                    }}
                     placeholder={ownedWedding.partnerRole === 'groom' ? 'groom@example.com' : 'bride@example.com'}
                   />
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Button
                     className="sm:w-auto"
-                    disabled={partnerInviteSubmitting || !partnerEmailInput.trim()}
+                    disabled={partnerInviteSubmitting || (!partnerInviteSent && !partnerEmailInput.trim())}
                     onClick={sendPartnerInvite}
+                    status={partnerInviteSubmitting ? 'loading' : partnerInviteSent ? 'success' : 'idle'}
+                    loadingText="Sending invite"
+                    successText="Invite sent"
                   >
-                    {partnerInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     {ownedWedding.partnerStatus === 'pending' ? 'Resend partner invite' : 'Send partner invite'}
                   </Button>
                   <p className="text-xs text-muted-foreground">
                     Owners share the same wedding workspace.
                   </p>
                 </div>
+                <FormFieldSuccess message={partnerInviteSent ? 'The pending invite is now visible in this wedding workspace.' : null} />
               </div>
             </div>
 
@@ -771,7 +783,10 @@ export default function MyConnections() {
                     type="email"
                     placeholder="committee.member@example.com"
                     value={committeeEmailInput}
-                    onChange={(event) => setCommitteeEmailInput(event.target.value)}
+                    onChange={(event) => {
+                      setCommitteeEmailInput(event.target.value);
+                      setCommitteeInviteSent(false);
+                    }}
                     disabled={!committeeHasSeats}
                   />
                 </div>
@@ -797,16 +812,20 @@ export default function MyConnections() {
                     disabled={
                       committeeInviteSubmitting ||
                       !committeeHasSeats ||
-                      !committeeEmailInput.trim() ||
+                      (!committeeInviteSent && !committeeEmailInput.trim()) ||
                       (committeeWorkspace?.seatsRemaining ?? 0) <= 0
                     }
                     onClick={sendCommitteeInvite}
+                    status={committeeInviteSubmitting ? 'loading' : committeeInviteSent ? 'success' : 'idle'}
+                    loadingText="Sending invite"
+                    successText="Invite sent"
                   >
-                    {committeeInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Send committee invite
                   </Button>
                 </div>
               </div>
+
+              <FormFieldSuccess message={committeeInviteSent ? 'The committee seat is reserved and the pending invite is listed below.' : null} />
 
               {!committeeHasSeats && (
                 <p className="mt-3 rounded-xl border border-dashed border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-3 py-2 text-xs leading-5 text-warning">

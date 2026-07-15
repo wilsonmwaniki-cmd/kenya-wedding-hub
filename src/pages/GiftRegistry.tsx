@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { normalizeExternalUrl } from '@/lib/security';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 
 type RegistryItem = {
   id: string;
@@ -82,6 +83,7 @@ export default function GiftRegistry() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const { profile, isSuperAdmin, rolePreview } = useAuth();
   const { weddingId, entitlements, couplePlanTier, loading, refresh } = useWeddingEntitlements();
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -380,31 +382,19 @@ export default function GiftRegistry() {
     setActiveItemId(null);
   };
 
-  const handleDeleteItem = async (item: RegistryItem) => {
-    if (!window.confirm(`Remove "${item.title}" from the registry?`)) return;
-
-    setActiveItemId(item.id);
-    const db = supabase as any;
-    const { error } = await db
-      .from('wedding_registry_items')
-      .delete()
-      .eq('id', item.id);
-
-    if (error) {
-      toast({
-        title: 'Could not remove gift',
-        description: error.message || 'There was a problem deleting this registry item.',
-        variant: 'destructive',
-      });
-      setActiveItemId(null);
-      return;
-    }
-
-    setItems((current) => current.filter((entry) => entry.id !== item.id));
-    setActiveItemId(null);
-    toast({
+  const handleDeleteItem = (item: RegistryItem) => {
+    scheduleDelete({
+      id: item.id,
       title: 'Gift removed',
-      description: 'The item was removed from the registry.',
+      description: `${item.title} was removed from the registry.`,
+      commit: async () => {
+        const { error } = await (supabase as any)
+          .from('wedding_registry_items')
+          .delete()
+          .eq('id', item.id);
+        if (error) throw error;
+      },
+      onCommit: () => setItems((current) => current.filter((entry) => entry.id !== item.id)),
     });
   };
 
@@ -615,7 +605,7 @@ export default function GiftRegistry() {
                 <div className="flex min-h-[14rem] items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
                 </div>
-              ) : items.length === 0 ? (
+              ) : items.filter((item) => !pendingDeleteIds.has(item.id)).length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
                   <p className="font-medium text-foreground">No gifts added yet.</p>
                   <p className="mt-2 text-sm text-muted-foreground">
@@ -623,7 +613,7 @@ export default function GiftRegistry() {
                   </p>
                 </div>
               ) : (
-                items.map((item) => {
+                items.filter((item) => !pendingDeleteIds.has(item.id)).map((item) => {
                   const isActiveItem = activeItemId === item.id;
 
                   return (

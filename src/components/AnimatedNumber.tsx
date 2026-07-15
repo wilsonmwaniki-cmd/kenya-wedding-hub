@@ -27,7 +27,7 @@ export default function AnimatedNumber({
       return;
     }
 
-    const duration = 480;
+    const duration = 360;
     const startedAt = performance.now();
     let animationFrame = 0;
 
