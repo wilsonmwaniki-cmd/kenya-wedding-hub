@@ -32,6 +32,7 @@ import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { buildConciergeContext } from '@/lib/conciergeContext';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ToastAction } from '@/components/ui/toast';
+import { useAssistantPageContext } from '@/contexts/AssistantPanelContext';
 
 interface Task {
   id: string;
@@ -704,6 +705,7 @@ export default function Tasks() {
     contextSource: taskViewMode === 'completed' ? 'completed_tasks_summary' : 'pending_tasks_summary',
     conciergeContext: tasksConciergeContext,
   });
+  useAssistantPageContext(tasksConciergeContext);
 
   const filteredPending = useMemo(
     () => pending.filter(taskMatchesWorkspaceFilters).sort(sortTasksByDateAndPriority),
@@ -1316,6 +1318,7 @@ export default function Tasks() {
               dismissible
               onDismiss={() => tasksAssistant.setDismissed(true)}
               onPromptClick={(prompt) => tasksAssistant.runPrompt(prompt)}
+              conciergeContext={tasksConciergeContext}
             />
           )}
           <div className="grid gap-4 md:grid-cols-3">

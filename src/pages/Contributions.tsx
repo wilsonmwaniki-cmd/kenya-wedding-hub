@@ -31,6 +31,8 @@ import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { useDeferredDelete } from '@/hooks/useDeferredDelete';
+import { useAssistantPageContext } from '@/contexts/AssistantPanelContext';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 type ContributionRound = {
   id: string;
@@ -309,6 +311,33 @@ export default function Contributions() {
       : fundingGap > 0
         ? 'Review the remaining funding gap'
         : 'Share the contribution summary';
+  const contributionsConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Contributions',
+    role: profile?.role,
+    weddingName: workspaceName,
+    primaryGoal: 'Help the user follow up pledges and understand how contributions affect the wedding funding gap.',
+    nextBestAction: contributionPrimaryAction,
+    facts: [
+      ['Contribution records', filteredRows.length],
+      ['Pending pledges', pendingRows.length],
+      ['Support recorded', `KES ${summary.totalSupport.toLocaleString()}`],
+      ['Funding target', `KES ${fundingTarget.toLocaleString()}`],
+      ['Funding gap', `KES ${fundingGap.toLocaleString()}`],
+      ['Active rounds', activeRounds],
+    ],
+    risks: [pendingRows.length > 0 ? `${pendingRows.length} pledges still have an outstanding amount.` : null],
+  }), [
+    activeRounds,
+    contributionPrimaryAction,
+    filteredRows.length,
+    fundingGap,
+    fundingTarget,
+    pendingRows.length,
+    profile?.role,
+    summary.totalSupport,
+    workspaceName,
+  ]);
+  useAssistantPageContext(contributionsConciergeContext);
 
   const copyText = async (value: string, successTitle: string, successDescription?: string) => {
     try {

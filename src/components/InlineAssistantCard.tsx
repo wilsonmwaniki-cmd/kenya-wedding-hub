@@ -25,6 +25,7 @@ export interface InlineAssistantCardProps {
   onDismiss?: () => void;
   onPromptClick?: (prompt: string) => void | Promise<void>;
   fullAssistantPrompt?: string | null;
+  conciergeContext?: string | null;
   fullAssistantHref?: string;
   className?: string;
 }
@@ -45,6 +46,7 @@ export default function InlineAssistantCard({
   onDismiss,
   onPromptClick,
   fullAssistantPrompt,
+  conciergeContext,
   fullAssistantHref = '/ai-chat',
   className,
 }: InlineAssistantCardProps) {
@@ -131,7 +133,7 @@ export default function InlineAssistantCard({
                   type="button"
                   variant="ghost"
                   className="gap-2"
-                  onClick={() => assistantPanel.openAssistant(panelPrompt)}
+                  onClick={() => assistantPanel.openAssistant(panelPrompt, conciergeContext)}
                 >
                   Open assistant panel
                 </Button>

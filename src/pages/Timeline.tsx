@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { useAssistantPageContext, useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import InfoTip from '@/components/InfoTip';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -21,6 +21,7 @@ import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { normalizeInvokeError } from '@/lib/invokeErrors';
 import { useDeferredDelete } from '@/hooks/useDeferredDelete';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 const VENDOR_ROLES = [
   { value: 'photographer', label: 'Photographer', icon: '📸' },
@@ -169,6 +170,34 @@ export default function Timeline() {
       : instances.length === 1
         ? 'Refine the current wedding flow'
         : 'Keep every timeline version in sync';
+  const timelineConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Timeline',
+    role: isPlanner ? 'planner' : 'couple',
+    primaryGoal: 'Help the user build an executable wedding-day sequence and catch timing or ownership gaps.',
+    nextBestAction: timelineHeroAction,
+    facts: [
+      ['Wedding timelines', instances.length],
+      ['Reusable templates', templates.length],
+      ['Selected timeline', selectedTimeline?.title],
+      ['Events in selected timeline', visibleEvents.length],
+      ['Active share links', shareLinks.filter((link) => isTokenActive(link.expires_at, link.revoked_at)).length],
+    ],
+    risks: [
+      instances.length === 0 ? 'No wedding-day timeline exists yet.' : null,
+      selectedTimeline && visibleEvents.length === 0 ? 'The selected timeline has no events.' : null,
+      selectedTimeline && !selectedTimelineShareActive ? 'The selected timeline has no active share link.' : null,
+    ],
+  }), [
+    instances.length,
+    isPlanner,
+    selectedTimeline,
+    selectedTimelineShareActive,
+    shareLinks,
+    templates.length,
+    timelineHeroAction,
+    visibleEvents.length,
+  ]);
+  useAssistantPageContext(timelineConciergeContext);
 
   // Load timelines
   const loadTimelines = async () => {
@@ -788,6 +817,7 @@ export default function Timeline() {
                       onClick={() =>
                         assistantPanel.openAssistant(
                           `Help me build a practical wedding-day timeline for "${selectedTimeline.title}" with prep, ceremony, photos, reception, and wrap-up.`,
+                          timelineConciergeContext,
                         )
                       }
                     >
@@ -1200,6 +1230,7 @@ export default function Timeline() {
                   onClick={() =>
                     assistantPanel.openAssistant(
                       'Help me build a full wedding-day timeline with getting ready, ceremony, photos, reception, and closing flow.',
+                      timelineConciergeContext,
                     )
                   }
                 >

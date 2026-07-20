@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_assistant_memories: {
+        Row: {
+          created_at: string
+          id: string
+          memory_key: string
+          memory_type: string
+          memory_value: Json
+          owner_user_id: string
+          source: string
+          updated_at: string
+          workspace_key: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          memory_key: string
+          memory_type: string
+          memory_value: Json
+          owner_user_id: string
+          source?: string
+          updated_at?: string
+          workspace_key?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          memory_key?: string
+          memory_type?: string
+          memory_value?: Json
+          owner_user_id?: string
+          source?: string
+          updated_at?: string
+          workspace_key?: string
+        }
+        Relationships: []
+      }
       budget_categories: {
         Row: {
           allocated: number
@@ -1864,6 +1900,20 @@ export type Database = {
       ensure_my_collaboration_code: {
         Args: never
         Returns: string
+      }
+      get_ai_usage_status: {
+        Args: never
+        Returns: {
+          add_on_annual_lookup_key: string | null
+          add_on_lookup_key: string | null
+          add_on_separate: boolean
+          ai_enabled: boolean
+          audience: string
+          messages_used: number
+          month_start: string
+          monthly_message_cap: number
+          remaining_messages: number
+        }[]
       }
       get_vendor_price_benchmark: {
         Args: {

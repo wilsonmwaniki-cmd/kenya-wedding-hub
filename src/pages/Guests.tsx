@@ -33,6 +33,8 @@ import { FormFieldError, FormFieldSuccess, FormSubmitError } from '@/components/
 import { sanitizeHtml } from '@/lib/security';
 import { ToastAction } from '@/components/ui/toast';
 import AnimatedNumber from '@/components/AnimatedNumber';
+import { useAssistantPageContext } from '@/contexts/AssistantPanelContext';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
 
@@ -733,6 +735,37 @@ export default function Guests() {
       : pendingGuests > 0
         ? 'Follow up missing contact details'
         : 'Review confirmed seating and VIP groups';
+  const guestsConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Guests',
+    role: profile?.role,
+    primaryGoal: 'Help the user move the guest list from names to confirmed, contactable, seated guests.',
+    nextBestAction: guestPrimaryAction,
+    facts: [
+      ['Guests tracked', guests.length],
+      ['Confirmed', confirmed],
+      ['Pending RSVP', pendingGuests],
+      ['Declined', declinedGuests],
+      ['Guests with email', guestsWithEmail],
+      ['Missing contact details', guestsMissingContact],
+      ['Not assigned to a table', guestsWithoutTables],
+    ],
+    risks: [
+      pendingGuests > 0 ? `${pendingGuests} RSVP responses are still pending.` : null,
+      guestsMissingContact > 0 ? `${guestsMissingContact} guests cannot be contacted yet.` : null,
+      guestsWithoutTables > 0 ? `${guestsWithoutTables} active guests are not assigned to tables.` : null,
+    ],
+  }), [
+    confirmed,
+    declinedGuests,
+    guestPrimaryAction,
+    guests.length,
+    guestsMissingContact,
+    guestsWithEmail,
+    guestsWithoutTables,
+    pendingGuests,
+    profile?.role,
+  ]);
+  useAssistantPageContext(guestsConciergeContext);
 
   const selectedGuest = useMemo(
     () => visibleGuests.find((guest) => guest.id === selectedGuestId) ?? null,

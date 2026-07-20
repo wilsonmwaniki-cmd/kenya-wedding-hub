@@ -19,13 +19,15 @@ import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorP
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { useAssistantPageContext, useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { getMyWeddingOwnershipSummary, type MyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
 import { summarizeContributions, type ContributionSummaryRow } from '@/lib/contributions';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 import { buildConciergeContext } from '@/lib/conciergeContext';
 import AnimatedNumber from '@/components/AnimatedNumber';
+import { buildConciergeNudges } from '@/lib/conciergeNudges';
+import { usePersistentAssistantDismissal } from '@/hooks/usePersistentAssistantDismissal';
 
 interface DashboardStats {
   totalBudget: number;
@@ -34,6 +36,8 @@ interface DashboardStats {
   completedTasks: number;
   totalGuests: number;
   confirmedGuests: number;
+  stalledRsvps: number;
+  overdueTasks: number;
   totalVendors: number;
 }
 
@@ -115,6 +119,8 @@ const EMPTY_DASHBOARD_WORKSPACE_DATA: DashboardWorkspaceData = {
     completedTasks: 0,
     totalGuests: 0,
     confirmedGuests: 0,
+    stalledRsvps: 0,
+    overdueTasks: 0,
     totalVendors: 0,
   },
   upcomingEvents: [],
@@ -131,7 +137,7 @@ async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWo
   const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows, contributions, timelines] = await Promise.all([
     supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope, visibility').or(dataOrFilter),
     supabase.from('tasks').select('id, title, due_date, completed, visibility, phase').or(dataOrFilter),
-    supabase.from('guests').select('rsvp_status').or(dataOrFilter),
+    supabase.from('guests').select('rsvp_status, created_at').or(dataOrFilter),
     supabase.from('vendors').select('id, name, category, selection_status, payment_due_date, payment_status').or(dataOrFilter),
     supabase
       .from('vendors')
@@ -193,6 +199,7 @@ async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWo
   const guestRows = (guests.data ?? []) as any[];
   const vendorRows = (vendors.data ?? []) as any[];
   const contributionDataRows = (contributions.data ?? []) as any[];
+  const stalledRsvpCutoff = Date.now() - (14 * 86400000);
 
   return {
     stats: {
@@ -202,6 +209,10 @@ async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWo
       completedTasks: taskRows.filter((task) => task.completed).length,
       totalGuests: guestRows.length,
       confirmedGuests: guestRows.filter((guest) => guest.rsvp_status === 'confirmed').length,
+      stalledRsvps: guestRows.filter((guest) =>
+        guest.rsvp_status === 'pending' && new Date(guest.created_at).getTime() <= stalledRsvpCutoff
+      ).length,
+      overdueTasks: taskRows.filter((task) => !task.completed && task.due_date && task.due_date < today).length,
       totalVendors: vendorRows.length,
     },
     budgetDigestRows: budgetRows.map((row) => ({
@@ -271,7 +282,6 @@ export default function Dashboard() {
   const showPlanningDigest = profile?.role === 'couple' || isCommittee;
   const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
   const labsEnabled = isLabsEnabled();
-  const [dashboardNudgeDismissed, setDashboardNudgeDismissed] = useState(false);
 
   const dashboardQuery = useQuery({
     queryKey: ['dashboard', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null],
@@ -322,16 +332,6 @@ export default function Dashboard() {
 
   const ownedWeddingSummary = ownershipSummaryQuery.data ?? null;
   const pageLoading = dashboardQuery.isLoading || ownershipSummaryQuery.isLoading;
-  const dashboardRefreshing = dashboardQuery.isFetching && !dashboardQuery.isLoading;
-
-  useEffect(() => {
-    if (!dashboardRefreshing) {
-      return;
-    }
-
-    setDashboardNudgeDismissed(false);
-  }, [dashboardRefreshing]);
-
   const weddingDate = isPlanner && selectedClient
     ? (selectedClient.wedding_date ? new Date(selectedClient.wedding_date) : null)
     : ((profile?.wedding_date || ownedWeddingSummary?.weddingDate)
@@ -717,33 +717,26 @@ export default function Dashboard() {
     surface: 'weekly_focus_card',
     conciergeContext: dashboardConciergeContext,
   });
-  const dashboardNudge = useMemo(() => {
-    if (pendingTasks.length >= 3) {
-      return {
-        title: `${pendingTasks.length} tasks still need attention`,
-        body: 'Get a quick catch-up plan before the week gets away from you.',
-        prompt: 'Turn the overdue and pending tasks into a simple catch-up plan for this week.',
-      };
-    }
-
-    if (overspentWeddingCategories[0] || nearLimitCategories[0]) {
-      return {
-        title: 'Budget pressure is building',
-        body: 'A few categories are over or close to the limit. Get a quick read before you keep spending.',
-        prompt: 'Review the dashboard and tell me where budget pressure needs attention first.',
-      };
-    }
-
-    if (paymentsDueSoon.length > 0) {
-      return {
-        title: `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due soon`,
-        body: 'Check what needs attention before a deadline slips.',
-        prompt: 'Review upcoming vendor payment deadlines and tell me what needs action first.',
-      };
-    }
-
-    return null;
-  }, [nearLimitCategories, overspentWeddingCategories, paymentsDueSoon.length, pendingTasks.length]);
+  useAssistantPageContext(dashboardConciergeContext);
+  const dashboardNudges = useMemo(() => buildConciergeNudges({
+    overdueTasks: stats.overdueTasks,
+    stalledRsvps: stats.stalledRsvps,
+    overspentCategories: overspentWeddingCategories.length,
+    nearLimitCategories: nearLimitCategories.length,
+    paymentsDueSoon: paymentsDueSoon.length,
+    openVendorFollowUps: vendorActionCount,
+  }), [
+    nearLimitCategories.length,
+    overspentWeddingCategories.length,
+    paymentsDueSoon.length,
+    stats.overdueTasks,
+    stats.stalledRsvps,
+    vendorActionCount,
+  ]);
+  const dashboardNudge = dashboardNudges[0] ?? null;
+  const dashboardNudgeDismissal = usePersistentAssistantDismissal(
+    dashboardNudge ? `dashboard:${dashboardNudge.id}` : null,
+  );
 
   const budgetUsagePercentage = stats.totalBudget > 0
     ? Math.min(Math.round((stats.totalSpent / stats.totalBudget) * 100), 999)
@@ -1032,7 +1025,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {!dashboardNudgeDismissed && dashboardNudge && assistantPanel && (
+      {!dashboardNudgeDismissal.dismissed && dashboardNudge && assistantPanel && (
         <Card className="semantic-surface-info shadow-card">
           <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1044,7 +1037,7 @@ export default function Dashboard() {
                 type="button"
                 size="sm"
                 className="gap-2"
-                onClick={() => assistantPanel.openAssistant(dashboardNudge.prompt)}
+                onClick={() => assistantPanel.openAssistant(dashboardNudge.prompt, dashboardConciergeContext)}
               >
                 Review with AI
               </Button>
@@ -1052,7 +1045,7 @@ export default function Dashboard() {
                 type="button"
                 size="sm"
                 variant="ghost"
-                onClick={() => setDashboardNudgeDismissed(true)}
+                onClick={() => void dashboardNudgeDismissal.dismiss()}
               >
                 Dismiss
               </Button>
@@ -1075,6 +1068,7 @@ export default function Dashboard() {
           dismissible
           onDismiss={() => dashboardAssistant.setDismissed(true)}
           onPromptClick={(prompt) => dashboardAssistant.runPrompt(prompt)}
+          conciergeContext={dashboardConciergeContext}
           emptyStateTitle="Get a quick planning read"
           emptyStateBody="Ask for a weekly focus, budget watch, or vendor decision summary without leaving the dashboard."
         />

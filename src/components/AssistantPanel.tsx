@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useLocation } from 'react-router-dom';
 import { Loader2, Send, X } from 'lucide-react';
 import SafeMarkdown from '@/components/SafeMarkdown';
+import AssistantActionReview from '@/components/AssistantActionReview';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,6 +12,7 @@ import type { AiAssistantMessage } from '@/lib/aiAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
 import type { PlannerType } from '@/lib/roles';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 function ZaniaMonogram({
   className = '',
@@ -186,10 +188,23 @@ export default function AssistantPanel({
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const assistantPanel = useAssistantPanel();
+  const launchRequest = assistantPanel?.launchRequest;
   const feature = useMemo(() => getAssistantFeature(role, plannerType), [plannerType, role]);
   const surface = useMemo(() => getAssistantSurface(location.pathname, role), [location.pathname, role]);
   const compactDesktopLauncher = surface.page === 'settings';
-  const activeConciergeContext = assistantPanel?.launchRequest?.conciergeContext ?? null;
+  const fallbackConciergeContext = useMemo(() => buildConciergeContext({
+    page: surface.label,
+    role,
+    primaryGoal: surface.description,
+    nextBestAction: surface.prompts[0],
+    facts: [
+      ['Current route', location.pathname],
+      ['Workspace surface', surface.page],
+    ],
+  }), [location.pathname, role, surface]);
+  const activeConciergeContext = assistantPanel?.launchRequest?.conciergeContext
+    ?? assistantPanel?.pageConciergeContext
+    ?? fallbackConciergeContext;
 
   const assistant = useInlineAssistant({
     feature: feature ?? 'couple.ai_assistant',
@@ -253,9 +268,9 @@ export default function AssistantPanel({
   }, [activePrompt, surface.prompts]);
 
   useEffect(() => {
-    if (!assistantPanel?.launchRequest) return;
-    setCustomPrompt(assistantPanel.launchRequest.prompt ?? '');
-  }, [assistantPanel?.launchRequest?.id, assistantPanel?.launchRequest?.prompt]);
+    if (!launchRequest) return;
+    setCustomPrompt(launchRequest.prompt ?? '');
+  }, [launchRequest]);
 
   useEffect(() => {
     if (!assistantPanel?.open) return;
@@ -322,6 +337,23 @@ export default function AssistantPanel({
 
   const submitCustomPrompt = async () => {
     await runAssistantPrompt(customPrompt.trim() || activePrompt.trim());
+  };
+
+  const confirmPendingActions = async () => {
+    const result = await assistant.confirmPendingActions();
+    if (!result) return;
+    setConversation((current) => [...current, { role: 'assistant', content: result }]);
+  };
+
+  const cancelPendingActions = () => {
+    assistant.cancelPendingActions();
+    setConversation((current) => [
+      ...current,
+      {
+        role: 'assistant',
+        content: '## No changes made\n\nI held off on those actions. I can revise the plan or prepare a smaller change instead.',
+      },
+    ]);
   };
 
   return (
@@ -495,6 +527,16 @@ export default function AssistantPanel({
                         >
                           {activeRequestPrompt}
                         </motion.div>
+                      ) : null}
+
+                      {assistant.pendingActions.length > 0 ? (
+                        <AssistantActionReview
+                          actions={assistant.pendingActions}
+                          confirming={assistant.confirmingActions}
+                          onConfirm={confirmPendingActions}
+                          onCancel={cancelPendingActions}
+                          className="max-w-[94%]"
+                        />
                       ) : null}
 
                       <AnimatePresence mode="wait">

@@ -17,6 +17,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Heart, Plus, Trash2, Copy, ExternalLink, Star, Loader2, Eye, Tag, X } from 'lucide-react';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { useDeferredDelete } from '@/hooks/useDeferredDelete';
+import { useAssistantPageContext } from '@/contexts/AssistantPanelContext';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 const STYLE_SUGGESTIONS = ['Garden', 'Church', 'Beach', 'Traditional', 'Modern', 'Rustic', 'Luxury', 'Intimate', 'Outdoor', 'Cultural'];
 
@@ -286,6 +288,32 @@ export default function ManagePortfolio() {
       : reviewableVendors.length > 0
         ? `Review ${reviewableVendors.length} vendor${reviewableVendors.length === 1 ? '' : 's'}`
         : 'Share the published portfolio';
+  const portfolioConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Portfolio',
+    role: profile?.role,
+    weddingName: title,
+    primaryGoal: 'Help the user prepare a polished wedding story, credit vendors, and publish only when it is ready.',
+    nextBestAction: portfolioPrimaryAction,
+    facts: [
+      ['Portfolio created', Boolean(portfolio)],
+      ['Published', isPublished],
+      ['Credited vendors', vendors.length],
+      ['Vendor reviews', reviews.length],
+      ['Vendors still reviewable', reviewableVendors.length],
+      ['Style tags', styleTags.join(', ') || 'none'],
+    ],
+  }), [
+    isPublished,
+    portfolio,
+    portfolioPrimaryAction,
+    profile?.role,
+    reviewableVendors.length,
+    reviews.length,
+    styleTags,
+    title,
+    vendors.length,
+  ]);
+  useAssistantPageContext(portfolioConciergeContext);
 
   if (loading) {
     return <WorkspacePageSkeleton compact />;

@@ -27,12 +27,13 @@ import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import InfoTip from '@/components/InfoTip';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { useAssistantPageContext, useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { getCheckoutReferenceFromSearchParams, syncCoupleCheckout } from '@/lib/billing';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { buildConciergeContext } from '@/lib/conciergeContext';
+import { usePersistentAssistantDismissal } from '@/hooks/usePersistentAssistantDismissal';
 
 interface BudgetCategory {
   id: string;
@@ -946,11 +947,11 @@ export default function Budget() {
     contextSource: activeBudgetScope === 'personal' ? 'personal_budget_summary' : 'wedding_budget_summary',
     conciergeContext: budgetConciergeContext,
   });
-  const [budgetNudgeDismissed, setBudgetNudgeDismissed] = useState(false);
-
+  useAssistantPageContext(budgetConciergeContext);
   const budgetNudge = useMemo(() => {
     if (visibleOverBudgetCategories[0]) {
       return {
+        id: `over-budget:${activeBudgetScope}`,
         title: `${visibleOverBudgetCategories.length} budget line${visibleOverBudgetCategories.length === 1 ? '' : 's'} over the limit`,
         body: 'Get a quick rebalance suggestion before the gap grows.',
         prompt: `Review our ${activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget'} and tell me which categories need urgent rebalancing first.`,
@@ -959,6 +960,7 @@ export default function Budget() {
 
     if (paymentsDueSoon.length > 0) {
       return {
+        id: `payments-due:${activeBudgetScope}`,
         title: `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due soon`,
         body: 'Use the assistant to decide what should be paid first.',
         prompt: 'Review upcoming vendor payment deadlines and tell me what should be paid first.',
@@ -967,6 +969,7 @@ export default function Budget() {
 
     if (visibleNearLimitCategories[0]) {
       return {
+        id: `near-limit:${activeBudgetScope}`,
         title: 'Some categories are nearly at the limit',
         body: 'A quick budget check now can prevent overspend later.',
         prompt: `Tell me which ${activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget'} lines are close to the limit and what to do before we overspend.`,
@@ -975,6 +978,9 @@ export default function Budget() {
 
     return null;
   }, [activeBudgetScope, paymentsDueSoon.length, visibleNearLimitCategories, visibleOverBudgetCategories]);
+  const budgetNudgeDismissal = usePersistentAssistantDismissal(
+    budgetNudge ? `budget:${budgetNudge.id}` : null,
+  );
 
   const paymentsByCategory = useMemo(() => {
     return currentScopePayments.reduce<Record<string, BudgetPaymentRecord[]>>((groups, payment) => {
@@ -1890,7 +1896,7 @@ export default function Budget() {
         </summary>
 
         <div className="space-y-4 px-6 pb-6">
-          {!budgetNudgeDismissed && budgetNudge && assistantPanel && (
+          {!budgetNudgeDismissal.dismissed && budgetNudge && assistantPanel && (
             <Card className="semantic-surface-info shadow-card">
               <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -1902,7 +1908,7 @@ export default function Budget() {
                     type="button"
                     size="sm"
                     className="gap-2"
-                    onClick={() => assistantPanel.openAssistant(budgetNudge.prompt)}
+                    onClick={() => assistantPanel.openAssistant(budgetNudge.prompt, budgetConciergeContext)}
                   >
                     Review with AI
                   </Button>
@@ -1910,7 +1916,7 @@ export default function Budget() {
                     type="button"
                     size="sm"
                     variant="ghost"
-                    onClick={() => setBudgetNudgeDismissed(true)}
+                    onClick={() => void budgetNudgeDismissal.dismiss()}
                   >
                     Dismiss
                   </Button>
@@ -1939,6 +1945,7 @@ export default function Budget() {
               dismissible
               onDismiss={() => budgetAssistant.setDismissed(true)}
               onPromptClick={(prompt) => budgetAssistant.runPrompt(prompt)}
+              conciergeContext={budgetConciergeContext}
             />
           )}
         </div>

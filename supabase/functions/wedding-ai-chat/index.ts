@@ -333,6 +333,46 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "remember_assistant_memory",
+      description: "Remember an explicit user preference, confirmed decision, or dismissed suggestion for future Zania conversations",
+      parameters: {
+        type: "object",
+        properties: {
+          memory_type: {
+            type: "string",
+            enum: ["preference", "decision", "dismissed_suggestion"],
+            description: "The kind of memory being saved",
+          },
+          memory_key: { type: "string", description: "A short stable label such as communication_style or venue_choice" },
+          memory_value: { type: "string", description: "The concise preference or decision to remember" },
+        },
+        required: ["memory_type", "memory_key", "memory_value"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "forget_assistant_memory",
+      description: "Forget a previously stored Zania preference, decision, or dismissed suggestion",
+      parameters: {
+        type: "object",
+        properties: {
+          memory_type: {
+            type: "string",
+            enum: ["preference", "decision", "dismissed_suggestion"],
+          },
+          memory_key: { type: "string", description: "The stable label of the memory to forget" },
+        },
+        required: ["memory_type", "memory_key"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 function fuzzyFind<T extends Record<string, any>>(items: T[], field: string, query: string): T | undefined {
@@ -448,6 +488,7 @@ type ToolContext = {
   vendorListingId: string | null;
   workspaceOrFilter: string | null;
   writeClientId: string | null;
+  memoryWorkspaceKey: string;
   today: string;
   profile: Record<string, any> | null;
 };
@@ -478,6 +519,8 @@ const WRITE_TOOL_NAMES = new Set([
   "create_vendor_follow_up_reminder",
   "update_vendor_follow_up_reminder_status",
   "update_vendor_booking_status",
+  "remember_assistant_memory",
+  "forget_assistant_memory",
 ]);
 
 function isWriteTool(name: string) {
@@ -522,18 +565,59 @@ function summarizePendingAction(name: string, args: Record<string, any>) {
       return `Mark follow-up reminder "${args.title}" as ${args.status} for ${args.couple_name}`;
     case "update_vendor_booking_status":
       return `Update booking status for ${args.couple_name} to ${args.status}`;
+    case "remember_assistant_memory":
+      return `Remember ${String(args.memory_key || "this detail").replaceAll("_", " ")}: ${args.memory_value}`;
+    case "forget_assistant_memory":
+      return `Forget ${String(args.memory_key || "this detail").replaceAll("_", " ")}`;
     default:
       return `Run ${name}`;
   }
 }
 
 async function executeTool(name: string, args: Record<string, any>, context: ToolContext): Promise<string> {
-  const { supabase, userId, role, plannerType, vendorListingId, workspaceOrFilter, writeClientId, today, profile } = context;
+  const { supabase, userId, role, plannerType, vendorListingId, workspaceOrFilter, writeClientId, memoryWorkspaceKey, today, profile } = context;
   const planningWriteBlock = getPlanningWriteBlock(role, plannerType, writeClientId);
   const vendorWriteBlock = getVendorWriteBlock(role, vendorListingId);
 
   try {
     switch (name) {
+      case "remember_assistant_memory": {
+        const memoryType = String(args.memory_type || "").trim();
+        const memoryKey = String(args.memory_key || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 120);
+        const memoryValue = String(args.memory_value || "").trim().slice(0, 2000);
+        if (!["preference", "decision", "dismissed_suggestion"].includes(memoryType) || !memoryKey || !memoryValue) {
+          return "I could not save that memory because its type, label, or value was invalid.";
+        }
+        const { error } = await supabase.from("ai_assistant_memories").upsert({
+          owner_user_id: userId,
+          workspace_key: memoryWorkspaceKey,
+          memory_type: memoryType,
+          memory_key: memoryKey,
+          memory_value: memoryValue,
+          source: "assistant_confirmation",
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "owner_user_id,workspace_key,memory_type,memory_key" });
+        if (error) return "I could not save that memory right now.";
+        return `Remembered ${memoryKey.replaceAll("_", " ")}.`;
+      }
+
+      case "forget_assistant_memory": {
+        const memoryType = String(args.memory_type || "").trim();
+        const memoryKey = String(args.memory_key || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 120);
+        if (!["preference", "decision", "dismissed_suggestion"].includes(memoryType) || !memoryKey) {
+          return "I could not identify the memory to forget.";
+        }
+        const { error } = await supabase
+          .from("ai_assistant_memories")
+          .delete()
+          .eq("owner_user_id", userId)
+          .eq("workspace_key", memoryWorkspaceKey)
+          .eq("memory_type", memoryType)
+          .eq("memory_key", memoryKey);
+        if (error) return "I could not forget that memory right now.";
+        return `Forgot ${memoryKey.replaceAll("_", " ")}.`;
+      }
+
       case "create_task": {
         if (planningWriteBlock) return planningWriteBlock;
 
@@ -1186,6 +1270,19 @@ serve(async (req) => {
       workspaceNotice = "Admin mode is advisory only.";
     }
 
+    const memoryWorkspaceKey = writeClientId ? `client:${writeClientId}` : "personal";
+    const { data: assistantMemories, error: assistantMemoriesError } = await supabase
+      .from("ai_assistant_memories")
+      .select("memory_type, memory_key, memory_value, updated_at")
+      .eq("owner_user_id", user.id)
+      .eq("workspace_key", memoryWorkspaceKey)
+      .order("updated_at", { ascending: false })
+      .limit(40);
+
+    if (assistantMemoriesError && !["42P01", "PGRST205"].includes(assistantMemoriesError.code)) {
+      console.error("Failed to load assistant memories:", assistantMemoriesError);
+    }
+
     let tasksList: any[] = [];
     let budgetCategories: any[] = [];
     let budgetPayments: any[] = [];
@@ -1390,6 +1487,14 @@ Timelines: ${timelines.length}, events: ${timelineEventCount}`;
         ? `Vendor write tools can save internal notes, create private follow-up reminders, mark reminders complete, and update booking status for real bookings matched by the couple's name. Never claim to edit public listing fields, pricing plans, or external calendars unless a real tool exists.`
         : `Use write tools when the user clearly asks for a concrete action. If a planner has not selected a client, stay advisory until they do.`;
 
+    const assistantMemorySummary = (assistantMemories || []).length > 0
+      ? (assistantMemories || []).map((memory: any) =>
+        `- ${memory.memory_type}: ${String(memory.memory_key).replaceAll("_", " ")} = ${
+          typeof memory.memory_value === "string" ? memory.memory_value : JSON.stringify(memory.memory_value)
+        }`
+      ).join("\n")
+      : "No saved preferences or decisions for this workspace yet.";
+
     const systemPrompt = `You are Zania AI acting as the user's ${assistantRoleLabel} inside the Zania app.
 
 ${assistantRoleInstructions}
@@ -1416,6 +1521,9 @@ ${profile?.wedding_town ? `Wedding town: ${profile.wedding_town}` : ""}
 ${weddingCountdown}
 
 ${workspaceSummary}
+
+Saved concierge memory (user-owned and explicitly confirmed):
+${assistantMemorySummary}
 ${workspaceNotice ? `\nImportant workspace note: ${workspaceNotice}` : ""}
 
 ${role === "planner" ? `\nPlanner clients:\n${plannerClientSummary}` : ""}
@@ -1454,6 +1562,8 @@ ${timelineShares.slice(0, 12).map((share: any) => `- ${share.assignee_name}${sha
 Operating rules:
 - Give advice that reflects the actual workspace data above.
 - If the user asks you to perform an action and a matching tool exists, use the tool instead of only describing what to do.
+- Use saved concierge memory when it is relevant, but never imply that an unsaved inference is a remembered fact.
+- If the user explicitly asks you to remember or forget a preference or decision, use the matching memory tool and require confirmation like every other write.
 - ${assistantWritePolicy}
 - If the user is a planner without an active client selected, stay advisory and ask them to select a client before writing workspace data.
 - When a requested action is not supported by tools, explain the exact Zania section they should use next.
@@ -1472,6 +1582,7 @@ Operating rules:
       vendorListingId: vendorListing?.id ?? null,
       workspaceOrFilter,
       writeClientId,
+      memoryWorkspaceKey,
       today,
       profile,
     };

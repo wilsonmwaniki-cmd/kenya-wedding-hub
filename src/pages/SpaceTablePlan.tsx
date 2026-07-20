@@ -38,7 +38,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { useAssistantPageContext, useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -1010,6 +1010,7 @@ export default function SpaceTablePlan() {
     weddingContext?.weddingName,
     zoom,
   ]);
+  useAssistantPageContext(spacePlanConciergeContext);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

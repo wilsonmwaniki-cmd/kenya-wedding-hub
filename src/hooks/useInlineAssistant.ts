@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -7,6 +8,7 @@ import {
   WeddingAiInvokeError,
   type AiAssistantMessage,
   type AiUsageStatus,
+  type PendingWriteAction,
 } from '@/lib/aiAssistant';
 import {
   getEntitlementDecision,
@@ -50,17 +52,22 @@ export interface InlineAssistantState {
   accessLoading: boolean;
   error: string | null;
   response: string | null;
+  pendingActions: PendingWriteAction[];
+  confirmingActions: boolean;
   usage: AiUsageStatus | null;
   dismissed: boolean;
   setDismissed: (value: boolean) => void;
   clearResponse: () => void;
   runPrompt: (prompt: string, options?: InlineAssistantRunOptions) => Promise<string | null>;
+  confirmPendingActions: () => Promise<string | null>;
+  cancelPendingActions: () => void;
 }
 
 export function useInlineAssistant(options: InlineAssistantOptions): InlineAssistantState {
   const { user, session, profile, baseProfile, isSuperAdmin } = useAuth();
   const { selectedClient, isPlanner } = usePlanner();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
+  const queryClient = useQueryClient();
   const [vendorListing, setVendorListing] = useState<VendorListingAccess | null>(null);
   const [accessLoading, setAccessLoading] = useState(false);
   const [usage, setUsage] = useState<AiUsageStatus | null>(null);
@@ -68,6 +75,13 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<string | null>(null);
+  const [pendingActions, setPendingActions] = useState<PendingWriteAction[]>([]);
+  const [confirmingActions, setConfirmingActions] = useState(false);
+  const [lastRequest, setLastRequest] = useState<{
+    messages: AiAssistantMessage[];
+    prompt: string;
+    runOptions?: InlineAssistantRunOptions;
+  } | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   const decision = useMemo<EntitlementDecision | null>(() => {
@@ -135,7 +149,7 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
       }
 
       setUsageLoading(true);
-      const { data, error } = await (supabase.rpc as any)('get_ai_usage_status');
+      const { data, error } = await supabase.rpc('get_ai_usage_status');
       if (cancelled) return;
 
       if (error) {
@@ -184,12 +198,13 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
               content: `${conciergeContext.trim()}\n\nUse this brief silently to make your answer contextual and concierge-like.`,
             }]
           : [];
-        const result = await invokeWeddingAiChat({
-          messages: [
+        const messages: AiAssistantMessage[] = [
             ...contextMessages,
             ...(options.initialMessages ?? []),
             { role: 'user', content: trimmedPrompt },
-          ],
+          ];
+        const result = await invokeWeddingAiChat({
+          messages,
           selectedClientId: isPlanner ? selectedClient?.id ?? null : null,
           allowWriteActions: runOptions?.allowWriteActions ?? false,
           confirmedActions: [],
@@ -203,6 +218,8 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
         if (result.usage) {
           setUsage(result.usage);
         }
+        setPendingActions(result.pendingActions);
+        setLastRequest({ messages, prompt: trimmedPrompt, runOptions });
         setResponse(result.content);
         return result.content;
       } catch (err) {
@@ -238,9 +255,57 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
     ],
   );
 
+  const confirmPendingActions = useCallback(async () => {
+    if (!lastRequest || pendingActions.length === 0 || confirmingActions) return null;
+
+    setConfirmingActions(true);
+    setError(null);
+    try {
+      const result = await invokeWeddingAiChat({
+        messages: lastRequest.messages,
+        selectedClientId: isPlanner ? selectedClient?.id ?? null : null,
+        allowWriteActions: true,
+        confirmedActions: pendingActions,
+        page: options.page,
+        surface: 'assistant_panel_confirmed_write',
+        contextSource: lastRequest.runOptions?.contextSource ?? options.contextSource ?? 'assistant_panel',
+        entityId: lastRequest.runOptions?.entityId ?? options.entityId ?? null,
+        starterPrompt: lastRequest.prompt,
+      });
+
+      if (result.usage) setUsage(result.usage);
+      setPendingActions([]);
+      setResponse(result.content);
+      await queryClient.invalidateQueries({ type: 'active' });
+      return result.content;
+    } catch (err) {
+      console.error('Assistant action confirmation error:', err);
+      setError(err instanceof WeddingAiInvokeError ? err.message : 'Could not apply the confirmed changes.');
+      return null;
+    } finally {
+      setConfirmingActions(false);
+    }
+  }, [
+    confirmingActions,
+    isPlanner,
+    lastRequest,
+    options.contextSource,
+    options.entityId,
+    options.page,
+    pendingActions,
+    queryClient,
+    selectedClient?.id,
+  ]);
+
+  const cancelPendingActions = useCallback(() => {
+    setPendingActions([]);
+    setResponse('## No changes made\n\nI held off on those actions. I can revise the plan or prepare a smaller change instead.');
+  }, []);
+
   const clearResponse = useCallback(() => {
     setResponse(null);
     setError(null);
+    setPendingActions([]);
   }, []);
 
   return {
@@ -251,10 +316,14 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
     accessLoading,
     error,
     response,
+    pendingActions,
+    confirmingActions,
     usage,
     dismissed,
     setDismissed,
     clearResponse,
     runPrompt,
+    confirmPendingActions,
+    cancelPendingActions,
   };
 }

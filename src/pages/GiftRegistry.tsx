@@ -19,6 +19,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { normalizeExternalUrl } from '@/lib/security';
 import { useDeferredDelete } from '@/hooks/useDeferredDelete';
+import { useAssistantPageContext } from '@/contexts/AssistantPanelContext';
+import { buildConciergeContext } from '@/lib/conciergeContext';
 
 type RegistryItem = {
   id: string;
@@ -233,6 +235,19 @@ export default function GiftRegistry() {
       : stats.activeItems > 0
         ? 'Review needed gifts and share the list'
         : 'Review purchased gifts and add anything missing';
+  const registryConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Gift Registry',
+    role: profile?.role,
+    primaryGoal: 'Help the couple maintain a useful, current registry without duplicate or unclear gift requests.',
+    nextBestAction: registryPrimaryAction,
+    facts: [
+      ['Registry items', stats.totalItems],
+      ['Still needed', stats.activeItems],
+      ['Purchased', stats.purchasedCount],
+      ['Estimated value', `KES ${stats.totalEstimatedValue.toLocaleString()}`],
+    ],
+  }), [profile?.role, registryPrimaryAction, stats]);
+  useAssistantPageContext(registryConciergeContext);
 
   const handleCheckout = async () => {
     if (!profile) return;

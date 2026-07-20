@@ -42,6 +42,7 @@ import {
   vendorPaymentStatuses,
   type VendorPaymentStatus,
 } from '@/lib/vendorPayments';
+import { usePersistentAssistantDismissal } from '@/hooks/usePersistentAssistantDismissal';
 import {
   createVendorReputationReview,
   getVendorReputationBenchmark,
@@ -61,7 +62,7 @@ import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import InfoTip from '@/components/InfoTip';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { useAssistantPageContext, useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
@@ -1993,11 +1994,11 @@ export default function Vendors() {
     contextSource: selectedVendor ? 'selected_vendor_detail' : 'vendor_workspace_summary',
     conciergeContext: vendorsConciergeContext,
   });
-  const [vendorsNudgeDismissed, setVendorsNudgeDismissed] = useState(false);
-
+  useAssistantPageContext(vendorsConciergeContext);
   const vendorsNudge = useMemo(() => {
     if (categoriesNeedingFinalChoice[0]) {
       return {
+        id: `open-category:${categoriesNeedingFinalChoice[0].category}`,
         title: `${categoriesNeedingFinalChoice.length} vendor categor${categoriesNeedingFinalChoice.length === 1 ? 'y still needs a final decision' : 'ies still need final decisions'}`,
         body: 'Use the assistant to figure out which category to close next.',
         prompt: `Help me close the ${categoriesNeedingFinalChoice[0].category} vendor decision next.`,
@@ -2006,6 +2007,7 @@ export default function Vendors() {
 
     if (finalVendorPaymentsDueSoon[0]) {
       return {
+        id: 'payments-due',
         title: `${finalVendorPaymentsDueSoon.length} final vendor payment${finalVendorPaymentsDueSoon.length === 1 ? '' : 's'} due soon`,
         body: 'A quick review now can help you avoid missing a vendor payment deadline.',
         prompt: 'Review the upcoming vendor payment deadlines and tell me what needs action first.',
@@ -2014,6 +2016,7 @@ export default function Vendors() {
 
     if (vendorTaskSummary.openTasks > 0) {
       return {
+        id: 'open-follow-ups',
         title: 'Vendor follow-ups are still open',
         body: 'Use the assistant to decide which vendor conversation or task to chase first.',
         prompt: 'Summarize the vendor follow-ups still open and tell me what to chase first.',
@@ -2022,6 +2025,7 @@ export default function Vendors() {
 
     if (vendors.length === 0) {
       return {
+        id: 'empty-shortlist',
         title: 'No vendors shortlisted yet',
         body: 'Get a quick recommendation on where to start so the shortlist builds with less guesswork.',
         prompt: 'Help me decide which vendor categories I should shortlist first.',
@@ -2030,6 +2034,9 @@ export default function Vendors() {
 
     return null;
   }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, vendorTaskSummary.openTasks, vendors.length]);
+  const vendorsNudgeDismissal = usePersistentAssistantDismissal(
+    vendorsNudge ? `vendors:${vendorsNudge.id}` : null,
+  );
 
   const vendorPrimaryAction = useMemo(() => {
     if (vendors.length === 0) {
@@ -2748,7 +2755,7 @@ export default function Vendors() {
                             return;
                           }
                           if (vendorPrimaryAction.actionType === 'assistant_prompt' && vendorPrimaryAction.prompt && assistantPanel) {
-                            assistantPanel.openAssistant(vendorPrimaryAction.prompt);
+                            assistantPanel.openAssistant(vendorPrimaryAction.prompt, vendorsConciergeContext);
                           }
                         }}
                       >
@@ -2890,7 +2897,7 @@ export default function Vendors() {
               </summary>
 
               <div className="space-y-4 px-6 pb-6">
-                {!vendorsNudgeDismissed && vendorsNudge && assistantPanel && (
+                {!vendorsNudgeDismissal.dismissed && vendorsNudge && assistantPanel && (
                   <Card className="semantic-surface-info shadow-card">
                     <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -2902,7 +2909,7 @@ export default function Vendors() {
                           type="button"
                           size="sm"
                           className="gap-2"
-                          onClick={() => assistantPanel.openAssistant(vendorsNudge.prompt)}
+                          onClick={() => assistantPanel.openAssistant(vendorsNudge.prompt, vendorsConciergeContext)}
                         >
                           Review with AI
                         </Button>
@@ -2910,7 +2917,7 @@ export default function Vendors() {
                           type="button"
                           size="sm"
                           variant="ghost"
-                          onClick={() => setVendorsNudgeDismissed(true)}
+                          onClick={() => void vendorsNudgeDismissal.dismiss()}
                         >
                           Dismiss
                         </Button>
@@ -2935,6 +2942,7 @@ export default function Vendors() {
                     dismissible
                     onDismiss={() => vendorsAssistant.setDismissed(true)}
                     onPromptClick={(prompt) => vendorsAssistant.runPrompt(prompt)}
+                    conciergeContext={vendorsConciergeContext}
                   />
                 )}
               </div>
