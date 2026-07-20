@@ -8,6 +8,7 @@ interface ImportMetaEnv {
   readonly VITE_POSTHOG_HOST?: string;
   readonly VITE_POSTHOG_KEY?: string;
   readonly VITE_PRICING_CONFIG_JSON?: string;
+  readonly VITE_RELEASE_CHANNEL?: 'production' | 'staging';
   readonly VITE_SENTRY_DSN?: string;
   readonly VITE_SENTRY_ENVIRONMENT?: string;
   readonly VITE_SENTRY_TRACE_SAMPLE_RATE?: string;

@@ -30,6 +30,8 @@ import {
 } from '@/lib/vendorPriceIntelligence';
 import type { WeddingTaskPhase } from '@/lib/weddingTaskTemplates';
 import {
+  hasRecordedVendor,
+  isChosenVendor,
   setVendorSelectionStatus,
   vendorSelectionLabel,
   vendorSelectionTone,
@@ -78,6 +80,7 @@ import {
   listVendorTaskSuggestions,
   type VendorTaskSuggestion,
 } from '@/lib/vendorTaskSuggestions';
+import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 
 interface Vendor {
   amount_paid: number;
@@ -234,7 +237,7 @@ function learningMarketPosition(
 function reputationSummary(benchmark?: VendorReputationBenchmark | null) {
   if (!benchmark) return 'Loading planner trust data...';
   if (benchmark.benchmark_visible && benchmark.average_overall_rating != null) {
-    const hireAgainRate = benchmark.hire_again_rate != null ? `${Math.round(benchmark.hire_again_rate * 100)}% would hire again` : 'Hire-again rate pending';
+    const hireAgainRate = benchmark.hire_again_rate != null ? `${Math.round(benchmark.hire_again_rate * 100)}% would hire again` : 'Hire-again rate not available yet';
     return `Planner / committee score ${benchmark.average_overall_rating.toFixed(1)}/5 · ${hireAgainRate}`;
   }
   if (benchmark.sample_size > 0) {
@@ -765,6 +768,13 @@ export default function Vendors() {
   }, [vendors, selectedClient?.wedding_location]);
 
   const loadReputationData = async (rows: Vendor[]) => {
+    if (profile?.role !== 'planner' && profile?.role !== 'admin') {
+      setCategoryReputationBenchmarks({});
+      setListingReputationBenchmarks({});
+      setReviewsBySourceVendorId({});
+      return;
+    }
+
     if (!rows.length) {
       setCategoryReputationBenchmarks({});
       setListingReputationBenchmarks({});
@@ -824,7 +834,7 @@ export default function Vendors() {
 
   useEffect(() => {
     void loadReputationData(vendors);
-  }, [vendors, selectedClient?.id]);
+  }, [vendors, selectedClient?.id, profile?.role]);
 
   useEffect(() => {
     if (!open || mode !== 'custom') return;
@@ -1254,6 +1264,13 @@ export default function Vendors() {
   };
 
   const updateSelection = async (vendor: Vendor, selectionStatus: VendorSelectionStatus) => {
+    if (selectionStatus === 'final' && !hasRecordedVendor(vendor)) {
+      toast({
+        title: 'Add a vendor first',
+        description: `Record or link a ${vendor.category.toLowerCase()} vendor before choosing a final option.`,
+      });
+      return;
+    }
     setSelectionSucceededId(null);
     setSavingSelectionId(vendor.id);
     if (plannerNeedsApproval && selectedClient?.linked_user_id) {
@@ -1323,7 +1340,7 @@ export default function Vendors() {
         });
         toast({
           title: 'Vendor workflow sent for approval',
-          description: `${vendor.name} ownership and contract updates are pending couple approval.`,
+          description: `${vendor.name} changes are waiting for couple approval.`,
         });
       } catch (error: any) {
         toast({ title: 'Could not submit workflow update', description: error?.message, variant: 'destructive' });
@@ -1463,7 +1480,7 @@ export default function Vendors() {
         });
         toast({
           title: 'Vendor notes sent for approval',
-          description: `Comparison notes for ${vendor.name} are now pending couple approval.`,
+          description: `Comparison notes for ${vendor.name} are waiting for couple approval.`,
         });
       } catch (error: any) {
         toast({ title: 'Could not submit vendor notes', description: error?.message, variant: 'destructive' });
@@ -1645,7 +1662,7 @@ export default function Vendors() {
   const selectionCounts = useMemo(() => {
     return vendors.reduce(
       (summary, vendor) => {
-        const key = (vendor.selection_status || 'shortlisted') as VendorSelectionStatus;
+        const key = (isChosenVendor(vendor) ? 'final' : vendor.selection_status === 'final' ? 'shortlisted' : vendor.selection_status || 'shortlisted') as VendorSelectionStatus;
         summary[key] += 1;
         return summary;
       },
@@ -1659,7 +1676,7 @@ export default function Vendors() {
   }, [vendors]);
 
   const finalVendorEntries = useMemo(
-    () => sortedVendors.filter((vendor) => vendor.selection_status === 'final'),
+    () => sortedVendors.filter(isChosenVendor),
     [sortedVendors],
   );
 
@@ -1698,7 +1715,7 @@ export default function Vendors() {
     return [...grouped.entries()]
       .filter(([, group]) => {
         const activeVendors = group.filter((vendor) => vendor.selection_status !== 'declined');
-        return activeVendors.length > 0 && !activeVendors.some((vendor) => vendor.selection_status === 'final');
+        return activeVendors.length > 0 && !activeVendors.some(isChosenVendor);
       })
       .map(([category, group]) => ({
         category,
@@ -1835,7 +1852,7 @@ export default function Vendors() {
   }, [selectedVendorTasks]);
 
   const selectedVendorMilestones = useMemo(() => {
-    if (!selectedVendor) return [];
+    if (!selectedVendor || !hasRecordedVendor(selectedVendor)) return [];
     return buildVendorMilestones(selectedVendor, selectedVendorTasks);
   }, [selectedVendor, selectedVendorTasks]);
 
@@ -2087,7 +2104,7 @@ export default function Vendors() {
   }, [selectedVendorId, selectedVendor]);
 
   useEffect(() => {
-    if (!selectedVendor || selectedVendor.vendor_listing_id) return;
+    if (showCoupleVendorWorkspace || !selectedVendor || selectedVendor.vendor_listing_id) return;
 
     let cancelled = false;
     setWorkspaceInviteLoadingVendorId(selectedVendor.id);
@@ -2109,10 +2126,10 @@ export default function Vendors() {
     return () => {
       cancelled = true;
     };
-  }, [selectedVendor]);
+  }, [selectedVendor, showCoupleVendorWorkspace]);
 
   useEffect(() => {
-    if (!selectedVendor || selectedVendor.vendor_listing_id) return;
+    if (showCoupleVendorWorkspace || !selectedVendor || selectedVendor.vendor_listing_id) return;
 
     setWorkspaceInviteForm({
       email: selectedVendorActiveInvite?.invite_contact_email ?? selectedVendor.email ?? '',
@@ -2121,10 +2138,10 @@ export default function Vendors() {
       expiresAt: selectedVendorActiveInvite?.invite_expires_at?.slice(0, 10) ?? '',
     });
     setWorkspaceInviteError(null);
-  }, [selectedVendor, selectedVendorActiveInvite]);
+  }, [selectedVendor, selectedVendorActiveInvite, showCoupleVendorWorkspace]);
 
   useEffect(() => {
-    if (!selectedVendor) return;
+    if (showCoupleVendorWorkspace || !selectedVendor) return;
 
     let cancelled = false;
     setVendorWorkspaceUpdatesLoadingId(selectedVendor.id);
@@ -2163,7 +2180,7 @@ export default function Vendors() {
     return () => {
       cancelled = true;
     };
-  }, [selectedVendor, toast]);
+  }, [selectedVendor, showCoupleVendorWorkspace, toast]);
 
   useEffect(() => {
     if (!selectedVendor?.vendor_listing_id) return;
@@ -2456,18 +2473,15 @@ export default function Vendors() {
         }
       }}
     >
-      <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4" />
-        Add Vendor
-      </Button>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <Button type="button" onClick={() => setOpen(true)}>Add vendor</Button>
+      <DialogContent className="overflow-y-auto sm:max-w-lg">
         <DialogHeader><DialogTitle className="font-display">Add a vendor</DialogTitle></DialogHeader>
-        <div className="flex gap-2 border-b border-border pb-3">
-          <Button variant={mode === 'custom' ? 'default' : 'outline'} size="sm" onClick={() => setMode('custom')} className="gap-1">
-            <Plus className="h-3.5 w-3.5" /> Add Vendor Record
+        <div className="grid grid-cols-2 gap-2 border-b border-border pb-3">
+          <Button variant={mode === 'custom' ? 'default' : 'outline'} size="sm" onClick={() => setMode('custom')} className="min-w-0 px-2 sm:px-3">
+            Add vendor
           </Button>
-          <Button variant={mode === 'directory' ? 'default' : 'outline'} size="sm" onClick={() => setMode('directory')} className="gap-1">
-            <Search className="h-3.5 w-3.5" /> Link From Zania
+          <Button variant={mode === 'directory' ? 'default' : 'outline'} size="sm" onClick={() => setMode('directory')} className="min-w-0 px-2 sm:px-3">
+            Find on Zania
           </Button>
         </div>
         {mode === 'directory' ? (
@@ -2513,10 +2527,7 @@ export default function Vendors() {
         ) : (
           <form onSubmit={addVendor} className="space-y-4">
             <FormSubmitError message={vendorSubmitError} />
-            <div className="semantic-surface-info rounded-lg border p-3 text-sm text-muted-foreground">
-              Add the vendor you are already working with. This starts as a <span className="font-medium text-foreground">private vendor record</span> inside your wedding workspace. It does <span className="font-medium text-foreground">not</span> create a public Zania profile, and the details stay private unless the vendor later joins and opts in.
-            </div>
-            <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+            <div className="hidden rounded-lg border border-border/70 bg-muted/40 p-3 sm:block">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 {modalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Market signal for {form.category}
@@ -2624,182 +2635,115 @@ export default function Vendors() {
     const renderVendorRow = (vendor: Vendor) => {
       const vendorTasks = vendorTasksByVendorId[vendor.id] ?? [];
       const openVendorTasks = vendorTasks.filter((task) => !task.completed).length;
+      const vendorPayments = vendorPaymentsByVendorId[vendor.id] ?? [];
       const outstandingBalance = Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0);
       const dueDateLabel = vendor.payment_due_date ? safeDateLabel(vendor.payment_due_date) : null;
+      const isActive = selectedVendorId === vendor.id;
+      const isRecorded = hasRecordedVendor(vendor);
+      const isChosen = isChosenVendor(vendor);
 
       return (
-        <button
+        <div
           key={vendor.id}
-          type="button"
-          onClick={() => {
-            setSelectedVendorId(vendor.id);
-            setSelectedVendorTab('details');
-          }}
-          className="flex w-full flex-col gap-4 rounded-[1.5rem] border border-border/70 bg-background px-4 py-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-accent/20 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5 sm:rounded-[1.75rem]"
+          className={`relative w-full overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,transform] duration-200 ${isActive ? '-translate-y-px border-primary/70 bg-primary/[0.075] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15' : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'}`}
         >
-          <div className="min-w-0 space-y-3">
-            <div>
-              <p className="truncate text-xl font-semibold text-foreground">{vendor.name}</p>
+          <span aria-hidden="true" className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary transition-opacity ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+          <button
+            type="button"
+            onClick={() => setSelectedVendorId(isActive ? null : vendor.id)}
+            aria-expanded={isActive}
+            className="flex w-full flex-col gap-4 px-4 py-4 text-left sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-lg font-semibold text-foreground">{vendor.name}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <Badge variant="outline">{vendor.category}</Badge>
-                <Badge variant={vendor.vendor_listing_id ? 'success' : 'outline'}>
-                  {vendor.vendor_listing_id ? 'Linked to Zania' : 'Private vendor record'}
-                </Badge>
-                {vendor.selection_status === 'final' && <Badge>Final choice</Badge>}
-                {vendor.selection_status === 'backup' && <Badge variant="secondary">Backup</Badge>}
-                {vendor.payment_status !== 'unpaid' && (
-                  <Badge variant={vendorPaymentStatusTone(vendor.payment_status)}>
-                    {vendorPaymentStatusLabel(vendor.payment_status)}
-                  </Badge>
-                )}
-                {vendor.phone && <span>{vendor.phone}</span>}
+                <span>{vendor.category}</span>
+                {isChosen ? <Badge>Chosen</Badge> : null}
+                {openVendorTasks > 0 ? <span>{openVendorTasks} task{openVendorTasks === 1 ? '' : 's'}</span> : null}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-              {openVendorTasks > 0 ? (
-                <span>{openVendorTasks} open follow-up{openVendorTasks === 1 ? '' : 's'}</span>
-              ) : (
-                <span>No open follow-ups</span>
-              )}
-              {dueDateLabel && vendor.payment_status !== 'paid_full' && <span>Payment due {dueDateLabel}</span>}
-              {outstandingBalance > 0 && <span>{formatCurrency(outstandingBalance)} outstanding</span>}
+            <div className="text-left sm:text-right">
+              <p className="text-lg font-semibold text-foreground">{formatCurrency(vendor.price)}</p>
+              <p className="mt-1 text-sm font-medium text-primary">{isActive ? 'Hide details' : 'View details'}</p>
             </div>
-          </div>
-          <div className="text-left sm:min-w-[180px] sm:text-right">
-            <p className="text-xl font-semibold text-foreground">
-              {vendorListView === 'by_name' ? vendor.category : formatCurrency(vendor.price)}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {selectedVendorId === vendor.id
-                ? 'Open in workspace'
-                : openVendorTasks > 0
-                  ? 'Needs follow-up'
-                  : outstandingBalance > 0
-                    ? 'Payment still active'
-                    : 'View details'}
-            </p>
-          </div>
-        </button>
+          </button>
+
+          {isActive ? (
+            <div className="min-w-0 space-y-4 border-t border-primary/15 px-4 pb-5 pt-4 sm:px-6">
+              <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-background/70 text-center">
+                <div className="p-3"><p className="text-xs text-muted-foreground">Quoted</p><p className="mt-1 font-semibold">{formatCurrency(vendor.price)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Paid</p><p className="mt-1 font-semibold">{formatCurrency(vendor.amount_paid)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Left</p><p className="mt-1 font-semibold">{formatCurrency(outstandingBalance)}</p></div>
+              </div>
+              <div className="grid min-w-0 gap-4 text-sm sm:grid-cols-2">
+                <div className="min-w-0"><p className="text-xs text-muted-foreground">Contact</p><p className="mt-1 break-words font-medium">{vendor.phone || vendor.email || 'Not added'}</p>{dueDateLabel && vendor.payment_status !== 'paid_full' ? <p className="mt-1 text-muted-foreground">Payment due {dueDateLabel}</p> : null}</div>
+                <div className="min-w-0"><p className="text-xs text-muted-foreground">Next tasks</p>{vendorTasks.filter((task) => !task.completed).slice(0, 3).map((task) => <p key={task.id} className="mt-1 break-words font-medium">{task.title}</p>)}{openVendorTasks === 0 ? <p className="mt-1 font-medium">No open tasks</p> : null}</div>
+              </div>
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
+                {!isChosen && isRecorded ? <Button type="button" className="w-full sm:w-auto" onClick={() => updateSelection(vendor, 'final')}>Choose vendor</Button> : null}
+                {!isRecorded ? <p className="text-sm text-muted-foreground">Add or link a vendor before choosing.</p> : null}
+                <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setSelectedVendorId(null)}>Close</Button>
+                <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Remove vendor" title="Remove vendor" onClick={() => deleteVendor(vendor.id)}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
+              </div>
+              {vendorPayments.length > 0 ? <p className="text-xs text-muted-foreground">{vendorPayments.length} payment{vendorPayments.length === 1 ? '' : 's'} recorded</p> : null}
+            </div>
+          ) : null}
+        </div>
       );
     };
 
     return (
       <div className="space-y-8">
-        {!selectedVendor ? (
+        {showCoupleVendorWorkspace ? (
           <>
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_360px]">
-              <Card className="overflow-hidden border-border/70 bg-gradient-to-br from-background via-background to-muted/30 shadow-card">
-                <CardContent className="p-6 sm:p-8">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="info" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.14em]">
-                      Vendor Workspace
-                    </Badge>
-                    <InfoTip content="Shortlist vendors, compare options, lock final choices, and stay on top of contracts, payments, and follow-up tasks." />
-                  </div>
-                  <h1 className="workspace-h1 mt-4">
-                    Decide who to book next
-                  </h1>
-                  <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-                    Start with the vendors you already know. Zania keeps the shortlist, final choices, payments, and follow-ups in one calmer flow.
-                  </p>
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-[1.4rem] border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4 shadow-sm">
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Tracked</p>
-                      <p className="mt-2 text-3xl font-semibold text-foreground">{vendors.length}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">vendors in your wedding lineup</p>
-                    </div>
-                    <div className="rounded-[1.4rem] border border-[#d9ead7] bg-[#f4fbf3]/90 p-4 shadow-sm">
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Final Choices</p>
-                      <p className="mt-2 text-3xl font-semibold text-foreground">{finalVendorEntries.length}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">categories already locked in</p>
-                    </div>
-                    <div className="rounded-[1.4rem] border border-[#f0dfc5] bg-[#fff8ec]/95 p-4 shadow-sm">
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Private Records</p>
-                      <p className="mt-2 text-3xl font-semibold text-foreground">{vendors.filter((vendor) => !vendor.vendor_listing_id).length}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">vendors not linked to a Zania listing yet</p>
-                    </div>
-                    <div className="rounded-[1.4rem] border border-[#f1d6d3] bg-[#fff4f2]/90 p-4 shadow-sm">
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Open Follow-ups</p>
-                      <p className="mt-2 text-3xl font-semibold text-foreground">{vendorTaskSummary.openTasks}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">vendor tasks still waiting on action</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Vendors</p>
+                <h1 className="mt-2 font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Who will help make it happen?</h1>
+                <p className="mt-2 text-sm text-muted-foreground">Save options, compare them, then choose who to book.</p>
+              </div>
+              {addVendorDialog}
+            </header>
 
-              <Card className="shadow-card">
-                <CardContent className="flex h-full flex-col justify-between gap-5 p-6">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Next Best Move</p>
-                      <InfoTip content="This suggestion changes based on shortlist gaps, final choices, payment deadlines, and open vendor follow-up tasks." />
-                    </div>
-                    <h2 className="mt-3 text-2xl font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">{vendorPrimaryAction.body}</p>
-                  </div>
-                  <div className="space-y-3">
-                    {vendorPrimaryAction.actionLabel && (
-                      <Button
-                        type="button"
-                        className="w-full gap-2"
-                        onClick={() => {
-                          if (vendorPrimaryAction.actionType === 'open_add_vendor') {
-                            setOpen(true);
-                            return;
-                          }
-                          if (vendorPrimaryAction.actionType === 'assistant_prompt' && vendorPrimaryAction.prompt && assistantPanel) {
-                            assistantPanel.openAssistant(vendorPrimaryAction.prompt);
-                          }
-                        }}
-                      >
-                        {vendorPrimaryAction.actionType === 'assistant_prompt' ? null : <Plus className="h-4 w-4" />}
-                        {vendorPrimaryAction.actionLabel}
-                      </Button>
-                    )}
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                      {vendorWorkspaceVendors.length === vendors.length
-                        ? `${vendors.length} vendor${vendors.length === 1 ? '' : 's'} visible in the workspace queue.`
-                        : `${vendorWorkspaceVendors.length} of ${vendors.length} vendor${vendors.length === 1 ? '' : 's'} visible after filtering.`}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
+              <CardContent className="p-5">
+                <h2 className="mt-2 text-lg font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
+              <div className="border-r border-border p-3 sm:p-4">
+                <p className="text-xs text-muted-foreground">Saved</p>
+                <p className="mt-1 text-xl font-semibold text-foreground">{vendors.length}</p>
+              </div>
+              <div className="border-r border-border p-3 sm:p-4">
+                <p className="text-xs text-muted-foreground">Chosen</p>
+                <p className="mt-1 text-xl font-semibold text-foreground">{finalVendorEntries.length}</p>
+              </div>
+              <div className="p-3 sm:p-4">
+                <p className="text-xs text-muted-foreground">Follow-ups</p>
+                <p className="mt-1 text-xl font-semibold text-foreground">{vendorTaskSummary.openTasks}</p>
+              </div>
             </div>
 
-            <Card className="shadow-card">
-              <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-                <div className="relative w-full lg:max-w-md">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Card className="rounded-lg border-border shadow-none">
+              <CardContent className="flex flex-col items-center gap-4 p-5">
+                <div className="w-full max-w-xl">
                   <Input
                     value={vendorWorkspaceQuery}
                     onChange={(event) => setVendorWorkspaceQuery(event.target.value)}
                     placeholder="Search vendors by name, category, contact, or status"
-                    className="pl-9"
                   />
                 </div>
-                <details className="w-full rounded-2xl border border-border/70 bg-background/70 p-3 sm:w-auto">
-                  <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                    Vendor view controls
-                  </summary>
-                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <div className="grid w-full grid-cols-2 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
-                    <Button
-                      type="button"
-                      variant={vendorListView === 'by_category' ? 'default' : 'ghost'}
-                      className="rounded-full px-4 sm:px-6"
-                      onClick={() => setVendorListView('by_category')}
-                    >
-                      By Category
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={vendorListView === 'by_name' ? 'default' : 'ghost'}
-                      className="rounded-full px-4 sm:px-6"
-                      onClick={() => setVendorListView('by_name')}
-                    >
-                      By Name
-                    </Button>
-                  </div>
+                <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
+                  <SlidingSegmentedControl
+                    label="Vendor view"
+                    layoutId="vendor-list-view-selection"
+                    value={vendorListView}
+                    options={[{ value: 'by_category', label: 'Categories' }, { value: 'by_name', label: 'Name' }]}
+                    onChange={setVendorListView}
+                    minWidthClassName="w-full min-w-0 sm:min-w-[18rem]"
+                  />
                   <UpgradePromptDialog
                     open={exportUpgradeOpen}
                     onOpenChange={setExportUpgradeOpen}
@@ -2808,7 +2752,6 @@ export default function Vendors() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="gap-2"
                     onClick={() => {
                       if (!exportDecision.allowed) {
                         setExportUpgradeOpen(true);
@@ -2817,12 +2760,9 @@ export default function Vendors() {
                       exportVendorData();
                     }}
                   >
-                    <Download className="h-4 w-4" />
                     Export Vendors
                   </Button>
                 </div>
-                </details>
-                {addVendorDialog}
               </CardContent>
             </Card>
 
@@ -2840,16 +2780,11 @@ export default function Vendors() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    {vendors.length === 0 ? (
-                      <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
-                        <Plus className="h-4 w-4" />
-                        Add first vendor
-                      </Button>
-                    ) : (
+                    {vendors.length > 0 ? (
                       <Button type="button" variant="outline" onClick={() => setVendorWorkspaceQuery('')}>
                         Clear search
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 </CardContent>
               </Card>
@@ -2863,7 +2798,7 @@ export default function Vendors() {
                   <section key={category} className="space-y-4">
                     <div className="border-t border-border/70 pt-6">
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                        <h2 className="text-3xl font-semibold text-foreground">{category}</h2>
+                        <h2 className="break-words text-2xl font-semibold text-foreground sm:text-3xl">{category}</h2>
                         <p className="text-sm text-muted-foreground">{group.length} vendor{group.length === 1 ? '' : 's'} in this category</p>
                       </div>
                     </div>
@@ -2875,7 +2810,7 @@ export default function Vendors() {
               </div>
             )}
 
-            <details className="rounded-[1.6rem] border border-border/70 bg-card shadow-card">
+            <details className="hidden rounded-[1.6rem] border border-border/70 bg-card shadow-card">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <p className="text-lg font-semibold text-foreground">AI guidance</p>
@@ -2942,7 +2877,7 @@ export default function Vendors() {
           </>
         ) : (
           <>
-            <Card className={`overflow-hidden bg-gradient-to-br from-background via-background to-muted/30 shadow-card transition-[border-color,box-shadow] duration-300 ease-zania motion-reduce:transition-none ${
+            <Card className={`overflow-hidden border-primary/70 bg-gradient-to-br from-primary/[0.075] via-background to-muted/30 shadow-[0_18px_44px_-28px_hsl(var(--foreground)/0.58)] ring-1 ring-primary/15 transition-[border-color,box-shadow] duration-300 ease-zania motion-reduce:transition-none ${
               selectedVendorMilestoneCelebrating
                 ? 'border-[#dfbd79] shadow-[0_0_0_5px_rgba(223,189,121,0.14),0_22px_52px_rgba(74,51,30,0.10)]'
                 : 'border-border/70'
@@ -2953,15 +2888,13 @@ export default function Vendors() {
                     <div className="flex items-start gap-4">
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="rounded-full"
+                        variant="outline"
                         onClick={() => {
                           setSelectedVendorId(null);
                           setSelectedVendorTab('details');
                         }}
                       >
-                        <ArrowLeft className="h-8 w-8" />
+                        Back to vendors
                       </Button>
                       <div>
                         <Badge variant="outline" className="rounded-full">{selectedVendor.category}</Badge>
@@ -3015,18 +2948,15 @@ export default function Vendors() {
                       </p>
                     </div>
 
-                  <div className="grid w-full grid-cols-3 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
-                    {(['details', 'tasks', 'payments'] as const).map((tab) => (
-                      <Button
-                        key={tab}
-                        type="button"
-                        variant={selectedVendorTab === tab ? 'default' : 'ghost'}
-                        className="rounded-full px-3 capitalize sm:px-8"
-                        onClick={() => setSelectedVendorTab(tab)}
-                      >
-                        {tab}
-                      </Button>
-                    ))}
+                  <div className="flex justify-center overflow-x-auto">
+                    <SlidingSegmentedControl
+                      label="Vendor details view"
+                      layoutId="vendor-detail-tab-selection"
+                      value={selectedVendorTab}
+                      options={[{ value: 'details', label: 'Details' }, { value: 'tasks', label: 'Tasks' }, { value: 'payments', label: 'Payments' }]}
+                      onChange={setSelectedVendorTab}
+                      minWidthClassName="min-w-[22rem]"
+                    />
                   </div>
                 </div>
               </CardContent>

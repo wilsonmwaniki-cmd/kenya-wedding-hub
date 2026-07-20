@@ -96,7 +96,12 @@ export async function performAuthEntrySignUp(input: {
       emailRedirectTo: input.emailRedirectTo,
     },
   });
-  if (error) throw error;
+  if (error) {
+    if (error.message.toLowerCase().includes('confirmation email')) {
+      throw new Error('We could not send your confirmation email. Your details are safe—please try again in a moment.');
+    }
+    throw error;
+  }
 
   const isExistingAccountAttempt =
     Array.isArray(data.user?.identities)

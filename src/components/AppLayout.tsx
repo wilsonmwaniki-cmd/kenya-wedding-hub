@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, type RolePreview } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
@@ -8,13 +8,14 @@ import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
   MessageSquare, Settings, LogOut, Menu, X, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown, HeartHandshake, FlaskConical, Map
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getHomeRouteForRole, isProfessionalSetupPending, type PlannerType } from '@/lib/roles';
 import { AssistantPanelProvider, useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import BrandWordmark from '@/components/BrandWordmark';
 import AccountReviewBanner from '@/components/AccountReviewBanner';
-import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isProfessionalNetworkEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
+import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isLaunchFeatureEnabled, isProfessionalNetworkEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 
 const AssistantPanel = lazy(() => import('@/components/AssistantPanel'));
 
@@ -34,7 +35,7 @@ function readExpandedNavItems() {
 type NavItem = {
   path: string;
   label: string;
-  icon: any;
+  icon: LucideIcon;
   children?: Array<{ path: string; label: string }>;
 };
 
@@ -159,47 +160,46 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const professionalNetworkEnabled = isProfessionalNetworkEnabled();
   const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
   const labsEnabled = professionalNetworkEnabled;
-  const professionalNetworkNavItem: NavItem = {
-    path: getProfessionalNetworkPath(),
-    label: 'Network',
-    icon: HeartHandshake,
-  };
-  const spaceTablePlanNavItem: NavItem = {
-    path: getSpaceTablePlanPath(),
-    label: 'Space Plan',
-    icon: Map,
-  };
-  const labsNavItem: NavItem = {
-    path: getLabsPath(),
-    label: 'Labs',
-    icon: FlaskConical,
-  };
   const isAdmin = profile?.role === 'admin';
   const isVendor = profile?.role === 'vendor';
   const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata ?? null, profile?.role, user?.email ?? null);
-  const previewNavItems: NavItem[] = [];
+  const navItems = useMemo<NavItem[]>(() => {
+    const previewNavItems: NavItem[] = [];
 
-  if (professionalNetworkEnabled && (isPlanner || isVendor)) {
-    previewNavItems.push(professionalNetworkNavItem);
-  }
+    if (professionalNetworkEnabled && (isPlanner || isVendor)) {
+      previewNavItems.push({ path: getProfessionalNetworkPath(), label: 'Network', icon: HeartHandshake });
+    }
 
-  if (spaceTablePlanEnabled && (isPlanner || (!isAdmin && !isVendor))) {
-    previewNavItems.push(spaceTablePlanNavItem);
-  }
+    if (spaceTablePlanEnabled && (isPlanner || (!isAdmin && !isVendor))) {
+      previewNavItems.push({ path: getSpaceTablePlanPath(), label: 'Space Plan', icon: Map });
+    }
 
-  if (labsEnabled && (!isAdmin && !professionalSetupPending)) {
-    previewNavItems.push(labsNavItem);
-  }
+    if (labsEnabled && !isAdmin && !professionalSetupPending) {
+      previewNavItems.push({ path: getLabsPath(), label: 'Labs', icon: FlaskConical });
+    }
 
-  const navItems = professionalSetupPending
-    ? professionalSetupNavItems
-    : isAdmin
-      ? adminNavItems
-      : isVendor
-        ? [...vendorNavItems.slice(0, 2), ...previewNavItems, ...vendorNavItems.slice(2)]
-        : isPlanner
-          ? [...plannerNavItems.slice(0, 9), ...previewNavItems, ...plannerNavItems.slice(9)]
-          : [...coupleNavItems.slice(0, 7), ...previewNavItems, ...coupleNavItems.slice(7)];
+    const releaseAwareCoupleNavItems = coupleNavItems.filter((item) => isLaunchFeatureEnabled(item.path));
+    const coupleSettingsItem = releaseAwareCoupleNavItems.find((item) => item.path === '/settings');
+    const resolvedCoupleNavItems = [
+      ...releaseAwareCoupleNavItems.filter((item) => item.path !== '/settings'),
+      ...previewNavItems.filter((item) => isLaunchFeatureEnabled(item.path)),
+      ...(coupleSettingsItem ? [coupleSettingsItem] : []),
+    ];
+
+    if (professionalSetupPending) return professionalSetupNavItems;
+    if (isAdmin) return adminNavItems;
+    if (isVendor) return [...vendorNavItems.slice(0, 2), ...previewNavItems, ...vendorNavItems.slice(2)];
+    if (isPlanner) return [...plannerNavItems.slice(0, 9), ...previewNavItems, ...plannerNavItems.slice(9)];
+    return resolvedCoupleNavItems;
+  }, [
+    isAdmin,
+    isPlanner,
+    isVendor,
+    labsEnabled,
+    professionalNetworkEnabled,
+    professionalSetupPending,
+    spaceTablePlanEnabled,
+  ]);
 
   // Map paths to badge counts
   const badgeCounts: Record<string, number> = {};
@@ -385,7 +385,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="space-y-2 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
             {navItems.map((item) => {
               const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
-              const disabled = needsClient && planningPaths.includes(item.path);
+              const releaseDisabled = !isLaunchFeatureEnabled(item.path);
+              const disabled = releaseDisabled || (needsClient && planningPaths.includes(item.path));
               const hasChildren = Boolean(item.children?.length);
               const isExpanded = expandedNavItems[item.path] ?? isActive;
               return (
@@ -418,6 +419,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       ) : null}
                       <item.icon className={`relative z-10 h-4.5 w-4.5 transition-colors duration-200 ${isActive ? 'text-primary' : 'text-white/80'}`} />
                       <span className="relative z-10 min-w-0 flex-1 truncate">{item.label}</span>
+                      {releaseDisabled ? (
+                        <span className="relative z-10 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/65">
+                          Soon
+                        </span>
+                      ) : null}
                       {(badgeCounts[item.path] || 0) > 0 && (
                         <span
                           className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-info/30 bg-info/15 px-1.5 text-[10px] font-bold text-info"
@@ -453,6 +459,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       ) : null}
                       <item.icon className={`relative z-10 h-4.5 w-4.5 transition-colors duration-200 ${isActive ? 'text-primary' : 'text-white/80'}`} />
                       <span className="relative z-10 min-w-0 flex-1 truncate">{item.label}</span>
+                      {releaseDisabled ? (
+                        <span className="relative z-10 ml-auto rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/65">
+                          Soon
+                        </span>
+                      ) : null}
                       {(badgeCounts[item.path] || 0) > 0 && (
                         <span
                           className="relative z-10 ml-auto flex h-5 min-w-5 items-center justify-center rounded-full border border-info/30 bg-info/15 px-1.5 text-[10px] font-bold text-info"
@@ -512,7 +523,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex min-h-screen flex-1 flex-col bg-[radial-gradient(circle_at_top,rgba(227,144,100,0.08),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,237,0.96))]">
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(227,144,100,0.08),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,237,0.96))]">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-[#eadbca] bg-[linear-gradient(180deg,rgba(255,251,247,0.96),rgba(248,241,232,0.92))] px-4 py-3 shadow-[0_10px_30px_rgba(28,22,18,0.04)] backdrop-blur-sm lg:hidden">
           <Button
             type="button"
@@ -530,7 +541,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </Badge>
           )}
         </header>
-        <div className="flex-1 p-4 pb-28 sm:p-6 sm:pb-32 lg:p-8 lg:pb-36">
+        <div className="min-w-0 flex-1 p-4 pb-28 sm:p-6 sm:pb-32 lg:p-8 lg:pb-36">
           {isSuperAdmin && (
             <div className="mb-6 rounded-[26px] border border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(227,144,100,0.16),transparent_28%),linear-gradient(180deg,rgba(255,251,247,0.95),rgba(250,244,236,0.92))] px-4 py-4 shadow-[0_18px_42px_rgba(28,22,18,0.06)]">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -561,7 +572,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           )}
-          <div className="mx-auto w-full max-w-[1680px]" data-page-shell>
+          <div className="mx-auto min-w-0 w-full max-w-[1680px]" data-page-shell>
             <AccountReviewBanner />
             {children}
           </div>

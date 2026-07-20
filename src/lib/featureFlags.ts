@@ -10,6 +10,37 @@ export function isAppleAuthEnabled() {
   return import.meta.env.VITE_ENABLE_APPLE_AUTH === 'true';
 }
 
+export type ReleaseChannel = 'production' | 'staging';
+
+const productionLaunchPaths = new Set([
+  '/dashboard',
+  '/budget',
+  '/tasks',
+  '/vendors',
+  '/settings',
+]);
+
+export function resolveReleaseChannel(
+  configuredChannel?: string,
+  isDevelopment = false,
+): ReleaseChannel {
+  if (configuredChannel === 'staging' || isDevelopment) return 'staging';
+  return 'production';
+}
+
+export function getReleaseChannel(): ReleaseChannel {
+  return resolveReleaseChannel(import.meta.env.VITE_RELEASE_CHANNEL, import.meta.env.DEV);
+}
+
+export function isPathEnabledForRelease(path: string, channel: ReleaseChannel) {
+  if (channel === 'staging') return true;
+  return productionLaunchPaths.has(path);
+}
+
+export function isLaunchFeatureEnabled(path: string) {
+  return isPathEnabledForRelease(path, getReleaseChannel());
+}
+
 export function getProfessionalNetworkPath() {
   return '/labs/network';
 }

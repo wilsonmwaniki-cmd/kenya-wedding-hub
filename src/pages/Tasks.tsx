@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download, Search, ChevronRight } from 'lucide-react';
+import { Link2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
@@ -32,6 +32,7 @@ import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { buildConciergeContext } from '@/lib/conciergeContext';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ToastAction } from '@/components/ui/toast';
+import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 
 interface Task {
   id: string;
@@ -644,7 +645,7 @@ export default function Tasks() {
     if (nextPendingTask?.category) {
       prompts.push(`Tell me what to do first for the next ${nextPendingTask.category} task on our list.`);
     } else if (nextPendingTask) {
-      prompts.push('Tell me which pending task should be tackled first and why.');
+      prompts.push('Tell me which open task should be tackled first and why.');
     }
 
     if (openVendorTaskCount > 0 || dueSoonVendorTasks > 0) {
@@ -802,15 +803,8 @@ export default function Tasks() {
   );
 
   useEffect(() => {
-    if (visibleTasks.length === 0) {
-      if (selectedTaskId !== null) {
-        setSelectedTaskId(null);
-      }
-      return;
-    }
-
-    if (!selectedTaskId || !visibleTasks.some((task) => task.id === selectedTaskId)) {
-      setSelectedTaskId(visibleTasks[0].id);
+    if (selectedTaskId && !visibleTasks.some((task) => task.id === selectedTaskId)) {
+      setSelectedTaskId(null);
     }
   }, [visibleTasks, selectedTaskId]);
 
@@ -851,36 +845,43 @@ export default function Tasks() {
     const active = selectedTaskId === t.id;
     const isUrgent = isUrgentTask(t);
 
+    const linkedBudget = resolvedCategory ? budgetLookup[normalizeCategory(resolvedCategory)] : null;
+
     return (
-      <motion.button
+      <motion.div
         layout
         initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
+        animate={{ opacity: 1, y: active && !prefersReducedMotion ? -1 : 0, scale: active && !prefersReducedMotion ? 1.006 : 1 }}
         exit={{ opacity: 0, height: 0, marginBottom: 0 }}
         transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-        type="button"
-        onClick={() => setSelectedTaskId(t.id)}
         className={cn(
-          'w-full rounded-2xl border p-4 text-left transition-all',
+          'relative w-full overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200',
           active
-            ? 'border-primary bg-primary/5 shadow-sm'
-            : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20',
+            ? 'z-10 border-primary/70 bg-primary/[0.075] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15'
+            : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card',
           isDone && 'opacity-70',
         )}
       >
-        <div className="flex items-start gap-3">
+        <span aria-hidden="true" className={cn('absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary transition-opacity', active ? 'opacity-100' : 'opacity-0')} />
+        <div className="flex items-start gap-3 p-4">
           <Checkbox
             checked={isDone}
             onCheckedChange={() => toggleTask(t.id, t.completed)}
             className="mt-1"
             onClick={(event) => event.stopPropagation()}
           />
-          <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => setSelectedTaskId(active ? null : t.id)}
+            aria-expanded={active}
+            className="min-w-0 flex-1 text-left"
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className={cn('font-medium text-card-foreground', isDone && 'line-through text-muted-foreground')}>
-                  {t.title}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className={cn('font-medium text-card-foreground', isDone && 'line-through text-muted-foreground')}>{t.title}</p>
+                  {active ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-primary">Open</span> : null}
+                </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {resolvedCategory && (
                     <Badge variant="secondary" className="rounded-full text-[11px]">
@@ -890,11 +891,6 @@ export default function Tasks() {
                   <Badge variant={t.visibility === 'private' ? 'destructive' : 'outline'} className="rounded-full text-[11px]">
                     {t.visibility === 'private' ? 'Private' : 'Shared'}
                   </Badge>
-                  {t.priority_level != null && (
-                    <Badge variant="outline" className="rounded-full text-[11px]">
-                      P{t.priority_level} · {priorityLabel(t.priority_level)}
-                    </Badge>
-                  )}
                   {isUrgent && !isDone && (
                     <Badge className="rounded-full bg-destructive/10 text-destructive hover:bg-destructive/10">
                       Urgent
@@ -902,149 +898,111 @@ export default function Tasks() {
                   )}
                 </div>
               </div>
-              <ChevronRight className={cn('mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform', active && 'translate-x-0.5 text-primary')} />
+              <span className={cn('mt-0.5 shrink-0 text-xs font-semibold', active ? 'text-primary' : 'text-muted-foreground')}>
+                {active ? 'Hide details' : 'View details'}
+              </span>
             </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               {t.due_date && (
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {new Date(t.due_date).toLocaleDateString()}
-                </span>
+                <span>Due {new Date(t.due_date).toLocaleDateString()}</span>
               )}
               {t.assigned_to && (
-                <span className="flex items-center gap-1">
-                  <UserCircle className="h-3 w-3" />
-                  {t.assigned_to}
-                </span>
-              )}
-              {linkedVendor && (
-                <span className="flex items-center gap-1">
-                  <BriefcaseBusiness className="h-3 w-3" />
-                  {linkedVendor.name}
-                </span>
+                <span>Assigned to {t.assigned_to}</span>
               )}
             </div>
-          </div>
+          </button>
         </div>
-      </motion.button>
+
+        <AnimatePresence initial={false}>
+          {active ? (
+            <motion.div
+              initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+              transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="space-y-4 border-t border-primary/15 px-4 pb-4 pt-4 sm:px-6">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
+                  <div><p className="text-xs text-muted-foreground">Due</p><p className="mt-1 font-medium">{t.due_date ? new Date(t.due_date).toLocaleDateString() : 'No date'}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Who</p><p className="mt-1 font-medium">{t.assigned_to || 'Not assigned'}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Vendor</p><p className="mt-1 font-medium">{linkedVendor?.name || 'None'}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Budget</p><p className="mt-1 font-medium">{linkedBudget ? `KES ${(linkedBudget.allocated - linkedBudget.spent).toLocaleString()} left` : 'None'}</p></div>
+                </div>
+                {t.description && t.description.trim() !== t.title.trim() ? (
+                  <p className="text-sm leading-6 text-muted-foreground">{t.description}</p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" onClick={() => toggleTask(t.id, t.completed)}>{t.completed ? 'Mark as open' : 'Mark complete'}</Button>
+                  {t.due_date ? (
+                    calendarDecision.allowed ? (
+                      <a href={buildGoogleCalendarUrl({ title: t.title, date: t.due_date, description: t.description ?? '' })} target="_blank" rel="noopener noreferrer">
+                        <Button type="button" variant="outline">Add to calendar</Button>
+                      </a>
+                    ) : <Button type="button" variant="outline" onClick={() => setUpgradeOpen(true)}>Add to calendar</Button>
+                  ) : null}
+                  <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Delete task" title="Delete task" onClick={() => deleteTask(t.id)}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
+                </div>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </motion.div>
     );
   };
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
-        <CardContent className="grid gap-5 p-6 lg:grid-cols-[1.35fr_0.95fr] lg:p-8">
-          <div className="space-y-5">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Task Workspace</p>
-              <h1 className="workspace-h1 mt-2">Choose the next task with confidence</h1>
-              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Zania separates urgent work, private work, and vendor-linked follow-up so the checklist feels like a path instead of a pile.
-              </p>
-            </div>
+      <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Tasks</p>
+          <h1 className="mt-2 font-editorial text-3xl font-semibold text-foreground sm:text-4xl">What needs doing?</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Start with the next task. The rest can wait.</p>
+        </div>
+        <Button type="button" onClick={() => setOpen(true)}>Add task</Button>
+      </header>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Open tasks</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{pending.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Still active in the wedding queue</p>
-              </div>
-              <div className="rounded-2xl border border-[#f1d6d3] bg-[#fff4f2]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Urgent now</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{urgentPending.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Critical or due in the next three days</p>
-              </div>
-              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Completed</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{done.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Already moved out of the active queue</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
-            <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Today on tasks</p>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-sm font-medium text-foreground">{nextPendingTask?.title ?? 'No pending task selected yet'}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {nextPendingTask?.due_date
-                    ? `Due ${new Date(nextPendingTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`
-                    : 'The next visible task will appear here once the queue starts filling up.'}
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Private queue</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{privateTaskCount}</p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Vendor linked</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{openVendorTaskCount}</p>
-                </div>
-              </div>
-              <div className="semantic-surface-info rounded-2xl border p-4">
-                <p className="text-sm font-medium text-foreground">
-                  {overduePending.length > 0
-                    ? `${overduePending.length} overdue task${overduePending.length === 1 ? '' : 's'} need recovery`
-                    : dueSoonVendorTasks > 0
-                      ? `${dueSoonVendorTasks} vendor task${dueSoonVendorTasks === 1 ? '' : 's'} are due soon`
-                      : 'The queue is under control right now'}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {overduePending.length > 0
-                    ? 'Start with the overdue queue, then move into vendor-linked work.'
-                    : 'Use the list filters below to focus on the work that matters most.'}
-                </p>
-              </div>
-            </div>
-          </div>
+      <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
+        <CardContent className="p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next task</p>
+          <p className="mt-2 text-lg font-semibold text-foreground">{nextPendingTask?.title ?? 'Add your first task'}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {nextPendingTask?.due_date
+              ? `Due ${new Date(nextPendingTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+              : nextPendingTask ? 'No due date' : 'A short checklist makes planning easier.'}
+          </p>
         </CardContent>
       </Card>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <details className="w-full rounded-2xl border border-border/70 bg-background/70 p-3 lg:w-auto">
-          <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Task view controls
-          </summary>
-          <div className="flex w-full items-center rounded-full border border-border bg-background p-1 shadow-sm sm:w-auto">
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setTaskViewMode('by_date')}
-              className={cn(
-                'flex-1 rounded-full px-4 sm:flex-none sm:px-7',
-                taskViewMode === 'by_date' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-transparent text-foreground hover:bg-muted',
-              )}
-            >
-              By Date
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setTaskViewMode('by_category')}
-              className={cn(
-                'flex-1 rounded-full px-4 sm:flex-none sm:px-7',
-                taskViewMode === 'by_category' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-transparent text-foreground hover:bg-muted',
-              )}
-            >
-              By Category
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setTaskViewMode('completed')}
-              className={cn(
-                'flex-1 rounded-full px-4 sm:flex-none sm:px-7',
-                taskViewMode === 'completed' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-transparent text-foreground hover:bg-muted',
-              )}
-            >
-              Completed
-            </Button>
-          </div>
-        </details>
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
+      <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-r border-border p-3 sm:p-4">
+          <p className="text-xs text-muted-foreground">Open</p>
+          <p className="mt-1 text-xl font-semibold text-foreground">{pending.length}</p>
+        </div>
+        <div className="border-r border-border p-3 sm:p-4">
+          <p className="text-xs text-muted-foreground">Urgent</p>
+          <p className="mt-1 text-xl font-semibold text-foreground">{urgentPending.length}</p>
+        </div>
+        <div className="p-3 sm:p-4">
+          <p className="text-xs text-muted-foreground">Done</p>
+          <p className="mt-1 text-xl font-semibold text-foreground">{done.length}</p>
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-border bg-card p-3 sm:p-4">
+        <div className="flex justify-center overflow-x-auto">
+          <SlidingSegmentedControl
+            label="Task view"
+            layoutId="task-view-selection"
+            value={taskViewMode}
+            options={[{ value: 'by_date', label: 'By date' }, { value: 'by_category', label: 'Categories' }, { value: 'completed', label: 'Completed' }]}
+            onChange={setTaskViewMode}
+            reducedMotion={Boolean(prefersReducedMotion)}
+            minWidthClassName="w-full min-w-0"
+          />
+        </div>
+        <div className="flex w-full flex-col justify-center gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <UpgradePromptDialog
             open={upgradeOpen}
             onOpenChange={setUpgradeOpen}
@@ -1067,14 +1025,9 @@ export default function Tasks() {
               exportTasks();
             }}
           >
-            <Download className="h-4 w-4" />
             Export Tasks
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-            <Button type="button" className="w-full gap-2 sm:w-auto" onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add Task
-            </Button>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
               <DialogHeader><DialogTitle className="font-display">Add Task</DialogTitle></DialogHeader>
               <form onSubmit={addTask} className="space-y-4">
@@ -1283,7 +1236,7 @@ export default function Tasks() {
         </div>
       </div>
 
-      <details className="rounded-3xl border border-border/70 bg-background p-5 shadow-card">
+      <details className="hidden rounded-3xl border border-border/70 bg-background p-5 shadow-card">
         <summary className="cursor-pointer list-none">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1347,13 +1300,13 @@ export default function Tasks() {
         </div>
       </details>
 
-      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+      <div>
         <Card className="border-primary/15 shadow-card">
           <CardContent className="space-y-5 p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Task Queue</p>
-                <h2 className="workspace-h2 mt-2">Browse the live checklist</h2>
+                <h2 className="workspace-h2">Tasks</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Choose a task to see more.</p>
               </div>
               <Badge variant="outline" className="rounded-full px-3 py-1">
                 {visibleTasks.length} visible
@@ -1361,13 +1314,11 @@ export default function Tasks() {
             </div>
 
             <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <div>
                 <Input
                   value={taskSearch}
                   onChange={(event) => setTaskSearch(event.target.value)}
                   placeholder="Search tasks, categories, vendors, or assignees"
-                  className="pl-10"
                 />
               </div>
               <Select value={taskScopeFilter} onValueChange={(value) => setTaskScopeFilter(value as TaskScopeFilter)}>
@@ -1382,13 +1333,6 @@ export default function Tasks() {
                   <SelectItem value="shared">Shared only</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="rounded-full px-3 py-1">Overdue {overduePending.length}</Badge>
-              <Badge variant="outline" className="rounded-full px-3 py-1">Urgent {urgentPending.length}</Badge>
-              <Badge variant="outline" className="rounded-full px-3 py-1">Vendor linked {openVendorTaskCount}</Badge>
-              <Badge variant="outline" className="rounded-full px-3 py-1">Private {privateTaskCount}</Badge>
             </div>
 
             {((taskViewMode === 'completed' && filteredDone.length === 0) ||
@@ -1427,7 +1371,7 @@ export default function Tasks() {
           </CardContent>
         </Card>
 
-        <Card className="border-primary/15 shadow-card">
+        <Card className="hidden border-primary/15 shadow-card">
           <CardContent className="space-y-5 p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -1553,27 +1497,23 @@ export default function Tasks() {
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          <Button type="button" variant="outline" className="gap-2">
-                            <CalendarPlus className="h-4 w-4" />
+                          <Button type="button" variant="outline">
                             Add to Calendar
                           </Button>
                         </a>
                       ) : (
-                        <Button type="button" variant="outline" className="gap-2" onClick={() => setUpgradeOpen(true)}>
-                          <CalendarPlus className="h-4 w-4" />
+                        <Button type="button" variant="outline" onClick={() => setUpgradeOpen(true)}>
                           Add to Calendar
                         </Button>
                       )
                     )}
                     {linkedVendor && (
-                      <Button type="button" variant="outline" className="gap-2" onClick={() => navigate('/vendors')}>
-                        <BriefcaseBusiness className="h-4 w-4" />
+                      <Button type="button" variant="outline" onClick={() => navigate('/vendors')}>
                         Open vendor workspace
                       </Button>
                     )}
-                    <Button type="button" variant="ghost" className="gap-2 text-destructive hover:text-destructive" onClick={() => deleteTask(selectedTask.id)}>
-                      <Trash2 className="h-4 w-4" />
-                      Delete
+                    <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Delete task" title="Delete task" onClick={() => deleteTask(selectedTask.id)}>
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </div>
                 </div>

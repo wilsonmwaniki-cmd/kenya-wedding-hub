@@ -179,9 +179,12 @@ export default function ResetPassword() {
       await supabase.auth.signOut({ scope: 'local' });
       toast({ title: 'Password updated!', description: 'You can now sign in with your new password.' });
       navigate('/sign-in');
-    } catch (err: any) {
-      setSubmitError(err.message || 'Could not update your password right now.');
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err: unknown) {
+      const message = err instanceof Error && err.message
+        ? err.message
+        : 'Could not update your password right now.';
+      setSubmitError(message);
+      toast({ title: 'Error', description: message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -203,7 +206,7 @@ export default function ResetPassword() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Button className="w-full" onClick={() => navigate('/')}>
+            <Button className="w-full" onClick={() => navigate('/forgot-password')}>
               Request New Reset Link
             </Button>
             <Button variant="outline" className="w-full" onClick={() => navigate('/sign-in')}>

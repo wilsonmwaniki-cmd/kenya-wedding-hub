@@ -33,8 +33,10 @@ import { FormFieldError, FormFieldSuccess, FormSubmitError } from '@/components/
 import { sanitizeHtml } from '@/lib/security';
 import { ToastAction } from '@/components/ui/toast';
 import AnimatedNumber from '@/components/AnimatedNumber';
+import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 
 const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
+type GuestStatusFilter = 'all' | 'confirmed' | 'pending' | 'declined';
 
 interface Guest {
   id: string;
@@ -163,6 +165,7 @@ export default function Guests() {
   const [checkInMode, setCheckInMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGroup, setFilterGroup] = useState<string>('all');
+  const [guestStatusFilter, setGuestStatusFilter] = useState<GuestStatusFilter>('all');
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [savingGuestId, setSavingGuestId] = useState<string | null>(null);
 
@@ -716,7 +719,8 @@ export default function Guests() {
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
     const matchesGroup = filterGroup === 'all' || g.group_name === filterGroup;
-    return matchesSearch && matchesGroup;
+    const matchesStatus = guestStatusFilter === 'all' || (g.rsvp_status || 'pending') === guestStatusFilter;
+    return matchesSearch && matchesGroup && matchesStatus;
   });
 
   const uniqueGroups = [...new Set(guests.map(g => g.group_name).filter(Boolean))] as string[];
@@ -750,13 +754,8 @@ export default function Guests() {
   }, [selectedGuest]);
 
   useEffect(() => {
-    if (visibleGuests.length === 0) {
-      if (selectedGuestId !== null) setSelectedGuestId(null);
-      return;
-    }
-
-    if (!selectedGuestId || !visibleGuests.some((guest) => guest.id === selectedGuestId)) {
-      setSelectedGuestId(visibleGuests[0].id);
+    if (selectedGuestId && !visibleGuests.some((guest) => guest.id === selectedGuestId)) {
+      setSelectedGuestId(null);
     }
   }, [selectedGuestId, visibleGuests]);
 
@@ -807,73 +806,55 @@ export default function Guests() {
         </Card>
       )}
 
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
-        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.3fr_0.95fr] lg:p-8">
+      <Card className="overflow-hidden border-border shadow-none">
+        <CardContent className="space-y-5 p-5 sm:p-6">
           <div className="space-y-5">
             <div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Guest Workspace</p>
-                <InfoTip content="Manage your guest list, RSVP replies, contact details, groups, and invite follow-up in one place." />
-              </div>
-              <h1 className="workspace-h1 mt-2">Build the guest list one step at a time</h1>
-              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Start with names, then add contact details, send invites, and use RSVP/check-in tools when the list is ready.
-              </p>
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-primary">Guests</p>
+              <h1 className="workspace-h1 mt-2">Who is coming?</h1>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-4">
-              <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Total guests</p>
+            <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
+              <div className="border-r border-border p-4">
+                <p className="text-xs text-muted-foreground">Total</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{guests.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Everyone currently on the list</p>
               </div>
-              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Confirmed</p>
+              <div className="border-r border-border p-4">
+                <p className="text-xs text-muted-foreground">Confirmed</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{confirmed}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Guests who have said yes</p>
               </div>
-              <div className="rounded-2xl border border-[#f1d6d3] bg-[#fff4f2]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Pending</p>
+              <div className="p-4">
+                <p className="text-xs text-muted-foreground">Waiting</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{pendingGuests}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Still waiting on RSVP replies</p>
-              </div>
-              <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{guestPrimaryAction}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest actions</p>
-              <InfoTip content="Use quick actions here to import guests, export a template, start check-in, or send invites in bulk." />
-            </div>
+          <div className="border-t border-border pt-4">
             <details className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-3">
               <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 Import, export, and check-in tools
               </summary>
               <div className="mt-3 flex flex-wrap gap-2">
               <input type="file" ref={fileInputRef} accept=".csv" onChange={handleFileUpload} className="hidden" />
-              <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
-                <Download className="h-4 w-4" /> CSV Template
+              <Button variant="outline" size="sm" onClick={downloadTemplate}>
+                CSV Template
               </Button>
-              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading || plannerNeedsApproval} className="gap-2">
-                <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload CSV'}
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading || plannerNeedsApproval}>
+                {uploading ? 'Uploading...' : 'Upload CSV'}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} className="gap-2" disabled={plannerNeedsApproval}>
-                <UserCheck className="h-4 w-4" /> Check-In
+              <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} disabled={plannerNeedsApproval}>
+                Check-In
               </Button>
               {!plannerNeedsApproval && pendingWithEmail.length > 0 && (
-                <Button variant="outline" size="sm" onClick={() => openCompose()} className="gap-2">
-                  <Send className="h-4 w-4" /> Invite All ({pendingWithEmail.length})
+                <Button variant="outline" size="sm" onClick={() => openCompose()}>
+                  Invite All ({pendingWithEmail.length})
                 </Button>
               )}
               </div>
             </details>
 
-            <div className="semantic-surface-info mt-4 rounded-2xl border p-4">
+            <div className="hidden semantic-surface-info mt-4 rounded-2xl border p-4">
               <p className="text-sm font-medium text-foreground">
                 {guests.length === 0
                   ? 'Start light, then enrich the details'
@@ -892,8 +873,7 @@ export default function Guests() {
 
             <div className="mt-4">
               <Dialog open={open} onOpenChange={setOpen}>
-                <Button type="button" className="gap-2" onClick={() => { setGuestAdded(false); setOpen(true); }}>
-                  <Plus className="h-4 w-4" />
+                <Button type="button" onClick={() => { setGuestAdded(false); setOpen(true); }}>
                   {plannerNeedsApproval ? 'Request Guest' : 'Add Guest'}
                 </Button>
                 <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
@@ -988,24 +968,16 @@ export default function Guests() {
           <CardContent className="space-y-5 p-5 lg:p-6">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest list</p>
-                  <InfoTip content="Keep the list in focus here. Invite analytics and deeper coordination stay tucked away until needed." />
-                </div>
-                <h2 className="workspace-h2 mt-2">Who still needs action?</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Search the list, clean contact details, and update RSVP status without leaving the workspace.
-                </p>
+                <h2 className="workspace-h2">Guest list</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Choose a guest to see more.</p>
               </div>
 
               <div className="flex items-center gap-3 flex-wrap">
-                <div className="relative min-w-0 flex-1 sm:min-w-[220px]">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <div className="min-w-0 flex-1 sm:min-w-[220px]">
                   <Input
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
                     placeholder="Search guests..."
-                    className="pl-10"
                   />
                 </div>
                 {uniqueGroups.length > 0 && (
@@ -1020,51 +992,72 @@ export default function Guests() {
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Visible</p>
+            <div className="flex justify-center overflow-x-auto rounded-lg border border-border bg-muted/20 p-3">
+              <SlidingSegmentedControl
+                label="Guest RSVP status"
+                layoutId="guest-status-selection"
+                value={guestStatusFilter}
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'confirmed', label: 'Confirmed' },
+                  { value: 'pending', label: 'Pending' },
+                  { value: 'declined', label: 'Declined' },
+                ]}
+                onChange={setGuestStatusFilter}
+                reducedMotion={Boolean(prefersReducedMotion)}
+                minWidthClassName="w-full min-w-0"
+              />
+            </div>
+
+            <div className="hidden grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
+              <div className="border-r border-border px-4 py-3">
+                <p className="text-xs text-muted-foreground">Guests</p>
                 <AnimatedNumber value={visibleGuests.length} className="mt-2 block text-xl font-semibold text-foreground" />
               </div>
-              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Invite ready</p>
+              <div className="border-r border-border px-4 py-3">
+                <p className="text-xs text-muted-foreground">Waiting</p>
                 <AnimatedNumber value={pendingWithEmail.length} className="mt-2 block text-xl font-semibold text-foreground" />
               </div>
-              <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Missing contact</p>
+              <div className="px-4 py-3">
+                <p className="text-xs text-muted-foreground">Need contact</p>
                 <AnimatedNumber value={guestsMissingContact} className="mt-2 block text-xl font-semibold text-foreground" />
-              </div>
-              <div className="rounded-2xl border border-[#f1d6d3] bg-[#fff4f2]/90 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Unseated</p>
-                <AnimatedNumber value={guestsWithoutTables} className="mt-2 block text-xl font-semibold text-foreground" />
               </div>
             </div>
 
-            <div className="grid lg:grid-cols-[340px_minmax(0,1fr)]">
-              <div className="border-b border-border/70 bg-muted/20 lg:border-b-0 lg:border-r">
-                <div className="max-h-[620px] space-y-2 overflow-y-auto p-3">
+            <div>
+              <div>
+                <div className="space-y-2">
                   {visibleGuests.length > 0 ? (
                     <AnimatePresence initial={false} mode="popLayout">
                     {visibleGuests.map((g) => {
                       const isSelected = selectedGuest?.id === g.id;
                       return (
-                        <motion.button
+                        <motion.div
                           key={g.id}
                           layout
                           initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
+                          animate={{ opacity: 1, y: isSelected && !prefersReducedMotion ? -1 : 0, scale: isSelected && !prefersReducedMotion ? 1.006 : 1 }}
                           exit={{ opacity: 0, height: 0, marginBottom: 0 }}
                           transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                          type="button"
-                          onClick={() => setSelectedGuestId(g.id)}
-                          className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                          className={`relative w-full overflow-hidden rounded-lg border px-4 py-4 text-left transition-[border-color,background-color,box-shadow,transform] duration-200 ${
                             isSelected
-                              ? 'border-primary bg-primary/6 shadow-sm'
-                              : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20'
+                              ? 'z-10 border-primary/70 bg-primary/[0.075] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15'
+                              : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'
                           }`}
                         >
+                          <span aria-hidden="true" className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                          <button
+                            type="button"
+                            onClick={() => setSelectedGuestId(isSelected ? null : g.id)}
+                            aria-expanded={isSelected}
+                            className="w-full text-left"
+                          >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-foreground">{g.name}</p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="truncate text-sm font-medium text-foreground">{g.name}</p>
+                                {isSelected ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-primary">Open</span> : null}
+                              </div>
                               <div className="mt-2 flex flex-wrap items-center gap-2">
                                 <Badge variant={g.rsvp_status === 'confirmed' ? 'success' : g.rsvp_status === 'declined' ? 'destructive' : 'warning'} className="capitalize">
                                   {g.rsvp_status || 'pending'}
@@ -1077,22 +1070,61 @@ export default function Guests() {
                                 )}
                               </div>
                             </div>
-                            <Users className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                            <span className={`shrink-0 text-xs font-semibold ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
+                              {isSelected ? 'Hide details' : 'View details'}
+                            </span>
                           </div>
                           <p className="mt-3 truncate text-xs text-muted-foreground">
                             {g.email || g.phone || 'No contact details yet'}
                           </p>
-                        </motion.button>
+                          </button>
+
+                          <AnimatePresence initial={false}>
+                            {isSelected && guestEditor ? (
+                              <motion.div
+                                initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                                className="overflow-hidden"
+                              >
+                                <div className="mt-4 space-y-4 border-t border-primary/15 pt-4">
+                                  <div className="grid gap-3 sm:grid-cols-3">
+                                    <div className="space-y-1"><Label>Name</Label><Input value={guestEditor.name} onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, name: e.target.value } : current)} /></div>
+                                    <div className="space-y-1"><Label>Email</Label><Input type="email" value={guestEditor.email || ''} onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, email: e.target.value || null } : current)} /></div>
+                                    <div className="space-y-1"><Label>Phone</Label><Input value={guestEditor.phone || ''} onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, phone: e.target.value || null } : current)} /></div>
+                                  </div>
+                                  <div className="grid gap-3 sm:grid-cols-3">
+                                    <div className="space-y-1">
+                                      <Label>RSVP</Label>
+                                      <Select value={g.rsvp_status || 'pending'} onValueChange={(value) => void updateRsvp(g.id, value)}>
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent><SelectItem value="pending">Pending</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem><SelectItem value="declined">Declined</SelectItem></SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div><p className="text-xs text-muted-foreground">Plus one</p><p className="mt-2 text-sm font-medium">{guestEditor.plus_one ? 'Yes' : 'No'}</p></div>
+                                    <div><p className="text-xs text-muted-foreground">Meal</p><p className="mt-2 text-sm font-medium">{guestEditor.meal_preference || 'Not set'}</p></div>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button type="button" onClick={() => saveGuestDetails(g, { name: guestEditor.name, email: guestEditor.email, phone: guestEditor.phone } as Partial<Guest>)} disabled={savingGuestId === g.id}>{savingGuestId === g.id ? 'Saving…' : 'Save'}</Button>
+                                    {!plannerNeedsApproval && g.email ? <Button type="button" variant="outline" onClick={() => openCompose(g)}>Send invite</Button> : null}
+                                    <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label={plannerNeedsApproval ? 'Request guest removal' : 'Remove guest'} title={plannerNeedsApproval ? 'Request guest removal' : 'Remove guest'} onClick={() => deleteGuest(g.id)}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            ) : null}
+                          </AnimatePresence>
+                        </motion.div>
                       );
                     })}
                     </AnimatePresence>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
                       <p className="text-sm font-medium text-foreground">
-                        {searchTerm || filterGroup !== 'all' ? 'No guests match this view' : 'No guests added yet'}
+                        {searchTerm || filterGroup !== 'all' || guestStatusFilter !== 'all' ? 'No guests match this view' : 'No guests added yet'}
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {searchTerm || filterGroup !== 'all'
+                        {searchTerm || filterGroup !== 'all' || guestStatusFilter !== 'all'
                           ? 'Try a different name, phone, email, or group search.'
                           : 'Add the first guest and start shaping the wedding headcount.'}
                       </p>
@@ -1101,7 +1133,7 @@ export default function Guests() {
                 </div>
               </div>
 
-              <div className="bg-background">
+              <div className="hidden bg-background">
                 {guestEditor && selectedGuest ? (
                   <div className="space-y-6 p-5 lg:p-6">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1128,11 +1160,13 @@ export default function Guests() {
                         <Button
                           type="button"
                           variant="ghost"
-                          className="gap-2 text-destructive hover:text-destructive"
+                          size="icon"
+                          className="text-destructive hover:text-destructive"
+                          aria-label={plannerNeedsApproval ? 'Request guest removal' : 'Delete guest'}
+                          title={plannerNeedsApproval ? 'Request guest removal' : 'Delete guest'}
                           onClick={() => deleteGuest(selectedGuest.id)}
                         >
-                          <Trash2 className="h-4 w-4" />
-                          {plannerNeedsApproval ? 'Request removal' : 'Delete guest'}
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       </div>
 
@@ -1381,8 +1415,7 @@ export default function Guests() {
                 ) : (
                   <div className="flex min-h-[420px] items-center justify-center p-8">
                     <div className="max-w-md text-center">
-                      <Users className="mx-auto h-10 w-10 text-muted-foreground" />
-                      <h2 className="workspace-h2 mt-4">No guest selected</h2>
+                      <h2 className="workspace-h2">No guest selected</h2>
                       <p className="mt-2 text-sm text-muted-foreground">
                         Pick a guest to manage details and RSVP actions.
                       </p>
@@ -1394,7 +1427,7 @@ export default function Guests() {
           </CardContent>
         </Card>
 
-        <details className="rounded-3xl border border-border/70 bg-background p-5 shadow-card">
+        <details className="hidden rounded-3xl border border-border/70 bg-background p-5 shadow-card">
           <summary className="cursor-pointer list-none">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>

@@ -131,6 +131,8 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   * {
@@ -139,9 +141,16 @@
 
   body {
     @apply bg-background text-foreground;
+    max-width: 100%;
+    overflow-x: hidden;
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+  }
+
+  #root {
+    min-width: 0;
+    width: 100%;
   }
 
   h1, h2, h3, h4, h5, h6 {

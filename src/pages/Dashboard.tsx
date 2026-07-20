@@ -23,7 +23,7 @@ import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { getMyWeddingOwnershipSummary, type MyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
 import { summarizeContributions, type ContributionSummaryRow } from '@/lib/contributions';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
-import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
+import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isLaunchFeatureEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 import { buildConciergeContext } from '@/lib/conciergeContext';
 import AnimatedNumber from '@/components/AnimatedNumber';
 
@@ -611,7 +611,7 @@ export default function Dashboard() {
       return {
         href: '/settings',
         label: 'Complete wedding profile',
-        description: 'Add your date and location so the workspace becomes more useful.',
+        description: 'Add your wedding date and location.',
       };
     }
 
@@ -619,7 +619,7 @@ export default function Dashboard() {
       return {
         href: '/tasks',
         label: 'Create first tasks',
-        description: 'Start the checklist so the rest of the plan has something concrete to organize around.',
+        description: 'Start with a short wedding checklist.',
       };
     }
 
@@ -627,23 +627,23 @@ export default function Dashboard() {
       return {
         href: '/budget',
         label: 'Start the budget',
-        description: 'Set your first categories and amounts before vendor costs start spreading out.',
+        description: 'Add your first budget categories and amounts.',
       };
     }
 
-    if (stats.totalGuests === 0) {
+    if (stats.totalGuests === 0 && isLaunchFeatureEnabled('/guests')) {
       return {
         href: '/guests',
         label: 'Build the guest list',
-        description: 'Add the first guests so RSVPs, tables, and invites have somewhere to begin.',
+        description: 'Add the first people you want to invite.',
       };
     }
 
-    if (upcomingEvents.length === 0) {
+    if (upcomingEvents.length === 0 && isLaunchFeatureEnabled('/timeline')) {
       return {
         href: '/timeline',
         label: 'Create the timeline',
-        description: 'Map the wedding day so everyone knows what happens next.',
+        description: 'Add the first events for your wedding day.',
       };
     }
 
@@ -651,14 +651,14 @@ export default function Dashboard() {
       return {
         href: '/vendors',
         label: 'Choose final vendors',
-        description: 'Move from browsing to confirmed bookings and payment tracking.',
+        description: 'Review the vendors you are considering.',
       };
     }
 
     return {
       href: '/tasks',
       label: 'Review this week',
-      description: 'Open the live checklist and move the highest-impact items forward.',
+      description: 'See what needs your attention next.',
     };
   })();
 
@@ -832,6 +832,92 @@ export default function Dashboard() {
 
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton />;
   if (pageLoading) return <WorkspacePageSkeleton />;
+
+  if (!isPlanner) {
+    const supportingActions = homeActionCards
+      .filter((action) => action.href !== homePrimaryAction.href && isLaunchFeatureEnabled(action.href))
+      .slice(0, 2);
+    const remainingBudget = stats.totalBudget - stats.totalSpent;
+
+    return (
+      <div className="mx-auto max-w-5xl space-y-6">
+        <header className="border-b border-border/70 pb-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Wedding Home</p>
+          <h1 className="mt-2 font-editorial text-3xl font-semibold text-foreground sm:text-4xl">{weddingTitle}</h1>
+          {weddingMeta.length > 0 ? (
+            <p className="mt-2 text-sm text-muted-foreground">{weddingMeta.join(' · ')}</p>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">Your wedding plan starts here.</p>
+          )}
+        </header>
+
+        <Card className="rounded-xl border-primary/25 bg-primary/5 shadow-none">
+          <CardContent className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Do this next</p>
+              <h2 className="mt-2 text-2xl font-semibold text-foreground">{homePrimaryAction.label}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">{homePrimaryAction.description}</p>
+            </div>
+            <Button asChild className="shrink-0 sm:min-w-36">
+              <Link to={homePrimaryAction.href}>{homePrimaryAction.label}</Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <section aria-labelledby="plan-overview-title">
+          <h2 id="plan-overview-title" className="text-lg font-semibold text-foreground">Your plan</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Link to="/budget" className="rounded-lg border border-border bg-card p-4 transition-colors duration-200 hover:border-primary/40">
+              <p className="text-sm font-medium text-muted-foreground">Budget</p>
+              <p className={`mt-2 text-xl font-semibold ${remainingBudget < 0 ? 'text-destructive' : 'text-foreground'}`}>
+                {stats.totalBudget > 0 ? `KES ${Math.abs(remainingBudget).toLocaleString()} ${remainingBudget < 0 ? 'over' : 'left'}` : 'Not started'}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{stats.totalBudget > 0 ? `${budgetUsagePercentage}% used` : 'Add your estimate'}</p>
+            </Link>
+            <Link to="/tasks" className="rounded-lg border border-border bg-card p-4 transition-colors duration-200 hover:border-primary/40">
+              <p className="text-sm font-medium text-muted-foreground">Tasks</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">
+                {stats.totalTasks > 0 ? `${pendingTasks.length} left` : 'Not started'}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{stats.totalTasks > 0 ? `${taskCompletionPercentage}% complete` : 'Create your checklist'}</p>
+            </Link>
+            <Link to="/vendors" className="rounded-lg border border-border bg-card p-4 transition-colors duration-200 hover:border-primary/40">
+              <p className="text-sm font-medium text-muted-foreground">Vendors</p>
+              <p className="mt-2 text-xl font-semibold text-foreground">
+                {stats.totalVendors > 0 ? `${stats.totalVendors} saved` : 'None saved'}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Browse your options</p>
+            </Link>
+          </div>
+        </section>
+
+        {supportingActions.length > 0 ? (
+          <section aria-labelledby="coming-up-title">
+            <h2 id="coming-up-title" className="text-lg font-semibold text-foreground">Coming up</h2>
+            <div className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+              {supportingActions.map((action) => (
+                <div key={action.href} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-foreground">{action.title}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{action.body}</p>
+                  </div>
+                  <Button asChild variant="outline" size="sm" className="shrink-0">
+                    <Link to={action.href}>{action.cta}</Link>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <div className="border-t border-border/70 pt-4">
+          <Link to="/settings" className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            Wedding settings and planning team
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

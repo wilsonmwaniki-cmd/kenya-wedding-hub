@@ -10,6 +10,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { PublicErrorBoundary, WorkspaceErrorBoundary } from "@/components/AppErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import type { AppRole } from "@/lib/roles";
+import LaunchFeature from "@/components/LaunchFeature";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -132,6 +133,7 @@ const App = () => (
               <Route path="/" element={<PublicPage><Landing /></PublicPage>} />
               <Route path="/auth" element={<PublicPage><Auth /></PublicPage>} />
               <Route path="/sign-in" element={<PublicPage><Auth /></PublicPage>} />
+              <Route path="/forgot-password" element={<PublicPage><Auth /></PublicPage>} />
               <Route path="/admin/login" element={<PublicPage><Auth /></PublicPage>} />
               <Route path="/auth/callback" element={<PublicPage><AuthCallback /></PublicPage>} />
               <Route path="/reset-password" element={<PublicPage><ResetPassword /></PublicPage>} />
@@ -158,22 +160,22 @@ const App = () => (
               <Route path="/dashboard" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Dashboard /></ProtectedPage>} />
               <Route path="/budget" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Budget /></ProtectedPage>} />
               <Route path="/tasks" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Tasks /></ProtectedPage>} />
-              <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Guests /></ProtectedPage>} />
-              <Route path="/contributions" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Contributions /></ProtectedPage>} />
-              <Route path="/gift-registry" element={<ProtectedPage allowedRoles={['couple', 'planner']}><GiftRegistry /></ProtectedPage>} />
+              <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/guests"><Guests /></LaunchFeature></ProtectedPage>} />
+              <Route path="/contributions" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/contributions"><Contributions /></LaunchFeature></ProtectedPage>} />
+              <Route path="/gift-registry" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/gift-registry"><GiftRegistry /></LaunchFeature></ProtectedPage>} />
               <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
-              <Route path="/space-plan" element={<ProtectedPage allowedRoles={['couple', 'planner']}><SpaceTablePlan /></ProtectedPage>} />
+              <Route path="/space-plan" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/space-plan"><SpaceTablePlan /></LaunchFeature></ProtectedPage>} />
               <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
               <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
               <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
               <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
               <Route path="/planner-documents/:section" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
               <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
-              <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><AiChat /></ProtectedPage>} />
+              <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><LaunchFeature path="/ai-chat"><AiChat /></LaunchFeature></ProtectedPage>} />
               <Route path="/admin" element={<ProtectedPage allowedRoles={['admin']}><AdminPortal /></ProtectedPage>} />
               <Route path="/settings" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor', 'admin']}><ProfileSettings /></ProtectedPage>} />
-              <Route path="/timeline" element={<ProtectedPage allowedRoles={['couple', 'planner']}><TimelinePage /></ProtectedPage>} />
-              <Route path="/portfolio" element={<ProtectedPage allowedRoles={['couple', 'planner']}><ManagePortfolio /></ProtectedPage>} />
+              <Route path="/timeline" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/timeline"><TimelinePage /></LaunchFeature></ProtectedPage>} />
+              <Route path="/portfolio" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/portfolio"><ManagePortfolio /></LaunchFeature></ProtectedPage>} />
               <Route path="*" element={<PublicPage><NotFound /></PublicPage>} />
             </Routes>
           </Suspense>
