@@ -14,12 +14,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download, Search, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { createVendorTask } from '@/lib/vendorTasks';
 import { vendorPaymentStatusLabel } from '@/lib/vendorPayments';
 import { cn } from '@/lib/utils';
-import { getSuggestedTaskCategories, getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
+import { getSuggestedTaskCategories, getSuggestedTaskTemplates, getTaskCategoryDefaults, getWeddingTaskTemplates } from '@/lib/weddingTaskTemplates';
 import { getEntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
@@ -206,6 +206,7 @@ export default function Tasks() {
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const prefersReducedMotion = useReducedMotion();
@@ -228,6 +229,7 @@ export default function Tasks() {
   const [submittingTask, setSubmittingTask] = useState(false);
   const [taskAdded, setTaskAdded] = useState(false);
   const taskSuccessTimerRef = useRef<number | null>(null);
+  const guidedTemplateAppliedRef = useRef<string | null>(null);
   const [taskFormErrors, setTaskFormErrors] = useState<{ title?: string }>({});
   const [taskSubmitError, setTaskSubmitError] = useState<string | null>(null);
 
@@ -242,9 +244,12 @@ export default function Tasks() {
   useEffect(() => () => {
     if (taskSuccessTimerRef.current != null) window.clearTimeout(taskSuccessTimerRef.current);
   }, []);
-  const tasks = tasksQuery.data?.tasks ?? [];
-  const vendorOptions = tasksQuery.data?.vendorOptions ?? [];
-  const budgetCategories = tasksQuery.data?.budgetCategories ?? [];
+  const tasks = useMemo(() => tasksQuery.data?.tasks ?? [], [tasksQuery.data?.tasks]);
+  const vendorOptions = useMemo(() => tasksQuery.data?.vendorOptions ?? [], [tasksQuery.data?.vendorOptions]);
+  const budgetCategories = useMemo(
+    () => tasksQuery.data?.budgetCategories ?? [],
+    [tasksQuery.data?.budgetCategories],
+  );
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
@@ -310,6 +315,44 @@ export default function Tasks() {
       plannerType: profile?.planner_type,
     });
   }, [selectedCategoryName, vendorOptions, profile?.role, profile?.planner_type]);
+
+  useEffect(() => {
+    if (searchParams.get('add') !== 'checklist') return;
+    const requestedTemplateKey = searchParams.get('template');
+    if (!requestedTemplateKey || guidedTemplateAppliedRef.current === requestedTemplateKey) return;
+
+    const template = getWeddingTaskTemplates({
+      vendorCategories: vendorOptions.map((vendor) => vendor.category),
+      role: profile?.role,
+      plannerType: profile?.planner_type,
+    }).find((candidate) => candidate.key === requestedTemplateKey);
+    if (!template) return;
+
+    const categoryValue = normalizeCategory(template.category);
+    if (!categoryOptions.some((category) => category.value === categoryValue)) return;
+
+    guidedTemplateAppliedRef.current = requestedTemplateKey;
+    setSourceVendorId('none');
+    setTaskCategory(categoryValue);
+    setTaskPickerMode('suggested');
+    setTaskTemplateKey(template.key);
+    setTitle(template.title);
+    setDescription(template.description);
+    if (template.recommendedRole) setAssignedTo(template.recommendedRole);
+    setOpen(true);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('add');
+    nextParams.delete('template');
+    setSearchParams(nextParams, { replace: true });
+  }, [
+    categoryOptions,
+    profile?.planner_type,
+    profile?.role,
+    searchParams,
+    setSearchParams,
+    vendorOptions,
+  ]);
 
   const selectedTaskTemplate = useMemo(() => {
     if (taskTemplateKey === 'none') return null;

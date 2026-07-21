@@ -28,6 +28,7 @@ import { buildConciergeContext } from '@/lib/conciergeContext';
 import AnimatedNumber from '@/components/AnimatedNumber';
 import { buildConciergeNudges } from '@/lib/conciergeNudges';
 import { usePersistentAssistantDismissal } from '@/hooks/usePersistentAssistantDismissal';
+import { getNextWeddingChecklistStep } from '@/lib/weddingTaskTemplates';
 
 interface DashboardStats {
   totalBudget: number;
@@ -90,6 +91,7 @@ interface VendorDigestRow {
 interface TaskDigestRow {
   id: string;
   title: string;
+  category: string | null;
   due_date: string | null;
   completed: boolean;
   visibility: string;
@@ -136,7 +138,7 @@ async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWo
   const today = new Date().toISOString().slice(0, 10);
   const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows, contributions, timelines] = await Promise.all([
     supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope, visibility').or(dataOrFilter),
-    supabase.from('tasks').select('id, title, due_date, completed, visibility, phase').or(dataOrFilter),
+    supabase.from('tasks').select('id, title, category, due_date, completed, visibility, phase').or(dataOrFilter),
     supabase.from('guests').select('rsvp_status, created_at').or(dataOrFilter),
     supabase.from('vendors').select('id, name, category, selection_status, payment_due_date, payment_status').or(dataOrFilter),
     supabase
@@ -462,13 +464,11 @@ export default function Dashboard() {
     () => [...publicTasks].sort((left, right) => (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31'))[0] ?? null,
     [publicTasks],
   );
-  const topPendingTasks = useMemo(
-    () =>
-      [...pendingTasks]
-        .sort((left, right) => (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31'))
-        .slice(0, 3),
-    [pendingTasks],
-  );
+  const nextChecklistStep = useMemo(() => getNextWeddingChecklistStep({
+    tasks: taskDigestRows,
+    role: profile?.role,
+    plannerType: profile?.planner_type,
+  }), [profile?.planner_type, profile?.role, taskDigestRows]);
 
   const vendorDecisionsPending = useMemo(() => {
     const byCategory = vendorDigestRows.reduce((summary, vendor) => {
@@ -607,58 +607,28 @@ export default function Dashboard() {
   const homeSetupPercentage = Math.round((completedHomeSetupCount / homeSetupChecklist.length) * 100);
 
   const homePrimaryAction = (() => {
-    if (!isPlanner && (!weddingDate || !weddingLocation)) {
+    if (nextChecklistStep) {
+      const { template, task, stepNumber, totalSteps } = nextChecklistStep;
+      const timeline = template.timelineLabel
+        ? /months?|weeks?|days?/i.test(template.timelineLabel)
+          ? `${template.timelineLabel} before the wedding`
+          : template.timelineLabel
+        : 'Planning checklist';
       return {
-        href: '/settings',
-        label: 'Complete wedding profile',
-        description: 'Add your date and location so the workspace becomes more useful.',
-      };
-    }
-
-    if (stats.totalTasks === 0) {
-      return {
-        href: '/tasks',
-        label: 'Create first tasks',
-        description: 'Start the checklist so the rest of the plan has something concrete to organize around.',
-      };
-    }
-
-    if (stats.totalBudget === 0) {
-      return {
-        href: '/budget',
-        label: 'Start the budget',
-        description: 'Set your first categories and amounts before vendor costs start spreading out.',
-      };
-    }
-
-    if (stats.totalGuests === 0) {
-      return {
-        href: '/guests',
-        label: 'Build the guest list',
-        description: 'Add the first guests so RSVPs, tables, and invites have somewhere to begin.',
-      };
-    }
-
-    if (upcomingEvents.length === 0) {
-      return {
-        href: '/timeline',
-        label: 'Create the timeline',
-        description: 'Map the wedding day so everyone knows what happens next.',
-      };
-    }
-
-    if (finalVendorUrgencies.length === 0) {
-      return {
-        href: '/vendors',
-        label: 'Choose final vendors',
-        description: 'Move from browsing to confirmed bookings and payment tracking.',
+        href: task?.id
+          ? '/tasks'
+          : `/tasks?add=checklist&template=${encodeURIComponent(template.key)}`,
+        label: template.title,
+        ctaLabel: task?.id ? 'Continue this step' : 'Start this step',
+        description: `${timeline}. Step ${stepNumber} of ${totalSteps} in Zania's guided checklist.`,
       };
     }
 
     return {
       href: '/tasks',
-      label: 'Review this week',
-      description: 'Open the live checklist and move the highest-impact items forward.',
+      label: 'Review your completed checklist',
+      ctaLabel: 'Open checklist',
+      description: 'Every guided wedding-planning step is complete. Review the plan and keep custom follow-ups moving.',
     };
   })();
 
@@ -698,7 +668,6 @@ export default function Dashboard() {
     paymentsDueSoon.length,
     pendingTasks.length,
     profile?.role,
-    stats.completedTasks,
     stats.confirmedGuests,
     stats.totalBudget,
     stats.totalGuests,
@@ -750,12 +719,10 @@ export default function Dashboard() {
 
   const homeActionCards = [
     {
-      title: topPendingTasks[0]?.title ?? 'Build your first checklist',
-      body: topPendingTasks[0]?.due_date
-        ? `Due ${new Date(topPendingTasks[0].due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}. Keep planning moving by clearing the next visible task.`
-        : 'Start with the next planning task so the workspace has an obvious rhythm.',
-      href: '/tasks',
-      cta: stats.totalTasks > 0 ? 'Open tasks' : 'Create first task',
+      title: homePrimaryAction.label,
+      body: homePrimaryAction.description,
+      href: homePrimaryAction.href,
+      cta: homePrimaryAction.ctaLabel,
     },
     {
       title: vendorDecisionsPending[0]
@@ -871,16 +838,19 @@ export default function Dashboard() {
                 </p>
               </div>
               <div className="rounded-[24px] border border-[#f0dfc5] bg-[#fff8ec]/95 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Do this next</p>
                 <p className="mt-2 text-sm font-medium text-foreground">
                   {homePrimaryAction.label}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {homePrimaryAction.description}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
               <Button asChild>
-                <Link to={homePrimaryAction.href}>{homePrimaryAction.label}</Link>
+                <Link to={homePrimaryAction.href}>{homePrimaryAction.ctaLabel}</Link>
               </Button>
               <Button asChild variant="outline">
                 <Link to="/tasks">Open task workspace</Link>

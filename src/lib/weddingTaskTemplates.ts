@@ -45,6 +45,22 @@ export interface SuggestedTaskTemplateOption {
   timelineLabel: string | null;
 }
 
+export interface WeddingChecklistProgressTask {
+  id?: string;
+  title: string;
+  category?: string | null;
+  completed: boolean;
+  due_date?: string | null;
+}
+
+export interface WeddingChecklistNextStep<TTask extends WeddingChecklistProgressTask = WeddingChecklistProgressTask> {
+  template: WeddingTaskTemplate;
+  task: TTask | null;
+  stepNumber: number;
+  totalSteps: number;
+  completedSteps: number;
+}
+
 type RawChecklistRow = readonly [
   key: string,
   category: string,
@@ -1434,12 +1450,19 @@ const CHECKLIST_TEMPLATES: WeddingTaskTemplate[] = RAW_CHECKLIST_ROWS.map((row) 
   };
 });
 
+const CHECKLIST_SEQUENCE_BY_KEY = new Map(
+  RAW_CHECKLIST_ROWS.map(([key], index) => [key, index]),
+);
+
 const CHECKLIST_CATEGORIES = [...new Set(CHECKLIST_TEMPLATES.map((template) => template.category))].sort((left, right) => left.localeCompare(right));
 
 function sortTemplates(left: WeddingTaskTemplate, right: WeddingTaskTemplate) {
   const leftTimeline = left.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
   const rightTimeline = right.timelineOffsetMonths ?? Number.MAX_SAFE_INTEGER;
   if (leftTimeline !== rightTimeline) return rightTimeline - leftTimeline;
+  const leftSequence = CHECKLIST_SEQUENCE_BY_KEY.get(left.key) ?? Number.MAX_SAFE_INTEGER;
+  const rightSequence = CHECKLIST_SEQUENCE_BY_KEY.get(right.key) ?? Number.MAX_SAFE_INTEGER;
+  if (leftSequence !== rightSequence) return leftSequence - rightSequence;
   if (left.priorityLevel !== right.priorityLevel) return left.priorityLevel - right.priorityLevel;
   return left.title.localeCompare(right.title);
 }
@@ -1516,6 +1539,45 @@ export function getWeddingTaskTemplates(input: {
   }
 
   return templates.sort(sortTemplates);
+}
+
+function taskMatchesTemplate(task: WeddingChecklistProgressTask, template: WeddingTaskTemplate) {
+  if (normalizeValue(task.title) !== normalizeValue(template.title)) return false;
+  if (!task.category) return true;
+  return normalizeValue(canonicalizeCategory(task.category)) === normalizeValue(template.category);
+}
+
+export function getNextWeddingChecklistStep<TTask extends WeddingChecklistProgressTask>(input: {
+  tasks: TTask[];
+  role: string | null | undefined;
+  plannerType?: PlannerType | null;
+  vendorCategories?: string[];
+}): WeddingChecklistNextStep<TTask> | null {
+  const templates = getWeddingTaskTemplates({
+    vendorCategories: input.vendorCategories ?? [],
+    role: input.role,
+    plannerType: input.plannerType,
+  });
+
+  let completedSteps = 0;
+
+  for (const [index, template] of templates.entries()) {
+    const task = input.tasks.find((candidate) => taskMatchesTemplate(candidate, template)) ?? null;
+    if (task?.completed) {
+      completedSteps += 1;
+      continue;
+    }
+
+    return {
+      template,
+      task,
+      stepNumber: index + 1,
+      totalSteps: templates.length,
+      completedSteps,
+    };
+  }
+
+  return null;
 }
 
 export function buildSeededTasksFromTemplates(input: {
