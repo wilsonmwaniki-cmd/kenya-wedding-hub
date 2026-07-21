@@ -34,6 +34,7 @@ import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { buildConciergeContext } from '@/lib/conciergeContext';
 import { usePersistentAssistantDismissal } from '@/hooks/usePersistentAssistantDismissal';
+import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 
 interface BudgetCategory {
   id: string;
@@ -44,6 +45,10 @@ interface BudgetCategory {
   visibility: 'public' | 'private';
   committee_role_in_charge: string | null;
   contract_status: string;
+  suggested_allocated: number | null;
+  suggested_percentage: number | null;
+  allocation_manually_edited: boolean;
+  allocation_last_edited_field: 'amount' | 'percentage' | null;
 }
 
 type BudgetScope = 'wedding' | 'personal';
@@ -154,6 +159,13 @@ async function loadBudgetCategories(dataOrFilter: string): Promise<BudgetCategor
     visibility: (item.visibility ?? 'public') as 'public' | 'private',
     committee_role_in_charge: item.committee_role_in_charge ?? null,
     contract_status: item.contract_status ?? (item.budget_scope === 'personal' ? 'not_required' : 'not_started'),
+    suggested_allocated: item.suggested_allocated == null ? null : Number(item.suggested_allocated),
+    suggested_percentage: item.suggested_percentage == null ? null : Number(item.suggested_percentage),
+    allocation_manually_edited: Boolean(item.allocation_manually_edited),
+    allocation_last_edited_field:
+      item.allocation_last_edited_field === 'amount' || item.allocation_last_edited_field === 'percentage'
+        ? item.allocation_last_edited_field
+        : null,
   })) as BudgetCategory[];
 }
 
@@ -211,6 +223,8 @@ export default function Budget() {
   const [categorySearch, setCategorySearch] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [spentDrafts, setSpentDrafts] = useState<Record<string, string>>({});
+  const [allocationDrafts, setAllocationDrafts] = useState<Record<string, { amount: string; percentage: string; lastEditedField: 'amount' | 'percentage' }>>({});
+  const [savingAllocationId, setSavingAllocationId] = useState<string | null>(null);
   const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, BudgetWorkflowDraft>>({});
   const [savingSpentId, setSavingSpentId] = useState<string | null>(null);
   const [savingWorkflowId, setSavingWorkflowId] = useState<string | null>(null);
@@ -226,6 +240,7 @@ export default function Budget() {
   const [recordingPaymentMade, setRecordingPaymentMade] = useState(false);
   const [paymentRecorded, setPaymentRecorded] = useState(false);
   const paymentSuccessTimerRef = useRef<number | null>(null);
+  const estimatorRecoveryAttemptedRef = useRef(false);
   const [paymentFormErrors, setPaymentFormErrors] = useState<{ categorySelection?: string; payeeName?: string; amount?: string }>({});
   const [paymentSubmitError, setPaymentSubmitError] = useState<string | null>(null);
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
@@ -293,6 +308,34 @@ export default function Budget() {
       queryClient.invalidateQueries({ queryKey: paymentsQueryKey }),
     ]);
   };
+
+  useEffect(() => {
+    if (
+      estimatorRecoveryAttemptedRef.current
+      || isPlanner
+      || !user
+      || categoriesQuery.isLoading
+      || categoriesQuery.isError
+      || categories.length > 0
+      || !hasPendingEstimatorPlanDraft(user.user_metadata)
+    ) return;
+
+    estimatorRecoveryAttemptedRef.current = true;
+    void (async () => {
+      const result = await seedPendingEstimatorPlanForUser({
+        userId: user.id,
+        role: profile?.role,
+        userMetadata: user.user_metadata,
+      });
+
+      if (!result) return;
+      await refreshBudgetWorkspace();
+      toast({
+        title: 'Wedding estimate restored',
+        description: 'Your saved estimate is now in your budget.',
+      });
+    })();
+  }, [categories.length, categoriesQuery.isError, categoriesQuery.isLoading, isPlanner, profile?.role, user]);
 
   useEffect(() => {
     if (
@@ -484,6 +527,12 @@ export default function Budget() {
       user_id: user.id,
       name,
       allocated: allocatedAmount,
+      suggested_allocated: allocatedAmount,
+      suggested_percentage: newCategoryScope === 'wedding' && visibleBudgetGoal > 0
+        ? (allocatedAmount / visibleBudgetGoal) * 100
+        : null,
+      allocation_manually_edited: false,
+      allocation_last_edited_field: null,
       spent: 0,
       budget_scope: newCategoryScope,
       visibility: newCategoryScope === 'personal' ? 'private' : 'public',
@@ -502,6 +551,10 @@ export default function Budget() {
           proposedPayload: {
             name: insert.name,
             allocated: insert.allocated,
+            suggested_allocated: insert.suggested_allocated,
+            suggested_percentage: insert.suggested_percentage,
+            allocation_manually_edited: insert.allocation_manually_edited,
+            allocation_last_edited_field: insert.allocation_last_edited_field,
             spent: insert.spent,
             budget_scope: insert.budget_scope,
             visibility: insert.visibility,
@@ -772,6 +825,13 @@ export default function Budget() {
   const visibleCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
   const visibleAllocated = visibleCategories.reduce((sum, category) => sum + category.allocated, 0);
   const visibleSpent = visibleCategories.reduce((sum, category) => sum + category.spent, 0);
+  const storedWeddingBudgetGoal = Number(isPlanner ? selectedClient?.wedding_budget_goal : profile?.wedding_budget_goal);
+  const visibleBudgetGoal = activeBudgetScope === 'wedding' && storedWeddingBudgetGoal > 0
+    ? storedWeddingBudgetGoal
+    : visibleAllocated;
+  const visibleAllocationPercentage = visibleBudgetGoal > 0
+    ? (visibleAllocated / visibleBudgetGoal) * 100
+    : 0;
   const totalFinalVendorContract = finalVendorPayments.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
   const totalFinalVendorPaid = finalVendorPayments.reduce((sum, vendor) => sum + vendor.amount_paid, 0);
   const totalFinalVendorOutstanding = finalVendorPayments.reduce(
@@ -820,7 +880,7 @@ export default function Budget() {
   const currentScopePaymentTotal = currentScopePayments.reduce((sum, payment) => sum + payment.amount, 0);
   const invoiceTotal = activeBudgetScope === 'wedding' ? totalFinalVendorContract : visibleAllocated;
   const totalBalance = Math.max(invoiceTotal - currentScopePaymentTotal, 0);
-  const remainingBudget = Math.max(visibleAllocated - currentScopePaymentTotal, 0);
+  const remainingBudget = Math.max(visibleBudgetGoal - currentScopePaymentTotal, 0);
   const budgetAssistantFeature = useMemo(
     () => getBudgetAssistantFeature(profile?.role, profile?.planner_type),
     [profile?.planner_type, profile?.role],
@@ -855,8 +915,8 @@ export default function Budget() {
     });
   }, [activeBudgetScope, finalVendorPayments]);
 
-  const visibleSpentPercentage = visibleAllocated > 0
-    ? Math.min(Math.round((visibleSpent / visibleAllocated) * 100), 999)
+  const visibleSpentPercentage = visibleBudgetGoal > 0
+    ? Math.min(Math.round((visibleSpent / visibleBudgetGoal) * 100), 999)
     : 0;
   const paymentCoveragePercentage = invoiceTotal > 0
     ? Math.min(Math.round((currentScopePaymentTotal / invoiceTotal) * 100), 999)
@@ -1185,6 +1245,109 @@ export default function Budget() {
     return source.filter((template) => !existingNames.has(template.name.toLowerCase().trim()));
   }, [categories, newCategoryScope]);
 
+  const persistCategoryAllocation = async (
+    category: BudgetCategory,
+    nextAllocated: number,
+    editedField: 'amount' | 'percentage',
+    manuallyEdited: boolean,
+  ) => {
+    if (!user || !Number.isFinite(nextAllocated) || nextAllocated < 0) return;
+    const normalizedAllocated = Math.round(nextAllocated);
+    setSavingAllocationId(category.id);
+
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'budget_categories',
+          targetId: category.id,
+          changeType: 'update',
+          proposedPayload: {
+            allocated: normalizedAllocated,
+            allocation_manually_edited: manuallyEdited,
+            allocation_last_edited_field: manuallyEdited ? editedField : null,
+          },
+        });
+        toast({ title: 'Allocation sent for approval', description: `${category.name} will update after the couple approves it.` });
+      } catch (error) {
+        toast({ title: 'Could not update allocation', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+      } finally {
+        setSavingAllocationId(null);
+      }
+      return;
+    }
+
+    const previousCategories = queryClient.getQueryData<BudgetCategory[]>(categoriesQueryKey);
+    queryClient.setQueryData<BudgetCategory[]>(categoriesQueryKey, (current = []) => current.map((item) => (
+      item.id === category.id
+        ? {
+            ...item,
+            allocated: normalizedAllocated,
+            allocation_manually_edited: manuallyEdited,
+            allocation_last_edited_field: manuallyEdited ? editedField : null,
+          }
+        : item
+    )));
+
+    try {
+      const { error } = await supabase
+        .from('budget_categories')
+        .update({
+          allocated: normalizedAllocated,
+          allocation_manually_edited: manuallyEdited,
+          allocation_last_edited_field: manuallyEdited ? editedField : null,
+        })
+        .eq('id', category.id);
+      if (error) throw error;
+      setAllocationDrafts((current) => {
+        const next = { ...current };
+        delete next[category.id];
+        return next;
+      });
+      toast({ title: manuallyEdited ? 'Allocation updated' : 'Suggestion restored', description: `${category.name} is now ${formatCurrency(normalizedAllocated)}.` });
+    } catch (error) {
+      queryClient.setQueryData(categoriesQueryKey, previousCategories);
+      toast({ title: 'Could not update allocation', description: error instanceof Error ? error.message : 'Your previous amount has been restored.', variant: 'destructive' });
+    } finally {
+      setSavingAllocationId(null);
+    }
+  };
+
+  const updateAllocationDraft = (
+    category: BudgetCategory,
+    currentPercentage: number,
+    value: string,
+    field: 'amount' | 'percentage',
+  ) => {
+    const numericValue = Number(value.replace(/,/g, ''));
+    setAllocationDrafts((current) => {
+      const fallback = current[category.id] ?? {
+        amount: String(category.allocated),
+        percentage: currentPercentage.toFixed(1),
+        lastEditedField: field,
+      };
+      if (!Number.isFinite(numericValue) || numericValue < 0 || value.trim() === '') {
+        return { ...current, [category.id]: { ...fallback, [field]: value, lastEditedField: field } };
+      }
+      return {
+        ...current,
+        [category.id]: field === 'amount'
+          ? {
+              amount: value,
+              percentage: visibleBudgetGoal > 0 ? ((numericValue / visibleBudgetGoal) * 100).toFixed(1) : '0.0',
+              lastEditedField: field,
+            }
+          : {
+              amount: String(Math.round((numericValue / 100) * visibleBudgetGoal)),
+              percentage: value,
+              lastEditedField: field,
+            },
+      };
+    });
+  };
+
   const filteredVisibleCategories = useMemo(() => {
     const searchTerm = categorySearch.trim().toLowerCase();
     return visibleCategories
@@ -1234,6 +1397,9 @@ export default function Budget() {
       : 0;
   const selectedCategoryRemaining = selectedBudgetCategory
     ? Math.max(selectedBudgetCategory.allocated - selectedBudgetCategory.spent, 0)
+    : 0;
+  const selectedCategoryOverallShare = selectedBudgetCategory && visibleBudgetGoal > 0
+    ? (selectedBudgetCategory.allocated / visibleBudgetGoal) * 100
     : 0;
   const selectedCategoryOverMedian =
     selectedBudgetCategory?.budget_scope === 'wedding'
@@ -1340,7 +1506,7 @@ export default function Budget() {
     {
       label: 'Budget used',
       value: visibleCategories.length > 0 ? `${visibleSpentPercentage}%` : 'Not started',
-      detail: `KES ${visibleSpent.toLocaleString()} spent of KES ${visibleAllocated.toLocaleString()}`,
+      detail: `KES ${visibleSpent.toLocaleString()} spent of KES ${visibleBudgetGoal.toLocaleString()}`,
       className: 'border-[#d9e5f4] bg-[#f4f8fd]/90',
     },
     {
@@ -2126,6 +2292,87 @@ export default function Budget() {
                       <Trash2 className="h-4 w-4" />
                       Delete line
                     </Button>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+                    <div className="mb-4">
+                      <p className="text-sm font-medium text-foreground">Planned allocation</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Adjust the amount directly or set its share of the {budgetScopeLabel}.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)_auto] sm:items-end">
+                      <div className="space-y-2">
+                        <Label htmlFor={`planned-allocation-${selectedBudgetCategory.id}`}>Amount</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
+                          <Input
+                            id={`planned-allocation-${selectedBudgetCategory.id}`}
+                            type="number"
+                            min="0"
+                            inputMode="numeric"
+                            value={allocationDrafts[selectedBudgetCategory.id]?.amount ?? String(selectedBudgetCategory.allocated)}
+                            onChange={(event) => updateAllocationDraft(selectedBudgetCategory, selectedCategoryOverallShare, event.target.value, 'amount')}
+                            className="pl-12"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`percentage-allocation-${selectedBudgetCategory.id}`}>Percentage</Label>
+                        <div className="relative">
+                          <Input
+                            id={`percentage-allocation-${selectedBudgetCategory.id}`}
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            inputMode="decimal"
+                            value={allocationDrafts[selectedBudgetCategory.id]?.percentage ?? selectedCategoryOverallShare.toFixed(1)}
+                            onChange={(event) => updateAllocationDraft(selectedBudgetCategory, selectedCategoryOverallShare, event.target.value, 'percentage')}
+                            className="pr-9"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">%</span>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        className="w-full sm:w-auto"
+                        disabled={savingAllocationId === selectedBudgetCategory.id}
+                        onClick={() => {
+                          const draft = allocationDrafts[selectedBudgetCategory.id] ?? {
+                            amount: String(selectedBudgetCategory.allocated),
+                            percentage: selectedCategoryOverallShare.toFixed(1),
+                            lastEditedField: 'amount' as const,
+                          };
+                          const rawValue = Number(draft[draft.lastEditedField]);
+                          if (!Number.isFinite(rawValue) || rawValue < 0) {
+                            toast({ title: 'Enter a valid allocation', description: 'Use zero or a positive number.', variant: 'destructive' });
+                            return;
+                          }
+                          const nextAmount = draft.lastEditedField === 'percentage'
+                            ? (rawValue / 100) * visibleBudgetGoal
+                            : rawValue;
+                          void persistCategoryAllocation(selectedBudgetCategory, nextAmount, draft.lastEditedField, true);
+                        }}
+                      >
+                        {savingAllocationId === selectedBudgetCategory.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
+                      </Button>
+                    </div>
+                    {selectedBudgetCategory.allocation_manually_edited && selectedBudgetCategory.suggested_allocated != null ? (
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="mt-3 h-auto p-0 text-sm"
+                        disabled={savingAllocationId === selectedBudgetCategory.id}
+                        onClick={() => {
+                          const suggestedAmount = selectedBudgetCategory.suggested_percentage != null && visibleBudgetGoal > 0
+                            ? (selectedBudgetCategory.suggested_percentage / 100) * visibleBudgetGoal
+                            : selectedBudgetCategory.suggested_allocated!;
+                          void persistCategoryAllocation(selectedBudgetCategory, suggestedAmount, 'amount', false);
+                        }}
+                      >
+                        Reset to suggested
+                      </Button>
+                    ) : null}
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-3">
