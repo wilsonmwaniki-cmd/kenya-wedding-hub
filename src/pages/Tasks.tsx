@@ -890,7 +890,7 @@ export default function Tasks() {
     );
   };
 
-  const TaskRow = ({ t, isDone }: { t: Task; isDone: boolean }) => {
+  const renderTaskRow = (t: Task, isDone: boolean) => {
     const linkedVendor = t.source_vendor_id ? vendorLookup[t.source_vendor_id] : null;
     const resolvedCategory = t.category || linkedVendor?.category || null;
     const active = selectedTaskId === t.id;
@@ -1461,9 +1461,7 @@ export default function Tasks() {
                     </div>
                     <div className="space-y-3">
                       <AnimatePresence initial={false} mode="popLayout">
-                      {group.tasks.map((task) => (
-                        <TaskRow key={task.id} t={task} isDone={task.completed} />
-                      ))}
+                      {group.tasks.map((task) => renderTaskRow(task, task.completed))}
                       </AnimatePresence>
                     </div>
                   </div>

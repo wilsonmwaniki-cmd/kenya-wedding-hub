@@ -296,11 +296,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 h-[100dvh] w-[17.5rem] overflow-hidden border-r border-white/15 sm:w-[18rem] lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:self-start lg:w-[clamp(14.5rem,18vw,17.5rem)] xl:w-[18rem]
+        fixed inset-y-0 left-0 z-50 h-[100dvh] w-[17.5rem] overflow-hidden border-r border-white/15 sm:w-[18rem] lg:z-20 lg:h-screen lg:w-[clamp(14.5rem,18vw,17.5rem)] xl:w-[18rem]
         bg-[linear-gradient(180deg,rgba(34,20,17,0.97),rgba(53,31,26,0.95)_36%,rgba(76,47,38,0.92))]
         text-sidebar-foreground shadow-[0_28px_80px_rgba(20,12,10,0.38)] backdrop-blur-2xl
         transform transition-transform duration-300 ease-in-out
-        lg:relative lg:translate-x-0
+        lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(233,154,108,0.26),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.09),transparent_22%),radial-gradient(circle_at_top_right,rgba(212,187,125,0.14),transparent_20%),linear-gradient(180deg,rgba(255,255,255,0.08),transparent_22%,rgba(255,255,255,0.03)_46%,rgba(0,0,0,0.14))]" />
@@ -512,7 +512,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex min-h-screen flex-1 flex-col bg-[radial-gradient(circle_at_top,rgba(227,144,100,0.08),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,237,0.96))]">
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(227,144,100,0.08),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,237,0.96))] lg:ml-[clamp(14.5rem,18vw,17.5rem)] xl:ml-[18rem]">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-[#eadbca] bg-[linear-gradient(180deg,rgba(255,251,247,0.96),rgba(248,241,232,0.92))] px-4 py-3 shadow-[0_10px_30px_rgba(28,22,18,0.04)] backdrop-blur-sm lg:hidden">
           <Button
             type="button"
