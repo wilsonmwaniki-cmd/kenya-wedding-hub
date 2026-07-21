@@ -1432,6 +1432,7 @@ export default function Auth() {
                       <div className="space-y-2">
                         <Label htmlFor="password">Password</Label>
                         <Input
+                          key={showPassword ? 'signup-password-visible' : 'signup-password-hidden'}
                           id="password"
                           type={showPassword ? 'text' : 'password'}
                           value={password}
@@ -1457,6 +1458,9 @@ export default function Auth() {
                               variant="ghost"
                               className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
                               onClick={() => setShowPassword((current) => !current)}
+                              aria-controls="password"
+                              aria-pressed={showPassword}
+                              aria-label={showPassword ? 'Hide password' : 'Show password'}
                             >
                               {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                               {showPassword ? 'Hide' : 'Show'}
@@ -1480,6 +1484,9 @@ export default function Auth() {
                               variant="ghost"
                               className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
                               onClick={() => setShowPassword((current) => !current)}
+                              aria-controls="password"
+                              aria-pressed={showPassword}
+                              aria-label={showPassword ? 'Hide password' : 'Show password'}
                             >
                               {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                               {showPassword ? 'Hide' : 'Show'}
@@ -1765,6 +1772,7 @@ export default function Auth() {
                         </button>
                       </div>
                       <Input
+                        key={showPassword ? 'signin-password-visible' : 'signin-password-hidden'}
                         id="password"
                         type={showPassword ? 'text' : 'password'}
                         value={password}
@@ -1785,6 +1793,9 @@ export default function Auth() {
                           variant="ghost"
                           className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
                           onClick={() => setShowPassword((current) => !current)}
+                          aria-controls="password"
+                          aria-pressed={showPassword}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
                         >
                           {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                           {showPassword ? 'Hide' : 'Show'}
