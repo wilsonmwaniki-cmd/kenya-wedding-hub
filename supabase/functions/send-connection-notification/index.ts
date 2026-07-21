@@ -94,7 +94,7 @@ serve(async (req) => {
   }
 
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-  const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Kenya Bliss Planner <onboarding@resend.dev>';
+  const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Zania <hello@planwithzania.com>';
 
   if (!RESEND_API_KEY) {
     return jsonResponse(500, { error: 'RESEND_API_KEY not configured' });
@@ -277,7 +277,7 @@ serve(async (req) => {
           <p style="margin-top: 24px; color: #999; font-size: 14px;">Don&apos;t keep them waiting. Great connections start with a quick reply.</p>
         </div>
         <div style="background: #f9f6f2; padding: 16px 30px; text-align: center; font-size: 12px; color: #999;">
-          Sent via Kenya Bliss Planner
+          Sent via Zania
         </div>
       </div>
     `;

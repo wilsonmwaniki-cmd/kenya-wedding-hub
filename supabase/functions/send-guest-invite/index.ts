@@ -17,9 +17,9 @@ const SUPABASE_ANON_KEY =
   Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ??
   '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') ?? 'https://kenya-wedding-hub.vercel.app';
+const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') ?? 'https://www.planwithzania.com';
 const RESEND_FROM_EMAIL =
-  Deno.env.get('RESEND_FROM_EMAIL') ?? 'Zania Weddings <invites@planwithzania.com>';
+  Deno.env.get('RESEND_FROM_EMAIL') ?? 'Zania <hello@planwithzania.com>';
 
 type GuestInviteRow = {
   id: string;
@@ -255,7 +255,7 @@ serve(async (req) => {
             <p style="margin-top: 30px;">With love and warm regards ❤️</p>
           </div>
           <div style="background: #f9f6f2; padding: 20px 30px; text-align: center; font-size: 12px; color: #999;">
-            Sent with love via Kenya Bliss Planner
+            Sent with love via Zania
           </div>
         </div>
       `;

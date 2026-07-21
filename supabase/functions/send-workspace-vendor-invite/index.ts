@@ -69,7 +69,7 @@ serve(async (req) => {
   }
 
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-  const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Zania Weddings <onboarding@resend.dev>';
+  const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Zania <hello@planwithzania.com>';
   if (!RESEND_API_KEY) {
     return jsonResponse(500, { error: 'RESEND_API_KEY not configured' });
   }

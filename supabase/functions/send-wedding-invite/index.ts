@@ -113,8 +113,8 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     const RESEND_FROM_EMAIL =
-      Deno.env.get('RESEND_FROM_EMAIL') || 'Zania Weddings <invites@planwithzania.com>';
-    const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') || req.headers.get('origin') || 'https://kenya-wedding-hub.vercel.app';
+      Deno.env.get('RESEND_FROM_EMAIL') || 'Zania <hello@planwithzania.com>';
+    const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') || req.headers.get('origin') || 'https://www.planwithzania.com';
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
       return new Response(JSON.stringify({ error: 'Supabase environment is not fully configured.' }), {

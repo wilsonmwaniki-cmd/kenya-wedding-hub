@@ -5,6 +5,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const TIMELINE_REMINDER_SECRET = Deno.env.get("TIMELINE_REMINDER_SECRET");
+const RESEND_FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL") ?? "Zania <hello@planwithzania.com>";
 
 Deno.serve(async (req) => {
   const corsHeaders = createCorsHeaders(req);
@@ -98,13 +99,13 @@ Deno.serve(async (req) => {
                   Authorization: `Bearer ${RESEND_API_KEY}`,
                 },
                 body: JSON.stringify({
-                  from: "WeddingPlan Kenya <onboarding@resend.dev>",
+                  from: RESEND_FROM_EMAIL,
                   to: [shareLink.email],
                   subject: `⏰ Reminder: ${event.title} in 30 minutes`,
                   html: `
                     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
                       <div style="text-align: center; margin-bottom: 24px;">
-                        <p style="color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">WeddingPlan Kenya</p>
+                        <p style="color: #888; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Zania</p>
                       </div>
                       <div style="background: #f9f9f9; border-radius: 12px; padding: 24px; text-align: center;">
                         <p style="font-size: 14px; color: #666; margin: 0 0 8px;">Hey ${shareLink.assignee_name} 👋</p>
