@@ -141,13 +141,15 @@ function SignupTermsNotice({
   acceptedTerms,
   onAcceptedTermsChange,
   error,
+  compact = false,
 }: {
   acceptedTerms: boolean;
   onAcceptedTermsChange: (checked: boolean) => void;
   error?: string;
+  compact?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+    <div className={`rounded-2xl border border-border/60 bg-muted/20 px-4 ${compact ? 'py-2.5' : 'py-3'}`}>
       <div className="flex items-start gap-3">
         <Checkbox
           id="signup-terms"
@@ -167,9 +169,11 @@ function SignupTermsNotice({
             </Link>
             .
           </Label>
-          <p className="text-xs leading-5 text-muted-foreground">
-            Please review both documents before creating your Zania account.
-          </p>
+          {!compact ? (
+            <p className="text-xs leading-5 text-muted-foreground">
+              Please review both documents before creating your Zania account.
+            </p>
+          ) : null}
           <FormFieldError message={error} />
         </div>
       </div>
@@ -962,10 +966,10 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-warm p-4">
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-2xl items-center justify-center">
+    <div className={`min-h-screen bg-gradient-warm ${isEstimatorCoupleEntry ? 'p-3' : 'p-4'}`}>
+      <div className={`mx-auto flex max-w-2xl items-center justify-center ${isEstimatorCoupleEntry ? 'min-h-[calc(100vh-1.5rem)]' : 'min-h-[calc(100vh-2rem)]'}`}>
         <Card className="w-full shadow-warm border-border/50">
-        <CardHeader className="space-y-3 text-center">
+        <CardHeader className={isEstimatorCoupleEntry ? 'space-y-2 pb-3 text-center' : 'space-y-3 text-center'}>
           <div className="mx-auto">
             <BrandWordmark size="md" />
           </div>
@@ -996,7 +1000,7 @@ export default function Auth() {
                   ? 'Start Your Wedding'
                   : 'Welcome Back'}
           </CardTitle>
-          <CardDescription>
+          {!isEstimatorCoupleEntry ? <CardDescription>
             {isForgot
               ? 'Enter your email to receive a reset link.'
               : isSignupSuccessStep
@@ -1028,9 +1032,9 @@ export default function Auth() {
                       ? 'Create your account now. You will choose the right path in the next step.'
                       : 'Choose whether this account starts a new wedding or joins one that already invited you.'
                     : 'Use the email and password already tied to your Zania account.'}
-          </CardDescription>
+          </CardDescription> : null}
         </CardHeader>
-        <CardContent>
+        <CardContent className={isEstimatorCoupleEntry ? 'pb-4' : undefined}>
           {isForgot ? (
             <form onSubmit={handleForgotPassword} className="space-y-4">
               <FormSubmitError message={forgotSubmitError} />
@@ -1167,7 +1171,7 @@ export default function Auth() {
 
               {isSignUp && (
                 <>
-                  <div className="mb-5 rounded-[28px] border border-[#ead9c8] bg-[linear-gradient(180deg,#fffaf4,#f8efe6)] px-5 py-4 text-left shadow-[0_16px_45px_rgba(194,114,79,0.08)]">
+                  {!isEstimatorCoupleEntry ? <div className="mb-5 rounded-[28px] border border-[#ead9c8] bg-[linear-gradient(180deg,#fffaf4,#f8efe6)] px-5 py-4 text-left shadow-[0_16px_45px_rgba(194,114,79,0.08)]">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#c2724f]">
@@ -1199,9 +1203,9 @@ export default function Auth() {
                         />
                       ))}
                     </div>
-                  </div>
+                  </div> : null}
 
-                  {!isSignupMethodStep && (
+                  {!isEstimatorCoupleEntry && !isSignupMethodStep && (
                     <motion.div
                       initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
                       animate={hasHomepageCarryover ? { opacity: 1, y: 0, scale: 1 } : { opacity: 1, y: 0, scale: 1 }}
@@ -1252,7 +1256,7 @@ export default function Auth() {
                 </>
               )}
 
-              {isSignUp && hasChosenAudiencePath && (
+              {isSignUp && hasChosenAudiencePath && !isEstimatorCoupleEntry && (
                 <div className="semantic-surface-success mb-5 rounded-2xl border px-4 py-3">
                   <p className="text-sm font-medium text-foreground">14-day full-access beta trial</p>
                   <p className="mt-1 text-xs leading-6 text-muted-foreground">
@@ -1261,7 +1265,7 @@ export default function Auth() {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className={isEstimatorCoupleEntry ? 'space-y-3' : 'space-y-4'}>
                 {isSignUp ? (
                   isSignupMethodStep ? (
                     <>
@@ -1298,7 +1302,15 @@ export default function Auth() {
                     </>
                   ) : isSignupAccountStep ? (
                     <>
-                      <div className="semantic-surface-info rounded-2xl border px-4 py-3">
+                      {isEstimatorCoupleEntry ? (
+                        <div className="semantic-surface-success flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-2xl border px-4 py-2.5 text-left">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">Couple account selected</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">Your estimate will be saved after signup.</p>
+                          </div>
+                          <span className="text-xs font-semibold text-success">14-day full access</span>
+                        </div>
+                      ) : <div className="semantic-surface-info rounded-2xl border px-4 py-3">
                         <p className="text-sm font-medium text-foreground">Step 2 of 4</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {hasLockedSignupTrack
@@ -1309,19 +1321,25 @@ export default function Auth() {
                                 : 'Add your details and wedding code so we can join you to the right wedding.'
                             : 'Add your details here, then we will move to the workspace choice.'}
                         </p>
-                      </div>
+                      </div>}
                       <FormSubmitError message={submitError} />
                       {isEstimatorCoupleEntry ? (
                         <div className="space-y-3">
+                          <SignupTermsNotice
+                            acceptedTerms={acceptedTerms}
+                            onAcceptedTermsChange={(checked) => {
+                              setAcceptedTerms(checked);
+                              setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
+                            }}
+                            error={formErrors.acceptedTerms}
+                            compact
+                          />
                           <GoogleAuthButton
                             loading={oauthSubmittingProvider === 'google'}
                             disabled={submitting || oauthSubmitting || !acceptedTerms}
                             onClick={handleGoogleSignIn}
                             text="Continue with Google"
                           />
-                          <p className="text-center text-xs text-muted-foreground">
-                            Accept the terms below, then continue securely with Google or use email.
-                          </p>
                           <div className="relative py-1">
                             <div className="absolute inset-0 flex items-center">
                               <span className="w-full border-t border-border/60" />
@@ -1334,7 +1352,7 @@ export default function Auth() {
                           </div>
                         </div>
                       ) : null}
-                      {hasLockedSignupTrack ? (
+                      {hasLockedSignupTrack && !isEstimatorCoupleEntry ? (
                         <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
                           <p className="text-sm font-medium text-foreground">
                             {selectedAudience === 'professional'
@@ -1356,6 +1374,7 @@ export default function Auth() {
                           </p>
                         </div>
                       ) : null}
+                      <div className={isEstimatorCoupleEntry ? 'grid gap-3 sm:grid-cols-2' : 'contents'}>
                       <div className="space-y-2">
                         <Label htmlFor="name">Full Name</Label>
                         <Input
@@ -1408,6 +1427,7 @@ export default function Auth() {
                         />
                         <FormFieldError message={formErrors.email} />
                       </div>
+                      </div>
 
                       <div className="space-y-2">
                         <Label htmlFor="password">Password</Label>
@@ -1428,7 +1448,21 @@ export default function Auth() {
                           minLength={6}
                         />
                         <FormFieldError message={formErrors.password} />
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        {isEstimatorCoupleEntry ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs text-muted-foreground">Use at least 6 characters.</p>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => setShowPassword((current) => !current)}
+                            >
+                              {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              {showPassword ? 'Hide' : 'Show'}
+                            </Button>
+                          </div>
+                        ) : <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex flex-wrap items-center gap-2">
                             <Button
                               type="button"
@@ -1468,7 +1502,7 @@ export default function Auth() {
                               ? 'Generated for you. Save it somewhere safe before continuing.'
                               : 'Use at least 6 characters, or generate one instantly.'}
                           </p>
-                        </div>
+                        </div>}
                       </div>
 
                       {selectedAudience === 'couple' && signupPath === 'join_wedding' ? (
@@ -1489,14 +1523,16 @@ export default function Auth() {
                         </div>
                       ) : null}
 
-                      <SignupTermsNotice
-                        acceptedTerms={acceptedTerms}
-                        onAcceptedTermsChange={(checked) => {
-                          setAcceptedTerms(checked);
-                          setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
-                        }}
-                        error={formErrors.acceptedTerms}
-                      />
+                      {!isEstimatorCoupleEntry ? (
+                        <SignupTermsNotice
+                          acceptedTerms={acceptedTerms}
+                          onAcceptedTermsChange={(checked) => {
+                            setAcceptedTerms(checked);
+                            setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
+                          }}
+                          error={formErrors.acceptedTerms}
+                        />
+                      ) : null}
 
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Button
