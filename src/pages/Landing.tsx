@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHomeRouteForRole } from '@/lib/roles';
-import { getEstimatorPlanDraft, saveEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import { saveEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 import {
   buildInteractiveBudgetPlan,
   calculatePercentage,
@@ -25,7 +25,6 @@ import {
   removeInteractiveBudgetCategory,
   resetAllInteractiveBudgetAllocations,
   resetInteractiveBudgetAllocation,
-  restoreInteractiveBudgetPlan,
   updateInteractiveBudgetAllocation,
   updateInteractiveBudgetPercentage,
   updateInteractiveBudgetSettings,
@@ -137,15 +136,6 @@ export default function Landing() {
       })),
     });
   };
-
-  useEffect(() => {
-    const draft = getEstimatorPlanDraft();
-    if (!draft?.totalBudget || !draft.allocations?.length) return;
-    const restoredPlan = restoreInteractiveBudgetPlan(draft.totalBudget, draft.guestCount, draft.allocations);
-    setBudgetInput(String(restoredPlan.totalBudget));
-    setGuestInput(String(restoredPlan.guestCount));
-    setPlan(restoredPlan);
-  }, []);
 
   useEffect(() => {
     if (!plan || !selectedAllocationName) return;

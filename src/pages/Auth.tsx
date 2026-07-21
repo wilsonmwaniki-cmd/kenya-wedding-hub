@@ -40,6 +40,7 @@ import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import AppleAuthButton from '@/components/AppleAuthButton';
 import { normalizeHumanName, normalizeHumanNameInput } from '@/lib/names';
 import { isAppleAuthEnabled } from '@/lib/featureFlags';
+import { isEstimatorCoupleSignupEntry } from '@/lib/authEntryFlows';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 import PublicSiteFooter from '@/components/PublicSiteFooter';
 
@@ -189,6 +190,12 @@ export default function Auth() {
   const requestedFlow = searchParams.get('flow');
   const requestedAudience = searchParams.get('audience');
   const requestedRole = searchParams.get('role');
+  const isEstimatorCoupleEntry = isEstimatorCoupleSignupEntry({
+    mode: requestedMode,
+    flow: requestedFlow,
+    audience: requestedAudience,
+    role: requestedRole,
+  });
   const hasExplicitUrlAuthState = (
     location.pathname === '/sign-in'
     || searchParams.has('mode')
@@ -255,6 +262,7 @@ export default function Auth() {
   const hasLockedSignupTrack = isSignUp && (
     (requestedFlow === 'join_wedding')
     || (requestedAudience === 'professional' && (requestedRole === 'planner' || requestedRole === 'vendor'))
+    || isEstimatorCoupleEntry
   );
   const showGenericModeChooser = false;
   const showGenericAudienceChooser = false;
@@ -443,7 +451,9 @@ export default function Auth() {
       setSignupPath(audienceParam === 'couple' ? (flow === 'join_wedding' ? 'join_wedding' : 'create_wedding') : 'professional');
       if (mode === 'signup') {
         setSignupMethod('email');
-        setSignupStep((flow === 'join_wedding' || (audienceParam === 'professional' && (roleParam === 'planner' || roleParam === 'vendor')))
+        setSignupStep((flow === 'join_wedding'
+          || (flow === 'estimator' && audienceParam === 'couple' && roleParam === 'couple')
+          || (audienceParam === 'professional' && (roleParam === 'planner' || roleParam === 'vendor')))
           ? 'account'
           : 'role');
       }
@@ -702,10 +712,6 @@ export default function Auth() {
 
     if (!audience) {
       throw new Error(`Choose whether you are continuing as a couple or wedding professional first.`);
-    }
-
-    if (!signupMethod || signupMethod === 'email') {
-      throw new Error('Choose Google or Apple first before continuing with a social signup.');
     }
 
     if (!selectedAudience || !signupPath) {
@@ -971,7 +977,9 @@ export default function Auth() {
               : isSignUp && isSignupMethodStep
                 ? 'Create your Zania account'
               : isSignUp && isSignupAccountStep
-                ? 'Tell us about you'
+                ? isEstimatorCoupleEntry
+                  ? 'Save your wedding plan'
+                  : 'Tell us about you'
               : isSignUp && isSignupRoleStep
                 ? 'Choose your path'
               : adminEntry
@@ -996,7 +1004,9 @@ export default function Auth() {
               : isSignUp && isSignupMethodStep
                 ? 'Start with one clear choice, then we will guide you the rest of the way.'
               : isSignUp && isSignupAccountStep
-                ? 'Secure your account details first, then we will lock in the workspace that fits you.'
+                ? isEstimatorCoupleEntry
+                  ? 'Your couple workspace is selected. Continue with Google or create it with email.'
+                  : 'Secure your account details first, then we will lock in the workspace that fits you.'
               : isSignUp && isSignupRoleStep
                 ? 'Pick the account you want Zania to open for you so the setup stays tailored from the start.'
               : adminEntry
@@ -1168,7 +1178,9 @@ export default function Auth() {
                         </p>
                       </div>
                       <p className="text-xs text-[#7c6353]">
-                        {isSignupMethodStep
+                        {isEstimatorCoupleEntry
+                          ? 'Create your couple account'
+                          : isSignupMethodStep
                           ? 'How do you want to start?'
                           : isSignupAccountStep
                             ? 'Secure your account'
@@ -1292,11 +1304,36 @@ export default function Auth() {
                           {hasLockedSignupTrack
                             ? selectedAudience === 'professional'
                               ? 'Add your details and we will finish creating your vendor account.'
-                              : 'Add your details and wedding code so we can join you to the right wedding.'
+                              : isEstimatorCoupleEntry
+                                ? 'Your estimate is ready. Create your private couple account to keep it.'
+                                : 'Add your details and wedding code so we can join you to the right wedding.'
                             : 'Add your details here, then we will move to the workspace choice.'}
                         </p>
                       </div>
                       <FormSubmitError message={submitError} />
+                      {isEstimatorCoupleEntry ? (
+                        <div className="space-y-3">
+                          <GoogleAuthButton
+                            loading={oauthSubmittingProvider === 'google'}
+                            disabled={submitting || oauthSubmitting || !acceptedTerms}
+                            onClick={handleGoogleSignIn}
+                            text="Continue with Google"
+                          />
+                          <p className="text-center text-xs text-muted-foreground">
+                            Accept the terms below, then continue securely with Google or use email.
+                          </p>
+                          <div className="relative py-1">
+                            <div className="absolute inset-0 flex items-center">
+                              <span className="w-full border-t border-border/60" />
+                            </div>
+                            <div className="relative flex justify-center">
+                              <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                                Or use email
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
                       {hasLockedSignupTrack ? (
                         <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
                           <p className="text-sm font-medium text-foreground">
@@ -1304,14 +1341,18 @@ export default function Auth() {
                               ? professionalSignupRole === 'planner'
                                 ? 'Planner workspace selected'
                                 : 'Vendor workspace selected'
-                              : 'Wedding join path selected'}
+                              : isEstimatorCoupleEntry
+                                ? 'Couple workspace selected'
+                                : 'Wedding join path selected'}
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
                             {selectedAudience === 'professional'
                               ? professionalSignupRole === 'planner'
                                 ? 'This account will open your planner operations workspace right after setup.'
                                 : 'This account will open your vendor portfolio, bookings, and listing workspace.'
-                              : 'Use the same invited email and the wedding code the couple shared with you.'}
+                              : isEstimatorCoupleEntry
+                                ? 'Your estimate will be saved into this private wedding workspace after signup.'
+                                : 'Use the same invited email and the wedding code the couple shared with you.'}
                           </p>
                         </div>
                       ) : null}
@@ -1332,7 +1373,7 @@ export default function Auth() {
                         <FormFieldError message={formErrors.fullName} />
                       </div>
 
-                      <div className="space-y-2">
+                      {!isEstimatorCoupleEntry ? <div className="space-y-2">
                         <Label htmlFor="account-purpose">What best describes how you will use Zania?</Label>
                         <Select value={accountPurpose} onValueChange={(value: AccountPurpose) => setAccountPurpose(value)}>
                           <SelectTrigger id="account-purpose">
@@ -1349,7 +1390,7 @@ export default function Auth() {
                         <p className="text-xs text-muted-foreground">
                           We use this to guide you into the right workspace and upgrade path. You can change it later in Settings.
                         </p>
-                      </div>
+                      </div> : null}
 
                       <div className="space-y-2">
                         <Label htmlFor="email">Your email</Label>
@@ -1458,7 +1499,12 @@ export default function Auth() {
                       />
 
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <Button type="button" variant="outline" className="w-full" onClick={resetSignupWizard}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => isEstimatorCoupleEntry ? navigate('/') : resetSignupWizard()}
+                        >
                           Back
                         </Button>
                         {hasLockedSignupTrack ? (
@@ -1466,6 +1512,8 @@ export default function Auth() {
                             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {signupPath === 'join_wedding'
                               ? 'Create account and join'
+                              : selectedAudience === 'couple'
+                                ? 'Create couple account'
                               : professionalSignupRole === 'planner'
                                 ? 'Create planner account'
                                 : 'Create vendor account'}

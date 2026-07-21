@@ -38,6 +38,18 @@ export interface AuthEntrySignUpResult {
   confirmationEmailResent: boolean;
 }
 
+export function isEstimatorCoupleSignupEntry(input: {
+  mode?: string | null;
+  flow?: string | null;
+  audience?: string | null;
+  role?: string | null;
+}) {
+  return input.mode === 'signup'
+    && input.flow === 'estimator'
+    && input.audience === 'couple'
+    && input.role === 'couple';
+}
+
 export async function performAuthEntrySignUp(input: {
   email: string;
   password: string;
