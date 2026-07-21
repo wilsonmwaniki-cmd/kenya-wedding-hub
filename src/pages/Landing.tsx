@@ -1,26 +1,35 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Trash2 } from 'lucide-react';
 import heroImage from '@/assets/hero-wedding.jpg';
 import BrandWordmark from '@/components/BrandWordmark';
+import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
 import PublicSiteFooter from '@/components/PublicSiteFooter';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHomeRouteForRole } from '@/lib/roles';
-import { saveEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import { getEstimatorPlanDraft, saveEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 import {
   buildInteractiveBudgetPlan,
+  calculatePercentage,
+  calculatePlannedAmount,
   getBudgetUtilizationPercentage,
   getBudgetUtilizationStatus,
   getGuestExperienceCost,
   removeInteractiveBudgetCategory,
+  resetAllInteractiveBudgetAllocations,
+  resetInteractiveBudgetAllocation,
+  restoreInteractiveBudgetPlan,
   updateInteractiveBudgetAllocation,
+  updateInteractiveBudgetPercentage,
   updateInteractiveBudgetSettings,
+  type BudgetResizeStrategy,
   type InteractiveBudgetPlan,
 } from '@/lib/interactiveBudgetPlan';
 
@@ -28,11 +37,19 @@ function formatCurrency(value: number) {
   return `KES ${Math.round(value).toLocaleString()}`;
 }
 
+function allocationDomId(name: string) {
+  return `estimator-allocation-${name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}`;
+}
+
 export default function Landing() {
   const [budgetInput, setBudgetInput] = useState('1500000');
   const [guestInput, setGuestInput] = useState('120');
   const [plan, setPlan] = useState<InteractiveBudgetPlan | null>(null);
   const [showAllCategories, setShowAllCategories] = useState(false);
+  const [selectedAllocationName, setSelectedAllocationName] = useState<string | null>(null);
+  const [allocationDraft, setAllocationDraft] = useState<{ amount: string; percentage: string; lastEditedField: 'amount' | 'percentage' } | null>(null);
+  const [pendingTotalBudget, setPendingTotalBudget] = useState<number | null>(null);
+  const [resetAllOpen, setResetAllOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const resultsRef = useRef<HTMLElement | null>(null);
   const professionalEntryRef = useRef<HTMLDivElement | null>(null);
@@ -41,36 +58,66 @@ export default function Landing() {
   const navigate = useNavigate();
   const { user, profile, loading } = useAuth();
 
+  const previewPlan = useMemo(() => {
+    if (!plan || !selectedAllocationName || !allocationDraft) return plan;
+    const rawValue = allocationDraft[allocationDraft.lastEditedField].replace(/,/g, '');
+    const nextValue = Number(rawValue);
+    if (!Number.isFinite(nextValue) || nextValue < 0) return plan;
+    const originalAllocation = plan.allocations.find((allocation) => allocation.name === selectedAllocationName);
+    const nextPlan = allocationDraft.lastEditedField === 'amount'
+      ? updateInteractiveBudgetAllocation(plan, selectedAllocationName, nextValue)
+      : updateInteractiveBudgetPercentage(plan, selectedAllocationName, nextValue);
+    if (!originalAllocation) return nextPlan;
+    return {
+      ...nextPlan,
+      allocations: nextPlan.allocations.map((allocation) => {
+        if (allocation.name !== selectedAllocationName) return allocation;
+        const hasDraftChange = allocation.amount !== originalAllocation.amount;
+        return {
+          ...allocation,
+          isManuallyEdited: originalAllocation.isManuallyEdited || hasDraftChange,
+          lastEditedField: hasDraftChange ? allocationDraft.lastEditedField : originalAllocation.lastEditedField,
+        };
+      }),
+    };
+  }, [allocationDraft, plan, selectedAllocationName]);
+
   const guestExperienceCost = useMemo(
-    () => plan ? getGuestExperienceCost(plan) : 0,
-    [plan],
+    () => previewPlan ? getGuestExperienceCost(previewPlan) : 0,
+    [previewPlan],
   );
 
   const utilizationPercentage = useMemo(
-    () => plan ? getBudgetUtilizationPercentage(plan) : 0,
-    [plan],
+    () => previewPlan ? getBudgetUtilizationPercentage(previewPlan) : 0,
+    [previewPlan],
   );
 
   const utilizationStatus = getBudgetUtilizationStatus(utilizationPercentage);
-  const utilizationLabel = utilizationStatus === 'safe'
-    ? 'Safe range'
-    : utilizationStatus === 'warning'
-      ? utilizationPercentage < 100 ? 'Near limit' : 'At limit'
+  const utilizationLabel = utilizationStatus === 'complete'
+    ? 'Budget fully allocated'
+    : utilizationStatus === 'under'
+      ? 'Left to allocate'
       : 'Over budget';
-  const utilizationClassName = utilizationStatus === 'safe'
+  const utilizationClassName = utilizationStatus === 'complete'
     ? 'border-success/30 bg-success/10 text-success'
-    : utilizationStatus === 'warning'
-      ? 'border-warning/40 bg-warning/10 text-warning-foreground'
+    : utilizationStatus === 'under'
+      ? 'border-border bg-muted/40 text-foreground'
       : 'border-destructive/30 bg-destructive/10 text-destructive';
 
+  const totalAllocated = useMemo(
+    () => previewPlan?.allocations.reduce((sum, allocation) => sum + allocation.amount, 0) ?? 0,
+    [previewPlan],
+  );
+  const remainingAllocation = (previewPlan?.totalBudget ?? 0) - totalAllocated;
+
   const visibleAllocations = useMemo(() => {
-    if (!plan) return [];
-    if (showAllCategories) return plan.allocations;
-    return [...plan.allocations]
+    if (!previewPlan) return [];
+    if (showAllCategories) return previewPlan.allocations;
+    return [...previewPlan.allocations]
       .filter((allocation) => allocation.amount > 0)
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 6);
-  }, [plan, showAllCategories]);
+  }, [previewPlan, showAllCategories]);
 
   const persistPlanDraft = (nextPlan: InteractiveBudgetPlan) => {
     saveEstimatorPlanDraft({
@@ -79,13 +126,37 @@ export default function Landing() {
       weddingStyle: 'classic',
       venueTier: 'mid_tier',
       totalBudget: nextPlan.totalBudget,
-      allocations: nextPlan.allocations.map(({ name, amount, percentage }) => ({
+      allocations: nextPlan.allocations.map(({ name, amount, percentage, suggestedAmount, suggestedPercentage, isManuallyEdited, lastEditedField }) => ({
         name,
         amount,
         percentage,
+        suggestedAmount,
+        suggestedPercentage,
+        isManuallyEdited,
+        lastEditedField,
       })),
     });
   };
+
+  useEffect(() => {
+    const draft = getEstimatorPlanDraft();
+    if (!draft?.totalBudget || !draft.allocations?.length) return;
+    const restoredPlan = restoreInteractiveBudgetPlan(draft.totalBudget, draft.guestCount, draft.allocations);
+    setBudgetInput(String(restoredPlan.totalBudget));
+    setGuestInput(String(restoredPlan.guestCount));
+    setPlan(restoredPlan);
+  }, []);
+
+  useEffect(() => {
+    if (!plan || !selectedAllocationName) return;
+    const selectedAllocation = plan.allocations.find((allocation) => allocation.name === selectedAllocationName);
+    if (!selectedAllocation) return;
+    setAllocationDraft({
+      amount: String(selectedAllocation.amount),
+      percentage: selectedAllocation.percentage.toFixed(1),
+      lastEditedField: selectedAllocation.lastEditedField ?? 'amount',
+    });
+  }, [plan, selectedAllocationName]);
 
   const handleBuildPlan = () => {
     const totalBudget = Number(budgetInput.replace(/,/g, ''));
@@ -128,14 +199,46 @@ export default function Landing() {
     window.requestAnimationFrame(() => professionalEntryRef.current?.focus({ preventScroll: true }));
   };
 
-  const handleAllocationChange = (category: string, value: string) => {
+  const handleAllocationChange = (category: string, value: string, field: 'amount' | 'percentage') => {
     if (!plan) return;
-    const amount = Number(value.replace(/,/g, ''));
-    if (!Number.isFinite(amount) || amount < 0) return;
+    const nextValue = Number(value.replace(/,/g, ''));
+    if (!Number.isFinite(nextValue) || nextValue < 0) return;
 
-    const nextPlan = updateInteractiveBudgetAllocation(plan, category, amount);
+    const nextPlan = field === 'amount'
+      ? updateInteractiveBudgetAllocation(plan, category, nextValue)
+      : updateInteractiveBudgetPercentage(plan, category, nextValue);
     setPlan(nextPlan);
     persistPlanDraft(nextPlan);
+    const updated = nextPlan.allocations.find((allocation) => allocation.name === category);
+    if (updated) {
+      setAllocationDraft({
+        amount: String(updated.amount),
+        percentage: updated.percentage.toFixed(1),
+        lastEditedField: field,
+      });
+    }
+  };
+
+  const handleAllocationDraftChange = (value: string, field: 'amount' | 'percentage') => {
+    if (!plan) return;
+    const nextValue = Number(value.replace(/,/g, ''));
+    setAllocationDraft((current) => {
+      const fallback = current ?? { amount: '', percentage: '', lastEditedField: field };
+      if (!Number.isFinite(nextValue) || nextValue < 0 || value.trim() === '') {
+        return { ...fallback, [field]: value, lastEditedField: field };
+      }
+      return field === 'amount'
+        ? {
+            amount: value,
+            percentage: calculatePercentage(nextValue, plan.totalBudget).toFixed(1),
+            lastEditedField: field,
+          }
+        : {
+            amount: String(Math.round(calculatePlannedAmount(nextValue, plan.totalBudget))),
+            percentage: value,
+            lastEditedField: field,
+          };
+    });
   };
 
   const handleRemoveCategory = (category: string) => {
@@ -143,27 +246,74 @@ export default function Landing() {
     const nextPlan = removeInteractiveBudgetCategory(plan, category);
     setPlan(nextPlan);
     persistPlanDraft(nextPlan);
+    if (selectedAllocationName === category) {
+      setSelectedAllocationName(null);
+      setAllocationDraft(null);
+    }
   };
 
-  const handlePlanSettingsChange = () => {
+  const handleBudgetGoalChange = () => {
     if (!plan) return;
     const totalBudget = Number(budgetInput.replace(/,/g, ''));
-    const guestCount = Number(guestInput.replace(/,/g, ''));
-
-    if (!Number.isFinite(totalBudget) || totalBudget <= 0 || !Number.isFinite(guestCount) || guestCount <= 0) {
+    if (!Number.isFinite(totalBudget) || totalBudget <= 0) {
       setBudgetInput(String(plan.totalBudget));
-      setGuestInput(String(plan.guestCount));
       toast({
-        title: 'Use valid planning numbers',
-        description: 'Budget and guest count must both be greater than zero.',
+        title: 'Enter a valid budget',
+        description: 'Your wedding budget must be greater than zero.',
         variant: 'destructive',
       });
       return;
     }
+    if (totalBudget !== plan.totalBudget) setPendingTotalBudget(totalBudget);
+  };
 
-    const nextPlan = updateInteractiveBudgetSettings(plan, totalBudget, guestCount);
+  const applyBudgetGoalChange = (strategy: BudgetResizeStrategy) => {
+    if (!plan || pendingTotalBudget == null) return;
+    const nextPlan = updateInteractiveBudgetSettings(plan, pendingTotalBudget, plan.guestCount, strategy);
+    setPlan(nextPlan);
+    setBudgetInput(String(nextPlan.totalBudget));
+    persistPlanDraft(nextPlan);
+    setPendingTotalBudget(null);
+  };
+
+  const handleGuestCountChange = () => {
+    if (!plan) return;
+    const guestCount = Number(guestInput.replace(/,/g, ''));
+    if (!Number.isFinite(guestCount) || guestCount <= 0) {
+      setGuestInput(String(plan.guestCount));
+      toast({ title: 'Enter a valid guest count', description: 'Use at least one guest.', variant: 'destructive' });
+      return;
+    }
+
+    const nextPlan = updateInteractiveBudgetSettings(plan, plan.totalBudget, guestCount, 'keep_amounts');
     setPlan(nextPlan);
     persistPlanDraft(nextPlan);
+  };
+
+  const openAllocation = (name: string) => {
+    if (!plan) return;
+    if (selectedAllocationName === name) {
+      setSelectedAllocationName(null);
+      setAllocationDraft(null);
+      return;
+    }
+    const allocation = plan.allocations.find((item) => item.name === name);
+    if (!allocation) return;
+    setSelectedAllocationName(name);
+    setAllocationDraft({
+      amount: String(allocation.amount),
+      percentage: allocation.percentage.toFixed(1),
+      lastEditedField: allocation.lastEditedField ?? 'amount',
+    });
+  };
+
+  const resetAllocation = (name: string) => {
+    if (!plan) return;
+    const nextPlan = resetInteractiveBudgetAllocation(plan, name);
+    setPlan(nextPlan);
+    persistPlanDraft(nextPlan);
+    const updated = nextPlan.allocations.find((allocation) => allocation.name === name);
+    if (updated) setAllocationDraft({ amount: String(updated.amount), percentage: updated.percentage.toFixed(1), lastEditedField: 'amount' });
   };
 
   const handleSavePlan = async () => {
@@ -181,6 +331,7 @@ export default function Landing() {
         userId: user.id,
         role: profile?.role,
         plannerType: profile?.planner_type,
+        userMetadata: user.user_metadata,
       });
 
       if (seeded) {
@@ -361,8 +512,8 @@ export default function Landing() {
           aria-labelledby="budget-plan-heading"
         >
           <Card className="border-border bg-card shadow-card">
-            <CardContent className="grid grid-cols-2 p-0 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-              <div className="p-4 sm:p-5">
+            <CardContent className="grid grid-cols-2 p-0 lg:grid-cols-4">
+              <div className="border-b border-border p-4 sm:p-5 lg:border-b-0 lg:border-r">
                 <Label htmlFor="plan-total-budget" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Your budget</Label>
                 <div className="relative mt-2">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">KES</span>
@@ -374,18 +525,25 @@ export default function Landing() {
                     inputMode="numeric"
                     value={budgetInput}
                     onChange={(event) => setBudgetInput(event.target.value)}
-                    onBlur={handlePlanSettingsChange}
+                    onBlur={handleBudgetGoalChange}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') event.currentTarget.blur();
                     }}
                     className="h-10 bg-background pl-12 text-sm font-semibold sm:h-11 sm:text-base"
                   />
                 </div>
-                <div className={`mt-2 inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-xs font-semibold sm:mt-3 sm:px-3 sm:text-sm ${utilizationClassName}`} aria-live="polite">
-                  {Math.round(utilizationPercentage)}%<span className="hidden sm:inline">&nbsp;planned</span>&nbsp;·&nbsp;{utilizationLabel}
-                </div>
               </div>
-              <div className="border-l border-border p-4 sm:border-l-0 sm:p-5">
+              <div className="border-b border-l border-border p-4 sm:p-5 lg:border-l-0 lg:border-r">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Allocated</p>
+                <p className="mt-3 text-base font-bold sm:text-xl">{formatCurrency(totalAllocated)}</p>
+                <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{utilizationPercentage.toFixed(1)}% of budget</p>
+              </div>
+              <div className="p-4 sm:p-5 lg:border-r">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">{remainingAllocation >= 0 ? 'Remaining' : 'Over budget'}</p>
+                <p className={`mt-3 text-base font-bold sm:text-xl ${remainingAllocation < 0 ? 'text-destructive' : ''}`}>{formatCurrency(Math.abs(remainingAllocation))}</p>
+                <div className={`mt-2 inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${utilizationClassName}`} aria-live="polite">{utilizationLabel}</div>
+              </div>
+              <div className="border-l border-border p-4 sm:p-5 lg:border-l-0">
                 <Label htmlFor="plan-guest-count" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Guests</Label>
                 <Input
                   id="plan-guest-count"
@@ -395,20 +553,13 @@ export default function Landing() {
                   inputMode="numeric"
                   value={guestInput}
                   onChange={(event) => setGuestInput(event.target.value)}
-                  onBlur={handlePlanSettingsChange}
+                  onBlur={handleGuestCountChange}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') event.currentTarget.blur();
                   }}
                   className="mt-2 h-10 bg-background text-sm font-semibold sm:h-11 sm:text-base"
                 />
-                <p className="mt-3 hidden text-sm text-muted-foreground sm:block">Adjust as your guest list changes.</p>
-              </div>
-              <div className="col-span-2 flex items-center justify-between border-t border-border p-4 sm:col-span-1 sm:block sm:border-t-0 sm:p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Guest-facing cost</p>
-                <div className="text-right sm:text-left">
-                  <p className="text-base font-bold sm:mt-2 sm:text-2xl">{formatCurrency(guestExperienceCost / plan.guestCount)}</p>
-                  <p className="text-xs text-muted-foreground sm:mt-1 sm:text-sm">per guest</p>
-                </div>
+                <p className="mt-2 text-xs text-muted-foreground sm:text-sm">{formatCurrency(guestExperienceCost / plan.guestCount)} per guest</p>
               </div>
             </CardContent>
           </Card>
@@ -419,53 +570,122 @@ export default function Landing() {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary sm:text-sm sm:tracking-[0.18em]">Your first draft</p>
                     <h2 id="budget-plan-heading" className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">Shape the plan</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Change any amount or remove what you do not need. Your budget status updates automatically.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Choose an item to adjust its amount or share.</p>
                   </div>
-                  <span className="text-xs font-semibold text-muted-foreground sm:text-sm">{plan.allocations.length} budget items available</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-muted-foreground sm:text-sm">{plan.allocations.length} items</span>
+                    {plan.allocations.some((allocation) => allocation.isManuallyEdited) ? (
+                      <button type="button" onClick={() => setResetAllOpen(true)} className="text-xs font-semibold text-primary underline-offset-4 hover:underline">Reset all</button>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div id="budget-category-list" className="mt-4 space-y-2 sm:mt-6">
                   <AnimatePresence initial={false}>
-                    {visibleAllocations.map((allocation) => (
-                    <motion.div
-                      layout={!prefersReducedMotion}
-                      key={allocation.name}
-                      initial={false}
-                      exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -4 }}
-                      transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: 'easeOut' }}
-                      className="grid grid-cols-[minmax(0,1fr)_7.5rem_3rem_2.75rem] items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 transition-colors duration-200 focus-within:border-ring sm:grid-cols-[minmax(0,1fr)_9rem_5rem_2.75rem] sm:gap-3 sm:p-4"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground" title={allocation.name}>{allocation.name}</p>
-                        <div className="mt-2 hidden h-1.5 overflow-hidden rounded-full bg-muted sm:block">
-                          <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(allocation.percentage, 100)}%` }} />
-                        </div>
-                      </div>
-                      <div className="relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[0.625rem] font-bold text-muted-foreground sm:left-3 sm:text-sm">KES</span>
-                        <Input
-                          key={`${allocation.name}-${allocation.amount}`}
-                          type="number"
-                          min="0"
-                          aria-label={`${allocation.name} amount`}
-                          defaultValue={allocation.amount}
-                          onBlur={(event) => handleAllocationChange(allocation.name, event.target.value)}
-                          className="h-10 pl-8 pr-2 text-right text-xs font-semibold sm:h-11 sm:pl-12 sm:pr-3 sm:text-sm"
-                        />
-                      </div>
-                      <p className="text-right text-xs font-semibold text-muted-foreground sm:text-sm">{allocation.percentage.toFixed(1)}%</p>
-                      <button
-                        type="button"
-                        disabled={plan.allocations.length <= 1}
-                        onClick={() => handleRemoveCategory(allocation.name)}
-                        className="inline-flex h-11 w-11 items-center justify-center rounded-md text-destructive transition-[background-color,color] duration-200 hover:bg-destructive/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={`Remove ${allocation.name}`}
-                        title={`Remove ${allocation.name}`}
-                      >
-                        <Trash2 className="h-5 w-5" aria-hidden="true" />
-                      </button>
-                    </motion.div>
-                  ))}
+                    {visibleAllocations.map((allocation) => {
+                      const isSelected = selectedAllocationName === allocation.name;
+                      const perGuestAmount = allocation.guestSensitive && plan.guestCount > 0
+                        ? allocation.amount / plan.guestCount
+                        : null;
+                      return (
+                        <motion.div
+                          layout={!prefersReducedMotion}
+                          key={allocation.name}
+                          initial={false}
+                          exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -4 }}
+                          transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: 'easeOut' }}
+                          className={`relative overflow-hidden rounded-lg border transition-[border-color,background-color,box-shadow] duration-200 ${isSelected ? 'border-primary/70 bg-primary/[0.025] shadow-card ring-1 ring-primary/15' : 'border-border bg-card hover:border-primary/30'}`}
+                        >
+                          <span aria-hidden="true" className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary transition-opacity duration-200 ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                          <button
+                            type="button"
+                            aria-expanded={isSelected}
+                            aria-controls={allocationDomId(allocation.name)}
+                            onClick={() => openAllocation(allocation.name)}
+                            className={`min-h-[4.5rem] w-full px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5 ${isSelected ? 'bg-primary/[0.06]' : 'hover:bg-muted/25'}`}
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-sm font-semibold">{allocation.name}</p>
+                                  {allocation.isManuallyEdited ? <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-primary">Edited</span> : null}
+                                </div>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {isSelected ? 'Hide details' : 'View details'}
+                                  {perGuestAmount == null ? '' : ` · ${formatCurrency(perGuestAmount)} per guest`}
+                                </p>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <p className="text-sm font-semibold">{formatCurrency(allocation.amount)}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">{allocation.percentage.toFixed(1)}% of budget</p>
+                              </div>
+                            </div>
+                            <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
+                              <motion.div layout className="h-full rounded-full bg-primary" animate={{ width: `${Math.min(allocation.percentage, 100)}%` }} transition={{ duration: prefersReducedMotion ? 0 : 0.28, ease: 'easeOut' }} />
+                            </div>
+                          </button>
+
+                          <AnimatedCardDetails open={isSelected}>
+                            <div id={allocationDomId(allocation.name)} className="space-y-4 border-t border-border bg-background/60 p-4 sm:p-5">
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                  <Label htmlFor={`${allocationDomId(allocation.name)}-amount`}>Planned amount</Label>
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
+                                    <Input
+                                      id={`${allocationDomId(allocation.name)}-amount`}
+                                      aria-label={`Edit planned allocation for ${allocation.name}`}
+                                      type="number"
+                                      min="0"
+                                      inputMode="numeric"
+                                      value={allocationDraft?.amount ?? String(allocation.amount)}
+                                      onChange={(event) => handleAllocationDraftChange(event.target.value, 'amount')}
+                                      className="pl-12"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor={`${allocationDomId(allocation.name)}-percentage`}>Allocation percentage</Label>
+                                  <div className="relative">
+                                    <Input
+                                      id={`${allocationDomId(allocation.name)}-percentage`}
+                                      aria-label={`Edit percentage allocation for ${allocation.name}`}
+                                      type="number"
+                                      min="0"
+                                      step="0.1"
+                                      inputMode="decimal"
+                                      value={allocationDraft?.percentage ?? allocation.percentage.toFixed(1)}
+                                      onChange={(event) => handleAllocationDraftChange(event.target.value, 'percentage')}
+                                      className="pr-9"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">%</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <Button type="button" size="sm" onClick={() => allocationDraft && handleAllocationChange(allocation.name, allocationDraft[allocationDraft.lastEditedField], allocationDraft.lastEditedField)}>Apply</Button>
+                                  <Button type="button" size="sm" variant="outline" onClick={() => openAllocation(allocation.name)}>Cancel</Button>
+                                  {allocation.isManuallyEdited ? <Button type="button" size="sm" variant="link" onClick={() => resetAllocation(allocation.name)}>Reset</Button> : null}
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  disabled={plan.allocations.length <= 1}
+                                  onClick={() => handleRemoveCategory(allocation.name)}
+                                  className="text-destructive hover:text-destructive"
+                                  aria-label={`Remove ${allocation.name}`}
+                                  title={`Remove ${allocation.name}`}
+                                >
+                                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                </Button>
+                              </div>
+                            </div>
+                          </AnimatedCardDetails>
+                        </motion.div>
+                      );
+                    })}
                   </AnimatePresence>
                 </div>
 
@@ -489,13 +709,62 @@ export default function Landing() {
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">Save it to your private Zania workspace and continue with linked tasks and vendors.</p>
                   </div>
                   <Button disabled={isSaving} onClick={() => void handleSavePlan()} className="mt-4 h-11 w-full gap-2 sm:mt-0 sm:w-auto sm:px-6">
-                    {isSaving ? 'Saving plan...' : user ? 'Save to my workspace' : 'Save my plan'}
+                    {isSaving ? 'Saving plan...' : user ? 'Save to my workspace' : 'Save this plan'}
                   </Button>
                 </div>
             </CardContent>
           </Card>
         </motion.section>
       ) : null}
+
+      <Dialog
+        open={pendingTotalBudget != null}
+        onOpenChange={(open) => {
+          if (!open && plan) {
+            setBudgetInput(String(plan.totalBudget));
+            setPendingTotalBudget(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Update your budget</DialogTitle>
+            <DialogDescription>How should Zania update the category amounts?</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <Button type="button" className="h-auto justify-start px-4 py-3 text-left" onClick={() => applyBudgetGoalChange('scale_percentages')}>
+              <span><span className="block font-semibold">Keep the same budget split</span><span className="mt-1 block text-xs font-normal opacity-80">Recommended · category amounts scale with your new budget.</span></span>
+            </Button>
+            <Button type="button" variant="outline" className="h-auto justify-start px-4 py-3 text-left" onClick={() => applyBudgetGoalChange('keep_amounts')}>
+              <span><span className="block font-semibold">Keep current category amounts</span><span className="mt-1 block text-xs font-normal text-muted-foreground">Only the percentages and remaining amount change.</span></span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetAllOpen} onOpenChange={setResetAllOpen}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Reset all allocations?</DialogTitle>
+            <DialogDescription>This restores Zania’s suggested split for the current wedding budget.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setResetAllOpen(false)}>Cancel</Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!plan) return;
+                const nextPlan = resetAllInteractiveBudgetAllocations(plan);
+                setPlan(nextPlan);
+                persistPlanDraft(nextPlan);
+                setResetAllOpen(false);
+              }}
+            >
+              Reset allocations
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <PublicSiteFooter />
     </div>

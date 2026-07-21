@@ -503,7 +503,7 @@ export default function AuthCallback() {
           return;
         }
 
-        if (hasPendingEstimatorPlanDraft()) {
+        if (hasPendingEstimatorPlanDraft(user?.user_metadata)) {
           navigate('/auth', { replace: true });
           return;
         }

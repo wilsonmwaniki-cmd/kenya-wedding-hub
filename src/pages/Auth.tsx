@@ -13,7 +13,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, isProfessionalSetupPending, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
-import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import {
+  getEstimatorPlanDraft,
+  hasPendingEstimatorPlanDraft,
+  seedPendingEstimatorPlanForUser,
+} from '@/lib/estimatorPlanSeed';
 import {
   clearPendingOAuthSignupState,
   persistPendingOAuthSignupState,
@@ -508,11 +512,12 @@ export default function Auth() {
           return;
         }
 
-        if (hasPendingEstimatorPlanDraft()) {
+        if (hasPendingEstimatorPlanDraft(user.user_metadata)) {
           const seeded = await seedPendingEstimatorPlanForUser({
             userId: user.id,
             role: profile.role,
             plannerType: profile.planner_type,
+            userMetadata: user.user_metadata,
           });
 
           if (seeded && active) {
@@ -805,6 +810,7 @@ export default function Auth() {
           const signupResult = await signUp(email, password, fullName, 'couple', {
             signupIntent: 'create_wedding',
             accountPurpose,
+            estimatorPlanDraft: requestedFlow === 'estimator' ? getEstimatorPlanDraft() : null,
           });
           setSignupSuccess({
             title: 'Welcome to Zania',

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { isAppleAuthEnabled } from '@/lib/featureFlags';
 import { normalizeHumanName } from '@/lib/names';
 import type { PlannerType, SignupRole } from '@/lib/roles';
+import type { EstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 import type {
   WeddingOwnerRole,
   WeddingPlanningMode,
@@ -28,6 +29,7 @@ export interface AuthEntrySignUpOptions {
   referenceCurrency?: WeddingReferenceCurrency | null;
   ownerTimezone?: string | null;
   professionalRoleLocked?: boolean | null;
+  estimatorPlanDraft?: EstimatorPlanDraft | null;
 }
 
 export interface AuthEntrySignUpResult {
@@ -92,6 +94,10 @@ export async function performAuthEntrySignUp(input: {
         owner_timezone: signupIntent === 'create_wedding' ? ownerTimezone : null,
         primary_county: primaryCounty,
         primary_town: primaryTown,
+        estimator_plan_draft:
+          signupIntent === 'create_wedding'
+            ? input.options?.estimatorPlanDraft ?? null
+            : null,
       },
       emailRedirectTo: input.emailRedirectTo,
     },

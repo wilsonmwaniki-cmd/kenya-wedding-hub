@@ -17,8 +17,16 @@ export interface EstimatorPlanDraft {
     name: string;
     amount: number;
     percentage: number;
+    suggestedAmount?: number;
+    suggestedPercentage?: number;
+    isManuallyEdited?: boolean;
+    lastEditedField?: 'amount' | 'percentage' | null;
   }>;
 }
+
+const estimatorWeddingStyles = new Set<EstimatorWeddingStyle>(['intimate', 'classic', 'luxury', 'garden']);
+const estimatorVenueTiers = new Set<EstimatorVenueTier>(['budget', 'mid_tier', 'luxury']);
+const ESTIMATOR_PLAN_METADATA_KEY = 'estimator_plan_draft';
 
 interface SeedWeddingPlanInput {
   userId: string;
@@ -105,39 +113,90 @@ export function saveEstimatorPlanDraft(draft: EstimatorPlanDraft) {
   window.localStorage.setItem(ESTIMATOR_PLAN_DRAFT_KEY, JSON.stringify(draft));
 }
 
+export function parseEstimatorPlanDraft(value: unknown): EstimatorPlanDraft | null {
+  if (!value || typeof value !== 'object') return null;
+
+  const parsed = value as Partial<EstimatorPlanDraft>;
+  if (
+    typeof parsed.guestCount !== 'number'
+    || !Number.isFinite(parsed.guestCount)
+    || parsed.guestCount <= 0
+    || parsed.guestCount > 100_000
+    || typeof parsed.county !== 'string'
+    || parsed.county.length > 120
+    || !estimatorWeddingStyles.has(parsed.weddingStyle as EstimatorWeddingStyle)
+    || !estimatorVenueTiers.has(parsed.venueTier as EstimatorVenueTier)
+    || (
+      parsed.totalBudget !== undefined
+      && (
+        typeof parsed.totalBudget !== 'number'
+        || !Number.isFinite(parsed.totalBudget)
+        || parsed.totalBudget <= 0
+        || parsed.totalBudget > 1_000_000_000_000
+      )
+    )
+  ) {
+    return null;
+  }
+
+  if (parsed.allocations !== undefined && (!Array.isArray(parsed.allocations) || parsed.allocations.length > 50)) {
+    return null;
+  }
+
+  const allocations = Array.isArray(parsed.allocations)
+    ? parsed.allocations.filter((allocation) => (
+        typeof allocation?.name === 'string'
+        && allocation.name.trim().length > 0
+        && allocation.name.length <= 120
+        && typeof allocation.amount === 'number'
+        && Number.isFinite(allocation.amount)
+        && allocation.amount >= 0
+        && allocation.amount <= 1_000_000_000_000
+        && typeof allocation.percentage === 'number'
+        && Number.isFinite(allocation.percentage)
+        && allocation.percentage >= 0
+        && allocation.percentage <= 10_000
+        && (allocation.suggestedAmount === undefined || (
+          typeof allocation.suggestedAmount === 'number'
+          && Number.isFinite(allocation.suggestedAmount)
+          && allocation.suggestedAmount >= 0
+          && allocation.suggestedAmount <= 1_000_000_000_000
+        ))
+        && (allocation.suggestedPercentage === undefined || (
+          typeof allocation.suggestedPercentage === 'number'
+          && Number.isFinite(allocation.suggestedPercentage)
+          && allocation.suggestedPercentage >= 0
+          && allocation.suggestedPercentage <= 10_000
+        ))
+        && (allocation.isManuallyEdited === undefined || typeof allocation.isManuallyEdited === 'boolean')
+        && (
+          allocation.lastEditedField === undefined
+          || allocation.lastEditedField === null
+          || allocation.lastEditedField === 'amount'
+          || allocation.lastEditedField === 'percentage'
+        )
+      ))
+    : undefined;
+
+  if (allocations?.length !== parsed.allocations?.length) return null;
+
+  return {
+    guestCount: parsed.guestCount,
+    county: parsed.county,
+    weddingStyle: parsed.weddingStyle as EstimatorWeddingStyle,
+    venueTier: parsed.venueTier as EstimatorVenueTier,
+    totalBudget: parsed.totalBudget,
+    allocations,
+  };
+}
+
 export function getEstimatorPlanDraft(): EstimatorPlanDraft | null {
   if (typeof window === 'undefined') return null;
   const raw = window.localStorage.getItem(ESTIMATOR_PLAN_DRAFT_KEY);
   if (!raw) return null;
 
   try {
-    const parsed = JSON.parse(raw) as Partial<EstimatorPlanDraft>;
-    if (
-      typeof parsed.guestCount === 'number' &&
-      Number.isFinite(parsed.guestCount) &&
-      parsed.guestCount > 0 &&
-      typeof parsed.county === 'string' &&
-      typeof parsed.weddingStyle === 'string' &&
-      typeof parsed.venueTier === 'string'
-    ) {
-      const allocations = Array.isArray(parsed.allocations)
-        ? parsed.allocations.filter((allocation) => (
-            typeof allocation?.name === 'string'
-            && allocation.name.trim().length > 0
-            && typeof allocation.amount === 'number'
-            && Number.isFinite(allocation.amount)
-            && allocation.amount >= 0
-            && typeof allocation.percentage === 'number'
-            && Number.isFinite(allocation.percentage)
-            && allocation.percentage >= 0
-          ))
-        : undefined;
-
-      return {
-        ...parsed,
-        allocations: allocations?.length === parsed.allocations?.length ? allocations : undefined,
-      } as EstimatorPlanDraft;
-    }
+    return parseEstimatorPlanDraft(JSON.parse(raw));
   } catch {
     // Ignore malformed local state.
   }
@@ -145,8 +204,20 @@ export function getEstimatorPlanDraft(): EstimatorPlanDraft | null {
   return null;
 }
 
-export function hasPendingEstimatorPlanDraft() {
-  return Boolean(getEstimatorPlanDraft());
+export function getEstimatorPlanDraftFromUserMetadata(
+  userMetadata: Record<string, unknown> | null | undefined,
+) {
+  return parseEstimatorPlanDraft(userMetadata?.[ESTIMATOR_PLAN_METADATA_KEY]);
+}
+
+export function getPendingEstimatorPlanDraft(
+  userMetadata?: Record<string, unknown> | null,
+) {
+  return getEstimatorPlanDraft() ?? getEstimatorPlanDraftFromUserMetadata(userMetadata);
+}
+
+export function hasPendingEstimatorPlanDraft(userMetadata?: Record<string, unknown> | null) {
+  return Boolean(getPendingEstimatorPlanDraft(userMetadata));
 }
 
 export function clearEstimatorPlanDraft() {
@@ -244,6 +315,18 @@ export async function seedWeddingPlanFromEstimator({
       client_id: clientId,
       name: row.category,
       allocated: row.suggested_amount,
+      suggested_allocated:
+        draft.allocations?.find((allocation) => allocation.name === row.category)?.suggestedAmount
+        ?? row.suggested_amount,
+      suggested_percentage:
+        draft.allocations?.find((allocation) => allocation.name === row.category)?.suggestedPercentage
+        ?? (draft.totalBudget ? (row.suggested_amount / draft.totalBudget) * 100 : 0),
+      allocation_manually_edited:
+        draft.allocations?.find((allocation) => allocation.name === row.category)?.isManuallyEdited
+        ?? false,
+      allocation_last_edited_field:
+        draft.allocations?.find((allocation) => allocation.name === row.category)?.lastEditedField
+        ?? null,
       spent: 0,
       budget_scope: 'wedding',
       visibility: 'public',
@@ -308,6 +391,22 @@ export async function seedWeddingPlanFromEstimator({
       .eq('user_id', userId);
   }
 
+  if (draft.totalBudget != null) {
+    if (clientId) {
+      const { error } = await supabase
+        .from('planner_clients')
+        .update({ wedding_budget_goal: draft.totalBudget })
+        .eq('id', clientId);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ wedding_budget_goal: draft.totalBudget })
+        .eq('user_id', userId);
+      if (error) throw error;
+    }
+  }
+
   return {
     budgetCategoriesCreated: budgetInserts.length,
     personalBudgetCategoriesCreated: personalBudgetInserts.length,
@@ -320,12 +419,14 @@ export async function seedPendingEstimatorPlanForUser({
   userId,
   plannerType = null,
   role,
+  userMetadata = null,
 }: {
   userId: string;
   role: string | null | undefined;
   plannerType?: PlannerType | null;
+  userMetadata?: Record<string, unknown> | null;
 }) {
-  const draft = getEstimatorPlanDraft();
+  const draft = getPendingEstimatorPlanDraft(userMetadata);
   if (!draft) return null;
   if (!canSeedEstimatorPlan(role, plannerType)) return null;
 
@@ -337,5 +438,13 @@ export async function seedPendingEstimatorPlanForUser({
   });
 
   clearEstimatorPlanDraft();
+  if (userMetadata?.[ESTIMATOR_PLAN_METADATA_KEY]) {
+    const { error } = await supabase.auth.updateUser({
+      data: { [ESTIMATOR_PLAN_METADATA_KEY]: null },
+    });
+    if (error) {
+      console.warn('Estimator plan was seeded, but its account handoff metadata could not be cleared.', error);
+    }
+  }
   return result;
 }

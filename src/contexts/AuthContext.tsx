@@ -39,6 +39,7 @@ import {
   verifyDeviceVerificationOtp,
   type DeviceSessionRow,
 } from '@/lib/deviceSessions';
+import type { EstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 
 interface Profile {
   id: string;
@@ -135,6 +136,7 @@ interface AuthContextType {
       referenceCurrency?: WeddingReferenceCurrency | null;
       ownerTimezone?: string | null;
       professionalRoleLocked?: boolean | null;
+      estimatorPlanDraft?: EstimatorPlanDraft | null;
     }
   ) => Promise<{ requiresEmailConfirmation: boolean; confirmationEmailResent: boolean }>;
   signIn: (
@@ -1493,6 +1495,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       referenceCurrency?: WeddingReferenceCurrency | null;
       ownerTimezone?: string | null;
       professionalRoleLocked?: boolean | null;
+      estimatorPlanDraft?: EstimatorPlanDraft | null;
     },
   ) => {
     const emailRedirectTo = `${getCanonicalAppOrigin()}/auth/callback`;
