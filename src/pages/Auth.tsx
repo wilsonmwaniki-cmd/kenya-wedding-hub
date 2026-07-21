@@ -1451,20 +1451,34 @@ export default function Auth() {
                         <FormFieldError message={formErrors.password} />
                         {isEstimatorCoupleEntry ? (
                           <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs text-muted-foreground">Use at least 6 characters.</p>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
-                              onClick={() => setShowPassword((current) => !current)}
-                              aria-controls="password"
-                              aria-pressed={showPassword}
-                              aria-label={showPassword ? 'Hide password' : 'Show password'}
-                            >
-                              {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                              {showPassword ? 'Hide' : 'Show'}
-                            </Button>
+                            <p className="text-xs text-muted-foreground">
+                              {generatedPassword ? 'Generated securely. Save it safely.' : 'Use at least 6 characters.'}
+                            </p>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={createGeneratedPassword}
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                Generate
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => setShowPassword((current) => !current)}
+                                aria-controls="password"
+                                aria-pressed={showPassword}
+                                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                              >
+                                {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                {showPassword ? 'Hide' : 'Show'}
+                              </Button>
+                            </div>
                           </div>
                         ) : <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex flex-wrap items-center gap-2">
