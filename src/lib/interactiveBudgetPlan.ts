@@ -4,7 +4,11 @@ export interface InteractiveBudgetAllocation {
   name: string;
   amount: number;
   percentage: number;
+  suggestedAmount: number;
+  suggestedPercentage: number;
   guestSensitive: boolean;
+  isManuallyEdited: boolean;
+  lastEditedField: 'amount' | 'percentage' | null;
 }
 
 export interface InteractiveBudgetPlan {
@@ -13,7 +17,11 @@ export interface InteractiveBudgetPlan {
   allocations: InteractiveBudgetAllocation[];
 }
 
-export type BudgetUtilizationStatus = 'safe' | 'warning' | 'over';
+export type PersistedInteractiveBudgetAllocation = Pick<InteractiveBudgetAllocation, 'name' | 'amount' | 'percentage'>
+  & Partial<Pick<InteractiveBudgetAllocation, 'suggestedAmount' | 'suggestedPercentage' | 'isManuallyEdited' | 'lastEditedField'>>;
+
+export type BudgetUtilizationStatus = 'under' | 'complete' | 'over';
+export type BudgetResizeStrategy = 'scale_percentages' | 'keep_amounts';
 
 type AllocationRule = {
   name: string;
@@ -55,9 +63,14 @@ function normalizeMoney(value: number) {
   return Math.max(0, Math.round(Number.isFinite(value) ? value : 0));
 }
 
-function percentage(amount: number, totalBudget: number) {
+export function calculatePercentage(amount: number, totalBudget: number) {
   if (totalBudget <= 0) return 0;
-  return Number(((amount / totalBudget) * 100).toFixed(2));
+  return (amount / totalBudget) * 100;
+}
+
+export function calculatePlannedAmount(percentage: number, totalBudget: number) {
+  if (totalBudget <= 0) return 0;
+  return (percentage / 100) * totalBudget;
 }
 
 function distributeExactTotal(rawAmounts: number[], totalBudget: number) {
@@ -92,43 +105,47 @@ export function buildInteractiveBudgetPlan(totalBudgetInput: number, guestCountI
   return {
     totalBudget,
     guestCount,
-    allocations: allocationRules.map((rule, index) => ({
-      name: rule.name,
-      amount: amounts[index],
-      percentage: percentage(amounts[index], totalBudget),
-      guestSensitive: Boolean(rule.guestSensitive),
-    })),
+    allocations: allocationRules.map((rule, index) => {
+      const suggestedPercentage = calculatePercentage(amounts[index], totalBudget);
+      return {
+        name: rule.name,
+        amount: amounts[index],
+        percentage: suggestedPercentage,
+        suggestedAmount: amounts[index],
+        suggestedPercentage,
+        guestSensitive: Boolean(rule.guestSensitive),
+        isManuallyEdited: false,
+        lastEditedField: null,
+      };
+    }),
   };
 }
 
-export function rebalanceInteractiveBudgetPlan(
-  plan: InteractiveBudgetPlan,
-  editedCategory: string,
-  nextAmountInput: number,
+export function restoreInteractiveBudgetPlan(
+  totalBudgetInput: number,
+  guestCountInput: number,
+  persistedAllocations: PersistedInteractiveBudgetAllocation[],
 ): InteractiveBudgetPlan {
-  const nextAmount = Math.min(normalizeMoney(nextAmountInput), plan.totalBudget);
-  const editedIndex = plan.allocations.findIndex((allocation) => allocation.name === editedCategory);
-  if (editedIndex < 0) return plan;
-
-  const remainingBudget = plan.totalBudget - nextAmount;
-  const otherTotal = plan.allocations.reduce(
-    (sum, allocation, index) => index === editedIndex ? sum : sum + allocation.amount,
-    0,
-  );
-  const rawAmounts = plan.allocations.map((allocation, index) => {
-    if (index === editedIndex) return nextAmount;
-    if (otherTotal <= 0) return 0;
-    return (allocation.amount / otherTotal) * remainingBudget;
-  });
-  const amounts = distributeExactTotal(rawAmounts, plan.totalBudget);
+  const suggestedPlan = buildInteractiveBudgetPlan(totalBudgetInput, guestCountInput);
+  const persistedByName = new Map(persistedAllocations.map((allocation) => [allocation.name, allocation]));
 
   return {
-    ...plan,
-    allocations: plan.allocations.map((allocation, index) => ({
-      ...allocation,
-      amount: amounts[index],
-      percentage: percentage(amounts[index], plan.totalBudget),
-    })),
+    ...suggestedPlan,
+    allocations: suggestedPlan.allocations
+      .filter((allocation) => persistedByName.has(allocation.name))
+      .map((allocation) => {
+        const persisted = persistedByName.get(allocation.name)!;
+        const amount = normalizeMoney(persisted.amount);
+        return {
+          ...allocation,
+          amount,
+          percentage: calculatePercentage(amount, suggestedPlan.totalBudget),
+          suggestedAmount: persisted.suggestedAmount ?? allocation.suggestedAmount,
+          suggestedPercentage: persisted.suggestedPercentage ?? allocation.suggestedPercentage,
+          isManuallyEdited: persisted.isManuallyEdited ?? amount !== allocation.suggestedAmount,
+          lastEditedField: persisted.lastEditedField ?? null,
+        };
+      }),
   };
 }
 
@@ -146,10 +163,72 @@ export function updateInteractiveBudgetAllocation(
         ? {
             ...allocation,
             amount: nextAmount,
-            percentage: percentage(nextAmount, plan.totalBudget),
+            percentage: calculatePercentage(nextAmount, plan.totalBudget),
+            isManuallyEdited: true,
+            lastEditedField: 'amount',
           }
         : allocation
     )),
+  };
+}
+
+export function updateInteractiveBudgetPercentage(
+  plan: InteractiveBudgetPlan,
+  category: string,
+  nextPercentageInput: number,
+): InteractiveBudgetPlan {
+  const nextPercentage = Math.max(0, Number.isFinite(nextPercentageInput) ? nextPercentageInput : 0);
+  const nextAmount = normalizeMoney(calculatePlannedAmount(nextPercentage, plan.totalBudget));
+
+  return {
+    ...plan,
+    allocations: plan.allocations.map((allocation) => (
+      allocation.name === category
+        ? {
+            ...allocation,
+            amount: nextAmount,
+            percentage: calculatePercentage(nextAmount, plan.totalBudget),
+            isManuallyEdited: true,
+            lastEditedField: 'percentage',
+          }
+        : allocation
+    )),
+  };
+}
+
+export function resetInteractiveBudgetAllocation(
+  plan: InteractiveBudgetPlan,
+  category: string,
+): InteractiveBudgetPlan {
+  return {
+    ...plan,
+    allocations: plan.allocations.map((allocation) => {
+      if (allocation.name !== category) return allocation;
+      const amount = normalizeMoney(calculatePlannedAmount(allocation.suggestedPercentage, plan.totalBudget));
+      return {
+        ...allocation,
+        amount,
+        percentage: calculatePercentage(amount, plan.totalBudget),
+        isManuallyEdited: false,
+        lastEditedField: null,
+      };
+    }),
+  };
+}
+
+export function resetAllInteractiveBudgetAllocations(plan: InteractiveBudgetPlan): InteractiveBudgetPlan {
+  return {
+    ...plan,
+    allocations: plan.allocations.map((allocation) => {
+      const amount = normalizeMoney(calculatePlannedAmount(allocation.suggestedPercentage, plan.totalBudget));
+      return {
+        ...allocation,
+        amount,
+        percentage: calculatePercentage(amount, plan.totalBudget),
+        isManuallyEdited: false,
+        lastEditedField: null,
+      };
+    }),
   };
 }
 
@@ -169,6 +248,7 @@ export function updateInteractiveBudgetSettings(
   plan: InteractiveBudgetPlan,
   totalBudgetInput: number,
   guestCountInput: number,
+  strategy: BudgetResizeStrategy = 'keep_amounts',
 ): InteractiveBudgetPlan {
   const totalBudget = Math.max(1, normalizeMoney(totalBudgetInput));
   const guestCount = Math.max(1, Math.round(guestCountInput));
@@ -177,10 +257,16 @@ export function updateInteractiveBudgetSettings(
     ...plan,
     totalBudget,
     guestCount,
-    allocations: plan.allocations.map((allocation) => ({
-      ...allocation,
-      percentage: percentage(allocation.amount, totalBudget),
-    })),
+    allocations: plan.allocations.map((allocation) => {
+      const amount = strategy === 'scale_percentages'
+        ? normalizeMoney(calculatePlannedAmount(allocation.percentage, totalBudget))
+        : allocation.amount;
+      return {
+        ...allocation,
+        amount,
+        percentage: calculatePercentage(amount, totalBudget),
+      };
+    }),
   };
 }
 
@@ -191,8 +277,8 @@ export function getBudgetUtilizationPercentage(plan: InteractiveBudgetPlan) {
 
 export function getBudgetUtilizationStatus(utilizationPercentage: number): BudgetUtilizationStatus {
   if (utilizationPercentage > 100) return 'over';
-  if (utilizationPercentage >= 85) return 'warning';
-  return 'safe';
+  if (Math.abs(utilizationPercentage - 100) < 0.01) return 'complete';
+  return 'under';
 }
 
 export function getGuestExperienceCost(plan: InteractiveBudgetPlan) {
