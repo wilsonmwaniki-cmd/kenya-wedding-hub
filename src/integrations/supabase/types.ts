@@ -53,6 +53,8 @@ export type Database = {
       budget_categories: {
         Row: {
           allocated: number
+          allocation_last_edited_field: string | null
+          allocation_manually_edited: boolean
           budget_scope: string
           committee_role_in_charge: string | null
           client_id: string | null
@@ -61,11 +63,15 @@ export type Database = {
           id: string
           name: string
           spent: number
+          suggested_allocated: number | null
+          suggested_percentage: number | null
           user_id: string
           visibility: string
         }
         Insert: {
           allocated?: number
+          allocation_last_edited_field?: string | null
+          allocation_manually_edited?: boolean
           budget_scope?: string
           committee_role_in_charge?: string | null
           client_id?: string | null
@@ -74,11 +80,15 @@ export type Database = {
           id?: string
           name: string
           spent?: number
+          suggested_allocated?: number | null
+          suggested_percentage?: number | null
           user_id: string
           visibility?: string
         }
         Update: {
           allocated?: number
+          allocation_last_edited_field?: string | null
+          allocation_manually_edited?: boolean
           budget_scope?: string
           committee_role_in_charge?: string | null
           client_id?: string | null
@@ -87,6 +97,8 @@ export type Database = {
           id?: string
           name?: string
           spent?: number
+          suggested_allocated?: number | null
+          suggested_percentage?: number | null
           user_id?: string
           visibility?: string
         }
@@ -385,6 +397,7 @@ export type Database = {
           updated_at: string
           wedding_date: string | null
           wedding_location: string | null
+          wedding_budget_goal: number | null
         }
         Insert: {
           client_name: string
@@ -399,6 +412,7 @@ export type Database = {
           updated_at?: string
           wedding_date?: string | null
           wedding_location?: string | null
+          wedding_budget_goal?: number | null
         }
         Update: {
           client_name?: string
@@ -413,6 +427,7 @@ export type Database = {
           updated_at?: string
           wedding_date?: string | null
           wedding_location?: string | null
+          wedding_budget_goal?: number | null
         }
         Relationships: []
       }
@@ -570,6 +585,7 @@ export type Database = {
           wedding_county: string | null
           wedding_date: string | null
           wedding_location: string | null
+          wedding_budget_goal: number | null
           wedding_town: string | null
         }
         Insert: {
@@ -611,6 +627,7 @@ export type Database = {
           wedding_county?: string | null
           wedding_date?: string | null
           wedding_location?: string | null
+          wedding_budget_goal?: number | null
           wedding_town?: string | null
         }
         Update: {
@@ -652,6 +669,7 @@ export type Database = {
           wedding_county?: string | null
           wedding_date?: string | null
           wedding_location?: string | null
+          wedding_budget_goal?: number | null
           wedding_town?: string | null
         }
         Relationships: []
