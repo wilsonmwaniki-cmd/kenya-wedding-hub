@@ -12,6 +12,12 @@ export interface EstimatorPlanDraft {
   county: string;
   weddingStyle: EstimatorWeddingStyle;
   venueTier: EstimatorVenueTier;
+  totalBudget?: number;
+  allocations?: Array<{
+    name: string;
+    amount: number;
+    percentage: number;
+  }>;
 }
 
 interface SeedWeddingPlanInput {
@@ -35,11 +41,14 @@ const alwaysVendorCategories = ['Venue', 'Catering', 'Photography', 'Flowers', '
 
 const expandedVendorCategories = ['Videography', 'Music/DJ', 'MC', 'Cake'] as const;
 
-function scopedQuery<T>(query: T, clientId?: string | null) {
+function scopedQuery<T extends {
+  is(column: string, value: null): T;
+  eq(column: string, value: string): T;
+}>(query: T, clientId?: string | null): T {
   if (!clientId) {
-    return (query as any).is('client_id', null);
+    return query.is('client_id', null);
   }
-  return (query as any).eq('client_id', clientId);
+  return query.eq('client_id', clientId);
 }
 
 function normalizeVendorCategory(category: string): string | null {
@@ -105,11 +114,29 @@ export function getEstimatorPlanDraft(): EstimatorPlanDraft | null {
     const parsed = JSON.parse(raw) as Partial<EstimatorPlanDraft>;
     if (
       typeof parsed.guestCount === 'number' &&
+      Number.isFinite(parsed.guestCount) &&
+      parsed.guestCount > 0 &&
       typeof parsed.county === 'string' &&
       typeof parsed.weddingStyle === 'string' &&
       typeof parsed.venueTier === 'string'
     ) {
-      return parsed as EstimatorPlanDraft;
+      const allocations = Array.isArray(parsed.allocations)
+        ? parsed.allocations.filter((allocation) => (
+            typeof allocation?.name === 'string'
+            && allocation.name.trim().length > 0
+            && typeof allocation.amount === 'number'
+            && Number.isFinite(allocation.amount)
+            && allocation.amount >= 0
+            && typeof allocation.percentage === 'number'
+            && Number.isFinite(allocation.percentage)
+            && allocation.percentage >= 0
+          ))
+        : undefined;
+
+      return {
+        ...parsed,
+        allocations: allocations?.length === parsed.allocations?.length ? allocations : undefined,
+      } as EstimatorPlanDraft;
     }
   } catch {
     // Ignore malformed local state.
@@ -132,6 +159,20 @@ export function canSeedEstimatorPlan(role: string | null | undefined, plannerTyp
   return role === 'planner' && plannerType === 'committee';
 }
 
+export function buildEstimatorRowsFromDraft(draft: EstimatorPlanDraft): PublicBudgetEstimateRow[] | null {
+  if (!draft.allocations?.length) return null;
+
+  return draft.allocations.map((allocation) => ({
+    category: allocation.name,
+    source: 'couple_plan',
+    sample_size: 0,
+    benchmark_visible: false,
+    suggested_amount: allocation.amount,
+    low_amount: allocation.amount,
+    high_amount: allocation.amount,
+  }));
+}
+
 export async function seedWeddingPlanFromEstimator({
   userId,
   clientId = null,
@@ -139,13 +180,14 @@ export async function seedWeddingPlanFromEstimator({
   plannerType = null,
   draft,
 }: SeedWeddingPlanInput): Promise<SeedWeddingPlanResult> {
-  const estimateRows = await getPublicBudgetEstimate({
-    guestCount: draft.guestCount,
-    county: draft.county.trim() || null,
-    weddingStyle: draft.weddingStyle,
-    venueTier: draft.venueTier,
-    minSampleSize: 5,
-  });
+  const estimateRows: PublicBudgetEstimateRow[] = buildEstimatorRowsFromDraft(draft)
+    ?? await getPublicBudgetEstimate({
+        guestCount: draft.guestCount,
+        county: draft.county.trim() || null,
+        weddingStyle: draft.weddingStyle,
+        venueTier: draft.venueTier,
+        minSampleSize: 5,
+      });
 
   const vendorCategories = buildVendorCategories(draft, estimateRows);
   const [existingBudgetRes, existingVendorRes, existingTaskRes, profileRes, clientRes] = await Promise.all([
@@ -171,21 +213,21 @@ export async function seedWeddingPlanFromEstimator({
   if (existingVendorRes.error) throw existingVendorRes.error;
   if (existingTaskRes.error) throw existingTaskRes.error;
   if (profileRes.error) throw profileRes.error;
-  if ((clientRes as any).error) throw (clientRes as any).error;
+  if (clientRes.error) throw clientRes.error;
 
   const existingWeddingBudgetNames = new Set(
-    ((existingBudgetRes.data ?? []) as any[])
+    (existingBudgetRes.data ?? [])
       .filter((item) => (item.budget_scope ?? 'wedding') === 'wedding')
       .map((item) => item.name),
   );
   const existingPersonalBudgetNames = new Set(
-    ((existingBudgetRes.data ?? []) as any[])
+    (existingBudgetRes.data ?? [])
       .filter((item) => item.budget_scope === 'personal')
       .map((item) => item.name),
   );
   const existingVendorKeys = new Set((existingVendorRes.data ?? []).map((item) => `${item.category}::${item.name}`));
   const existingTaskTitles = new Set((existingTaskRes.data ?? []).map((item) => item.title));
-  const seededWeddingDate = ((clientRes as any).data?.wedding_date as string | null | undefined)
+  const seededWeddingDate = clientRes.data?.wedding_date
     ?? profileRes.data?.wedding_date
     ?? null;
   const starterTasks = buildSeededTasksFromTemplates({

@@ -766,6 +766,13 @@ export default function Vendors() {
   }, [vendors, selectedClient?.wedding_location]);
 
   const loadReputationData = async (rows: Vendor[]) => {
+    if (!isPlanner) {
+      setCategoryReputationBenchmarks({});
+      setListingReputationBenchmarks({});
+      setReviewsBySourceVendorId({});
+      return;
+    }
+
     if (!rows.length) {
       setCategoryReputationBenchmarks({});
       setListingReputationBenchmarks({});
@@ -813,9 +820,10 @@ export default function Vendors() {
       setCategoryReputationBenchmarks(Object.fromEntries(categoryResults));
       setListingReputationBenchmarks(Object.fromEntries(listingResults));
     } catch (error: any) {
+      console.error('Could not load planner vendor reputation data:', error);
       toast({
-        title: 'Failed to load vendor trust data',
-        description: error.message,
+        title: 'Vendor trust data is unavailable',
+        description: 'You can continue managing vendors while we restore this insight.',
         variant: 'destructive',
       });
     } finally {
@@ -825,7 +833,7 @@ export default function Vendors() {
 
   useEffect(() => {
     void loadReputationData(vendors);
-  }, [vendors, selectedClient?.id]);
+  }, [isPlanner, vendors, selectedClient?.id]);
 
   useEffect(() => {
     if (!open || mode !== 'custom') return;
@@ -2137,28 +2145,38 @@ export default function Vendors() {
     setVendorWorkspaceUpdatesLoadingId(selectedVendor.id);
 
     setVendorTaskSuggestionsLoadingId(selectedVendor.id);
-    void Promise.all([
+    void Promise.allSettled([
       listVendorWorkspaceUpdates(selectedVendor.id),
       listVendorTaskSuggestions(selectedVendor.id),
     ])
-      .then(([updates, suggestions]) => {
+      .then(([updatesResult, suggestionsResult]) => {
         if (cancelled) return;
-        setVendorWorkspaceUpdates((current) => ({
-          ...current,
-          [selectedVendor.id]: updates.filter((update) => !update.is_archived),
-        }));
-        setVendorTaskSuggestions((current) => ({
-          ...current,
-          [selectedVendor.id]: suggestions,
-        }));
-      })
-      .catch((error: any) => {
-        if (cancelled) return;
-        toast({
-          title: 'Could not load vendor updates',
-          description: error?.message || 'Please try again.',
-          variant: 'destructive',
-        });
+
+        if (updatesResult.status === 'fulfilled') {
+          setVendorWorkspaceUpdates((current) => ({
+            ...current,
+            [selectedVendor.id]: updatesResult.value.filter((update) => !update.is_archived),
+          }));
+        } else {
+          console.error('Could not load vendor workspace updates:', updatesResult.reason);
+        }
+
+        if (suggestionsResult.status === 'fulfilled') {
+          setVendorTaskSuggestions((current) => ({
+            ...current,
+            [selectedVendor.id]: suggestionsResult.value,
+          }));
+        } else {
+          console.error('Could not load vendor task suggestions:', suggestionsResult.reason);
+        }
+
+        if (updatesResult.status === 'rejected' && suggestionsResult.status === 'rejected') {
+          toast({
+            title: 'Vendor activity is temporarily unavailable',
+            description: 'The vendor record is still available. Please try the activity panel again shortly.',
+            variant: 'destructive',
+          });
+        }
       })
       .finally(() => {
         if (!cancelled) {
