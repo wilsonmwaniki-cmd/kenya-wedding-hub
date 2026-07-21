@@ -40,9 +40,9 @@ import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import AppleAuthButton from '@/components/AppleAuthButton';
 import { normalizeHumanName, normalizeHumanNameInput } from '@/lib/names';
 import { isAppleAuthEnabled } from '@/lib/featureFlags';
+import { isEstimatorCoupleSignupEntry } from '@/lib/authEntryFlows';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 import PublicSiteFooter from '@/components/PublicSiteFooter';
-import { getPasswordRecoveryRedirectUrl } from '@/lib/passwordRecovery';
 
 type AuthEntryState = {
   mode?: 'signup' | 'signin';
@@ -60,10 +60,6 @@ type SignupSuccessState = {
   description: string;
   accent: string;
 };
-
-function getErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
 type OAuthProvider = 'google' | 'apple';
 type AccountPurpose = 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other';
 
@@ -194,6 +190,12 @@ export default function Auth() {
   const requestedFlow = searchParams.get('flow');
   const requestedAudience = searchParams.get('audience');
   const requestedRole = searchParams.get('role');
+  const isEstimatorCoupleEntry = isEstimatorCoupleSignupEntry({
+    mode: requestedMode,
+    flow: requestedFlow,
+    audience: requestedAudience,
+    role: requestedRole,
+  });
   const hasExplicitUrlAuthState = (
     location.pathname === '/sign-in'
     || searchParams.has('mode')
@@ -203,14 +205,10 @@ export default function Auth() {
     || searchParams.has('code')
     || searchParams.has('email')
   );
-  const isPasswordResetRequest = location.pathname === '/forgot-password';
-  const defaultToSignup = !adminEntry
-    && requestedMode !== 'signin'
-    && location.pathname !== '/sign-in'
-    && !isPasswordResetRequest;
+  const defaultToSignup = !adminEntry && requestedMode !== 'signin' && location.pathname !== '/sign-in';
 
   const [isSignUp, setIsSignUp] = useState(defaultToSignup);
-  const [isForgot, setIsForgot] = useState(isPasswordResetRequest);
+  const [isForgot, setIsForgot] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -263,23 +261,12 @@ export default function Auth() {
   const isSignupSuccessStep = isSignUp && signupStep === 'success' && !!signupSuccess;
   const hasLockedSignupTrack = isSignUp && (
     (requestedFlow === 'join_wedding')
-    || (requestedFlow === 'estimator' && requestedAudience === 'couple')
     || (requestedAudience === 'professional' && (requestedRole === 'planner' || requestedRole === 'vendor'))
+    || isEstimatorCoupleEntry
   );
-  const showEstimatorGoogleSignup = isSignupAccountStep
-    && requestedFlow === 'estimator'
-    && selectedAudience === 'couple'
-    && signupPath === 'create_wedding';
   const showGenericModeChooser = false;
   const showGenericAudienceChooser = false;
-  const signupProgressTotal = hasLockedSignupTrack ? 3 : 4;
-  const signupProgressStep = isSignupSuccessStep
-    ? signupProgressTotal
-    : isSignupRoleStep
-      ? 3
-      : isSignupAccountStep
-        ? 2
-        : 1;
+  const signupProgressStep = isSignupSuccessStep ? 4 : isSignupRoleStep ? 3 : isSignupAccountStep ? 2 : 1;
   const authErrorMessage = useMemo(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('auth_error') !== 'missing_role') return null;
@@ -464,7 +451,9 @@ export default function Auth() {
       setSignupPath(audienceParam === 'couple' ? (flow === 'join_wedding' ? 'join_wedding' : 'create_wedding') : 'professional');
       if (mode === 'signup') {
         setSignupMethod('email');
-        setSignupStep((flow === 'join_wedding' || flow === 'estimator' || (audienceParam === 'professional' && (roleParam === 'planner' || roleParam === 'vendor')))
+        setSignupStep((flow === 'join_wedding'
+          || (flow === 'estimator' && audienceParam === 'couple' && roleParam === 'couple')
+          || (audienceParam === 'professional' && (roleParam === 'planner' || roleParam === 'vendor')))
           ? 'account'
           : 'role');
       }
@@ -488,10 +477,7 @@ export default function Auth() {
   }, [hasHomepageCarryover, isSignUp, signupPath]);
 
   useEffect(() => {
-    // Password recovery must stay reachable even when the browser already has a
-    // Zania session. A user may request a reset from one signed-in device and
-    // open the email in the same browser.
-    if (isPasswordResetRequest || loading || !user || redirecting) return;
+    if (loading || !user || redirecting) return;
 
     const pendingSetup = getPendingWeddingSetup(user.user_metadata, user.email ?? null);
     let active = true;
@@ -559,11 +545,11 @@ export default function Auth() {
           setRedirecting(true);
           navigate(getHomeRouteForRole(profile.role, profile.planner_type), { replace: true });
         }
-      } catch (err: unknown) {
+      } catch (err: any) {
         if (!active) return;
         toast({
           title: 'We could not finish that wedding setup',
-          description: getErrorMessage(err, 'Please try again.'),
+          description: err.message,
           variant: 'destructive',
         });
         setRedirecting(false);
@@ -575,7 +561,7 @@ export default function Auth() {
     return () => {
       active = false;
     };
-  }, [isPasswordResetRequest, loading, navigate, profile?.planner_type, profile?.role, redirecting, toast, user]);
+  }, [loading, navigate, profile?.planner_type, profile?.role, redirecting, toast, user]);
 
   const createGeneratedPassword = () => {
     const nextPassword = createSecurePassword();
@@ -718,7 +704,7 @@ export default function Auth() {
     persistPendingWeddingSetup(payload);
   };
 
-  const validateOAuthIntent = (provider?: OAuthProvider) => {
+  const validateOAuthIntent = () => {
     if (!isSignUp) {
       if (adminEntry) return;
       return;
@@ -726,10 +712,6 @@ export default function Auth() {
 
     if (!audience) {
       throw new Error(`Choose whether you are continuing as a couple or wedding professional first.`);
-    }
-
-    if (!provider && (!signupMethod || signupMethod === 'email')) {
-      throw new Error('Choose Google or Apple first before continuing with a social signup.');
     }
 
     if (!selectedAudience || !signupPath) {
@@ -763,16 +745,15 @@ export default function Auth() {
     setSubmitting(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-        redirectTo: getPasswordRecoveryRedirectUrl(window.location),
+        redirectTo: `${window.location.origin}/reset-password?type=recovery`,
       });
       if (error) throw error;
       toast({ title: 'Reset link sent!', description: 'Check your email for the password reset link.' });
       setIsForgot(false);
       setForgotErrors({});
-    } catch (err: unknown) {
-      const message = getErrorMessage(err, 'We could not send the reset link right now.');
-      setForgotSubmitError(message);
-      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } catch (err: any) {
+      setForgotSubmitError(err.message || 'We could not send the reset link right now.');
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -895,10 +876,9 @@ export default function Auth() {
         persistWeddingIntentIfNeeded();
         await signIn(email, password, adminEntry ? { audience: 'admin' } : undefined);
       }
-    } catch (err: unknown) {
-      const message = getErrorMessage(err, 'We could not complete that request right now.');
-      setSubmitError(message);
-      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } catch (err: any) {
+      setSubmitError(err.message || 'We could not complete that request right now.');
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -907,8 +887,7 @@ export default function Auth() {
   const handleOAuthSignIn = async (provider: 'google' | 'apple') => {
     setOauthSubmittingProvider(provider);
     try {
-      validateOAuthIntent(provider);
-      setSignupMethod(provider);
+      validateOAuthIntent();
       persistWeddingIntentIfNeeded();
       const pendingVendorClaim = readPendingVendorClaim();
       if (vendorClaimEntry && pendingVendorClaim?.token) {
@@ -968,12 +947,8 @@ export default function Auth() {
       } else {
         await signInWithApple(oauthOptions);
       }
-    } catch (err: unknown) {
-      toast({
-        title: 'Error',
-        description: getErrorMessage(err, 'We could not complete social sign-in right now.'),
-        variant: 'destructive',
-      });
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
       setOauthSubmittingProvider(null);
     }
   };
@@ -1002,8 +977,8 @@ export default function Auth() {
               : isSignUp && isSignupMethodStep
                 ? 'Create your Zania account'
               : isSignUp && isSignupAccountStep
-                ? requestedFlow === 'estimator'
-                  ? 'Save your wedding estimate'
+                ? isEstimatorCoupleEntry
+                  ? 'Save your wedding plan'
                   : 'Tell us about you'
               : isSignUp && isSignupRoleStep
                 ? 'Choose your path'
@@ -1029,8 +1004,8 @@ export default function Auth() {
               : isSignUp && isSignupMethodStep
                 ? 'Start with one clear choice, then we will guide you the rest of the way.'
               : isSignUp && isSignupAccountStep
-                ? requestedFlow === 'estimator'
-                  ? 'Create your couple account and continue with the plan you have already shaped.'
+                ? isEstimatorCoupleEntry
+                  ? 'Your couple workspace is selected. Continue with Google or create it with email.'
                   : 'Secure your account details first, then we will lock in the workspace that fits you.'
               : isSignUp && isSignupRoleStep
                 ? 'Pick the account you want Zania to open for you so the setup stays tailored from the start.'
@@ -1199,11 +1174,13 @@ export default function Auth() {
                           Guided signup
                         </p>
                         <p className="mt-1 text-sm font-medium text-[#2c211c]">
-                          Step {signupProgressStep} of {signupProgressTotal}
+                          Step {signupProgressStep} of 4
                         </p>
                       </div>
                       <p className="text-xs text-[#7c6353]">
-                        {isSignupMethodStep
+                        {isEstimatorCoupleEntry
+                          ? 'Create your couple account'
+                          : isSignupMethodStep
                           ? 'How do you want to start?'
                           : isSignupAccountStep
                             ? 'Secure your account'
@@ -1212,8 +1189,8 @@ export default function Auth() {
                               : 'Almost done'}
                       </p>
                     </div>
-                    <div className={`mt-4 grid gap-2 ${signupProgressTotal === 3 ? 'grid-cols-3' : 'grid-cols-4'}`}>
-                      {Array.from({ length: signupProgressTotal }, (_, index) => index + 1).map((step) => (
+                    <div className="mt-4 grid grid-cols-4 gap-2">
+                      {[1, 2, 3, 4].map((step) => (
                         <div
                           key={step}
                           className={`h-2 rounded-full ${
@@ -1233,9 +1210,7 @@ export default function Auth() {
                     >
                       <div>
                         <p className="text-sm font-medium text-foreground">
-                          {showEstimatorGoogleSignup
-                            ? 'Choose Google or email'
-                            : signupMethod === 'email'
+                          {signupMethod === 'email'
                             ? 'Email signup selected'
                             : signupMethod === 'google'
                               ? 'Google signup selected'
@@ -1244,9 +1219,7 @@ export default function Auth() {
                                 : 'Choose your account type'}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {showEstimatorGoogleSignup
-                            ? 'Either option will save this estimate in your couple workspace.'
-                            : audience === 'couple' && signupPath === 'join_wedding'
+                          {audience === 'couple' && signupPath === 'join_wedding'
                             ? 'Use the wedding code the couple shared with you.'
                             : audience === 'couple'
                               ? 'This will open a shared couple workspace.'
@@ -1326,18 +1299,41 @@ export default function Auth() {
                   ) : isSignupAccountStep ? (
                     <>
                       <div className="semantic-surface-info rounded-2xl border px-4 py-3">
-                        <p className="text-sm font-medium text-foreground">Step 2 of {signupProgressTotal}</p>
+                        <p className="text-sm font-medium text-foreground">Step 2 of 4</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {hasLockedSignupTrack
                             ? selectedAudience === 'professional'
                               ? 'Add your details and we will finish creating your vendor account.'
-                              : signupPath === 'create_wedding'
-                                ? 'Add your details to save this estimate in your new couple workspace.'
+                              : isEstimatorCoupleEntry
+                                ? 'Your estimate is ready. Create your private couple account to keep it.'
                                 : 'Add your details and wedding code so we can join you to the right wedding.'
                             : 'Add your details here, then we will move to the workspace choice.'}
                         </p>
                       </div>
                       <FormSubmitError message={submitError} />
+                      {isEstimatorCoupleEntry ? (
+                        <div className="space-y-3">
+                          <GoogleAuthButton
+                            loading={oauthSubmittingProvider === 'google'}
+                            disabled={submitting || oauthSubmitting || !acceptedTerms}
+                            onClick={handleGoogleSignIn}
+                            text="Continue with Google"
+                          />
+                          <p className="text-center text-xs text-muted-foreground">
+                            Accept the terms below, then continue securely with Google or use email.
+                          </p>
+                          <div className="relative py-1">
+                            <div className="absolute inset-0 flex items-center">
+                              <span className="w-full border-t border-border/60" />
+                            </div>
+                            <div className="relative flex justify-center">
+                              <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                                Or use email
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
                       {hasLockedSignupTrack ? (
                         <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
                           <p className="text-sm font-medium text-foreground">
@@ -1345,7 +1341,7 @@ export default function Auth() {
                               ? professionalSignupRole === 'planner'
                                 ? 'Planner workspace selected'
                                 : 'Vendor workspace selected'
-                              : signupPath === 'create_wedding'
+                              : isEstimatorCoupleEntry
                                 ? 'Couple workspace selected'
                                 : 'Wedding join path selected'}
                           </p>
@@ -1354,43 +1350,12 @@ export default function Auth() {
                               ? professionalSignupRole === 'planner'
                                 ? 'This account will open your planner operations workspace right after setup.'
                                 : 'This account will open your vendor portfolio, bookings, and listing workspace.'
-                              : signupPath === 'create_wedding'
-                                ? 'Your estimate is ready and will be carried into this private wedding workspace.'
+                              : isEstimatorCoupleEntry
+                                ? 'Your estimate will be saved into this private wedding workspace after signup.'
                                 : 'Use the same invited email and the wedding code the couple shared with you.'}
                           </p>
                         </div>
                       ) : null}
-
-                      {showEstimatorGoogleSignup ? (
-                        <div className="space-y-3">
-                          <SignupTermsNotice
-                            acceptedTerms={acceptedTerms}
-                            onAcceptedTermsChange={(checked) => {
-                              setAcceptedTerms(checked);
-                              setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
-                              setSubmitError(null);
-                            }}
-                            error={formErrors.acceptedTerms}
-                          />
-                          <GoogleAuthButton
-                            loading={oauthSubmittingProvider === 'google'}
-                            disabled={submitting || oauthSubmitting}
-                            onClick={handleGoogleSignIn}
-                            text="Continue with Google"
-                          />
-                          <div className="relative py-1" aria-hidden="true">
-                            <div className="absolute inset-0 flex items-center">
-                              <span className="w-full border-t border-border/60" />
-                            </div>
-                            <div className="relative flex justify-center">
-                              <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                                Or create with email
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-
                       <div className="space-y-2">
                         <Label htmlFor="name">Full Name</Label>
                         <Input
@@ -1408,26 +1373,24 @@ export default function Auth() {
                         <FormFieldError message={formErrors.fullName} />
                       </div>
 
-                      {!hasLockedSignupTrack ? (
-                        <div className="space-y-2">
-                          <Label htmlFor="account-purpose">What best describes how you will use Zania?</Label>
-                          <Select value={accountPurpose} onValueChange={(value: AccountPurpose) => setAccountPurpose(value)}>
-                            <SelectTrigger id="account-purpose">
-                              <SelectValue placeholder="Choose how you will use Zania" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {accountPurposeOptions.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-muted-foreground">
-                            We use this to guide you into the right workspace and upgrade path. You can change it later in Settings.
-                          </p>
-                        </div>
-                      ) : null}
+                      {!isEstimatorCoupleEntry ? <div className="space-y-2">
+                        <Label htmlFor="account-purpose">What best describes how you will use Zania?</Label>
+                        <Select value={accountPurpose} onValueChange={(value: AccountPurpose) => setAccountPurpose(value)}>
+                          <SelectTrigger id="account-purpose">
+                            <SelectValue placeholder="Choose how you will use Zania" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {accountPurposeOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          We use this to guide you into the right workspace and upgrade path. You can change it later in Settings.
+                        </p>
+                      </div> : null}
 
                       <div className="space-y-2">
                         <Label htmlFor="email">Your email</Label>
@@ -1526,33 +1489,31 @@ export default function Auth() {
                         </div>
                       ) : null}
 
-                      {!showEstimatorGoogleSignup ? (
-                        <SignupTermsNotice
-                          acceptedTerms={acceptedTerms}
-                          onAcceptedTermsChange={(checked) => {
-                            setAcceptedTerms(checked);
-                            setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
-                          }}
-                          error={formErrors.acceptedTerms}
-                        />
-                      ) : null}
+                      <SignupTermsNotice
+                        acceptedTerms={acceptedTerms}
+                        onAcceptedTermsChange={(checked) => {
+                          setAcceptedTerms(checked);
+                          setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
+                        }}
+                        error={formErrors.acceptedTerms}
+                      />
 
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Button
                           type="button"
                           variant="outline"
                           className="w-full"
-                          onClick={requestedFlow === 'estimator' ? () => navigate('/') : resetSignupWizard}
+                          onClick={() => isEstimatorCoupleEntry ? navigate('/') : resetSignupWizard()}
                         >
-                          {requestedFlow === 'estimator' ? 'Back to estimate' : 'Back'}
+                          Back
                         </Button>
                         {hasLockedSignupTrack ? (
                           <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting}>
                             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {signupPath === 'create_wedding'
-                              ? 'Create couple account'
-                              : signupPath === 'join_wedding'
+                            {signupPath === 'join_wedding'
                               ? 'Create account and join'
+                              : selectedAudience === 'couple'
+                                ? 'Create couple account'
                               : professionalSignupRole === 'planner'
                                 ? 'Create planner account'
                                 : 'Create vendor account'}

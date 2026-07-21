@@ -6,8 +6,24 @@ import {
   parseEstimatorPlanDraft,
 } from '@/lib/estimatorPlanSeed';
 import { buildInteractiveBudgetPlan, updateInteractiveBudgetAllocation } from '@/lib/interactiveBudgetPlan';
+import { isEstimatorCoupleSignupEntry } from '@/lib/authEntryFlows';
 
 describe('estimator plan handoff', () => {
+  it('locks estimator handoffs to the couple signup path', () => {
+    expect(isEstimatorCoupleSignupEntry({
+      mode: 'signup',
+      flow: 'estimator',
+      audience: 'couple',
+      role: 'couple',
+    })).toBe(true);
+    expect(isEstimatorCoupleSignupEntry({
+      mode: 'signup',
+      flow: 'estimator',
+      audience: 'professional',
+      role: 'vendor',
+    })).toBe(false);
+  });
+
   it('preserves the exact edited 21-category plan for budget seeding', () => {
     const initialPlan = buildInteractiveBudgetPlan(1_500_000, 120);
     const editedPlan = updateInteractiveBudgetAllocation(initialPlan, 'Catering', 600_000);
