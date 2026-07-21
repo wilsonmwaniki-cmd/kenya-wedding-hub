@@ -33,6 +33,7 @@ import { buildConciergeContext } from '@/lib/conciergeContext';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ToastAction } from '@/components/ui/toast';
 import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
+import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
 
 interface Task {
   id: string;
@@ -839,7 +840,7 @@ export default function Tasks() {
     );
   };
 
-  const TaskRow = ({ t, isDone }: { t: Task; isDone: boolean }) => {
+  const renderTaskRow = (t: Task, isDone: boolean) => {
     const linkedVendor = t.source_vendor_id ? vendorLookup[t.source_vendor_id] : null;
     const resolvedCategory = t.category || linkedVendor?.category || null;
     const active = selectedTaskId === t.id;
@@ -849,11 +850,10 @@ export default function Tasks() {
 
     return (
       <motion.div
-        layout
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: active && !prefersReducedMotion ? -1 : 0, scale: active && !prefersReducedMotion ? 1.006 : 1 }}
-        exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        key={t.id}
+        layout={!prefersReducedMotion}
+        animate={prefersReducedMotion ? undefined : active ? { y: -1, scale: 1.006 } : { y: 0, scale: 1 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
         className={cn(
           'relative w-full overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200',
           active
@@ -914,15 +914,7 @@ export default function Tasks() {
           </button>
         </div>
 
-        <AnimatePresence initial={false}>
-          {active ? (
-            <motion.div
-              initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-              transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-              className="overflow-hidden"
-            >
+        <AnimatedCardDetails open={active}>
               <div className="space-y-4 border-t border-primary/15 px-4 pb-4 pt-4 sm:px-6">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
                   <div><p className="text-xs text-muted-foreground">Due</p><p className="mt-1 font-medium">{t.due_date ? new Date(t.due_date).toLocaleDateString() : 'No date'}</p></div>
@@ -945,9 +937,7 @@ export default function Tasks() {
                   <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Delete task" title="Delete task" onClick={() => deleteTask(t.id)}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
                 </div>
               </div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
+        </AnimatedCardDetails>
       </motion.div>
     );
   };
@@ -1359,9 +1349,7 @@ export default function Tasks() {
                     </div>
                     <div className="space-y-3">
                       <AnimatePresence initial={false} mode="popLayout">
-                      {group.tasks.map((task) => (
-                        <TaskRow key={task.id} t={task} isDone={task.completed} />
-                      ))}
+                      {group.tasks.map((task) => renderTaskRow(task, task.completed))}
                       </AnimatePresence>
                     </div>
                   </div>

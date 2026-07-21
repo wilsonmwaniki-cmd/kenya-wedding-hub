@@ -68,6 +68,8 @@ import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { buildConciergeContext } from '@/lib/conciergeContext';
+import { motion, useReducedMotion } from 'framer-motion';
+import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
 import {
   archiveVendorWorkspaceUpdate,
   listVendorWorkspaceUpdates,
@@ -406,6 +408,7 @@ export default function Vendors() {
   const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const queryClient = useQueryClient();
   const assistantPanel = useAssistantPanel();
+  const prefersReducedMotion = useReducedMotion();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'directory' | 'custom'>('custom');
@@ -2643,16 +2646,19 @@ export default function Vendors() {
       const isChosen = isChosenVendor(vendor);
 
       return (
-        <div
+        <motion.div
           key={vendor.id}
-          className={`relative w-full overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,transform] duration-200 ${isActive ? '-translate-y-px border-primary/70 bg-primary/[0.075] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15' : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'}`}
+          layout={!prefersReducedMotion}
+          animate={prefersReducedMotion ? undefined : isActive ? { y: -1, scale: 1.006 } : { y: 0, scale: 1 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
+          className={`relative w-full overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200 ${isActive ? 'z-10 border-primary/70 bg-primary/[0.025] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15' : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'}`}
         >
           <span aria-hidden="true" className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary transition-opacity ${isActive ? 'opacity-100' : 'opacity-0'}`} />
           <button
             type="button"
             onClick={() => setSelectedVendorId(isActive ? null : vendor.id)}
             aria-expanded={isActive}
-            className="flex w-full flex-col gap-4 px-4 py-4 text-left sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5"
+            className={`flex w-full flex-col gap-4 px-4 py-4 text-left transition-colors duration-200 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5 ${isActive ? 'bg-primary/[0.075]' : 'hover:bg-muted/30'}`}
           >
             <div className="min-w-0">
               <p className="truncate text-lg font-semibold text-foreground">{vendor.name}</p>
@@ -2668,8 +2674,8 @@ export default function Vendors() {
             </div>
           </button>
 
-          {isActive ? (
-            <div className="min-w-0 space-y-4 border-t border-primary/15 px-4 pb-5 pt-4 sm:px-6">
+          <AnimatedCardDetails open={isActive}>
+            <div className="min-w-0 space-y-4 border-t border-border bg-background/60 px-4 pb-5 pt-4 sm:px-6">
               <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-background/70 text-center">
                 <div className="p-3"><p className="text-xs text-muted-foreground">Quoted</p><p className="mt-1 font-semibold">{formatCurrency(vendor.price)}</p></div>
                 <div className="p-3"><p className="text-xs text-muted-foreground">Paid</p><p className="mt-1 font-semibold">{formatCurrency(vendor.amount_paid)}</p></div>
@@ -2687,8 +2693,8 @@ export default function Vendors() {
               </div>
               {vendorPayments.length > 0 ? <p className="text-xs text-muted-foreground">{vendorPayments.length} payment{vendorPayments.length === 1 ? '' : 's'} recorded</p> : null}
             </div>
-          ) : null}
-        </div>
+          </AnimatedCardDetails>
+        </motion.div>
       );
     };
 
