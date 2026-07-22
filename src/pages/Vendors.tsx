@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, Pencil } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
@@ -487,6 +487,12 @@ export default function Vendors() {
     message: '',
     expiresAt: '',
   });
+  const [contactEditorVendor, setContactEditorVendor] = useState<Vendor | null>(null);
+  const [contactEditorForm, setContactEditorForm] = useState({ email: '', phone: '' });
+  const [contactEditorErrors, setContactEditorErrors] = useState<{ email?: string; phone?: string }>({});
+  const [contactEditorSubmitError, setContactEditorSubmitError] = useState<string | null>(null);
+  const [savingVendorContact, setSavingVendorContact] = useState(false);
+  const [createClaimAfterContactSave, setCreateClaimAfterContactSave] = useState(false);
   const [vendorWorkspaceUpdates, setVendorWorkspaceUpdates] = useState<Record<string, VendorWorkspaceUpdate[]>>({});
   const [vendorWorkspaceUpdatesLoadingId, setVendorWorkspaceUpdatesLoadingId] = useState<string | null>(null);
   const [archivingVendorWorkspaceUpdateId, setArchivingVendorWorkspaceUpdateId] = useState<string | null>(null);
@@ -581,6 +587,17 @@ export default function Vendors() {
     await queryClient.invalidateQueries({ queryKey: vendorsQueryKey });
   };
 
+  const openVendorContactEditor = (vendor: Vendor, createClaimAfterSave = false) => {
+    setContactEditorVendor(vendor);
+    setContactEditorForm({
+      email: vendor.email ?? '',
+      phone: vendor.phone ?? '',
+    });
+    setContactEditorErrors({});
+    setContactEditorSubmitError(null);
+    setCreateClaimAfterContactSave(createClaimAfterSave);
+  };
+
   const saveWorkspaceVendorInvite = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedVendor || selectedVendor.vendor_listing_id || !activeWeddingId) return;
@@ -646,10 +663,7 @@ export default function Vendors() {
   const createQuickVendorClaimLink = async (vendor: Vendor) => {
     if (vendor.vendor_listing_id || !activeWeddingId) return;
     if (!vendor.email && !vendor.phone) {
-      toast({
-        title: 'Add vendor contact details first',
-        description: 'A vendor email address or phone number is needed before Zania can create a private claim link.',
-      });
+      openVendorContactEditor(vendor, true);
       return;
     }
 
@@ -679,6 +693,71 @@ export default function Vendors() {
       });
     } finally {
       setWorkspaceInviteSubmittingVendorId(null);
+    }
+  };
+
+  const saveVendorContact = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!contactEditorVendor || profile?.role !== 'couple') return;
+
+    const email = contactEditorForm.email.trim().toLowerCase();
+    const phone = contactEditorForm.phone.trim();
+    const nextErrors: { email?: string; phone?: string } = {};
+    if (!email && !phone) {
+      nextErrors.email = 'Add an email address or phone number.';
+    } else if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      nextErrors.email = 'Enter a valid email address.';
+    }
+    if (phone && !/^[\d+\s()-]{7,}$/.test(phone)) {
+      nextErrors.phone = 'Enter a valid phone number.';
+    }
+    setContactEditorErrors(nextErrors);
+    setContactEditorSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    const vendor = contactEditorVendor;
+    const shouldCreateClaim = createClaimAfterContactSave;
+    setSavingVendorContact(true);
+
+    try {
+      const { error } = await supabase
+        .from('vendors')
+        .update({ email: email || null, phone: phone || null })
+        .eq('id', vendor.id);
+      if (error) throw error;
+
+      const activeInvite = (workspaceVendorInvites[vendor.id] ?? []).find((invite) =>
+        ['draft', 'pending', 'sent', 'opened'].includes(invite.invite_status),
+      ) ?? null;
+      if (activeInvite) {
+        const updatedInvite = await updateWorkspaceVendorInvite(activeInvite.id, {
+          invite_contact_email: email || null,
+          invite_contact_phone: phone || null,
+        });
+        setWorkspaceVendorInvites((current) => ({
+          ...current,
+          [vendor.id]: (current[vendor.id] ?? []).map((invite) =>
+            invite.id === updatedInvite.id ? updatedInvite : invite,
+          ),
+        }));
+      }
+
+      await refreshVendorsWorkspace();
+      setContactEditorVendor(null);
+      setCreateClaimAfterContactSave(false);
+
+      if (shouldCreateClaim && !activeInvite) {
+        await createQuickVendorClaimLink({ ...vendor, email: email || null, phone: phone || null });
+      } else {
+        toast({
+          title: 'Vendor contact saved',
+          description: `${vendor.name}'s contact details are ready for invitations and follow-ups.`,
+        });
+      }
+    } catch (error: any) {
+      setContactEditorSubmitError(error?.message || 'Could not save these vendor contact details right now.');
+    } finally {
+      setSavingVendorContact(false);
     }
   };
 
@@ -2655,6 +2734,84 @@ export default function Vendors() {
     </Dialog>
   );
 
+  const vendorContactDialog = (
+    <Dialog
+      open={Boolean(contactEditorVendor)}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen || savingVendorContact) return;
+        setContactEditorVendor(null);
+        setContactEditorErrors({});
+        setContactEditorSubmitError(null);
+        setCreateClaimAfterContactSave(false);
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">
+            {contactEditorVendor?.email || contactEditorVendor?.phone ? 'Edit vendor contact' : 'Add vendor contact'}
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm leading-6 text-muted-foreground">
+          Add an email address or phone number for {contactEditorVendor?.name ?? 'this vendor'}. These details stay in your private wedding workspace and make claim links and follow-ups easier.
+        </p>
+        <form onSubmit={saveVendorContact} className="space-y-4">
+          <FormSubmitError message={contactEditorSubmitError} />
+          <div className="space-y-2">
+            <Label htmlFor="quick-vendor-contact-email">Vendor email</Label>
+            <Input
+              id="quick-vendor-contact-email"
+              type="email"
+              value={contactEditorForm.email}
+              onChange={(event) => {
+                setContactEditorForm((current) => ({ ...current, email: event.target.value }));
+                setContactEditorErrors((current) => ({ ...current, email: undefined }));
+                setContactEditorSubmitError(null);
+              }}
+              placeholder="vendor@example.com"
+              autoFocus
+            />
+            <FormFieldError message={contactEditorErrors.email} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="quick-vendor-contact-phone">Vendor phone</Label>
+            <Input
+              id="quick-vendor-contact-phone"
+              value={contactEditorForm.phone}
+              onChange={(event) => {
+                setContactEditorForm((current) => ({ ...current, phone: event.target.value }));
+                setContactEditorErrors((current) => ({ ...current, phone: undefined }));
+                setContactEditorSubmitError(null);
+              }}
+              placeholder="+254..."
+            />
+            <FormFieldError message={contactEditorErrors.phone} />
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={savingVendorContact}
+              onClick={() => {
+                setContactEditorVendor(null);
+                setCreateClaimAfterContactSave(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={savingVendorContact}>
+              {savingVendorContact ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {savingVendorContact
+                ? 'Saving...'
+                : createClaimAfterContactSave
+                  ? 'Save & create claim link'
+                  : 'Save contact'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
   if (vendorsQuery.isLoading) return <WorkspacePageSkeleton compact />;
 
@@ -2737,7 +2894,32 @@ export default function Vendors() {
                 <div className="p-3"><p className="text-xs text-muted-foreground">Left</p><p className="mt-1 font-semibold">{formatCurrency(outstandingBalance)}</p></div>
               </div>
               <div className="grid min-w-0 gap-4 text-sm sm:grid-cols-2">
-                <div className="min-w-0"><p className="text-xs text-muted-foreground">Contact</p><p className="mt-1 break-words font-medium">{vendor.phone || vendor.email || 'Not added'}</p>{dueDateLabel && vendor.payment_status !== 'paid_full' ? <p className="mt-1 text-muted-foreground">Payment due {dueDateLabel}</p> : null}</div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">Contact</p>
+                    {profile?.role === 'couple' ? (
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto gap-1 p-0 text-xs"
+                        onClick={() => openVendorContactEditor(vendor)}
+                      >
+                        <Pencil className="h-3 w-3" aria-hidden="true" />
+                        {vendor.email || vendor.phone ? 'Edit contact' : 'Add contact'}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {vendor.email || vendor.phone ? (
+                    <div className="mt-1 space-y-1 break-words font-medium">
+                      {vendor.email ? <p>{vendor.email}</p> : null}
+                      {vendor.phone ? <p>{vendor.phone}</p> : null}
+                    </div>
+                  ) : (
+                    <p className="mt-1 font-medium text-muted-foreground">Not added</p>
+                  )}
+                  {dueDateLabel && vendor.payment_status !== 'paid_full' ? <p className="mt-1 text-muted-foreground">Payment due {dueDateLabel}</p> : null}
+                </div>
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">Related tasks</p>
                   {vendorTasks.filter((task) => !task.completed).slice(0, 3).map((task) => (
@@ -2772,7 +2954,7 @@ export default function Vendors() {
                         onClick={() => void createQuickVendorClaimLink(vendor)}
                       >
                         {workspaceInviteLoadingVendorId === vendor.id || workspaceInviteSubmittingVendorId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Create vendor claim link
+                        {vendor.email || vendor.phone ? 'Create vendor claim link' : 'Add contact & create claim link'}
                       </Button>
                     )}
                   </div>
@@ -2793,6 +2975,7 @@ export default function Vendors() {
 
     return (
       <div className="space-y-8">
+        {vendorContactDialog}
         {showCoupleVendorWorkspace ? (
           <>
             <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
