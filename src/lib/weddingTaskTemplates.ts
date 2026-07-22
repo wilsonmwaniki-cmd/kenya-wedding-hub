@@ -45,6 +45,15 @@ export interface SuggestedTaskTemplateOption {
   timelineLabel: string | null;
 }
 
+export interface WeddingChecklistStep {
+  key: string;
+  title: string;
+  category: string;
+  timelineLabel: string | null;
+  step: number;
+  totalSteps: number;
+}
+
 type RawChecklistRow = readonly [
   key: string,
   category: string,
@@ -1433,6 +1442,57 @@ const CHECKLIST_TEMPLATES: WeddingTaskTemplate[] = RAW_CHECKLIST_ROWS.map((row) 
     timelineLabel,
   };
 });
+
+function normalizeChecklistTitle(value?: string | null) {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+const CHECKLIST_STEP_BY_TITLE = new Map(
+  CHECKLIST_TEMPLATES.map((template, index) => [
+    normalizeChecklistTitle(template.title),
+    {
+      key: template.key,
+      title: template.title,
+      category: template.category,
+      timelineLabel: template.timelineLabel ?? null,
+      step: index + 1,
+      totalSteps: CHECKLIST_TEMPLATES.length,
+    } satisfies WeddingChecklistStep,
+  ]),
+);
+
+export function getWeddingChecklistStep(task: { title: string }): WeddingChecklistStep | null {
+  return CHECKLIST_STEP_BY_TITLE.get(normalizeChecklistTitle(task.title)) ?? null;
+}
+
+export function compareTasksByWeddingChecklistOrder<T extends { title: string; due_date?: string | null }>(left: T, right: T) {
+  const leftStep = getWeddingChecklistStep(left);
+  const rightStep = getWeddingChecklistStep(right);
+
+  if (leftStep && rightStep) return leftStep.step - rightStep.step;
+  if (leftStep) return -1;
+  if (rightStep) return 1;
+
+  const dueDateComparison = (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31');
+  return dueDateComparison || left.title.localeCompare(right.title);
+}
+
+export function getNextWeddingChecklistTask<T extends { title: string; completed: boolean; due_date?: string | null }>(tasks: T[]) {
+  const nextTask = tasks
+    .filter((task) => !task.completed && getWeddingChecklistStep(task))
+    .sort(compareTasksByWeddingChecklistOrder)[0] ?? null;
+
+  if (!nextTask) return null;
+  return {
+    task: nextTask,
+    step: getWeddingChecklistStep(nextTask)!,
+  };
+}
 
 const CHECKLIST_CATEGORIES = [...new Set(CHECKLIST_TEMPLATES.map((template) => template.category))].sort((left, right) => left.localeCompare(right));
 

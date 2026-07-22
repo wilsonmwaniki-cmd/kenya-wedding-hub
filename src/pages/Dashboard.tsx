@@ -26,6 +26,7 @@ import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isLaunchFeatureEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 import { buildConciergeContext } from '@/lib/conciergeContext';
 import AnimatedNumber from '@/components/AnimatedNumber';
+import { compareTasksByWeddingChecklistOrder, getNextWeddingChecklistTask } from '@/lib/weddingTaskTemplates';
 
 interface DashboardStats {
   totalBudget: number;
@@ -86,6 +87,7 @@ interface VendorDigestRow {
 interface TaskDigestRow {
   id: string;
   title: string;
+  category: string | null;
   due_date: string | null;
   completed: boolean;
   visibility: string;
@@ -126,11 +128,18 @@ const EMPTY_DASHBOARD_WORKSPACE_DATA: DashboardWorkspaceData = {
   contributionRows: [],
 };
 
+function guidedTimelineDescription(timelineLabel: string | null) {
+  if (!timelineLabel) return 'Continue with the next guided planning step.';
+  if (timelineLabel.toLowerCase() === 'wedding day') return 'Plan this for the wedding day.';
+  if (timelineLabel.toLowerCase() === 'post wedding') return 'Complete this after the wedding.';
+  return `${timelineLabel} before the wedding.`;
+}
+
 async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWorkspaceData> {
   const today = new Date().toISOString().slice(0, 10);
   const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows, contributions, timelines] = await Promise.all([
     supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope, visibility').or(dataOrFilter),
-    supabase.from('tasks').select('id, title, due_date, completed, visibility, phase').or(dataOrFilter),
+    supabase.from('tasks').select('id, title, category, due_date, completed, visibility, phase').or(dataOrFilter),
     supabase.from('guests').select('rsvp_status').or(dataOrFilter),
     supabase.from('vendors').select('id, name, category, selection_status, payment_due_date, payment_status').or(dataOrFilter),
     supabase
@@ -465,10 +474,16 @@ export default function Dashboard() {
   const topPendingTasks = useMemo(
     () =>
       [...pendingTasks]
-        .sort((left, right) => (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31'))
+        .sort(compareTasksByWeddingChecklistOrder)
         .slice(0, 3),
     [pendingTasks],
   );
+  const nextGuidedRecommendation = useMemo(
+    () => getNextWeddingChecklistTask(taskDigestRows),
+    [taskDigestRows],
+  );
+  const nextGuidedTask = nextGuidedRecommendation?.task ?? null;
+  const nextGuidedStep = nextGuidedRecommendation?.step ?? null;
 
   const vendorDecisionsPending = useMemo(() => {
     const byCategory = vendorDigestRows.reduce((summary, vendor) => {
@@ -606,7 +621,7 @@ export default function Dashboard() {
   const completedHomeSetupCount = homeSetupChecklist.filter((item) => item.complete).length;
   const homeSetupPercentage = Math.round((completedHomeSetupCount / homeSetupChecklist.length) * 100);
 
-  const homePrimaryAction = (() => {
+  const homePrimaryAction: { href: string; label: string; description: string; cta?: string } = (() => {
     if (!isPlanner && (!weddingDate || !weddingLocation)) {
       return {
         href: '/settings',
@@ -620,6 +635,15 @@ export default function Dashboard() {
         href: '/tasks',
         label: 'Create first tasks',
         description: 'Start with a short wedding checklist.',
+      };
+    }
+
+    if (nextGuidedTask && nextGuidedStep) {
+      return {
+        href: `/tasks?task=${encodeURIComponent(nextGuidedTask.id)}`,
+        label: nextGuidedTask.title,
+        description: `${guidedTimelineDescription(nextGuidedStep.timelineLabel)} Step ${nextGuidedStep.step} of ${nextGuidedStep.totalSteps} in Zania's guided checklist.`,
+        cta: 'Start this step',
       };
     }
 
@@ -859,7 +883,7 @@ export default function Dashboard() {
               <p className="mt-2 text-sm text-muted-foreground">{homePrimaryAction.description}</p>
             </div>
             <Button asChild className="shrink-0 sm:min-w-36">
-              <Link to={homePrimaryAction.href}>{homePrimaryAction.label}</Link>
+              <Link to={homePrimaryAction.href}>{homePrimaryAction.cta ?? homePrimaryAction.label}</Link>
             </Button>
           </CardContent>
         </Card>
@@ -973,7 +997,7 @@ export default function Dashboard() {
 
             <div className="flex flex-wrap gap-3">
               <Button asChild>
-                <Link to={homePrimaryAction.href}>{homePrimaryAction.label}</Link>
+                <Link to={homePrimaryAction.href}>{homePrimaryAction.cta ?? homePrimaryAction.label}</Link>
               </Button>
               <Button asChild variant="outline">
                 <Link to="/tasks">Open task workspace</Link>
