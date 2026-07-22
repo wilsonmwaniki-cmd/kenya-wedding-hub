@@ -37,6 +37,7 @@ import { useToast } from '@/hooks/use-toast';
 import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
 import DocumentMomentumCard from '@/components/documents/DocumentMomentumCard';
 import DocumentMetricLink from '@/components/documents/DocumentMetricLink';
+import ContextualAssistantAction from '@/components/ContextualAssistantAction';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
 import InfoTip from '@/components/InfoTip';
 import {
@@ -1034,6 +1035,11 @@ export default function VendorDocuments() {
                 <FilePlus2 className="h-4 w-4" />
                 {documentPrimaryAction.actionLabel}
               </Button>
+              <ContextualAssistantAction
+                prompt="Help me prepare the next client document. What should I include?"
+                context={`This vendor is viewing the ${pageTitle.toLowerCase()} workspace with ${stats.total} total documents, ${stats.quotes} quotes, ${formatCurrency(stats.collected)} collected, and ${formatCurrency(stats.outstanding)} still due.`}
+                className="w-full"
+              />
               <div className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground">
                 {documents.length === 0
                   ? 'No live documents yet.'

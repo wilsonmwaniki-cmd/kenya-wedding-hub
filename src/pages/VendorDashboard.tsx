@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { vendorHasFullAccess } from '@/lib/vendorAccess';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
+import ContextualAssistantAction from '@/components/ContextualAssistantAction';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { listAcceptedWorkspaceVendorInvitesForUser } from '@/lib/workspaceVendorInvites';
@@ -1152,9 +1153,15 @@ export default function VendorDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-3xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground">Track your workspace invites, bookings, and client inquiries.</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground">Track your workspace invites, bookings, and client inquiries.</p>
+        </div>
+        <ContextualAssistantAction
+          prompt="Look at my vendor workspace and tell me the one thing I should do next."
+          context={`This vendor has ${bookedCount} confirmed bookings, ${contactedCount} inquiries, ${workspaceInvites.length} workspace invites, and KES ${totalRevenue.toLocaleString()} in quoted revenue.`}
+        />
       </div>
 
       {claimedWorkspaceInvite && (

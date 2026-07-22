@@ -20,6 +20,7 @@ import { approvePlannerCodeLinkRequest, requestPlannerLinkByCode } from '@/lib/c
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { usePlannerFreeWeddingStatus } from '@/hooks/usePlannerFreeWeddingStatus';
+import ContextualAssistantAction from '@/components/ContextualAssistantAction';
 
 interface LinkRequest {
   id: string;
@@ -337,7 +338,11 @@ export default function PlannerDashboard() {
           <h1 className="font-display text-3xl font-bold text-foreground">{collectionHeading}</h1>
           <p className="text-muted-foreground">{clients.length} wedding{clients.length !== 1 ? 's' : ''} in this {workspaceLabel}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ContextualAssistantAction
+            prompt="Look at my planner workspace and tell me the one thing I should do next."
+            context={`This planner is managing ${clients.length} wedding${clients.length === 1 ? '' : 's'} and has ${linkRequests.length} waiting link request${linkRequests.length === 1 ? '' : 's'}.`}
+          />
           <Button asChild variant="outline" className="gap-2">
             <Link to="/planner-documents">
               <NotebookPen className="h-4 w-4" />
