@@ -19,6 +19,8 @@ const productionLaunchPaths = new Set([
   '/tasks',
   '/vendors',
   '/vendor-dashboard',
+  '/vendor-documents',
+  '/planner-documents',
   '/vendor-settings',
   '/settings',
 ]);

@@ -6,7 +6,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  MessageSquare, Settings, LogOut, Menu, X, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown, HeartHandshake, FlaskConical, Map
+  Settings, LogOut, Menu, X, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown, HeartHandshake, FlaskConical, Map
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,7 @@ type NavItem = {
   label: string;
   icon: LucideIcon;
   children?: Array<{ path: string; label: string }>;
+  professional?: boolean;
 };
 
 const coupleNavItems: NavItem[] = [
@@ -52,7 +53,6 @@ const coupleNavItems: NavItem[] = [
   { path: '/vendors', label: 'Vendors', icon: Store },
   { path: '/timeline', label: 'Timeline', icon: Clock },
   { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
-  { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -62,6 +62,7 @@ const plannerNavItems: NavItem[] = [
     path: '/planner-documents',
     label: 'Documents',
     icon: NotebookPen,
+    professional: true,
     children: [
       { path: '/planner-documents', label: 'Overview' },
       { path: '/planner-documents/quotes', label: 'Quotes' },
@@ -80,7 +81,6 @@ const plannerNavItems: NavItem[] = [
   { path: '/vendors', label: 'Vendors', icon: Store },
   { path: '/timeline', label: 'Timeline', icon: Clock },
   { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
-  { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -90,6 +90,7 @@ const vendorNavItems: NavItem[] = [
     path: '/vendor-documents',
     label: 'Documents',
     icon: NotebookPen,
+    professional: true,
     children: [
       { path: '/vendor-documents', label: 'Overview' },
       { path: '/vendor-documents/quotes', label: 'Quotes' },
@@ -100,7 +101,6 @@ const vendorNavItems: NavItem[] = [
     ],
   },
   { path: '/vendor-settings', label: 'My Listing', icon: Store },
-  { path: '/ai-chat', label: 'AI Assistant', icon: MessageSquare },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -471,6 +471,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           Soon
                         </span>
                       ) : null}
+                      {item.professional && !professionalPaid && !professionalPlan.loading ? (
+                        <span className="relative z-10 rounded-full border border-[#d4bb7d]/35 bg-[#d4bb7d]/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#ead8aa]">
+                          Professional
+                        </span>
+                      ) : null}
                       {(badgeCounts[item.path] || 0) > 0 && (
                         <span
                           className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-info/30 bg-info/15 px-1.5 text-[10px] font-bold text-info"
@@ -509,6 +514,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       {releaseDisabled ? (
                         <span className="relative z-10 ml-auto rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/65">
                           Soon
+                        </span>
+                      ) : null}
+                      {item.professional && !professionalPaid && !professionalPlan.loading ? (
+                        <span className="relative z-10 ml-auto rounded-full border border-[#d4bb7d]/35 bg-[#d4bb7d]/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#ead8aa]">
+                          Professional
                         </span>
                       ) : null}
                       {(badgeCounts[item.path] || 0) > 0 && (

@@ -36,6 +36,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
 import DocumentMomentumCard from '@/components/documents/DocumentMomentumCard';
+import DocumentMetricLink from '@/components/documents/DocumentMetricLink';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
 import InfoTip from '@/components/InfoTip';
 import {
@@ -897,19 +898,6 @@ export default function VendorDocuments() {
               ? 'Keep reusable starting points together so new documents are faster to prepare.'
               : 'Use the left menu to move between your overview, quotes, invoices, receipts, contracts, and templates.';
 
-  const sectionBadgeLabel =
-    activeSection === 'overview'
-      ? 'Quotes'
-      : activeSection === 'quotes'
-        ? 'Quotes'
-        : activeSection === 'invoices'
-          ? 'Invoices'
-          : activeSection === 'receipts'
-            ? 'Receipts'
-            : activeSection === 'contracts'
-              ? 'Contracts'
-              : 'Templates';
-
   const showDocumentWorkspace =
     activeSection === 'overview' ||
     activeSection === 'quotes' ||
@@ -924,15 +912,6 @@ export default function VendorDocuments() {
         : activeSection === 'receipts'
           ? 'Receipts appear after you record real payments against invoices.'
           : 'Start with a quote for a couple, then turn it into an invoice once the work is confirmed.';
-
-  const currentSectionCount =
-    activeSection === 'quotes'
-      ? stats.quotes
-      : activeSection === 'invoices'
-        ? stats.invoices
-        : activeSection === 'receipts'
-          ? stats.receipts
-          : stats.total;
 
   const documentPrimaryAction = selectedDetail
     ? selectedDetail.documentType === 'invoice' && selectedDetail.balanceDue > 0
@@ -1018,26 +997,14 @@ export default function VendorDocuments() {
               </div>
               <CardTitle className="font-display text-3xl text-foreground sm:text-4xl">{pageTitle}</CardTitle>
               <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                Quotes, invoices, and receipts in one place.
+                Create, send, and track client paperwork in one place.
               </CardDescription>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Documents</p>
-                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.total}</p>
-              </div>
-              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{sectionBadgeLabel}</p>
-                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{currentSectionCount}</p>
-              </div>
-              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Collected</p>
-                <p className="mt-2 break-words text-lg font-semibold leading-tight text-emerald-700">{formatCurrency(stats.collected)}</p>
-              </div>
-              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Outstanding</p>
-                <p className="mt-2 break-words text-lg font-semibold leading-tight text-amber-700">{formatCurrency(stats.outstanding)}</p>
-              </div>
+              <DocumentMetricLink to="/vendor-documents" label="All documents" value={stats.total} hint="Open everything" />
+              <DocumentMetricLink to="/vendor-documents/quotes" label="Quotes" value={stats.quotes} hint="Open quotes" />
+              <DocumentMetricLink to="/vendor-documents/receipts" label="Money received" value={formatCurrency(stats.collected)} hint="Open receipts" tone="success" />
+              <DocumentMetricLink to="/vendor-documents/invoices" label="Money still due" value={formatCurrency(stats.outstanding)} hint="Open invoices" tone="warning" />
             </div>
           </div>
 
@@ -1109,10 +1076,6 @@ export default function VendorDocuments() {
                 <FileSpreadsheet className="mx-auto mb-3 h-5 w-5 text-primary" />
                 <p className="font-medium text-foreground">No documents yet</p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{emptyStateCopy}</p>
-                <Button className="mt-4 gap-2" onClick={() => setCreateOpen(true)}>
-                  <FilePlus2 className="h-4 w-4" />
-                  Create first document
-                </Button>
               </div>
             ) : (
               <div className="overflow-hidden rounded-2xl border border-border">

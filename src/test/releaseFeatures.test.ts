@@ -11,8 +11,12 @@ describe('launch feature release controls', () => {
       expect(isPathEnabledForRelease(path, 'production')).toBe(true);
     });
 
-    ['/guests', '/contributions', '/gift-registry', '/timeline', '/portfolio', '/ai-chat', '/planner-documents', '/vendor-documents'].forEach((path) => {
+    ['/guests', '/contributions', '/gift-registry', '/timeline', '/portfolio', '/ai-chat'].forEach((path) => {
       expect(isPathEnabledForRelease(path, 'production')).toBe(false);
+    });
+
+    ['/planner-documents', '/vendor-documents'].forEach((path) => {
+      expect(isPathEnabledForRelease(path, 'production')).toBe(true);
     });
   });
 

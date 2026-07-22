@@ -11,6 +11,7 @@ import { PublicErrorBoundary, WorkspaceErrorBoundary } from "@/components/AppErr
 import ProtectedRoute from "@/components/ProtectedRoute";
 import type { AppRole } from "@/lib/roles";
 import LaunchFeature from "@/components/LaunchFeature";
+import ProfessionalFeatureGate from "@/components/ProfessionalFeatureGate";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -153,7 +154,7 @@ const App = () => (
               <Route path="/rsvp/:token" element={<PublicPage><GuestRsvp /></PublicPage>} />
               <Route path="/wedding/:token" element={<PublicPage><WeddingPortfolio /></PublicPage>} />
               <Route path="/wedding-setup" element={<ProtectedStandalonePage allowedRoles={['couple']}><WeddingSetup /></ProtectedStandalonePage>} />
-              <Route path="/documents/:documentId/print" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><CommercialDocumentPrint /></ProtectedStandalonePage>} />
+              <Route path="/documents/:documentId/print" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><ProfessionalFeatureGate feature="invoicing"><CommercialDocumentPrint /></ProfessionalFeatureGate></ProtectedStandalonePage>} />
               <Route path="/labs" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><LabsIndex /></ProtectedPage>} />
               <Route path="/labs/network" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><ProfessionalNetwork /></ProtectedPage>} />
               <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
@@ -166,10 +167,10 @@ const App = () => (
               <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
               <Route path="/space-plan" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/space-plan"><SpaceTablePlan /></LaunchFeature></ProtectedPage>} />
               <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
-              <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
-              <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
-              <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
-              <Route path="/planner-documents/:section" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
+              <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><ProfessionalFeatureGate audience="vendor" feature="invoicing"><VendorDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
+              <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><ProfessionalFeatureGate audience="vendor" feature="invoicing"><VendorDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
+              <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><ProfessionalFeatureGate audience="planner" feature="invoicing"><PlannerDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
+              <Route path="/planner-documents/:section" element={<ProtectedPage allowedRoles={['planner']}><ProfessionalFeatureGate audience="planner" feature="invoicing"><PlannerDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
               <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
               <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><LaunchFeature path="/ai-chat"><AiChat /></LaunchFeature></ProtectedPage>} />
               <Route path="/admin" element={<ProtectedPage allowedRoles={['admin']}><AdminPortal /></ProtectedPage>} />
