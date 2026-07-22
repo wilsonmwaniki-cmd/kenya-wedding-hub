@@ -15,7 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
@@ -35,6 +35,11 @@ import { createVendorTask } from '@/lib/vendorTasks';
 import { getSuggestedTaskTemplates, type SuggestedTaskTemplateOption } from '@/lib/weddingTaskTemplates';
 import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import {
+  getRecordedVendorsForBudgetCategory,
+  getRelatedTasksForBudgetCategory,
+  planningCategoryRelationScore,
+} from '@/lib/budgetRelations';
 
 interface BudgetCategory {
   id: string;
@@ -97,6 +102,9 @@ interface BudgetVendorOption {
   payment_due_date: string | null;
   selection_status?: string | null;
   vendor_listing_id?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
 }
 
 interface DirectoryVendorSuggestion {
@@ -186,7 +194,7 @@ async function loadBudgetCategories(dataOrFilter: string): Promise<BudgetCategor
 async function loadBudgetVendorOptions(dataOrFilter: string): Promise<BudgetVendorOption[]> {
   const { data, error } = await supabase
     .from('vendors')
-    .select('id, name, category, price, amount_paid, payment_status, payment_due_date, selection_status, vendor_listing_id')
+    .select('id, name, category, price, amount_paid, payment_status, payment_due_date, selection_status, vendor_listing_id, phone, email, notes')
     .or(dataOrFilter)
     .order('category');
 
@@ -236,16 +244,6 @@ async function loadBudgetTasks(dataOrFilter: string): Promise<BudgetTaskOption[]
 
   if (error) throw error;
   return (data ?? []) as BudgetTaskOption[];
-}
-
-function isRelevantToBudgetCategory(categoryName: string, value?: string | null) {
-  if (!value) return false;
-  const category = normalizeCategoryName(categoryName);
-  const candidate = normalizeCategoryName(value);
-  if (candidate.includes(category) || category.includes(candidate)) return true;
-
-  const meaningfulWords = category.split(/[^a-z0-9]+/).filter((word) => word.length > 3);
-  return meaningfulWords.some((word) => candidate.includes(word));
 }
 
 export default function Budget() {
@@ -1974,24 +1972,17 @@ export default function Budget() {
                     const overallShare = visibleBudgetGoal > 0
                       ? (category.allocated / visibleBudgetGoal) * 100
                       : 0;
-                    const relevantVendors = vendorOptions
-                      .filter((vendor) => isRelevantToBudgetCategory(category.name, vendor.category))
+                    const allRelevantVendors = getRecordedVendorsForBudgetCategory(category.name, vendorOptions);
+                    const relevantVendors = allRelevantVendors
                       .sort((left, right) => Number(right.selection_status === 'final') - Number(left.selection_status === 'final'))
                       .slice(0, 2);
-                    const relevantVendorIds = new Set(relevantVendors.map((vendor) => vendor.id));
-                    const relevantTasks = budgetTasks
-                      .filter((task) =>
-                        (task.category != null && isRelevantToBudgetCategory(category.name, task.category))
-                        || (task.source_vendor_id != null && relevantVendorIds.has(task.source_vendor_id))
-                        || (task.category == null && isRelevantToBudgetCategory(category.name, task.title)),
-                      )
-                      .sort((left, right) => Number(left.completed) - Number(right.completed))
+                    const relevantTasks = getRelatedTasksForBudgetCategory(category.name, budgetTasks, allRelevantVendors)
                       .slice(0, 3);
                     const linkedDirectoryIds = new Set(
                       vendorOptions.map((vendor) => vendor.vendor_listing_id).filter(Boolean),
                     );
                     const suggestedVendors = directorySuggestions
-                      .filter((vendor) => isRelevantToBudgetCategory(category.name, vendor.category))
+                      .filter((vendor) => planningCategoryRelationScore(category.name, vendor.category) > 0)
                       .filter((vendor) => !linkedDirectoryIds.has(vendor.id))
                       .slice(0, 3);
                     const existingTaskTitles = new Set(budgetTasks.map((task) => task.title.trim().toLowerCase()));
@@ -2164,7 +2155,14 @@ export default function Budget() {
                                 <p className="text-sm font-medium">Related tasks</p>
                                 {relevantTasks.length ? relevantTasks.map((task) => (
                                   <div key={task.id} className="mt-2 flex min-w-0 items-start justify-between gap-3 text-sm">
-                                    <span className={task.completed ? 'min-w-0 flex-1 break-words text-muted-foreground line-through' : 'min-w-0 flex-1 break-words'}>{task.title}</span>
+                                    <Link
+                                      to={`/tasks?task=${encodeURIComponent(task.id)}`}
+                                      className={task.completed
+                                        ? 'min-w-0 flex-1 break-words text-muted-foreground line-through underline-offset-4 hover:text-foreground hover:underline'
+                                        : 'min-w-0 flex-1 break-words font-medium text-foreground underline-offset-4 hover:text-primary hover:underline'}
+                                    >
+                                      {task.title}
+                                    </Link>
                                     <Badge variant="outline">{task.completed ? 'Done' : 'Next'}</Badge>
                                   </div>
                                 )) : <p className="mt-2 text-sm text-muted-foreground">No matching task yet.</p>}

@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Link2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { createVendorTask } from '@/lib/vendorTasks';
 import { vendorPaymentStatusLabel } from '@/lib/vendorPayments';
@@ -207,6 +207,7 @@ export default function Tasks() {
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const prefersReducedMotion = useReducedMotion();
@@ -231,6 +232,7 @@ export default function Tasks() {
   const taskSuccessTimerRef = useRef<number | null>(null);
   const [taskFormErrors, setTaskFormErrors] = useState<{ title?: string }>({});
   const [taskSubmitError, setTaskSubmitError] = useState<string | null>(null);
+  const requestedTaskId = searchParams.get('task');
 
   const tasksQueryKey = ['tasks', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
   const tasksQuery = useQuery({
@@ -809,6 +811,23 @@ export default function Tasks() {
     }
   }, [visibleTasks, selectedTaskId]);
 
+  useEffect(() => {
+    if (!requestedTaskId || tasksQuery.isLoading) return;
+    const requestedTask = tasksQuery.data?.tasks.find((task) => task.id === requestedTaskId);
+    if (!requestedTask) return;
+
+    setTaskSearch('');
+    setTaskScopeFilter('all');
+    setTaskViewMode(requestedTask.completed ? 'completed' : 'by_date');
+    setSelectedTaskId(requestedTask.id);
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document.getElementById(`task-${requestedTask.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  }, [requestedTaskId, tasksQuery.data?.tasks, tasksQuery.isLoading]);
+
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
   if (tasksQuery.isLoading) return <WorkspacePageSkeleton compact />;
 
@@ -851,11 +870,12 @@ export default function Tasks() {
     return (
       <motion.div
         key={t.id}
+        id={`task-${t.id}`}
         layout={!prefersReducedMotion}
         animate={prefersReducedMotion ? undefined : active ? { y: -1, scale: 1.006 } : { y: 0, scale: 1 }}
         transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
         className={cn(
-          'relative w-full overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200',
+          'relative w-full scroll-mt-24 overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200',
           active
             ? 'z-10 border-primary/70 bg-primary/[0.075] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15'
             : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card',
