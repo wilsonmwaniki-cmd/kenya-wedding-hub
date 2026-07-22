@@ -15,11 +15,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import MyConnections from '@/components/MyConnections';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
-import { isCommitteePlanner } from '@/lib/plannerAccess';
+import { isCommitteePlanner, plannerCanCollaborate } from '@/lib/plannerAccess';
 import { approvePlannerCodeLinkRequest, requestPlannerLinkByCode } from '@/lib/collaborationCodes';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
-import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
 import { usePlannerFreeWeddingStatus } from '@/hooks/usePlannerFreeWeddingStatus';
 
 interface LinkRequest {
@@ -214,9 +213,6 @@ export default function PlannerDashboard() {
   const plannerPreviewMode = isSuperAdmin && (rolePreview === 'planner' || rolePreview === 'committee');
   const isCommittee = isCommitteePlanner(profile);
   const { status: plannerFreeWeddingStatus } = usePlannerFreeWeddingStatus(!isCommittee);
-  const { entitlements: professionalEntitlements, teamSeatLimit: professionalTeamSeatLimit } = useProfessionalEntitlements(
-    isCommittee ? null : 'planner',
-  );
   const workspaceDecision = getEntitlementDecision(isCommittee ? 'committee.connect_couples' : 'planner.full_workspace', {
     profile,
     activeWeddingCount: !isCommittee ? plannerFreeWeddingStatus.meaningfulClientCount : clients.length,
@@ -234,33 +230,6 @@ export default function PlannerDashboard() {
   const collectionHeading = isCommittee ? 'Committee Weddings' : 'My Clients';
   const addLabel = isCommittee ? 'Add Wedding' : 'Add Client';
   const committeeAtCapacity = isCommittee && clients.length >= 1;
-  const mediaAddonDecision = !isCommittee
-    ? getEntitlementDecision('planner.media_portfolio', {
-        profile,
-        professionalAudience: 'planner',
-        professionalEntitlements,
-        professionalTeamSeatLimit,
-        bypass: plannerPreviewMode,
-      })
-    : null;
-  const advertisingAddonDecision = !isCommittee
-    ? getEntitlementDecision('planner.advertising', {
-        profile,
-        professionalAudience: 'planner',
-        professionalEntitlements,
-        professionalTeamSeatLimit,
-        bypass: plannerPreviewMode,
-      })
-    : null;
-  const teamAddonDecision = !isCommittee
-    ? getEntitlementDecision('planner.team_workspace', {
-        profile,
-        professionalAudience: 'planner',
-        professionalEntitlements,
-        professionalTeamSeatLimit,
-        bypass: plannerPreviewMode,
-      })
-    : null;
 
   return (
     <div className="space-y-6">
@@ -278,7 +247,7 @@ export default function PlannerDashboard() {
       )}
 
       {/* Pending Link Requests */}
-      {fullPlannerAccess && incomingLinkRequests.length > 0 && (
+      {(plannerPreviewMode || plannerCanCollaborate(profile)) && incomingLinkRequests.length > 0 && (
         <Card className="semantic-surface-warning">
           <CardHeader>
             <CardTitle className="font-display text-base">Pending Link Requests</CardTitle>
@@ -309,7 +278,7 @@ export default function PlannerDashboard() {
         </Card>
       )}
 
-      {fullPlannerAccess && outgoingCodeRequests.length > 0 && (
+      {(plannerPreviewMode || plannerCanCollaborate(profile)) && outgoingCodeRequests.length > 0 && (
         <Card className="border-border/70 bg-muted/20">
           <CardHeader>
             <CardTitle className="font-display text-base flex items-center gap-2">
@@ -341,37 +310,13 @@ export default function PlannerDashboard() {
       {!isCommittee && (
         <Card className="border-border/70 bg-muted/20">
           <CardHeader>
-            <CardTitle className="text-base">Professional Growth Add-ons</CardTitle>
+            <CardTitle className="text-base">Professional workspace</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 lg:grid-cols-3">
             {[
-              {
-                key: 'media',
-                title: 'Media portfolio',
-                description: mediaAddonDecision?.allowed
-                  ? 'Richer visual presentation is active for this planner workspace.'
-                  : 'Upgrade to showcase richer portfolio photos and videos on your planner profile.',
-                decision: mediaAddonDecision,
-                activeLabel: 'Active',
-              },
-              {
-                key: 'advertising',
-                title: 'Advertising',
-                description: advertisingAddonDecision?.allowed
-                  ? 'Advertising access is active for this planner workspace.'
-                  : 'Upgrade to unlock promoted placement and stronger directory visibility.',
-                decision: advertisingAddonDecision,
-                activeLabel: 'Active',
-              },
-              {
-                key: 'team',
-                title: 'Team workspace',
-                description: teamAddonDecision?.allowed
-                  ? `Team collaboration is active with up to ${professionalTeamSeatLimit || 0} seats available.`
-                  : 'Upgrade to add bundled colleague seats inside your planner workspace.',
-                decision: teamAddonDecision,
-                activeLabel: professionalTeamSeatLimit > 0 ? `${professionalTeamSeatLimit} seats` : 'Active',
-              },
+              { key: 'portfolio', title: 'Advanced portfolio', description: 'Included with Professional for richer business presentation.', badge: 'Professional' },
+              { key: 'analytics', title: 'Business analytics', description: 'Included with Professional for clearer inquiry and booking insights.', badge: 'Professional' },
+              { key: 'team', title: 'Team workspace', description: 'Team roles and shared professional operations are in development.', badge: 'Coming soon' },
             ].map((item) => (
               <div key={item.key} className="rounded-xl border border-border bg-card p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -379,18 +324,8 @@ export default function PlannerDashboard() {
                     <p className="font-medium text-card-foreground">{item.title}</p>
                     <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
                   </div>
-                  <Badge variant={item.decision?.allowed ? 'success' : 'info'}>
-                    {item.decision?.allowed ? item.activeLabel : 'Add-on'}
-                  </Badge>
+                  <Badge variant="info">{item.badge}</Badge>
                 </div>
-                {item.decision && !item.decision.allowed && (
-                  <Button asChild variant="outline" className="mt-4 w-full gap-2">
-                    <Link to={item.decision.pricingHref}>
-                      {item.decision.ctaLabel}
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                )}
               </div>
             ))}
           </CardContent>

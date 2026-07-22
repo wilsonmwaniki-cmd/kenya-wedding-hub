@@ -27,7 +27,7 @@ import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InfoTip from '@/components/InfoTip';
-import { getCheckoutReferenceFromSearchParams, syncCoupleCheckout } from '@/lib/billing';
+import { getCheckoutProviderFromSearchParams, getCheckoutReferenceFromSearchParams, syncCoupleCheckout } from '@/lib/billing';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
@@ -315,6 +315,7 @@ export default function Budget() {
   const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
   const upgradeState = searchParams.get('upgrade');
   const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
+  const checkoutProvider = getCheckoutProviderFromSearchParams(searchParams);
 
   const categoriesQueryKey = ['budget', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
   const vendorsQueryKey = ['budget-vendors', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
@@ -544,13 +545,13 @@ export default function Budget() {
 
     const runSync = async () => {
       try {
-        const result = await syncCoupleCheckout(checkoutReference);
+        const result = await syncCoupleCheckout(checkoutReference, checkoutProvider);
         if (cancelled) return;
 
         await refresh();
         if (cancelled) return;
 
-        const planLabel = result.couplePlanTier === 'premium' ? 'Premium' : 'Basic';
+        const planLabel = result.couplePlanTier === 'collaborative' ? 'Collaborative' : 'Intimate';
         toast({
           title: `${planLabel} activated`,
           description: 'Your wedding workspace now has the upgraded planning access.',
@@ -571,7 +572,7 @@ export default function Budget() {
     return () => {
       cancelled = true;
     };
-  }, [checkoutReference, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
+  }, [checkoutProvider, checkoutReference, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');

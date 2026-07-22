@@ -1,19 +1,14 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ExternalLink, Gift, Loader2, Trash2 } from 'lucide-react';
 import { WorkspacePageSkeleton, ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
-import { getEntitlementDecision } from '@/lib/entitlements';
-import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
-import { getCheckoutReferenceFromSearchParams, startCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
@@ -80,14 +75,10 @@ function formatKes(value: number | null) {
 }
 
 export default function GiftRegistry() {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
-  const { profile, isSuperAdmin, rolePreview } = useAuth();
-  const { weddingId, entitlements, couplePlanTier, loading, refresh } = useWeddingEntitlements();
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
+  const { profile } = useAuth();
+  const { weddingId, loading } = useWeddingEntitlements();
   const [items, setItems] = useState<RegistryItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsError, setItemsError] = useState<string | null>(null);
@@ -97,81 +88,7 @@ export default function GiftRegistry() {
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof RegistryFormState, string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const decision = getEntitlementDecision('couple.gift_registry', {
-    profile,
-    bypass: isSuperAdmin && rolePreview === 'couple',
-    weddingEntitlements: entitlements,
-    couplePlanTier,
-  });
-
-  const canAccessRegistry = decision.allowed && Boolean(weddingId);
-  const addon = getCoupleAddonDefinition('gift_registry_addon');
-  const isFocusedUpgradeFlow = searchParams.get('intent') === 'upgrade';
-  const upgradeState = searchParams.get('upgrade');
-  const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
-
-  const statusMessage = useMemo(() => {
-    if (upgradeState === 'success') {
-      return {
-        title: 'Gift Registry unlocked',
-        body: 'Your registry is now active. Start adding gifts and mark them off as they get claimed.',
-        tone: 'success',
-      } as const;
-    }
-
-    if (upgradeState === 'cancelled') {
-      return {
-        title: 'Checkout cancelled',
-        body: 'No problem. Your registry add-on was not purchased yet, and you can come back to it anytime.',
-        tone: 'warning',
-      } as const;
-    }
-
-    return null;
-  }, [upgradeState]);
-
-  useEffect(() => {
-    if (
-      upgradeState !== 'success'
-      || !checkoutReference
-      || processedCheckoutSessionId === checkoutReference
-      || !profile
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    setProcessedCheckoutSessionId(checkoutReference);
-
-    const runSync = async () => {
-      try {
-        await syncCoupleCheckout(checkoutReference);
-        if (cancelled) return;
-
-        await refresh();
-        if (cancelled) return;
-
-        toast({
-          title: 'Gift Registry unlocked',
-          description: 'Your registry add-on is now active for this wedding workspace.',
-        });
-        navigate('/gift-registry?upgrade=success', { replace: true });
-      } catch (error: any) {
-        if (cancelled) return;
-        toast({
-          title: 'Payment completed but activation is still pending',
-          description: error?.message || 'The checkout succeeded, but we could not sync your Gift Registry access yet.',
-          variant: 'destructive',
-        });
-      }
-    };
-
-    void runSync();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [checkoutReference, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
+  const canAccessRegistry = Boolean(weddingId);
 
   useEffect(() => {
     if (!canAccessRegistry || !weddingId) {
@@ -226,64 +143,11 @@ export default function GiftRegistry() {
       totalEstimatedValue,
     };
   }, [items]);
-  const registryPrimaryAction = !decision.allowed
-    ? 'Unlock the gift registry add-on'
-    : items.length === 0
+  const registryPrimaryAction = items.length === 0
       ? 'Add the first gift'
       : stats.activeItems > 0
         ? 'Review needed gifts and share the list'
         : 'Review purchased gifts and add anything missing';
-
-  const handleCheckout = async () => {
-    if (!profile) return;
-
-    if (profile.role !== 'couple' && !(isSuperAdmin && rolePreview === 'couple')) {
-      toast({
-        title: 'Couple owners purchase wedding add-ons',
-        description: 'Open this page as the couple workspace owner to add Gift Registry to the wedding.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!weddingId) {
-      toast({
-        title: 'Create or join a wedding first',
-        description: 'Gift Registry attaches to a specific wedding workspace.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!addon.checkoutMonthlyLookupKey) {
-      toast({
-        title: 'Checkout is not configured',
-        description: 'This add-on does not have a checkout mapping configured yet.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setCheckoutLoading(true);
-    try {
-      await startCheckout({
-        audience: 'couple',
-        feature: 'gift_registry',
-        lookupKey: addon.checkoutMonthlyLookupKey,
-        cadence: 'monthly',
-        weddingId,
-        successPath: withCheckoutSessionId('/gift-registry?upgrade=success'),
-        cancelPath: '/gift-registry?intent=upgrade&upgrade=cancelled',
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Could not start checkout',
-        description: error?.message || 'There was a problem starting your payment session.',
-        variant: 'destructive',
-      });
-      setCheckoutLoading(false);
-    }
-  };
 
   const handleCreateItem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -411,38 +275,18 @@ export default function GiftRegistry() {
 
   return (
     <div className="space-y-6">
-      {statusMessage && (
-        <Card
-          className={`border ${
-            statusMessage.tone === 'success'
-              ? 'border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))]/60'
-              : 'border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))]/60'
-          }`}
-        >
-          <CardContent className="px-6 py-5">
-            <p className={`text-sm font-semibold uppercase tracking-[0.14em] ${statusMessage.tone === 'success' ? 'text-success' : 'text-warning'}`}>Registry status</p>
-            <h2 className="workspace-h2 mt-2">{statusMessage.title}</h2>
-            <p className="mt-2 text-sm leading-7 text-muted-foreground">{statusMessage.body}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {!canAccessRegistry && !loading && !isFocusedUpgradeFlow && (
-        <InlineUpgradePrompt decision={decision} />
-      )}
-
       {!canAccessRegistry ? (
         <div className="max-w-4xl">
           <Card className="border-primary/10 shadow-card">
             <CardHeader>
-              <CardTitle className="workspace-h2">Add Gift Registry to this wedding</CardTitle>
+              <CardTitle className="workspace-h2">Create your wedding workspace first</CardTitle>
               <CardDescription>
-                This add-on unlocks a dedicated registry space for gifts, tracking, and guest sharing.
+                Gift Registry is included at no extra cost and will be ready as soon as your wedding workspace exists.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="rounded-2xl border border-border/70 bg-muted/20 p-5">
-                <p className="text-sm font-medium text-foreground">What this add-on gives you</p>
+                <p className="text-sm font-medium text-foreground">What Gift Registry gives you</p>
                 <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
                   {registryHighlights.map((item) => (
                     <li key={item} className="flex gap-2">
@@ -451,16 +295,6 @@ export default function GiftRegistry() {
                     </li>
                   ))}
                 </ul>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button className="gap-2" onClick={() => void handleCheckout()} disabled={checkoutLoading}>
-                  {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Add Gift Registry to this wedding
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
-                </Button>
               </div>
             </CardContent>
           </Card>

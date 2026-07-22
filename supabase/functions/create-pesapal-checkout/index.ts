@@ -173,7 +173,7 @@ serve(async (req) => {
         membership.role === 'groom';
 
       if (!canManageWedding) {
-        return new Response(JSON.stringify({ error: 'Only the couple owners can purchase wedding plans and add-ons.' }), {
+        return new Response(JSON.stringify({ error: 'Only the couple owners can purchase the Collaborative plan.' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });

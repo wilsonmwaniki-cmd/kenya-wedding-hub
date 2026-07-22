@@ -36,7 +36,7 @@ describe("getEntitlementDecision", () => {
     window.localStorage.clear();
   });
 
-  it("keeps couple AI assistant behind Premium when there is no entitlement", () => {
+  it("keeps the couple AI assistant available on Intimate", () => {
     const decision = getEntitlementDecision("couple.ai_assistant", {
       profile: {
         role: "couple",
@@ -47,9 +47,8 @@ describe("getEntitlementDecision", () => {
       },
     });
 
-    expect(decision.allowed).toBe(false);
-    expect(decision.planName).toContain("Premium");
-    expect(decision.reasons).toContain("AI Wedding Assistant is part of Premium.");
+    expect(decision.allowed).toBe(true);
+    expect(decision.reasons).toHaveLength(0);
   });
 
   it("unlocks couple AI assistant when the wedding entitlement is active", () => {
@@ -111,5 +110,31 @@ describe("getEntitlementDecision", () => {
     });
 
     expect(decision.allowed).toBe(true);
+  });
+
+  it("allows approved and verified free vendors to receive inquiries", () => {
+    const decision = getEntitlementDecision("vendor.direct_leads", {
+      vendorListing: {
+        is_approved: true,
+        is_verified: true,
+        subscription_status: "inactive",
+      },
+    });
+
+    expect(decision.allowed).toBe(true);
+    expect(decision.reasons).toHaveLength(0);
+  });
+
+  it("keeps vendor analytics behind Professional", () => {
+    const decision = getEntitlementDecision("vendor.analytics", {
+      vendorListing: {
+        is_approved: true,
+        is_verified: true,
+        subscription_status: "inactive",
+      },
+    });
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.planName).toBe("Professional");
   });
 });

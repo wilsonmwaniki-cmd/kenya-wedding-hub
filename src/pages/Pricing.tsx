@@ -14,11 +14,8 @@ import {
   getAvailableCheckoutCadences,
   getDisplayPriceForCadence,
   getLookupKeyForCadence,
-  getProfessionalAddonDefinition,
-  professionalAddonEntitlementMap,
-  type CoupleAddonCode,
+  type CouplePlanTier,
   type CouplePlanCadence,
-  type ProfessionalAddonCode,
   type ProfessionalAudience,
   type ProfessionalPlanCadence,
   type PricingAudience,
@@ -26,12 +23,11 @@ import {
 } from '@/lib/pricingPlans';
 import {
   getAudiencePlanDefinition,
-  getCoupleAddonDefinitionWithContent,
   getCouplePlanDefinitionWithContent,
   getProfessionalPlanDefinitionWithContent,
   listCouplePlanDefinitions,
 } from '@/lib/pricingContent';
-import { getCheckoutReferenceFromSearchParams, startCheckout, syncProfessionalCheckout, withCheckoutSessionId } from '@/lib/billing';
+import { getCheckoutProviderFromSearchParams, getCheckoutReferenceFromSearchParams, startCheckout, syncProfessionalCheckout, withCheckoutSessionId } from '@/lib/billing';
 import BrandWordmark from '@/components/BrandWordmark';
 import PublicSiteFooter from '@/components/PublicSiteFooter';
 
@@ -53,10 +49,9 @@ const coupleCadenceLabels: Record<CouplePlanCadence, string> = {
   annual: 'Annual',
 };
 
-const coupleTierUpgradeCopy: Record<'free' | 'basic' | 'premium', string> = {
-  free: 'Perfect for smaller weddings, early planning, and couples who want one calm place to begin.',
-  basic: 'Best for weddings with more moving parts, more people involved, and a guest list that is growing quickly.',
-  premium: 'Built for large, multi-event, or high-coordination weddings that need sharper logistics and premium support.',
+const coupleTierUpgradeCopy: Record<CouplePlanTier, string> = {
+  free: 'Explore Zania and use the complete couple planning workspace without paying.',
+  collaborative: 'Upgrade when you are ready to work directly with your vendors and planner in Zania.',
 };
 
 const professionalPlanCopy: Record<ProfessionalAudience, {
@@ -70,14 +65,14 @@ const professionalPlanCopy: Record<ProfessionalAudience, {
     sectionTitle: 'For planners turning coordination into a repeatable system',
     sectionDescription: 'Join free, prove the workflow, then upgrade when Zania becomes part of how your business runs.',
     freeSummary: 'A clean entry into the Zania workflow for testing one live client workspace.',
-    premiumSummary: 'For serious planners who want reusable systems, stronger reporting, and smoother client operations.',
+    premiumSummary: 'For planners who want reusable systems, stronger reporting, and smoother client operations.',
     premiumValue: 'Run multiple weddings with more rhythm, tighter client delivery, and less manual follow-up.',
   },
   vendor: {
     sectionTitle: 'For vendors who want to be discovered and booked professionally',
-    sectionDescription: 'Start with a free listing, then upgrade for business tools, stronger visibility, and faster deal flow.',
+    sectionDescription: 'Start with a free verified presence, then upgrade when Zania becomes part of how your wider business runs.',
     freeSummary: 'A strong first step for getting visible inside Zania without friction.',
-    premiumSummary: 'For vendors who want both better operations and stronger high-intent discovery.',
+    premiumSummary: 'For vendors who want better operations across inquiries, bookings, documents, and delivery.',
     premiumValue: 'This is where Zania becomes your booking, quoting, invoicing, and contract workspace, not just your listing.',
   },
 };
@@ -98,9 +93,10 @@ export default function Pricing() {
   const successPath = searchParams.get('successPath');
   const cancelPath = searchParams.get('cancelPath');
   const upgradeState = searchParams.get('upgrade');
-  const professionalAddon = searchParams.get('professionalAddon');
   const professionalAudienceParam = searchParams.get('professionalAudience');
+  const professionalPlanParam = searchParams.get('professionalPlan');
   const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
+  const checkoutProvider = getCheckoutProviderFromSearchParams(searchParams);
   const [checkoutTarget, setCheckoutTarget] = useState<string | null>(null);
   const [processedProfessionalCheckout, setProcessedProfessionalCheckout] = useState<string | null>(null);
   const [selectedCadence, setSelectedCadence] = useState<Record<PricingAudience, PricingCheckoutCadence>>({
@@ -109,42 +105,31 @@ export default function Pricing() {
     planner: 'monthly',
     vendor: 'monthly',
   });
-  const [selectedCoupleCadence, setSelectedCoupleCadence] = useState<Record<'basic' | 'premium', CouplePlanCadence>>({
-    basic: 'annual',
-    premium: 'annual',
+  const [selectedCoupleCadence, setSelectedCoupleCadence] = useState<Record<'collaborative', CouplePlanCadence>>({
+    collaborative: 'annual',
   });
   const [selectedProfessionalCadence, setSelectedProfessionalCadence] = useState<Record<ProfessionalAudience, ProfessionalPlanCadence>>({
     planner: 'annual',
     vendor: 'annual',
   });
-  const [selectedProfessionalAddonAudience, setSelectedProfessionalAddonAudience] = useState<ProfessionalAudience>('planner');
   const couplePlanDefinitions = listCouplePlanDefinitions();
 
   const targetAudience = isPricingAudience(requestedAudience) ? requestedAudience : null;
   const targetPlan = targetAudience ? getAudiencePlanDefinition(targetAudience) : null;
   const highlightedFeature = formatEntitlementFeatureLabel(requestedFeature);
   const focusedCoupleTier =
-    requestedPlanCode === 'couple_basic' ? 'basic'
-      : requestedPlanCode === 'couple_premium' ? 'premium'
+    requestedPlanCode === 'couple_collaborative'
+      || requestedPlanCode === 'couple_basic'
+      || requestedPlanCode === 'couple_premium' ? 'collaborative'
         : null;
   const inferredCoupleTier =
     requestedFeature === 'couple.connect_vendors' || requestedFeature === 'couple.connect_planners'
-      ? 'basic'
-      : requestedFeature === 'couple.ai_assistant'
-        || requestedFeature === 'couple.calendar_sync'
-        || requestedFeature === 'couple.export_progress'
-        ? 'premium'
-        : null;
-  const focusedCoupleAddon =
-    requestedFeature === 'couple.gift_registry'
-      ? 'gift_registry_addon'
-      : requestedFeature === 'couple.guest_rsvp_management'
-        ? 'guest_rsvp_management_addon'
-        : null;
+      ? 'collaborative'
+      : null;
   const resolvedCoupleTier = focusedCoupleTier ?? inferredCoupleTier;
   const isFocusedUpgradeView =
     Boolean(targetAudience)
-    && Boolean(requestedPlanCode || requestedFeature || professionalAddon)
+    && Boolean(requestedPlanCode || requestedFeature)
     && upgradeState !== 'success'
     && upgradeState !== 'cancelled';
 
@@ -158,36 +143,15 @@ export default function Pricing() {
   }, [targetPlan?.audience]);
 
   useEffect(() => {
-    if (profile?.role === 'planner' && profile?.planner_type !== 'committee') {
-      setSelectedProfessionalAddonAudience('planner');
-      return;
-    }
-
-    if (profile?.role === 'vendor') {
-      setSelectedProfessionalAddonAudience('vendor');
-    }
-  }, [profile?.planner_type, profile?.role]);
-
-  useEffect(() => {
     const professionalAudience =
       professionalAudienceParam === 'planner' || professionalAudienceParam === 'vendor'
         ? professionalAudienceParam
         : null;
-    const supportedAddon = professionalAddon && (
-      professionalAddon === 'media_addon'
-      || professionalAddon === 'advertising_addon'
-      || professionalAddon === 'team_workspace_bundle_3'
-      || professionalAddon === 'team_workspace_bundle_5'
-      || professionalAddon === 'team_workspace_bundle_10'
-    )
-      ? professionalAddon
-      : null;
-
     if (
       upgradeState !== 'success'
       || !checkoutReference
       || !professionalAudience
-      || !supportedAddon
+      || professionalPlanParam !== 'premium'
       || processedProfessionalCheckout === checkoutReference
       || !user
     ) {
@@ -198,27 +162,23 @@ export default function Pricing() {
     setProcessedProfessionalCheckout(checkoutReference);
 
     const syncCheckout = async () => {
-      let data: { activatedFeatures: string[]; seatLimit: number | null } | null = null;
-
       try {
-        data = await syncProfessionalCheckout(checkoutReference, professionalAudience);
+        await syncProfessionalCheckout(checkoutReference, professionalAudience, checkoutProvider);
       } catch (error: any) {
         if (cancelled) return;
         toast({
           title: 'Payment completed but activation is still pending',
-          description: error?.message || 'The checkout succeeded, but we could not sync your professional add-on yet.',
+          description: error?.message || 'The checkout succeeded, but we could not sync your Professional plan yet.',
           variant: 'destructive',
         });
         return;
       }
 
-      const addonDefinition = getProfessionalAddonDefinition(supportedAddon as ProfessionalAddonCode);
-      const extraSeatMessage = data?.seatLimit ? ` Your team workspace now allows up to ${data.seatLimit} seats.` : '';
       toast({
-        title: `${addonDefinition.title} activated`,
-        description: `Your ${professionalAudience} workspace add-on is now active.${extraSeatMessage}`,
+        title: 'Professional activated',
+        description: `Your ${professionalAudience} Professional workspace is now active.`,
       });
-      navigate(`/pricing?upgrade=success&audience=${professionalAudience}`, { replace: true });
+      navigate(professionalAudience === 'planner' ? '/clients?upgrade=success' : '/vendor-dashboard?upgrade=success', { replace: true });
     };
 
     void syncCheckout();
@@ -227,11 +187,12 @@ export default function Pricing() {
       cancelled = true;
     };
   }, [
+    checkoutProvider,
     checkoutReference,
     navigate,
     processedProfessionalCheckout,
-    professionalAddon,
     professionalAudienceParam,
+    professionalPlanParam,
     toast,
     upgradeState,
     user,
@@ -333,7 +294,7 @@ export default function Pricing() {
     }
   };
 
-  const handleCouplePlanCheckout = async (tier: 'basic' | 'premium') => {
+  const handleCouplePlanCheckout = async (tier: 'collaborative') => {
     const plan = getCouplePlanDefinitionWithContent(tier);
     if (!plan) return;
 
@@ -370,7 +331,7 @@ export default function Pricing() {
     try {
       await startCheckout({
         audience: 'couple',
-        feature: tier === 'premium' ? 'ai_wedding_assistant' : 'wedding_collaboration',
+        feature: 'wedding_collaboration',
         lookupKey,
         cadence,
         weddingId,
@@ -387,90 +348,35 @@ export default function Pricing() {
     }
   };
 
-  const handleCoupleAddonCheckout = async (code: CoupleAddonCode) => {
-    const addon = getCoupleAddonDefinitionWithContent(code);
-    if (!addon || !addon.checkoutMonthlyLookupKey) return;
-
-    if (!user) {
-      navigate('/auth?mode=signup');
-      toast({
-        title: 'Sign in to continue',
-        description: 'We need your account before we can attach this add-on to your wedding workspace.',
-      });
-      return;
-    }
-
-    if (!weddingId) {
-      toast({
-        title: 'Create or join a wedding first',
-        description: 'Wedding add-ons attach to a specific wedding workspace. Create or join your wedding before checkout.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setCheckoutTarget(`addon-${code}`);
-    try {
-      await startCheckout({
-        audience: 'couple',
-        feature: code === 'guest_rsvp_management_addon' ? 'guest_rsvp_management' : 'gift_registry',
-        lookupKey: addon.checkoutMonthlyLookupKey,
-        cadence: 'monthly',
-        weddingId,
-        successPath: withCheckoutSessionId(
-          code === 'guest_rsvp_management_addon' ? '/guests?upgrade=success' : '/gift-registry?upgrade=success',
-        ),
-        cancelPath:
-          code === 'guest_rsvp_management_addon'
-            ? '/guests?intent=upgrade&upgrade=cancelled'
-            : '/gift-registry?intent=upgrade&upgrade=cancelled',
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Could not start checkout',
-        description: error?.message || 'There was a problem starting your payment session.',
-        variant: 'destructive',
-      });
-      setCheckoutTarget(null);
-    }
-  };
-
   const handleProfessionalPlanCheckout = async (audience: ProfessionalAudience) => {
     const cadence = selectedProfessionalCadence[audience];
-    setSelectedCadence((prev) => ({ ...prev, [audience]: cadence }));
-    await handleCheckout(audience);
-  };
-
-  const handleProfessionalAddonCheckout = async (
-    audience: ProfessionalAudience,
-    code: ProfessionalAddonCode,
-  ) => {
-    const addon = getProfessionalAddonDefinition(code);
-    if (!addon.checkoutMonthlyLookupKey) return;
+    const plan = getAudiencePlan(audience);
+    const lookupKey = getLookupKeyForCadence(plan, cadence);
+    if (!lookupKey) return;
 
     if (!user) {
       navigate('/auth?mode=signup');
       toast({
         title: 'Sign in to continue',
-        description: 'We need your account before we can attach this professional add-on to your workspace.',
+        description: 'We need your account before we can attach Professional access to your workspace.',
       });
       return;
     }
 
-    setCheckoutTarget(`professional-addon-${audience}-${code}`);
+    setCheckoutTarget(`audience-${audience}`);
     try {
       await startCheckout({
         audience,
-        feature: professionalAddonEntitlementMap[code],
-        lookupKey: addon.checkoutMonthlyLookupKey,
-        cadence: 'monthly',
-        successPath: `/pricing?upgrade=success&professionalAddon=${code}&professionalAudience=${audience}&checkout_session_id={CHECKOUT_SESSION_ID}`,
-        cancelPath: `/pricing?upgrade=cancelled&professionalAddon=${code}&professionalAudience=${audience}`,
+        feature: 'booking_management',
+        lookupKey,
+        cadence,
+        successPath: `/pricing?upgrade=success&professionalAudience=${audience}&professionalPlan=premium`,
+        cancelPath: `/pricing?upgrade=cancelled&audience=${audience}`,
       });
     } catch (error: any) {
       toast({
         title: 'Could not start checkout',
-        description: error?.message || 'There was a problem starting your payment session.',
+        description: error?.message || 'There was a problem starting your Professional payment session.',
         variant: 'destructive',
       });
       setCheckoutTarget(null);
@@ -485,51 +391,45 @@ export default function Pricing() {
   const compactComparisonRows = [
     {
       feature: 'Core planning workspace',
-      coupleFree: 'Tasks, budget, guests, vendor discovery',
-      coupleBasic: 'Everything in Free',
-      couplePremium: 'Everything in Basic',
+      coupleFree: 'All current couple planning tools',
+      coupleCollaborative: 'Everything in Intimate',
       professionalFree: 'Directory listing and profile',
       professionalPremium: 'Operational workspace tools',
     },
     {
       feature: 'Shared collaboration',
       coupleFree: 'Not included',
-      coupleBasic: 'Planner, vendor, family, and committee access',
-      couplePremium: 'More seats and deeper coordination',
-      professionalFree: 'Solo profile only',
+      coupleCollaborative: 'Planner and vendor collaboration',
+      professionalFree: 'Join couple-funded workspaces',
       professionalPremium: 'Manage client work in one place',
     },
     {
       feature: 'AI support',
-      coupleFree: 'Not included',
-      coupleBasic: 'Not included',
-      couplePremium: 'AI Wedding Assistant',
+      coupleFree: 'Included',
+      coupleCollaborative: 'Included',
       professionalFree: 'Not included',
-      professionalPremium: 'Not included',
+      professionalPremium: 'Included',
     },
     {
       feature: 'Vendor and planner coordination',
-      coupleFree: 'Vendor management only',
-      coupleBasic: 'Included',
-      couplePremium: 'Included',
-      professionalFree: 'Discovery only',
+      coupleFree: 'Discovery and private records',
+      coupleCollaborative: 'Shared workspace collaboration',
+      professionalFree: 'Invitations and inquiries',
       professionalPremium: 'Bookings and follow-through',
     },
     {
       feature: 'Bookings, invoices, contracts',
       coupleFree: 'Not included',
-      coupleBasic: 'Not included',
-      couplePremium: 'Not included',
+      coupleCollaborative: 'Not included',
       professionalFree: 'Not included',
       professionalPremium: 'Included',
     },
     {
       feature: 'Public trust and growth',
       coupleFree: 'Not included',
-      coupleBasic: 'Not included',
-      couplePremium: 'Not included',
+      coupleCollaborative: 'Not included',
       professionalFree: 'Verified listing eligibility',
-      professionalPremium: 'Visible ratings and stronger profile',
+      professionalPremium: 'Advanced portfolio and analytics',
     },
   ];
 
@@ -611,63 +511,6 @@ export default function Pricing() {
                   {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
                   {!isLoading && <ArrowRight className="h-4 w-4" />}
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-      );
-    }
-
-    if (targetAudience === 'couple' && focusedCoupleAddon) {
-      const addon = getCoupleAddonDefinitionWithContent(focusedCoupleAddon);
-      if (!addon) return null;
-
-      const isLoading = checkoutTarget === `addon-${addon.code}`;
-
-      return (
-        <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
-          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
-            <CardHeader className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="rounded-full px-3 py-1">{addon.title}</Badge>
-                {highlightedFeature ? (
-                  <Badge variant="outline" className="rounded-full px-3 py-1">
-                    For {highlightedFeature}
-                  </Badge>
-                ) : null}
-              </div>
-              <div>
-                <CardTitle className="marketing-h2">Add {addon.title}</CardTitle>
-                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
-                  {addon.supportCopy}
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
-                <div>
-                  <p className="marketing-h3">
-                    {addon.checkoutMonthlyLookupKey ? 'Paid add-on' : 'Contact sales'}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Add this only when you are ready to use it in a live wedding workflow.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  onClick={() => void handleCoupleAddonCheckout(addon.code)}
-                  className="gap-2"
-                  disabled={isLoading || !addon.checkoutMonthlyLookupKey}
-                >
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {user ? `Continue with ${addon.title}` : 'Sign in to continue'}
-                  {!isLoading && addon.checkoutMonthlyLookupKey ? <ArrowRight className="h-4 w-4" /> : null}
                 </Button>
                 <Button asChild variant="outline">
                   <Link to="/pricing?audience=couple">See all wedding pricing</Link>
@@ -879,17 +722,12 @@ export default function Pricing() {
                 <Badge variant="info" className="rounded-full px-3 py-1">
                   Free to start
                 </Badge>
-                <div className="semantic-surface-success mt-5 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium text-success">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Every new account starts with a 14-day full-access beta trial
-                </div>
                 <h1 className="marketing-h1 mt-8 max-w-[12ch] text-foreground">
-                  Start free. Upgrade when the wedding gets serious.
+                  Plan freely. Upgrade when you are ready to collaborate.
                 </h1>
                 <p className="mt-8 max-w-[36rem] text-base leading-8 text-muted-foreground sm:text-[17px]">
                   Zania gives couples, planners, and vendors one elegant workspace for weddings in Kenya and beyond.
-                  Begin free, build real momentum, and unlock advanced tools only when you need scale, visibility,
-                  or deeper automation.
+                  Couples can use the planning workspace for free, then move to Collaborative when vendors or a planner need to join them.
                 </p>
                 <p className="mt-5 max-w-[30rem] text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">
                   No clutter. No forced upgrade on day one. Just a better way to run weddings.
@@ -925,7 +763,7 @@ export default function Pricing() {
                   <div>
                     <CardTitle className="marketing-h3">How Zania grows with you</CardTitle>
                     <CardDescription className="mt-3 max-w-[30rem] text-sm leading-7 text-muted-foreground sm:text-base">
-                      You do not pay to understand Zania. You pay when the wedding, the workload, or the business value becomes meaningfully bigger.
+                      You do not pay to explore or plan your wedding. Couples pay when planning becomes collaborative.
                     </CardDescription>
                   </div>
                 </CardHeader>
@@ -933,19 +771,19 @@ export default function Pricing() {
                   <div className="rounded-[24px] border border-border/60 bg-background/70 p-5 sm:p-6">
                     <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Couples</p>
                     <p className="mt-3 max-w-[26rem] text-sm leading-7 text-muted-foreground">
-                      Free gets you a real planning workspace. Paid unlocks bigger guest counts, richer coordination, and deeper automation.
+                      Intimate includes the current planning workspace. Collaborative unlocks direct work with vendors and a planner.
                     </p>
                   </div>
                   <div className="rounded-[24px] border border-border/60 bg-background/70 p-5 sm:p-6">
                     <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Planners</p>
                     <p className="mt-3 max-w-[26rem] text-sm leading-7 text-muted-foreground">
-                      Free gets you in. Pro plans unlock multi-wedding operations, reusable systems, and sharper client delivery.
+                      Free includes discovery and couple-funded collaboration. Professional unlocks multi-wedding operations and reusable systems.
                     </p>
                   </div>
                   <div className="rounded-[24px] border border-primary/20 bg-primary/5 p-5 sm:p-6">
                     <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Vendors</p>
                     <p className="mt-3 max-w-[26rem] text-sm leading-7 text-muted-foreground">
-                      Free gets you listed. Premium unlocks quoting, contracts, invoices, receipts, analytics, and stronger visibility.
+                      Free includes discovery and couple-funded collaboration. Professional unlocks quoting, contracts, invoices, receipts, and analytics.
                     </p>
                   </div>
                 </CardContent>
@@ -1007,11 +845,11 @@ export default function Pricing() {
               </Badge>
               <h2 className="marketing-h2 mt-4">For couples who want one calm place to run the whole wedding</h2>
               <p className="mt-4 text-base leading-8 text-muted-foreground">
-                Start planning for free, then upgrade only when your guest count, events, or coordination needs grow.
+                Use Zania freely while planning as a couple. Upgrade only when you want vendors or a planner inside your workspace.
               </p>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-3">
+            <div className="grid gap-6 lg:grid-cols-2">
               {couplePlanDefinitions.map((plan) => {
                 const isPaidTier = plan.tier !== 'free';
                 const isLoading = checkoutTarget === `couple-${plan.tier}`;
@@ -1026,7 +864,7 @@ export default function Pricing() {
                   <Card
                     key={plan.tier}
                     className={`h-full rounded-[30px] border bg-card/95 shadow-card ${
-                      plan.tier === 'premium' ? 'border-primary/30 ring-2 ring-primary/10' : 'border-border/60'
+                      plan.tier === 'collaborative' ? 'border-primary/30 ring-2 ring-primary/10' : 'border-border/60'
                     }`}
                   >
                     <CardHeader className="space-y-5 px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
@@ -1035,8 +873,8 @@ export default function Pricing() {
                           <CardTitle className="marketing-h3">{plan.title}</CardTitle>
                           <CardDescription className="mt-2 text-base leading-7">{plan.tagline}</CardDescription>
                         </div>
-                        {plan.tier === 'premium' ? (
-                          <Badge className="rounded-full px-3 py-1">Most complete</Badge>
+                        {plan.tier === 'collaborative' ? (
+                          <Badge className="rounded-full px-3 py-1">Collaborate together</Badge>
                         ) : null}
                       </div>
                       <div>
@@ -1099,7 +937,7 @@ export default function Pricing() {
             </div>
 
             <p className="mt-6 max-w-[42rem] text-sm leading-7 text-muted-foreground">
-              Committee members and family members access Zania inside the couple&apos;s wedding plan, not through a separate public subscription.
+              There are no couple-facing add-ons. Existing planning tools stay included, and collaboration is the only upgrade decision.
             </p>
           </section>
 
@@ -1110,7 +948,7 @@ export default function Pricing() {
               </Badge>
               <h2 className="marketing-h2 mt-4">For planners and vendors building real wedding businesses</h2>
               <p className="mt-4 text-base leading-8 text-muted-foreground">
-                Both roles begin free. The upgrade path is simple: planners pay for operational depth, and vendors pay for both business tools and stronger visibility.
+                Both roles begin free and can join a paying couple's workspace. Upgrade only when Zania becomes part of how you run your wider business.
               </p>
             </div>
 
@@ -1201,7 +1039,7 @@ export default function Pricing() {
             <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
               <Card className="rounded-[30px] border-border/60 bg-card/95 shadow-card">
                 <CardHeader className="px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
-                  <CardTitle className="marketing-h3">Vendor Pro operations</CardTitle>
+                  <CardTitle className="marketing-h3">Professional operations</CardTitle>
                   <CardDescription className="text-base leading-7">
                     This is the layer that turns Zania from a listing into a working revenue system for vendors.
                   </CardDescription>
@@ -1227,19 +1065,18 @@ export default function Pricing() {
 
               <Card className="rounded-[30px] border-primary/20 bg-primary/5 shadow-card">
                 <CardHeader className="px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
-                  <CardTitle className="marketing-h3">Visibility that feels useful, not noisy</CardTitle>
+                  <CardTitle className="marketing-h3">Professional roadmap</CardTitle>
                   <CardDescription className="text-base leading-7">
-                    Zania does not sell random ad clutter. Vendors can pay for stronger placement only where they are genuinely relevant.
+                    New business capabilities will arrive inside Professional without creating a maze of optional add-ons.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4 px-6 pb-6 text-sm leading-7 text-foreground/85 sm:px-7 sm:pb-7">
                   <ul className="space-y-3">
                     {[
-                      'Featured in category or county',
-                      'Seasonal campaign boosts',
-                      'Planner-facing preferred placement',
-                      'Sponsored recommendations that stay clearly labelled',
-                      'Analytics on profile views, saves, and inquiries',
+                      'Advanced portfolio presentation',
+                      'Business performance analytics',
+                      'Team workspace tools (coming soon)',
+                      'New professional workflow features as they are released',
                     ].map((item) => (
                       <li key={item} className="flex items-start gap-2">
                         <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
@@ -1248,7 +1085,7 @@ export default function Pricing() {
                     ))}
                   </ul>
                   <p className="pt-2 text-sm font-medium uppercase tracking-[0.16em] text-primary">
-                    Visibility can be paid for. Trust cannot.
+                    Verification and public ratings remain available on Free. Trust cannot be bought.
                   </p>
                 </CardContent>
               </Card>
@@ -1260,30 +1097,28 @@ export default function Pricing() {
               <CardHeader className="px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
                 <CardTitle className="marketing-h3">Compare the paths</CardTitle>
                 <CardDescription className="text-base leading-7">
-                  The difference is simple: couples pay for complexity, planners pay for professional operations, and vendors pay for growth plus workflow tools.
+                  The difference is simple: couples pay for collaboration, while planners and vendors pay when Zania runs their wider business operations.
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-6 pb-6 sm:px-7 sm:pb-7">
                 <div className="overflow-x-auto">
-                  <div className="min-w-[920px]">
-                    <div className="grid grid-cols-[1.4fr_repeat(5,minmax(110px,1fr))] gap-2 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  <div className="min-w-[760px]">
+                    <div className="grid grid-cols-[1.4fr_repeat(4,minmax(120px,1fr))] gap-2 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                       <span>Feature</span>
-                      <span className="text-center">Couple Free</span>
-                      <span className="text-center">Couple Basic</span>
-                      <span className="text-center">Couple Premium</span>
+                      <span className="text-center">Couple Intimate</span>
+                      <span className="text-center">Couple Collaborative</span>
                       <span className="text-center">Pro Free</span>
-                      <span className="text-center">Pro Premium</span>
+                      <span className="text-center">Professional</span>
                     </div>
                     <div className="mt-4 space-y-3">
                       {compactComparisonRows.map((row) => (
                         <div
                           key={row.feature}
-                          className="grid grid-cols-[1.4fr_repeat(5,minmax(110px,1fr))] gap-2 rounded-2xl border border-border/50 bg-background/60 px-4 py-4"
+                          className="grid grid-cols-[1.4fr_repeat(4,minmax(120px,1fr))] gap-2 rounded-2xl border border-border/50 bg-background/60 px-4 py-4"
                         >
                           <p className="text-sm font-medium text-foreground">{row.feature}</p>
                           <p className="text-center text-sm text-muted-foreground">{row.coupleFree}</p>
-                          <p className="text-center text-sm text-muted-foreground">{row.coupleBasic}</p>
-                          <p className="text-center text-sm font-medium text-primary">{row.couplePremium}</p>
+                          <p className="text-center text-sm font-medium text-primary">{row.coupleCollaborative}</p>
                           <p className="text-center text-sm text-muted-foreground">{row.professionalFree}</p>
                           <p className="text-center text-sm font-medium text-primary">{row.professionalPremium}</p>
                         </div>
@@ -1349,15 +1184,15 @@ export default function Pricing() {
                 },
                 {
                   question: 'What usually triggers a couple upgrade?',
-                  answer: 'Guest volume, multi-event planning, deeper exports, and more advanced coordination needs.',
+                  answer: 'Inviting vendors or a planner to work directly inside the couple\'s wedding workspace.',
                 },
                 {
                   question: 'Why would a planner upgrade?',
-                  answer: 'To manage multiple weddings, reuse systems, add team members, and run a more professional client operation.',
+                  answer: 'To manage multiple weddings, reuse systems, access analytics, and run their wider client operation from Zania.',
                 },
                 {
                   question: 'Why would a vendor upgrade?',
-                  answer: 'To handle quotes, contracts, invoices, receipts, bookings, and visibility more professionally from one place.',
+                  answer: 'To handle quotes, contracts, invoices, receipts, bookings, and business analytics from one place.',
                 },
               ].map((item) => (
                 <Card key={item.question} className="rounded-[26px] border border-border/60 bg-card/95 shadow-card">

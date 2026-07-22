@@ -14,7 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, CheckCircle2, Clock, X, Instagram, Facebook, AlertTriangle, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
-import { vendorAccessMessage, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
+import { vendorAccessMessage, vendorCanCollaborate, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
@@ -259,7 +259,7 @@ export default function VendorSettings() {
   }, [profile?.primary_county, profile?.primary_town]);
 
   useEffect(() => {
-    if (!listing?.id || !vendorHasFullAccess(listing)) {
+    if (!listing?.id || !vendorCanCollaborate(listing)) {
       setReputationOverview(null);
       return;
     }

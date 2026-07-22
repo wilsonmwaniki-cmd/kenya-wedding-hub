@@ -338,7 +338,6 @@ interface AdminPricingCatalogConfig {
   couplePlans?: Record<string, AdminPricingPlanCard>;
   coupleAddons?: Record<string, AdminPricingAddonCard>;
   professionalPlans?: Record<string, Record<string, AdminPricingPlanCard>>;
-  professionalAddons?: Record<string, AdminPricingAddonCard>;
   audiencePlans?: Record<string, AdminAudiencePricingCard>;
   checkout?: {
     allowedLookupKeys?: string[];
@@ -363,29 +362,15 @@ const pricingAudienceCards = [
 ] as const;
 
 const pricingCouplePlanCards = [
-  { key: "free", label: "Couple Free" },
-  { key: "basic", label: "Couple Basic" },
-  { key: "premium", label: "Couple Premium" },
-] as const;
-
-const pricingCoupleAddonCards = [
-  { key: "gift_registry_addon", label: "Gift Registry Add-on" },
-  { key: "guest_rsvp_management_addon", label: "Guest RSVP Add-on" },
+  { key: "free", label: "Couple Intimate" },
+  { key: "collaborative", label: "Couple Collaborative" },
 ] as const;
 
 const pricingProfessionalPlanCards = [
   { audience: "planner", tier: "free", label: "Planner Free" },
-  { audience: "planner", tier: "premium", label: "Planner Premium" },
+  { audience: "planner", tier: "premium", label: "Planner Professional" },
   { audience: "vendor", tier: "free", label: "Vendor Free" },
-  { audience: "vendor", tier: "premium", label: "Vendor Premium" },
-] as const;
-
-const pricingProfessionalAddonCards = [
-  { key: "media_addon", label: "Media Add-on" },
-  { key: "advertising_addon", label: "Advertising Add-on" },
-  { key: "team_workspace_bundle_3", label: "Team Workspace 3" },
-  { key: "team_workspace_bundle_5", label: "Team Workspace 5" },
-  { key: "team_workspace_bundle_10", label: "Team Workspace 10" },
+  { audience: "vendor", tier: "premium", label: "Vendor Professional" },
 ] as const;
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -457,15 +442,7 @@ function asAdminPricingCatalogConfig(value: Json): AdminPricingCatalogConfig {
     );
   }
 
-  if (isObjectRecord(next.professionalAddons)) {
-    next.professionalAddons = Object.fromEntries(
-      Object.entries(next.professionalAddons).map(([key, addon]) => [
-        key,
-        isObjectRecord(addon) ? normalizeLookupFields(addon) : addon,
-      ]),
-    );
-  }
-
+  delete next.professionalAddons;
   return next as unknown as AdminPricingCatalogConfig;
 }
 
@@ -495,21 +472,11 @@ function deriveAllowedLookupKeys(config: AdminPricingCatalogConfig) {
     collect(plan.checkoutAnnualLookupKey);
   });
 
-  Object.values(config.coupleAddons ?? {}).forEach((addon) => {
-    collect(addon.checkoutMonthlyLookupKey);
-    collect(addon.checkoutAnnualLookupKey);
-  });
-
   Object.values(config.professionalPlans ?? {}).forEach((tiers) => {
     Object.values(tiers ?? {}).forEach((plan) => {
       collect(plan.checkoutMonthlyLookupKey);
       collect(plan.checkoutAnnualLookupKey);
     });
-  });
-
-  Object.values(config.professionalAddons ?? {}).forEach((addon) => {
-    collect(addon.checkoutMonthlyLookupKey);
-    collect(addon.checkoutAnnualLookupKey);
   });
 
   return Array.from(keys);
@@ -521,40 +488,14 @@ function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): Admin
     checkout: {
       ...(config.checkout ?? {}),
       allowedLookupKeys: deriveAllowedLookupKeys(config),
-      coupleCheckoutMap: {
-        ...((config.checkout?.coupleCheckoutMap ?? {}) as Record<string, unknown>),
-      },
-      professionalCheckoutMap: {
-        ...((config.checkout?.professionalCheckoutMap ?? {}) as Record<string, unknown>),
-      },
+      coupleCheckoutMap: {},
+      professionalCheckoutMap: {},
     },
   };
 
-  const coupleAudienceOneTimeKey = next.audiencePlans?.couple?.checkoutOneTimeLookupKey?.trim();
-  if (coupleAudienceOneTimeKey) {
-    next.checkout!.coupleCheckoutMap![coupleAudienceOneTimeKey] = {
-      bundleCode: "planning_pass_one_time",
-      bundleType: "wedding_pass",
-      features: [
-        "wedding_collaboration",
-        "planner_collaboration",
-        "vendor_collaboration",
-        "committee_collaboration",
-        "family_collaboration",
-        "timeline_management",
-        "ai_wedding_assistant",
-      ],
-      couplePlanTier: "premium",
-      seatLimits: { committee: 20, family: 20 },
-      syncLegacyPlanningPass: true,
-    };
-  }
-
   const couplePlans = [
-    { key: next.couplePlans?.basic?.checkoutMonthlyLookupKey, bundleCode: "couple_basic_monthly", tier: "basic", committee: 10, family: 10, cadence: "monthly" },
-    { key: next.couplePlans?.basic?.checkoutAnnualLookupKey, bundleCode: "couple_basic_annual", tier: "basic", committee: 10, family: 10, cadence: "annual" },
-    { key: next.couplePlans?.premium?.checkoutMonthlyLookupKey, bundleCode: "couple_premium_monthly", tier: "premium", committee: 20, family: 20, cadence: "monthly" },
-    { key: next.couplePlans?.premium?.checkoutAnnualLookupKey, bundleCode: "couple_premium_annual", tier: "premium", committee: 20, family: 20, cadence: "annual" },
+    { key: next.couplePlans?.collaborative?.checkoutMonthlyLookupKey, bundleCode: "couple_collaborative_monthly", cadence: "monthly" },
+    { key: next.couplePlans?.collaborative?.checkoutAnnualLookupKey, bundleCode: "couple_collaborative_annual", cadence: "annual" },
   ] as const;
 
   couplePlans.forEach((plan) => {
@@ -563,67 +504,25 @@ function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): Admin
     next.checkout!.coupleCheckoutMap![lookupKey] = {
       bundleCode: plan.bundleCode,
       bundleType: "wedding_pass",
-      features: plan.tier === "basic"
-        ? [
-            "wedding_collaboration",
-            "planner_collaboration",
-            "vendor_collaboration",
-            "committee_collaboration",
-            "family_collaboration",
-          ]
-        : [
-            "wedding_collaboration",
-            "planner_collaboration",
-            "vendor_collaboration",
-            "committee_collaboration",
-            "family_collaboration",
-            "timeline_management",
-            "ai_wedding_assistant",
-          ],
-      couplePlanTier: plan.tier,
-      seatLimits: { committee: plan.committee, family: plan.family },
-      syncLegacyPlanningPass: plan.tier === "premium",
+      features: ["wedding_collaboration", "planner_collaboration", "vendor_collaboration"],
+      couplePlanTier: "collaborative",
+      seatLimits: null,
+      syncLegacyPlanningPass: false,
     };
   });
 
-  const giftRegistryKey = next.coupleAddons?.gift_registry_addon?.checkoutMonthlyLookupKey?.trim();
-  if (giftRegistryKey) {
-    next.checkout!.coupleCheckoutMap![giftRegistryKey] = {
-      bundleCode: "gift_registry_addon",
-      bundleType: "registry_addon",
-      features: ["gift_registry"],
-      couplePlanTier: null,
-      seatLimits: null,
-      syncLegacyPlanningPass: false,
-    };
-  }
+  const professionalPlans = [
+    next.professionalPlans?.planner?.premium?.checkoutMonthlyLookupKey,
+    next.professionalPlans?.planner?.premium?.checkoutAnnualLookupKey,
+    next.professionalPlans?.vendor?.premium?.checkoutMonthlyLookupKey,
+    next.professionalPlans?.vendor?.premium?.checkoutAnnualLookupKey,
+  ];
 
-  const guestRsvpKey = next.coupleAddons?.guest_rsvp_management_addon?.checkoutMonthlyLookupKey?.trim();
-  if (guestRsvpKey) {
-    next.checkout!.coupleCheckoutMap![guestRsvpKey] = {
-      bundleCode: "guest_rsvp_management_addon",
-      bundleType: "guest_rsvp_addon",
-      features: ["guest_rsvp_management"],
-      couplePlanTier: null,
-      seatLimits: null,
-      syncLegacyPlanningPass: false,
-    };
-  }
-
-  const professionalAddons = [
-    { key: next.professionalAddons?.media_addon?.checkoutMonthlyLookupKey, feature: "media_portfolio", seatLimit: null },
-    { key: next.professionalAddons?.advertising_addon?.checkoutMonthlyLookupKey, feature: "advertising", seatLimit: null },
-    { key: next.professionalAddons?.team_workspace_bundle_3?.checkoutMonthlyLookupKey, feature: "team_workspace", seatLimit: 3 },
-    { key: next.professionalAddons?.team_workspace_bundle_5?.checkoutMonthlyLookupKey, feature: "team_workspace", seatLimit: 5 },
-    { key: next.professionalAddons?.team_workspace_bundle_10?.checkoutMonthlyLookupKey, feature: "team_workspace", seatLimit: 10 },
-  ] as const;
-
-  professionalAddons.forEach((addon) => {
-    const lookupKey = addon.key?.trim();
+  professionalPlans.forEach((key) => {
+    const lookupKey = key?.trim();
     if (!lookupKey) return;
     next.checkout!.professionalCheckoutMap![lookupKey] = {
-      features: [addon.feature],
-      ...(addon.seatLimit ? { seatLimit: addon.seatLimit } : {}),
+      features: ["booking_management", "invoicing", "contract_management", "media_portfolio"],
     };
   });
 
@@ -1354,26 +1253,6 @@ export default function AdminPortal() {
     });
   };
 
-  const updateCoupleAddonDraft = (
-    addonKey: string,
-    field: keyof AdminPricingAddonCard,
-    value: string | number | null,
-  ) => {
-    setPricingCatalogDraft((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        coupleAddons: {
-          ...(current.coupleAddons ?? {}),
-          [addonKey]: {
-            ...(current.coupleAddons?.[addonKey] ?? {}),
-            [field]: value,
-          },
-        },
-      };
-    });
-  };
-
   const updateProfessionalPlanDraft = (
     audienceKey: string,
     tierKey: string,
@@ -1392,26 +1271,6 @@ export default function AdminPortal() {
               ...(current.professionalPlans?.[audienceKey]?.[tierKey] ?? {}),
               [field]: value,
             },
-          },
-        },
-      };
-    });
-  };
-
-  const updateProfessionalAddonDraft = (
-    addonKey: string,
-    field: keyof AdminPricingAddonCard,
-    value: string | number | null,
-  ) => {
-    setPricingCatalogDraft((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        professionalAddons: {
-          ...(current.professionalAddons ?? {}),
-          [addonKey]: {
-            ...(current.professionalAddons?.[addonKey] ?? {}),
-            [field]: value,
           },
         },
       };
@@ -2600,64 +2459,6 @@ export default function AdminPortal() {
                         />
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-2">
-            {pricingCoupleAddonCards.map((item) => {
-              const addon = pricingCatalogDraft?.coupleAddons?.[item.key] ?? {};
-              return (
-                <Card key={item.key}>
-                  <CardHeader>
-                    <CardTitle className="text-base">{item.label}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Title</label>
-                      <Input value={addon.title ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "title", e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Monthly checkout key</label>
-                      <Input value={addon.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-sm font-medium">Support copy</label>
-                      <Textarea value={addon.supportCopy ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "supportCopy", e.target.value)} rows={4} />
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-
-            {pricingProfessionalAddonCards.map((item) => {
-              const addon = pricingCatalogDraft?.professionalAddons?.[item.key] ?? {};
-              return (
-                <Card key={item.key}>
-                  <CardHeader>
-                    <CardTitle className="text-base">{item.label}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Title</label>
-                      <Input value={addon.title ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "title", e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Monthly checkout key</label>
-                      <Input value={addon.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-sm font-medium">Support copy</label>
-                      <Textarea value={addon.supportCopy ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "supportCopy", e.target.value)} rows={4} />
-                    </div>
-                    {item.key.startsWith("team_workspace") ? (
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Seat limit</label>
-                        <Input type="number" value={addon.seatLimit ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "seatLimit", e.target.value ? Number(e.target.value) : null)} />
-                      </div>
-                    ) : null}
                   </CardContent>
                 </Card>
               );

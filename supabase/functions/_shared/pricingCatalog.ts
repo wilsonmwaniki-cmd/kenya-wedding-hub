@@ -1,6 +1,6 @@
-type CouplePlanTier = 'basic' | 'premium';
+type CouplePlanTier = 'collaborative';
 type CoupleBundleType = 'wedding_pass' | 'registry_addon' | 'guest_rsvp_addon';
-type ProfessionalFeatureKey = 'media_portfolio' | 'advertising' | 'team_workspace';
+type ProfessionalFeatureKey = 'booking_management' | 'invoicing' | 'contract_management' | 'media_portfolio';
 
 export type CoupleCheckoutMapping = {
   bundleCode: string;
@@ -44,222 +44,99 @@ const defaultPaymentCatalog: Record<string, PricingPaymentCatalogItem> = {
     cadence: 'one_time',
     feature: null,
   },
-  couple_basic_monthly: {
-    title: 'Couple Basic',
-    amountKes: 750,
+  couple_collaborative_monthly: {
+    title: 'Couple Collaborative',
+    amountKes: 1999,
     audience: 'couple',
     cadence: 'monthly',
     feature: null,
   },
-  couple_basic_annual: {
-    title: 'Couple Basic',
-    amountKes: 5000,
-    audience: 'couple',
-    cadence: 'annual',
-    feature: null,
-  },
-  couple_premium_monthly: {
-    title: 'Couple Premium',
-    amountKes: 2000,
-    audience: 'couple',
-    cadence: 'monthly',
-    feature: null,
-  },
-  couple_premium_annual: {
-    title: 'Couple Premium',
+  couple_collaborative_annual: {
+    title: 'Couple Collaborative',
     amountKes: 15000,
     audience: 'couple',
     cadence: 'annual',
     feature: null,
   },
-  gift_registry_addon: {
-    title: 'Gift Registry',
-    amountKes: null,
-    audience: 'couple',
-    cadence: 'monthly',
-    feature: 'gift_registry',
-  },
-  guest_rsvp_management_addon: {
-    title: 'Guest RSVP & Management',
-    amountKes: null,
-    audience: 'couple',
-    cadence: 'monthly',
-    feature: 'guest_rsvp_management',
-  },
-  media_addon: {
-    title: 'Media Add-on',
-    amountKes: null,
+  planner_premium_monthly: {
+    title: 'Planner Professional',
+    amountKes: 1000,
     audience: 'planner',
     cadence: 'monthly',
-    feature: 'media_portfolio',
+    feature: 'booking_management',
   },
-  advertising_addon: {
-    title: 'Advertising Add-on',
-    amountKes: null,
+  planner_premium_annual: {
+    title: 'Planner Professional',
+    amountKes: 9000,
     audience: 'planner',
-    cadence: 'monthly',
-    feature: 'advertising',
+    cadence: 'annual',
+    feature: 'booking_management',
   },
-  team_workspace_bundle_3: {
-    title: 'Team Workspace Bundle (3)',
-    amountKes: null,
-    audience: 'planner',
+  vendor_premium_monthly: {
+    title: 'Vendor Professional',
+    amountKes: 1000,
+    audience: 'vendor',
     cadence: 'monthly',
-    feature: 'team_workspace',
+    feature: 'booking_management',
   },
-  team_workspace_bundle_5: {
-    title: 'Team Workspace Bundle (5)',
-    amountKes: null,
-    audience: 'planner',
-    cadence: 'monthly',
-    feature: 'team_workspace',
-  },
-  team_workspace_bundle_10: {
-    title: 'Team Workspace Bundle (10)',
-    amountKes: null,
-    audience: 'planner',
-    cadence: 'monthly',
-    feature: 'team_workspace',
+  vendor_premium_annual: {
+    title: 'Vendor Professional',
+    amountKes: 9000,
+    audience: 'vendor',
+    cadence: 'annual',
+    feature: 'booking_management',
   },
 };
 
 const defaultAllowedLookupKeys = [
-  'planning_pass_one_time',
   'committee_pass_one_time',
-  'planner_pro_monthly',
-  'planner_pro_annual',
   'planner_premium_monthly',
   'planner_premium_annual',
-  'vendor_pro_monthly',
-  'vendor_pro_annual',
   'vendor_premium_monthly',
   'vendor_premium_annual',
-  'couple_basic_monthly',
-  'couple_basic_annual',
-  'couple_premium_monthly',
-  'couple_premium_annual',
-  'gift_registry_addon',
-  'guest_rsvp_management_addon',
-  'media_addon',
-  'advertising_addon',
-  'team_workspace_bundle_3',
-  'team_workspace_bundle_5',
-  'team_workspace_bundle_10',
+  'couple_collaborative_monthly',
+  'couple_collaborative_annual',
 ];
 
 const defaultCoupleCheckoutMap: Record<string, CoupleCheckoutMapping> = {
-  planning_pass_one_time: {
-    bundleCode: 'planning_pass_one_time',
+  couple_collaborative_monthly: {
+    bundleCode: 'couple_collaborative_monthly',
     bundleType: 'wedding_pass',
     features: [
       'wedding_collaboration',
       'planner_collaboration',
       'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-      'timeline_management',
-      'ai_wedding_assistant',
     ],
-    couplePlanTier: 'premium',
-    seatLimits: { committee: 20, family: 20 },
-    syncLegacyPlanningPass: true,
-  },
-  couple_basic_monthly: {
-    bundleCode: 'couple_basic_monthly',
-    bundleType: 'wedding_pass',
-    features: [
-      'wedding_collaboration',
-      'planner_collaboration',
-      'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-    ],
-    couplePlanTier: 'basic',
-    seatLimits: { committee: 10, family: 10 },
-    syncLegacyPlanningPass: false,
-  },
-  couple_basic_annual: {
-    bundleCode: 'couple_basic_annual',
-    bundleType: 'wedding_pass',
-    features: [
-      'wedding_collaboration',
-      'planner_collaboration',
-      'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-    ],
-    couplePlanTier: 'basic',
-    seatLimits: { committee: 10, family: 10 },
-    syncLegacyPlanningPass: false,
-  },
-  couple_premium_monthly: {
-    bundleCode: 'couple_premium_monthly',
-    bundleType: 'wedding_pass',
-    features: [
-      'wedding_collaboration',
-      'planner_collaboration',
-      'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-      'timeline_management',
-      'ai_wedding_assistant',
-    ],
-    couplePlanTier: 'premium',
-    seatLimits: { committee: 20, family: 20 },
-    syncLegacyPlanningPass: true,
-  },
-  couple_premium_annual: {
-    bundleCode: 'couple_premium_annual',
-    bundleType: 'wedding_pass',
-    features: [
-      'wedding_collaboration',
-      'planner_collaboration',
-      'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-      'timeline_management',
-      'ai_wedding_assistant',
-    ],
-    couplePlanTier: 'premium',
-    seatLimits: { committee: 20, family: 20 },
-    syncLegacyPlanningPass: true,
-  },
-  gift_registry_addon: {
-    bundleCode: 'gift_registry_addon',
-    bundleType: 'registry_addon',
-    features: ['gift_registry'],
-    couplePlanTier: null,
+    couplePlanTier: 'collaborative',
     seatLimits: null,
     syncLegacyPlanningPass: false,
   },
-  guest_rsvp_management_addon: {
-    bundleCode: 'guest_rsvp_management_addon',
-    bundleType: 'guest_rsvp_addon',
-    features: ['guest_rsvp_management'],
-    couplePlanTier: null,
+  couple_collaborative_annual: {
+    bundleCode: 'couple_collaborative_annual',
+    bundleType: 'wedding_pass',
+    features: [
+      'wedding_collaboration',
+      'planner_collaboration',
+      'vendor_collaboration',
+    ],
+    couplePlanTier: 'collaborative',
     seatLimits: null,
     syncLegacyPlanningPass: false,
   },
 };
 
 const defaultProfessionalCheckoutMap: Record<string, ProfessionalCheckoutMapping> = {
-  media_addon: {
-    features: ['media_portfolio'],
+  planner_premium_monthly: {
+    features: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
   },
-  advertising_addon: {
-    features: ['advertising'],
+  planner_premium_annual: {
+    features: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
   },
-  team_workspace_bundle_3: {
-    features: ['team_workspace'],
-    seatLimit: 3,
+  vendor_premium_monthly: {
+    features: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
   },
-  team_workspace_bundle_5: {
-    features: ['team_workspace'],
-    seatLimit: 5,
-  },
-  team_workspace_bundle_10: {
-    features: ['team_workspace'],
-    seatLimit: 10,
+  vendor_premium_annual: {
+    features: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
   },
 };
 
@@ -291,28 +168,6 @@ function mergeCoupleCheckoutMap(
     };
   }
 
-  if (!overrides) return merged;
-
-  for (const [lookupKey, override] of Object.entries(overrides)) {
-    if (merged[lookupKey] || !override.bundleCode || !override.bundleType) continue;
-    merged[lookupKey] = {
-      bundleCode: override.bundleCode,
-      bundleType: override.bundleType,
-      features: Array.isArray(override.features) ? override.features : [],
-      couplePlanTier: override.couplePlanTier ?? null,
-      seatLimits:
-        isObject(override.seatLimits)
-          && typeof override.seatLimits.committee === 'number'
-          && typeof override.seatLimits.family === 'number'
-          ? {
-              committee: override.seatLimits.committee,
-              family: override.seatLimits.family,
-            }
-          : null,
-      syncLegacyPlanningPass: override.syncLegacyPlanningPass === true,
-    };
-  }
-
   return merged;
 }
 
@@ -331,16 +186,6 @@ function mergeProfessionalCheckoutMap(
     };
   }
 
-  if (!overrides) return merged;
-
-  for (const [lookupKey, override] of Object.entries(overrides)) {
-    if (merged[lookupKey] || !Array.isArray(override.features)) continue;
-    merged[lookupKey] = {
-      features: override.features as ProfessionalFeatureKey[],
-      seatLimit: typeof override.seatLimit === 'number' ? override.seatLimit : undefined,
-    };
-  }
-
   return merged;
 }
 
@@ -350,8 +195,11 @@ function getCheckoutOverrides(config: unknown): PricingCatalogCheckoutOverrides 
 }
 
 function buildConfigFromOverrides(overrides?: PricingCatalogCheckoutOverrides | null): PricingCatalogCheckoutConfig {
-  const allowedLookupKeys = Array.isArray(overrides?.allowedLookupKeys)
-    ? [...new Set([...defaultAllowedLookupKeys, ...overrides.allowedLookupKeys.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)])]
+  const configuredKeys = Array.isArray(overrides?.allowedLookupKeys)
+    ? new Set(overrides.allowedLookupKeys.filter((value): value is string => typeof value === 'string'))
+    : null;
+  const allowedLookupKeys = configuredKeys
+    ? defaultAllowedLookupKeys.filter((lookupKey) => configuredKeys.has(lookupKey))
     : defaultAllowedLookupKeys;
 
   return {
@@ -455,11 +303,10 @@ export async function loadPricingPaymentCatalog(serviceClient: {
 
     const config = getObject(data?.config);
     const couplePlans = getObject(config?.couplePlans);
-    const coupleAddons = getObject(config?.coupleAddons);
     const professionalPlans = getObject(config?.professionalPlans);
-    const professionalAddons = getObject(config?.professionalAddons);
 
     for (const [tier, value] of Object.entries(couplePlans ?? {})) {
+      if (tier !== 'collaborative') continue;
       const plan = getObject(value);
       if (!plan) continue;
 
@@ -477,18 +324,6 @@ export async function loadPricingPaymentCatalog(serviceClient: {
         audience: 'couple',
         cadence: 'annual',
         feature: null,
-      });
-    }
-
-    for (const [code, value] of Object.entries(coupleAddons ?? {})) {
-      const addon = getObject(value);
-      if (!addon) continue;
-      upsertPaymentCatalogItem(catalog, getLookupKey(addon, 'checkoutMonthlyLookupKey', 'stripeMonthlyLookupKey'), {
-        title: getNullableString(addon.title) ?? code,
-        amountKes: getNullableNumber(addon.monthlyPriceKes),
-        audience: 'couple',
-        cadence: 'monthly',
-        feature: code,
       });
     }
 
@@ -516,19 +351,6 @@ export async function loadPricingPaymentCatalog(serviceClient: {
           feature: null,
         });
       }
-    }
-
-    for (const [code, value] of Object.entries(professionalAddons ?? {})) {
-      const addon = getObject(value);
-      if (!addon) continue;
-      const audience = getNullableString(addon.audience);
-      upsertPaymentCatalogItem(catalog, getLookupKey(addon, 'checkoutMonthlyLookupKey', 'stripeMonthlyLookupKey'), {
-        title: getNullableString(addon.title) ?? code,
-        amountKes: getNullableNumber(addon.monthlyPriceKes),
-        audience: audience === 'vendor' ? 'vendor' : 'planner',
-        cadence: 'monthly',
-        feature: code,
-      });
     }
 
     return catalog;

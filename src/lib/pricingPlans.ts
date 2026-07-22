@@ -1,18 +1,11 @@
 export type PricingAudience = 'couple' | 'committee' | 'planner' | 'vendor';
 export type AccessLevel = 'free' | 'paid';
 export type PricingCheckoutCadence = 'one_time' | 'monthly' | 'annual';
-export type CouplePlanTier = 'free' | 'basic' | 'premium';
+export type CouplePlanTier = 'free' | 'collaborative';
 export type CouplePlanCadence = 'monthly' | 'annual';
-export type CoupleAddonCode = 'gift_registry_addon' | 'guest_rsvp_management_addon';
 export type ProfessionalAudience = 'planner' | 'vendor';
 export type ProfessionalPlanTier = 'free' | 'premium';
 export type ProfessionalPlanCadence = 'monthly' | 'annual';
-export type ProfessionalAddonCode =
-  | 'media_addon'
-  | 'advertising_addon'
-  | 'team_workspace_bundle_3'
-  | 'team_workspace_bundle_5'
-  | 'team_workspace_bundle_10';
 
 export type CouplePlanDefinition = {
   tier: CouplePlanTier;
@@ -21,15 +14,6 @@ export type CouplePlanDefinition = {
   monthlyPriceKes: number | null;
   bundleType: 'couple_plan';
   bundleCode: string | null;
-  checkoutMonthlyLookupKey: string | null;
-  checkoutAnnualLookupKey: string | null;
-};
-
-export type CoupleAddonDefinition = {
-  code: CoupleAddonCode;
-  title: string;
-  bundleType: 'wedding_addon';
-  bundleCode: CoupleAddonCode;
   checkoutMonthlyLookupKey: string | null;
   checkoutAnnualLookupKey: string | null;
 };
@@ -44,17 +28,6 @@ export type ProfessionalPlanDefinition = {
   bundleCode: string | null;
   checkoutMonthlyLookupKey: string | null;
   checkoutAnnualLookupKey: string | null;
-};
-
-export type ProfessionalAddonDefinition = {
-  audience: ProfessionalAudience | 'shared';
-  code: ProfessionalAddonCode;
-  title: string;
-  bundleType: 'professional_addon';
-  bundleCode: ProfessionalAddonCode;
-  checkoutMonthlyLookupKey: string | null;
-  checkoutAnnualLookupKey: string | null;
-  seatLimit: number | null;
 };
 
 export type AudiencePlan = {
@@ -84,11 +57,9 @@ type LegacyLookupFields = {
 
 type PricingConfigOverrides = {
   couplePlans?: Partial<Record<CouplePlanTier, Partial<CouplePlanDefinition>>>;
-  coupleAddons?: Partial<Record<CoupleAddonCode, Partial<CoupleAddonDefinition>>>;
   professionalPlans?: Partial<
     Record<ProfessionalAudience, Partial<Record<ProfessionalPlanTier, Partial<ProfessionalPlanDefinition>>>>
   >;
-  professionalAddons?: Partial<Record<ProfessionalAddonCode, Partial<ProfessionalAddonDefinition>>>;
   audiencePlans?: Partial<Record<PricingAudience, Partial<AudiencePlan>>>;
 };
 
@@ -152,17 +123,6 @@ function normalizePricingConfigOverridesShape(raw: unknown): PricingConfigOverri
     ) as PricingConfigOverrides['couplePlans'];
   }
 
-  if (parsed.coupleAddons && typeof parsed.coupleAddons === 'object' && !Array.isArray(parsed.coupleAddons)) {
-    next.coupleAddons = Object.fromEntries(
-      Object.entries(parsed.coupleAddons as Record<string, unknown>).map(([key, value]) => [
-        key,
-        value && typeof value === 'object' && !Array.isArray(value)
-          ? normalizeLookupFields(value as Record<string, unknown>)
-          : {},
-      ]),
-    ) as PricingConfigOverrides['coupleAddons'];
-  }
-
   if (parsed.professionalPlans && typeof parsed.professionalPlans === 'object' && !Array.isArray(parsed.professionalPlans)) {
     next.professionalPlans = Object.fromEntries(
       Object.entries(parsed.professionalPlans as Record<string, unknown>).map(([audience, tiers]) => [
@@ -179,17 +139,6 @@ function normalizePricingConfigOverridesShape(raw: unknown): PricingConfigOverri
           : {},
       ]),
     ) as PricingConfigOverrides['professionalPlans'];
-  }
-
-  if (parsed.professionalAddons && typeof parsed.professionalAddons === 'object' && !Array.isArray(parsed.professionalAddons)) {
-    next.professionalAddons = Object.fromEntries(
-      Object.entries(parsed.professionalAddons as Record<string, unknown>).map(([key, value]) => [
-        key,
-        value && typeof value === 'object' && !Array.isArray(value)
-          ? normalizeLookupFields(value as Record<string, unknown>)
-          : {},
-      ]),
-    ) as PricingConfigOverrides['professionalAddons'];
   }
 
   if (parsed.audiencePlans && typeof parsed.audiencePlans === 'object' && !Array.isArray(parsed.audiencePlans)) {
@@ -220,10 +169,6 @@ function mergePricingConfigOverrides(
       ...(base.couplePlans ?? {}),
       ...(override.couplePlans ?? {}),
     },
-    coupleAddons: {
-      ...(base.coupleAddons ?? {}),
-      ...(override.coupleAddons ?? {}),
-    },
     professionalPlans: {
       planner: {
         ...(base.professionalPlans?.planner ?? {}),
@@ -233,10 +178,6 @@ function mergePricingConfigOverrides(
         ...(base.professionalPlans?.vendor ?? {}),
         ...(override.professionalPlans?.vendor ?? {}),
       },
-    },
-    professionalAddons: {
-      ...(base.professionalAddons ?? {}),
-      ...(override.professionalAddons ?? {}),
     },
     audiencePlans: {
       ...(base.audiencePlans ?? {}),
@@ -250,7 +191,7 @@ const pricingConfigOverrides = parsePricingConfigOverrides();
 const defaultCouplePlanDefinitions: CouplePlanDefinition[] = [
   {
     tier: 'free',
-    title: 'Free',
+    title: 'Intimate',
     annualPriceKes: null,
     monthlyPriceKes: null,
     bundleType: 'couple_plan',
@@ -259,43 +200,14 @@ const defaultCouplePlanDefinitions: CouplePlanDefinition[] = [
     checkoutAnnualLookupKey: null,
   },
   {
-    tier: 'basic',
-    title: 'Basic',
-    annualPriceKes: 5000,
-    monthlyPriceKes: 750,
-    bundleType: 'couple_plan',
-    bundleCode: 'couple_basic_annual',
-    checkoutMonthlyLookupKey: 'couple_basic_monthly',
-    checkoutAnnualLookupKey: 'couple_basic_annual',
-  },
-  {
-    tier: 'premium',
-    title: 'Premium',
+    tier: 'collaborative',
+    title: 'Collaborative',
     annualPriceKes: 15000,
-    monthlyPriceKes: 2000,
+    monthlyPriceKes: 1999,
     bundleType: 'couple_plan',
-    bundleCode: 'couple_premium_annual',
-    checkoutMonthlyLookupKey: 'couple_premium_monthly',
-    checkoutAnnualLookupKey: 'couple_premium_annual',
-  },
-];
-
-const defaultCoupleAddonDefinitions: CoupleAddonDefinition[] = [
-  {
-    code: 'gift_registry_addon',
-    title: 'Gift Registry',
-    bundleType: 'wedding_addon',
-    bundleCode: 'gift_registry_addon',
-    checkoutMonthlyLookupKey: 'gift_registry_addon',
-    checkoutAnnualLookupKey: null,
-  },
-  {
-    code: 'guest_rsvp_management_addon',
-    title: 'Guest RSVP & Management',
-    bundleType: 'wedding_addon',
-    bundleCode: 'guest_rsvp_management_addon',
-    checkoutMonthlyLookupKey: 'guest_rsvp_management_addon',
-    checkoutAnnualLookupKey: null,
+    bundleCode: 'couple_collaborative_annual',
+    checkoutMonthlyLookupKey: 'couple_collaborative_monthly',
+    checkoutAnnualLookupKey: 'couple_collaborative_annual',
   },
 ];
 
@@ -314,33 +226,16 @@ export const coupleEntitlementKeys = [
 export type CoupleEntitlementKey = (typeof coupleEntitlementKeys)[number];
 
 export const couplePlanEntitlementMap: Record<Exclude<CouplePlanTier, 'free'>, CoupleEntitlementKey[]> = {
-  basic: [
+  collaborative: [
     'wedding_collaboration',
     'planner_collaboration',
     'vendor_collaboration',
-    'committee_collaboration',
-    'family_collaboration',
-  ],
-  premium: [
-    'wedding_collaboration',
-    'planner_collaboration',
-    'vendor_collaboration',
-    'committee_collaboration',
-    'family_collaboration',
-    'timeline_management',
-    'ai_wedding_assistant',
   ],
 };
 
 export const couplePlanSeatLimits: Record<CouplePlanTier, { committee: number; family: number }> = {
   free: { committee: 0, family: 0 },
-  basic: { committee: 10, family: 10 },
-  premium: { committee: 20, family: 20 },
-};
-
-export const coupleAddonEntitlementMap: Record<CoupleAddonCode, CoupleEntitlementKey> = {
-  gift_registry_addon: 'gift_registry',
-  guest_rsvp_management_addon: 'guest_rsvp_management',
+  collaborative: { committee: 20, family: 20 },
 };
 
 export const professionalEntitlementKeys = [
@@ -372,7 +267,7 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
   {
     audience: 'planner',
     tier: 'premium',
-    title: 'Premium',
+    title: 'Professional',
     annualPriceKes: 9000,
     monthlyPriceKes: 1000,
     bundleType: 'professional_plan',
@@ -394,7 +289,7 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
   {
     audience: 'vendor',
     tier: 'premium',
-    title: 'Premium',
+    title: 'Professional',
     annualPriceKes: 9000,
     monthlyPriceKes: 1000,
     bundleType: 'professional_plan',
@@ -404,92 +299,25 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
   },
 ];
 
-const defaultProfessionalAddonDefinitions: ProfessionalAddonDefinition[] = [
-  {
-    audience: 'shared',
-    code: 'media_addon',
-    title: 'Media',
-    bundleType: 'professional_addon',
-    bundleCode: 'media_addon',
-    checkoutMonthlyLookupKey: 'media_addon',
-    checkoutAnnualLookupKey: null,
-    seatLimit: null,
-  },
-  {
-    audience: 'shared',
-    code: 'advertising_addon',
-    title: 'Advertising',
-    bundleType: 'professional_addon',
-    bundleCode: 'advertising_addon',
-    checkoutMonthlyLookupKey: 'advertising_addon',
-    checkoutAnnualLookupKey: null,
-    seatLimit: null,
-  },
-  {
-    audience: 'shared',
-    code: 'team_workspace_bundle_3',
-    title: 'Team Workspace',
-    bundleType: 'professional_addon',
-    bundleCode: 'team_workspace_bundle_3',
-    checkoutMonthlyLookupKey: 'team_workspace_bundle_3',
-    checkoutAnnualLookupKey: null,
-    seatLimit: 3,
-  },
-  {
-    audience: 'shared',
-    code: 'team_workspace_bundle_5',
-    title: 'Team Workspace',
-    bundleType: 'professional_addon',
-    bundleCode: 'team_workspace_bundle_5',
-    checkoutMonthlyLookupKey: 'team_workspace_bundle_5',
-    checkoutAnnualLookupKey: null,
-    seatLimit: 5,
-  },
-  {
-    audience: 'shared',
-    code: 'team_workspace_bundle_10',
-    title: 'Team Workspace',
-    bundleType: 'professional_addon',
-    bundleCode: 'team_workspace_bundle_10',
-    checkoutMonthlyLookupKey: 'team_workspace_bundle_10',
-    checkoutAnnualLookupKey: null,
-    seatLimit: 10,
-  },
-];
-
 export const professionalPlanEntitlementMap: Record<Exclude<ProfessionalPlanTier, 'free'>, ProfessionalEntitlementKey[]> = {
-  premium: ['directory_listing', 'booking_management', 'invoicing', 'contract_management', 'public_reputation'],
-};
-
-export const professionalAddonEntitlementMap: Record<ProfessionalAddonCode, ProfessionalEntitlementKey> = {
-  media_addon: 'media_portfolio',
-  advertising_addon: 'advertising',
-  team_workspace_bundle_3: 'team_workspace',
-  team_workspace_bundle_5: 'team_workspace',
-  team_workspace_bundle_10: 'team_workspace',
-};
-
-export const professionalAddonSeatLimits: Partial<Record<ProfessionalAddonCode, number>> = {
-  team_workspace_bundle_3: 3,
-  team_workspace_bundle_5: 5,
-  team_workspace_bundle_10: 10,
+  premium: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
 };
 
 const defaultAudiencePlans: AudiencePlan[] = [
   {
     audience: 'couple',
     title: 'Couples',
-    freeTierName: 'Explore',
-    paidTierName: 'Wedding Plan',
-    billingCadence: 'one_time',
-    displayOneTimePriceKes: 15000,
-    displayMonthlyPriceKes: null,
-    displayAnnualPriceKes: null,
-    entitlementCode: 'planning_pass',
-    billingProductKey: 'planning_pass',
-    checkoutMonthlyLookupKey: null,
-    checkoutAnnualLookupKey: null,
-    checkoutOneTimeLookupKey: 'planning_pass_one_time',
+    freeTierName: 'Intimate',
+    paidTierName: 'Collaborative',
+    billingCadence: 'monthly_or_annual',
+    displayOneTimePriceKes: null,
+    displayMonthlyPriceKes: 1999,
+    displayAnnualPriceKes: 15000,
+    entitlementCode: 'couple_collaborative',
+    billingProductKey: 'couple_collaborative',
+    checkoutMonthlyLookupKey: 'couple_collaborative_monthly',
+    checkoutAnnualLookupKey: 'couple_collaborative_annual',
+    checkoutOneTimeLookupKey: null,
     successPath: '/budget?upgrade=success',
     cancelPath: '/pricing?upgrade=cancelled',
   },
@@ -514,7 +342,7 @@ const defaultAudiencePlans: AudiencePlan[] = [
     audience: 'planner',
     title: 'Professional Planners',
     freeTierName: 'Free',
-    paidTierName: 'Premium',
+    paidTierName: 'Professional',
     billingCadence: 'monthly_or_annual',
     displayOneTimePriceKes: null,
     displayMonthlyPriceKes: 1000,
@@ -524,14 +352,14 @@ const defaultAudiencePlans: AudiencePlan[] = [
     checkoutMonthlyLookupKey: 'planner_premium_monthly',
     checkoutAnnualLookupKey: 'planner_premium_annual',
     checkoutOneTimeLookupKey: null,
-    successPath: '/clients?upgrade=success',
+    successPath: '/pricing?upgrade=success&professionalAudience=planner&professionalPlan=premium',
     cancelPath: '/pricing?upgrade=cancelled',
   },
   {
     audience: 'vendor',
     title: 'Vendors',
     freeTierName: 'Free',
-    paidTierName: 'Premium',
+    paidTierName: 'Professional',
     billingCadence: 'monthly_or_annual',
     displayOneTimePriceKes: null,
     displayMonthlyPriceKes: 1000,
@@ -541,7 +369,7 @@ const defaultAudiencePlans: AudiencePlan[] = [
     checkoutMonthlyLookupKey: 'vendor_premium_monthly',
     checkoutAnnualLookupKey: 'vendor_premium_annual',
     checkoutOneTimeLookupKey: null,
-    successPath: '/vendor-dashboard?upgrade=success',
+    successPath: '/pricing?upgrade=success&professionalAudience=vendor&professionalPlan=premium',
     cancelPath: '/pricing?upgrade=cancelled',
   },
 ];
@@ -549,12 +377,8 @@ const defaultAudiencePlans: AudiencePlan[] = [
 function buildResolvedPricingCatalog(overrides: PricingConfigOverrides) {
   return {
     couplePlans: defaultCouplePlanDefinitions.map((plan) => applyOverride(plan, overrides.couplePlans?.[plan.tier])),
-    coupleAddons: defaultCoupleAddonDefinitions.map((addon) => applyOverride(addon, overrides.coupleAddons?.[addon.code])),
     professionalPlans: defaultProfessionalPlanDefinitions.map((plan) =>
       applyOverride(plan, overrides.professionalPlans?.[plan.audience]?.[plan.tier]),
-    ),
-    professionalAddons: defaultProfessionalAddonDefinitions.map((addon) =>
-      applyOverride(addon, overrides.professionalAddons?.[addon.code]),
     ),
     audiencePlans: defaultAudiencePlans.map((plan) => applyOverride(plan, overrides.audiencePlans?.[plan.audience])),
   };
@@ -567,18 +391,14 @@ function replaceArrayContents<T>(target: T[], next: T[]) {
 function applyPricingConfig(overrides: PricingConfigOverrides) {
   const resolved = buildResolvedPricingCatalog(overrides);
   replaceArrayContents(couplePlanDefinitions, resolved.couplePlans);
-  replaceArrayContents(coupleAddonDefinitions, resolved.coupleAddons);
   replaceArrayContents(professionalPlanDefinitions, resolved.professionalPlans);
-  replaceArrayContents(professionalAddonDefinitions, resolved.professionalAddons);
   replaceArrayContents(audiencePlans, resolved.audiencePlans);
 }
 
 const initialResolvedPricingCatalog = buildResolvedPricingCatalog(pricingConfigOverrides);
 
 export const couplePlanDefinitions: CouplePlanDefinition[] = [...initialResolvedPricingCatalog.couplePlans];
-export const coupleAddonDefinitions: CoupleAddonDefinition[] = [...initialResolvedPricingCatalog.coupleAddons];
 export const professionalPlanDefinitions: ProfessionalPlanDefinition[] = [...initialResolvedPricingCatalog.professionalPlans];
-export const professionalAddonDefinitions: ProfessionalAddonDefinition[] = [...initialResolvedPricingCatalog.professionalAddons];
 export const audiencePlans: AudiencePlan[] = [...initialResolvedPricingCatalog.audiencePlans];
 
 export function hydratePricingCatalog(overrides: PricingConfigOverrides | null | undefined) {
@@ -609,16 +429,8 @@ export function getCouplePlanDefinition(tier: CouplePlanTier) {
   return couplePlanDefinitions.find((plan) => plan.tier === tier)!;
 }
 
-export function getCoupleAddonDefinition(code: CoupleAddonCode) {
-  return coupleAddonDefinitions.find((addon) => addon.code === code)!;
-}
-
 export function getProfessionalPlanDefinition(audience: ProfessionalAudience, tier: ProfessionalPlanTier) {
   return professionalPlanDefinitions.find((plan) => plan.audience === audience && plan.tier === tier)!;
-}
-
-export function getProfessionalAddonDefinition(code: ProfessionalAddonCode) {
-  return professionalAddonDefinitions.find((addon) => addon.code === code)!;
 }
 
 export function getLookupKeyForCadence(

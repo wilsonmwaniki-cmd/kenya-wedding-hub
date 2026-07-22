@@ -15,17 +15,23 @@ type StartCheckoutArgs = {
 type CheckoutResponse = {
   url: string;
   reference: string;
-  provider?: 'pesapal';
+  provider?: PaymentProvider;
   sessionId?: string;
   orderTrackingId?: string;
 };
+
+export type PaymentProvider = 'pesapal' | 'paystack';
+
+export function getConfiguredPaymentProvider(): PaymentProvider {
+  return import.meta.env.VITE_BILLING_PROVIDER === 'paystack' ? 'paystack' : 'pesapal';
+}
 
 export type CoupleCheckoutSyncResponse = {
   weddingId: string;
   bundleCode: string;
   bundleType: string;
   activatedFeatures: string[];
-  couplePlanTier: 'free' | 'basic' | 'premium' | null;
+  couplePlanTier: 'free' | 'collaborative' | null;
   seatLimits: {
     committee: number;
     family: number;
@@ -39,7 +45,17 @@ export function withCheckoutSessionId(successPath: string) {
 }
 
 export function getCheckoutReferenceFromSearchParams(searchParams: URLSearchParams) {
-  return searchParams.get('OrderTrackingId') || searchParams.get('checkout_session_id');
+  return searchParams.get('reference')
+    || searchParams.get('trxref')
+    || searchParams.get('OrderTrackingId')
+    || searchParams.get('checkout_session_id');
+}
+
+export function getCheckoutProviderFromSearchParams(searchParams: URLSearchParams): PaymentProvider {
+  const provider = searchParams.get('payment_provider');
+  return provider === 'paystack' || provider === 'pesapal'
+    ? provider
+    : getConfiguredPaymentProvider();
 }
 
 export async function startCheckout({
@@ -54,8 +70,9 @@ export async function startCheckout({
   const origin = window.location.origin;
   const successUrl = new URL(successPath, 'https://zania.local');
   successUrl.searchParams.delete('checkout_session_id');
+  const provider = getConfiguredPaymentProvider();
 
-  const { data, error } = await supabase.functions.invoke<CheckoutResponse>('create-pesapal-checkout', {
+  const { data, error } = await supabase.functions.invoke<CheckoutResponse>(`create-${provider}-checkout`, {
     body: {
       audience,
       feature,
@@ -79,9 +96,9 @@ export async function startCheckout({
   window.location.assign(data.url);
 }
 
-export async function syncCoupleCheckout(reference: string) {
-  const { data, error } = await supabase.functions.invoke<CoupleCheckoutSyncResponse>('sync-pesapal-couple-checkout', {
-    body: { orderTrackingId: reference },
+export async function syncCoupleCheckout(reference: string, provider: PaymentProvider = getConfiguredPaymentProvider()) {
+  const { data, error } = await supabase.functions.invoke<CoupleCheckoutSyncResponse>(`sync-${provider}-couple-checkout`, {
+    body: provider === 'paystack' ? { reference } : { orderTrackingId: reference },
   });
 
   if (error) {
@@ -99,12 +116,13 @@ export async function syncCoupleCheckout(reference: string) {
 export async function syncProfessionalCheckout(
   reference: string,
   audience: Extract<PricingAudience, 'planner' | 'vendor'>,
+  provider: PaymentProvider = getConfiguredPaymentProvider(),
 ) {
   const { data, error } = await supabase.functions.invoke<{
     activatedFeatures: string[];
     seatLimit: number | null;
-  }>('sync-pesapal-professional-checkout', {
-    body: { orderTrackingId: reference, audience },
+  }>(`sync-${provider}-professional-checkout`, {
+    body: provider === 'paystack' ? { reference, audience } : { orderTrackingId: reference, audience },
   });
 
   if (error) {

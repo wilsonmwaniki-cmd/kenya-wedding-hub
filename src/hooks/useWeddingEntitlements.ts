@@ -11,7 +11,7 @@ type WeddingEntitlementsState = {
   loading: boolean;
 };
 
-const BASIC_COLLABORATION_KEYS: CoupleEntitlementKey[] = [
+const COLLABORATION_KEYS: CoupleEntitlementKey[] = [
   'wedding_collaboration',
   'planner_collaboration',
   'vendor_collaboration',
@@ -20,8 +20,7 @@ const BASIC_COLLABORATION_KEYS: CoupleEntitlementKey[] = [
 ];
 
 function inferCouplePlanTier(entitlements: Partial<Record<CoupleEntitlementKey, boolean>>): CouplePlanTier {
-  if (entitlements.ai_wedding_assistant || entitlements.timeline_management) return 'premium';
-  if (BASIC_COLLABORATION_KEYS.some((key) => entitlements[key])) return 'basic';
+  if (COLLABORATION_KEYS.some((key) => entitlements[key])) return 'collaborative';
   return 'free';
 }
 

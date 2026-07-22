@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
-import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,13 +19,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import GuestInsights from '@/components/guests/GuestInsights';
 import InfoTip from '@/components/InfoTip';
-import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
-import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
-import { getCheckoutReferenceFromSearchParams, startCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormFieldSuccess, FormSubmitError } from '@/components/FormFeedback';
@@ -151,10 +147,9 @@ async function loadGuestsWorkspace(dataOrFilter: string): Promise<Guest[]> {
 export default function Guests() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
-  const { weddingId, entitlements, couplePlanTier, loading: entitlementsLoading, refresh } = useWeddingEntitlements();
+  const { weddingId } = useWeddingEntitlements();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const prefersReducedMotion = useReducedMotion();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
@@ -189,9 +184,6 @@ export default function Guests() {
   const [showPreview, setShowPreview] = useState(false);
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState({ sent: 0, failed: 0, total: 0 });
-  const [upgradePromptOpen, setUpgradePromptOpen] = useState(false);
-  const [guestAddonCheckoutLoading, setGuestAddonCheckoutLoading] = useState(false);
-  const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
   const [savingGuest, setSavingGuest] = useState(false);
   const [guestAdded, setGuestAdded] = useState(false);
   const guestSuccessTimerRef = useRef<number | null>(null);
@@ -483,117 +475,7 @@ export default function Guests() {
     setSavingGuestId(null);
   };
 
-  const guestRsvpDecision = getEntitlementDecision('couple.guest_rsvp_management', {
-    profile,
-    bypass: isSuperAdmin && rolePreview === 'couple',
-    weddingEntitlements: entitlements,
-    couplePlanTier,
-  });
-
-  const requireGuestRsvpManagement = () => {
-    if (guestRsvpDecision.allowed) return true;
-    setUpgradePromptOpen(true);
-    return false;
-  };
-
-  const guestAddon = getCoupleAddonDefinition('guest_rsvp_management_addon');
-  const isFocusedGuestUpgrade = searchParams.get('intent') === 'upgrade';
-  const guestUpgradeState = searchParams.get('upgrade');
-  const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
-
-  useEffect(() => {
-    if (
-      guestUpgradeState !== 'success'
-      || !checkoutReference
-      || processedCheckoutSessionId === checkoutReference
-      || !profile
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    setProcessedCheckoutSessionId(checkoutReference);
-
-    const runSync = async () => {
-      try {
-        await syncCoupleCheckout(checkoutReference);
-        if (cancelled) return;
-
-        await refresh();
-        if (cancelled) return;
-
-        toast({
-          title: 'RSVP & Guest Management unlocked',
-          description: 'Your wedding can now collect RSVPs and manage guest coordination in one flow.',
-        });
-        navigate('/guests?upgrade=success', { replace: true });
-      } catch (error: any) {
-        if (cancelled) return;
-        toast({
-          title: 'Payment completed but activation is still pending',
-          description: error?.message || 'The checkout succeeded, but we could not sync RSVP & Guest Management yet.',
-          variant: 'destructive',
-        });
-      }
-    };
-
-    void runSync();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [checkoutReference, guestUpgradeState, navigate, processedCheckoutSessionId, profile, refresh, toast]);
-
-  const handleGuestAddonCheckout = async () => {
-    if (!profile) return;
-
-    if (profile.role !== 'couple' && !(isSuperAdmin && rolePreview === 'couple')) {
-      toast({
-        title: 'Couple owners purchase wedding add-ons',
-        description: 'Open this page as the couple workspace owner to add RSVP & Guest Management.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!weddingId) {
-      toast({
-        title: 'Create or join a wedding first',
-        description: 'This add-on attaches to a specific wedding workspace.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!guestAddon.checkoutMonthlyLookupKey) {
-      toast({
-        title: 'Checkout is not configured',
-        description: 'This add-on does not have a checkout mapping configured yet.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setGuestAddonCheckoutLoading(true);
-    try {
-      await startCheckout({
-        audience: 'couple',
-        feature: 'guest_rsvp_management',
-        lookupKey: guestAddon.checkoutMonthlyLookupKey,
-        cadence: 'monthly',
-        weddingId,
-        successPath: withCheckoutSessionId('/guests?upgrade=success'),
-        cancelPath: '/guests?intent=upgrade&upgrade=cancelled',
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Could not start checkout',
-        description: error?.message || 'There was a problem starting your payment session.',
-        variant: 'destructive',
-      });
-      setGuestAddonCheckoutLoading(false);
-    }
-  };
+  const requireGuestRsvpManagement = () => true;
 
   const copyRsvpLink = (guest: Guest) => {
     if (!requireGuestRsvpManagement()) return;
@@ -777,35 +659,6 @@ export default function Guests() {
 
   return (
     <div className="space-y-6">
-      {(!guestRsvpDecision.allowed || guestUpgradeState) && (isFocusedGuestUpgrade || guestUpgradeState) && (
-        <Card className={`border ${guestUpgradeState === 'success' ? 'semantic-surface-success' : guestUpgradeState === 'cancelled' ? 'semantic-surface-warning' : 'semantic-surface-info'}`}>
-          <CardContent className="px-6 py-5">
-            <p className={`text-sm font-semibold uppercase tracking-[0.14em] ${guestUpgradeState === 'success' ? 'text-success' : guestUpgradeState === 'cancelled' ? 'text-warning' : 'text-info'}`}>Guest add-on</p>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">
-              {guestUpgradeState === 'success'
-                ? 'RSVP & Guest Management unlocked'
-                : 'Add RSVP & Guest Management'}
-            </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
-              {guestUpgradeState === 'success'
-                ? 'This wedding now has RSVP sending, insights, and check-in tools unlocked.'
-                : 'Unlock RSVP links, invite sending, guest insights, and check-in tools without leaving the guest workspace.'}
-            </p>
-            {!guestRsvpDecision.allowed && (
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <Button className="gap-2" onClick={() => void handleGuestAddonCheckout()} disabled={guestAddonCheckoutLoading}>
-                  {guestAddonCheckoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Add RSVP & Guest Management
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       <Card className="overflow-hidden border-border shadow-none">
         <CardContent className="space-y-5 p-5 sm:p-6">
           <div className="space-y-5">
@@ -958,10 +811,6 @@ export default function Guests() {
           </div>
         </CardContent>
       </Card>
-
-      {!entitlementsLoading && !guestRsvpDecision.allowed && !isFocusedGuestUpgrade && !guestUpgradeState && (
-        <InlineUpgradePrompt decision={guestRsvpDecision} />
-      )}
 
       <div className="space-y-4">
         <Card className="overflow-hidden shadow-card">
@@ -1541,11 +1390,6 @@ export default function Guests() {
         </DialogContent>
       </Dialog>
 
-      <UpgradePromptDialog
-        open={upgradePromptOpen}
-        onOpenChange={setUpgradePromptOpen}
-        decision={guestRsvpDecision}
-      />
     </div>
   );
 }

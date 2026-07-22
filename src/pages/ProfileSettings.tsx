@@ -1278,7 +1278,7 @@ export default function ProfileSettings() {
                   <p className="mt-1">
                     {coupleExportDecision?.allowed
                       ? 'Your current wedding plan includes exports. Budget, task, and vendor progress exports are available across your workspace.'
-                      : 'You are still on the free plan. Exports, planner/vendor collaboration, and richer coordination tools unlock with Basic or Premium.'}
+                      : 'You are on Intimate. Upgrade to Collaborative when you want a planner or vendors to join your wedding workspace.'}
                   </p>
                   {profile.planning_pass_expires_at && (
                     <p className="mt-1 text-xs">

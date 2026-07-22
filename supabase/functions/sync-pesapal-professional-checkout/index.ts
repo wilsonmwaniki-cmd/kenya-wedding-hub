@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
+import { activateProfessionalCheckout } from '../_shared/checkoutEntitlements.ts';
 import { fetchPesapalToken, getPesapalTransactionStatus, loadPesapalConfig, mapPesapalStatus } from '../_shared/pesapal.ts';
 import { loadPricingCheckoutConfig } from '../_shared/pricingCatalog.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
@@ -129,72 +130,33 @@ serve(async (req) => {
 
     const mapping = pricingCheckoutConfig.professionalCheckoutMap[transaction.lookup_key];
     if (!mapping) {
-      return await respondWithError(400, 'This Pesapal transaction is not a supported professional add-on.', 'entitlement_unsupported', { lookupKey: transaction.lookup_key }, user.id, transaction.audience);
+      return await respondWithError(400, 'This Pesapal transaction is not a supported Professional plan.', 'entitlement_unsupported', { lookupKey: transaction.lookup_key }, user.id, transaction.audience);
     }
 
-    const entitlementWrites = await Promise.all(
-      mapping.features.map(async (featureKey) => {
-        const { data: existingRow } = await serviceClient
-          .from('professional_entitlements')
-          .select('id, seat_limit')
-          .eq('user_id', user.id)
-          .eq('audience', audience)
-          .eq('feature_key', featureKey)
-          .maybeSingle();
-
-        const seatLimit = featureKey === 'team_workspace'
-          ? Math.max(existingRow?.seat_limit ?? 0, mapping.seatLimit ?? 0)
-          : existingRow?.seat_limit ?? null;
-
-        const { error } = await serviceClient
-          .from('professional_entitlements')
-          .upsert(
-            {
-              id: existingRow?.id,
-              user_id: user.id,
-              audience,
-              feature_key: featureKey,
-              status: 'active',
-              source_lookup_key: transaction.lookup_key,
-              source_bundle_code: transaction.lookup_key,
-              seat_limit: seatLimit,
-              effective_from: new Date().toISOString(),
-              effective_to: null,
-              metadata: {
-                order_tracking_id: orderTrackingId,
-                merchant_reference: transaction.merchant_reference,
-              },
-            },
-            {
-              onConflict: 'user_id,audience,feature_key',
-            },
-          );
-
-        if (error) throw error;
-        return featureKey;
-      }),
-    );
+    const result = await activateProfessionalCheckout(serviceClient, transaction, mapping, {
+      provider: 'pesapal',
+      reference: orderTrackingId,
+      paidAt: new Date().toISOString(),
+    });
 
     await logFunctionEvent({
       functionName: 'sync-pesapal-professional-checkout',
       severity: 'info',
       status: 'success',
       eventType: 'checkout_sync_succeeded',
-      message: `Activated professional Pesapal add-on ${transaction.lookup_key}.`,
+      message: `Activated Professional Pesapal purchase ${transaction.lookup_key}.`,
       userId: user.id,
       audience: transaction.audience,
       requestId,
       details: {
         orderTrackingId,
-        activatedFeatures: entitlementWrites,
-        seatLimit: mapping.seatLimit ?? null,
+        activatedFeatures: result.activatedFeatures,
+        seatLimit: result.seatLimit,
       },
     });
 
     return new Response(JSON.stringify({
-      audience,
-      activatedFeatures: entitlementWrites,
-      seatLimit: mapping.seatLimit ?? null,
+      ...result,
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

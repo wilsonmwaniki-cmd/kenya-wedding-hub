@@ -1,5 +1,7 @@
 # Pricing And Gating Product Map
 
+> This historical product map is superseded. Use [COUPLE_PRICING_MODEL.md](./COUPLE_PRICING_MODEL.md) for couples and [PROFESSIONAL_PRICING_ENTITLEMENT_IMPLEMENTATION_SPEC.md](./PROFESSIONAL_PRICING_ENTITLEMENT_IMPLEMENTATION_SPEC.md) for planners and vendors. Do not implement pricing from the sections below.
+
 ## Product thesis
 
 Zania should be free at the point of discovery and draft planning, then paid at the point where a wedding becomes collaborative, coordinated, and operationally active.

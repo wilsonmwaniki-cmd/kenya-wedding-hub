@@ -60,7 +60,7 @@ Required server-side secrets live in Supabase, not the frontend `.env`:
 
 Optional client/server billing provider switch while migrating:
 
-- `VITE_BILLING_PROVIDER=stripe|pesapal`
+- `VITE_BILLING_PROVIDER=pesapal|paystack`
 
 Pesapal server configuration:
 

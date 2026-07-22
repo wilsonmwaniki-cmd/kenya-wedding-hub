@@ -37,7 +37,7 @@ import {
   matchesVendorCollection,
   vendorCollections,
 } from '@/lib/vendorDirectoryCollections';
-import { vendorHasFullAccess } from '@/lib/vendorAccess';
+import { vendorCanCollaborate } from '@/lib/vendorAccess';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { DirectoryResultsSkeleton } from '@/components/AppLoadingSkeletons';
 import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
@@ -703,7 +703,7 @@ export default function VendorDirectory() {
                             View profile
                           </Button>
                         </Link>
-                        {user && vendorHasFullAccess(vendor) && (
+                        {user && vendorCanCollaborate(vendor) && (
                           <VendorInterestButton
                             vendorListingId={vendor.id}
                             vendorName={vendor.business_name}
@@ -711,9 +711,9 @@ export default function VendorDirectory() {
                             existingStatus={requestStatuses[vendor.id] || null}
                           />
                         )}
-                        {user && !vendorHasFullAccess(vendor) && profile?.role !== 'vendor' && (
+                        {user && !vendorCanCollaborate(vendor) && profile?.role !== 'vendor' && (
                           <p className="text-xs text-muted-foreground">
-                            Planner connections unlock after vendor verification and subscription.
+                            Connections unlock after this vendor is approved and verified.
                           </p>
                         )}
                         {canRecommendVendor && (

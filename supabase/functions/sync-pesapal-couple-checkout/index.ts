@@ -137,7 +137,7 @@ serve(async (req) => {
 
     const mapping = pricingCheckoutConfig.coupleCheckoutMap[transaction.lookup_key];
     if (!mapping) {
-      return await respondWithError(400, 'This Pesapal transaction is not a supported couple plan or add-on.', 'entitlement_unsupported', { lookupKey: transaction.lookup_key }, user.id, transaction.audience, transaction.wedding_id);
+      return await respondWithError(400, 'This Pesapal transaction is not a supported couple plan.', 'entitlement_unsupported', { lookupKey: transaction.lookup_key }, user.id, transaction.audience, transaction.wedding_id);
     }
 
     if (!transaction.wedding_id) {
@@ -162,7 +162,7 @@ serve(async (req) => {
       membership.role === 'groom';
 
     if (!canManageWedding) {
-      return await respondWithError(403, 'Only wedding owners can activate couple plans and add-ons.', 'owner_required', { membershipRole: membership.role, orderTrackingId }, user.id, transaction.audience, transaction.wedding_id);
+      return await respondWithError(403, 'Only wedding owners can activate the Collaborative plan.', 'owner_required', { membershipRole: membership.role, orderTrackingId }, user.id, transaction.audience, transaction.wedding_id);
     }
 
     const activatedAt = toIsoOrNull(statusResult.createdDate) ?? new Date().toISOString();
