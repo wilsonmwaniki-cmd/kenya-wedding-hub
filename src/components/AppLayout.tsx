@@ -16,6 +16,9 @@ import { AssistantPanelProvider, useAssistantPanel } from '@/contexts/AssistantP
 import BrandWordmark from '@/components/BrandWordmark';
 import AccountReviewBanner from '@/components/AccountReviewBanner';
 import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isLaunchFeatureEnabled, isProfessionalNetworkEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
+import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
+import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
+import { professionalPlanEntitlementMap } from '@/lib/pricingPlans';
 
 const AssistantPanel = lazy(() => import('@/components/AssistantPanel'));
 
@@ -130,6 +133,26 @@ function AssistantPanelSlot({
   );
 }
 
+function AccountPlanBadge({ label, paid }: { label: string; paid: boolean }) {
+  return (
+    <span
+      aria-label={`Current plan: ${label}`}
+      title={`Current plan: ${label}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] ${
+        paid
+          ? 'border-[#d4bb7d]/45 bg-[#d4bb7d]/12 text-[#ead8aa]'
+          : 'border-white/15 bg-white/[0.04] text-white/55'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`h-1.5 w-1.5 rounded-full ${paid ? 'bg-[#d4bb7d]' : 'bg-white/35'}`}
+      />
+      {label}
+    </span>
+  );
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedNavItems, setExpandedNavItems] = useState<Record<string, boolean>>(readExpandedNavItems);
@@ -162,6 +185,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const labsEnabled = professionalNetworkEnabled;
   const isAdmin = profile?.role === 'admin';
   const isVendor = profile?.role === 'vendor';
+  const isCouple = profile?.role === 'couple';
+  const weddingPlan = useWeddingEntitlements();
+  const professionalPlan = useProfessionalEntitlements(isPlanner ? 'planner' : isVendor ? 'vendor' : null);
+  const professionalPaid = professionalPlanEntitlementMap.premium.some(
+    (entitlement) => professionalPlan.entitlements[entitlement],
+  );
+  const accountPlan = isCouple
+    ? {
+        label: weddingPlan.couplePlanTier === 'collaborative' ? 'Collaborative' : 'Free',
+        paid: weddingPlan.couplePlanTier === 'collaborative',
+        loading: weddingPlan.loading,
+      }
+    : isPlanner || isVendor
+      ? {
+          label: professionalPaid ? 'Professional' : 'Free',
+          paid: professionalPaid,
+          loading: professionalPlan.loading,
+        }
+      : null;
   const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata ?? null, profile?.role, user?.email ?? null);
   const navItems = useMemo<NavItem[]>(() => {
     const previewNavItems: NavItem[] = [];
@@ -322,10 +364,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {profile && (
             <div className="border-b border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04))] px-4 py-4 sm:px-6">
               <p className="truncate text-sm font-semibold text-white">{profile.full_name || 'Welcome!'}</p>
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#d9c4a2]/80">
-                {professionalSetupPending ? 'Professional Account' : `${profile.role} Account`}
-                {isSuperAdmin && rolePreview !== 'admin' ? ` · previewing as ${rolePreview}` : ''}
-              </p>
+              <div className="mt-0.5 flex min-w-0 items-center gap-2">
+                <p className="min-w-0 truncate text-xs font-medium uppercase tracking-[0.18em] text-[#d9c4a2]/80">
+                  {professionalSetupPending ? 'Professional Account' : `${profile.role} Account`}
+                  {isSuperAdmin && rolePreview !== 'admin' ? ` · previewing as ${rolePreview}` : ''}
+                </p>
+                {!isSuperAdmin && accountPlan && !accountPlan.loading && !professionalSetupPending && (
+                  <AccountPlanBadge label={accountPlan.label} paid={accountPlan.paid} />
+                )}
+              </div>
               {isSuperAdmin && baseProfile && (
                 <p className="mt-1 text-[11px] text-white/58">
                   Signed in as {baseProfile.full_name || baseProfile.role}
