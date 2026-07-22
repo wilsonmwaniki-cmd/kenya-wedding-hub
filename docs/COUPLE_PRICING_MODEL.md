@@ -48,4 +48,3 @@ Future unreleased capabilities should be labelled `Coming soon`. They must not b
 Preferred message:
 
 > Ready to plan together? Upgrade to Collaborative to invite your vendors and planner into your Zania wedding workspace.
-
