@@ -34,6 +34,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ToastAction } from '@/components/ui/toast';
 import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
+import { getConfirmedVendorForTask, getRelatedBudgetCategoryForTask } from '@/lib/budgetRelations';
 
 interface Task {
   id: string;
@@ -262,6 +263,12 @@ export default function Tasks() {
     () => Object.fromEntries(budgetCategories.map((category) => [normalizeCategory(category.name), category])),
     [budgetCategories],
   );
+
+  const resolveTaskVendor = (task: Task) => getConfirmedVendorForTask(task, vendorOptions);
+  const resolveTaskBudget = (task: Task) => {
+    const exactCategory = task.category ? budgetLookup[normalizeCategory(task.category)] : null;
+    return exactCategory ?? getRelatedBudgetCategoryForTask(task, budgetCategories);
+  };
 
   const categoryOptions = useMemo(() => {
     const set = new Map<string, string>();
@@ -556,7 +563,7 @@ export default function Tasks() {
     .sort((left, right) => sortTasksByDateAndPriority(left, right));
   const urgentPending = pending.filter(isUrgentTask).sort(sortTasksByDateAndPriority);
   const scheduledPending = pending.filter((task) => !isUrgentTask(task)).sort(sortTasksByDateAndPriority);
-  const vendorLinkedTasks = tasks.filter((task) => task.source_vendor_id);
+  const vendorLinkedTasks = tasks.filter((task) => resolveTaskVendor(task));
   const openVendorTaskCount = vendorLinkedTasks.filter((task) => !task.completed).length;
   const privateTaskCount = pending.filter((task) => task.visibility === 'private').length;
   const calendarFeature = profile?.role === 'planner'
@@ -573,7 +580,10 @@ export default function Tasks() {
   const exportDecision = getEntitlementDecision(exportFeature, { profile, weddingEntitlements, couplePlanTier });
   const delegatedTaskCount = pending.filter((task) => task.delegatable).length;
   const vendorsWithOpenTasks = new Set(
-    vendorLinkedTasks.filter((task) => !task.completed && task.source_vendor_id).map((task) => task.source_vendor_id as string),
+    vendorLinkedTasks
+      .filter((task) => !task.completed)
+      .map((task) => resolveTaskVendor(task)?.id)
+      .filter((vendorId): vendorId is string => Boolean(vendorId)),
   ).size;
   const dueSoonVendorTasks = vendorLinkedTasks.filter((task) => {
     if (task.completed || !task.due_date) return false;
@@ -608,7 +618,7 @@ export default function Tasks() {
 
   const taskMatchesWorkspaceFilters = (task: Task) => {
     if (searchTerm) {
-      const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+      const linkedVendor = resolveTaskVendor(task);
       const searchBlob = [
         task.title,
         task.description,
@@ -628,7 +638,7 @@ export default function Tasks() {
       case 'urgent':
         return isUrgentTask(task);
       case 'vendor':
-        return Boolean(task.source_vendor_id);
+        return Boolean(resolveTaskVendor(task));
       case 'private':
         return task.visibility === 'private';
       case 'shared':
@@ -743,13 +753,13 @@ export default function Tasks() {
       .slice()
       .sort(sortTasksByDateAndPriority)
       .reduce<Record<string, Task[]>>((groups, task) => {
-        const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+        const linkedVendor = getConfirmedVendorForTask(task, vendorOptions);
         const key = task.category || linkedVendor?.category || 'Uncategorized';
         if (!groups[key]) groups[key] = [];
         groups[key].push(task);
         return groups;
       }, {});
-  }, [filteredPending, vendorLookup]);
+  }, [filteredPending, vendorOptions]);
 
   const sortedCategoryGroups = useMemo(
     () =>
@@ -766,13 +776,13 @@ export default function Tasks() {
 
   const completedByCategory = useMemo(() => {
     return filteredDone.reduce<Record<string, Task[]>>((groups, task) => {
-      const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+      const linkedVendor = getConfirmedVendorForTask(task, vendorOptions);
       const key = task.category || linkedVendor?.category || 'Uncategorized';
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
       return groups;
     }, {});
-  }, [filteredDone, vendorLookup]);
+  }, [filteredDone, vendorOptions]);
 
   const taskGroups = useMemo(() => {
     if (taskViewMode === 'by_date') {
@@ -835,9 +845,9 @@ export default function Tasks() {
     downloadCsv(
       `zania-tasks-${new Date().toISOString().slice(0, 10)}.csv`,
       tasks.map((task) => {
-        const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+        const linkedVendor = resolveTaskVendor(task);
         const resolvedCategory = task.category || linkedVendor?.category || '';
-        const linkedBudget = resolvedCategory ? budgetLookup[normalizeCategory(resolvedCategory)] : null;
+        const linkedBudget = resolveTaskBudget(task);
 
         return {
           title: task.title,
@@ -860,12 +870,12 @@ export default function Tasks() {
   };
 
   const renderTaskRow = (t: Task, isDone: boolean) => {
-    const linkedVendor = t.source_vendor_id ? vendorLookup[t.source_vendor_id] : null;
+    const linkedVendor = resolveTaskVendor(t);
     const resolvedCategory = t.category || linkedVendor?.category || null;
     const active = selectedTaskId === t.id;
     const isUrgent = isUrgentTask(t);
 
-    const linkedBudget = resolvedCategory ? budgetLookup[normalizeCategory(resolvedCategory)] : null;
+    const linkedBudget = resolveTaskBudget(t);
 
     return (
       <motion.div
@@ -1400,9 +1410,9 @@ export default function Tasks() {
             </div>
 
             {selectedTask ? (() => {
-              const linkedVendor = selectedTask.source_vendor_id ? vendorLookup[selectedTask.source_vendor_id] : null;
+              const linkedVendor = resolveTaskVendor(selectedTask);
               const resolvedCategory = selectedTask.category || linkedVendor?.category || null;
-              const linkedBudget = resolvedCategory ? budgetLookup[normalizeCategory(resolvedCategory)] : null;
+              const linkedBudget = resolveTaskBudget(selectedTask);
               const outstandingAmount =
                 linkedVendor && linkedVendor.price != null ? Math.max(linkedVendor.price - linkedVendor.amount_paid, 0) : null;
 
@@ -1442,9 +1452,18 @@ export default function Tasks() {
                     </div>
                     <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
                       <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Vendor link</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">{linkedVendor?.name || 'No linked vendor'}</p>
+                      {linkedVendor ? (
+                        <button
+                          type="button"
+                          className="mt-2 text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
+                          onClick={() => navigate(`/vendors?vendor=${encodeURIComponent(linkedVendor.id)}`)}
+                        >
+                          {linkedVendor.name}
+                        </button>
+                      ) : <p className="mt-2 text-sm font-medium text-foreground">No linked vendor</p>}
                       {linkedVendor && (
                         <p className="mt-1 text-xs text-muted-foreground">
+                          {linkedVendor.selection_status === 'final' ? 'Confirmed · ' : ''}
                           {vendorPaymentStatusLabel(linkedVendor.payment_status)}
                           {outstandingAmount != null ? ` · KES ${outstandingAmount.toLocaleString()} outstanding` : ''}
                         </p>
@@ -1477,7 +1496,7 @@ export default function Tasks() {
                     <p className="mt-2 text-sm text-muted-foreground">
                       {selectedTask.completed
                         ? 'This one is already complete. Move to the next item in the queue or review the completed history.'
-                        : selectedTask.source_vendor_id
+                        : linkedVendor
                           ? 'Open the vendor workspace if this task depends on quote, payment, or booking follow-up.'
                           : selectedTask.visibility === 'private'
                             ? 'Keep this inside the couple workflow unless you intentionally want to delegate it.'

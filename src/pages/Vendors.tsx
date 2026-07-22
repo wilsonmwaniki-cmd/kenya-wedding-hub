@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
 import { getMyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
 import {
@@ -83,6 +83,7 @@ import {
   type VendorTaskSuggestion,
 } from '@/lib/vendorTaskSuggestions';
 import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
+import { getRelatedTasksForVendor } from '@/lib/budgetRelations';
 
 interface Vendor {
   amount_paid: number;
@@ -133,6 +134,8 @@ interface VendorTaskItem {
   due_date: string | null;
   completed: boolean;
   source_vendor_id: string | null;
+  category: string | null;
+  description: string | null;
   phase: WeddingTaskPhase | null;
   visibility: string;
   recommended_role: string | null;
@@ -367,9 +370,8 @@ async function loadVendorsWorkspace(dataOrFilter: string): Promise<VendorsWorksp
     supabase.from('vendors').select('*').or(dataOrFilter).order('created_at'),
     supabase
       .from('tasks')
-      .select('id, title, due_date, completed, source_vendor_id, phase, visibility, recommended_role')
+      .select('id, title, description, category, due_date, completed, source_vendor_id, phase, visibility, recommended_role')
       .or(dataOrFilter)
-      .not('source_vendor_id', 'is', null)
       .order('due_date', { ascending: true, nullsFirst: false }),
     supabase
       .from('budget_payments')
@@ -404,6 +406,7 @@ export default function Vendors() {
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const queryClient = useQueryClient();
@@ -556,13 +559,13 @@ export default function Vendors() {
 
   const vendors = vendorsQuery.data?.vendors ?? [];
   const vendorTasksByVendorId = useMemo(
-    () =>
-      (vendorsQuery.data?.vendorTasks ?? []).reduce((summary, task) => {
-        if (!task.source_vendor_id) return summary;
-        summary[task.source_vendor_id] = [...(summary[task.source_vendor_id] ?? []), task];
-        return summary;
-      }, {} as Record<string, VendorTaskItem[]>),
-    [vendorsQuery.data?.vendorTasks],
+    () => Object.fromEntries(
+      vendors.map((vendor) => [
+        vendor.id,
+        getRelatedTasksForVendor(vendor, vendorsQuery.data?.vendorTasks ?? []),
+      ]),
+    ) as Record<string, VendorTaskItem[]>,
+    [vendors, vendorsQuery.data?.vendorTasks],
   );
   const vendorPaymentsByVendorId = useMemo(
     () =>
@@ -632,6 +635,45 @@ export default function Vendors() {
       setWorkspaceInviteError(error?.message || 'Could not save this vendor invite right now.');
       toast({
         title: 'Could not save vendor invite',
+        description: error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setWorkspaceInviteSubmittingVendorId(null);
+    }
+  };
+
+  const createQuickVendorClaimLink = async (vendor: Vendor) => {
+    if (vendor.vendor_listing_id || !activeWeddingId) return;
+    if (!vendor.email && !vendor.phone) {
+      toast({
+        title: 'Add vendor contact details first',
+        description: 'A vendor email address or phone number is needed before Zania can create a private claim link.',
+      });
+      return;
+    }
+
+    setWorkspaceInviteSubmittingVendorId(vendor.id);
+    setWorkspaceInviteError(null);
+    try {
+      const savedInvite = await createWorkspaceVendorInviteDraft({
+        weddingId: activeWeddingId,
+        vendorId: vendor.id,
+        inviteContactEmail: vendor.email,
+        inviteContactPhone: vendor.phone,
+      });
+      setWorkspaceVendorInvites((current) => ({
+        ...current,
+        [vendor.id]: [savedInvite, ...(current[vendor.id] ?? [])],
+      }));
+      toast({
+        title: 'Vendor claim link ready',
+        description: `The private Zania claim link for ${vendor.name} is ready to share.`,
+      });
+    } catch (error: any) {
+      setWorkspaceInviteError(error?.message || 'Could not create this vendor claim link right now.');
+      toast({
+        title: 'Could not create claim link',
         description: error?.message || 'Please try again.',
         variant: 'destructive',
       });
@@ -2107,7 +2149,16 @@ export default function Vendors() {
   }, [selectedVendorId, selectedVendor]);
 
   useEffect(() => {
-    if (showCoupleVendorWorkspace || !selectedVendor || selectedVendor.vendor_listing_id) return;
+    const requestedVendorId = searchParams.get('vendor');
+    if (!requestedVendorId || !vendors.some((vendor) => vendor.id === requestedVendorId)) return;
+    setSelectedVendorId(requestedVendorId);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`vendor-${requestedVendorId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }, [searchParams, vendors]);
+
+  useEffect(() => {
+    if (!selectedVendor || selectedVendor.vendor_listing_id) return;
 
     let cancelled = false;
     setWorkspaceInviteLoadingVendorId(selectedVendor.id);
@@ -2129,10 +2180,10 @@ export default function Vendors() {
     return () => {
       cancelled = true;
     };
-  }, [selectedVendor, showCoupleVendorWorkspace]);
+  }, [selectedVendor]);
 
   useEffect(() => {
-    if (showCoupleVendorWorkspace || !selectedVendor || selectedVendor.vendor_listing_id) return;
+    if (!selectedVendor || selectedVendor.vendor_listing_id) return;
 
     setWorkspaceInviteForm({
       email: selectedVendorActiveInvite?.invite_contact_email ?? selectedVendor.email ?? '',
@@ -2141,7 +2192,7 @@ export default function Vendors() {
       expiresAt: selectedVendorActiveInvite?.invite_expires_at?.slice(0, 10) ?? '',
     });
     setWorkspaceInviteError(null);
-  }, [selectedVendor, selectedVendorActiveInvite, showCoupleVendorWorkspace]);
+  }, [selectedVendor, selectedVendorActiveInvite]);
 
   useEffect(() => {
     if (showCoupleVendorWorkspace || !selectedVendor) return;
@@ -2644,10 +2695,14 @@ export default function Vendors() {
       const isActive = selectedVendorId === vendor.id;
       const isRecorded = hasRecordedVendor(vendor);
       const isChosen = isChosenVendor(vendor);
+      const vendorActiveInvite = (workspaceVendorInvites[vendor.id] ?? []).find((invite) =>
+        ['draft', 'pending', 'sent', 'opened'].includes(invite.invite_status),
+      ) ?? null;
 
       return (
         <motion.div
           key={vendor.id}
+          id={`vendor-${vendor.id}`}
           layout={!prefersReducedMotion}
           animate={prefersReducedMotion ? undefined : isActive ? { y: -1, scale: 1.006 } : { y: 0, scale: 1 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
@@ -2683,8 +2738,46 @@ export default function Vendors() {
               </div>
               <div className="grid min-w-0 gap-4 text-sm sm:grid-cols-2">
                 <div className="min-w-0"><p className="text-xs text-muted-foreground">Contact</p><p className="mt-1 break-words font-medium">{vendor.phone || vendor.email || 'Not added'}</p>{dueDateLabel && vendor.payment_status !== 'paid_full' ? <p className="mt-1 text-muted-foreground">Payment due {dueDateLabel}</p> : null}</div>
-                <div className="min-w-0"><p className="text-xs text-muted-foreground">Next tasks</p>{vendorTasks.filter((task) => !task.completed).slice(0, 3).map((task) => <p key={task.id} className="mt-1 break-words font-medium">{task.title}</p>)}{openVendorTasks === 0 ? <p className="mt-1 font-medium">No open tasks</p> : null}</div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Related tasks</p>
+                  {vendorTasks.filter((task) => !task.completed).slice(0, 3).map((task) => (
+                    <Link
+                      key={task.id}
+                      to={`/tasks?task=${encodeURIComponent(task.id)}`}
+                      className="mt-1 block break-words font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
+                    >
+                      {task.title}
+                    </Link>
+                  ))}
+                  {openVendorTasks === 0 ? <p className="mt-1 font-medium">No related tasks</p> : null}
+                </div>
               </div>
+              {!vendor.vendor_listing_id ? (
+                <div className="rounded-lg border border-border bg-background/70 p-4 text-sm">
+                  <p className="font-medium text-foreground">Vendor account</p>
+                  <p className="mt-1 text-muted-foreground">Create a private link this vendor can use to claim this record when they join Zania.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {vendorActiveInvite ? (
+                      <Button asChild type="button" variant="outline" size="sm">
+                        <Link to={`/vendor-claim?token=${encodeURIComponent(vendorActiveInvite.invite_token)}&email=${encodeURIComponent(vendorActiveInvite.invite_contact_email ?? '')}`}>
+                          Open vendor claim link
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={workspaceInviteLoadingVendorId === vendor.id || workspaceInviteSubmittingVendorId === vendor.id || !activeWeddingId}
+                        onClick={() => void createQuickVendorClaimLink(vendor)}
+                      >
+                        {workspaceInviteLoadingVendorId === vendor.id || workspaceInviteSubmittingVendorId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Create vendor claim link
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
               <div className="grid gap-2 sm:flex sm:flex-wrap">
                 {!isChosen && isRecorded ? <Button type="button" className="w-full sm:w-auto" onClick={() => updateSelection(vendor, 'final')}>Choose vendor</Button> : null}
                 {!isRecorded ? <p className="text-sm text-muted-foreground">Add or link a vendor before choosing.</p> : null}
@@ -3461,7 +3554,12 @@ export default function Vendors() {
                         <Card key={task.id} className="shadow-card">
                           <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                             <div>
-                              <p className="text-xl font-medium text-foreground">{task.title}</p>
+                              <Link
+                                to={`/tasks?task=${encodeURIComponent(task.id)}`}
+                                className="text-xl font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
+                              >
+                                {task.title}
+                              </Link>
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                                 <Badge variant="outline">{task.visibility === 'private' ? 'Private' : 'Public'}</Badge>
                                 {task.phase && <Badge variant="outline">{vendorMilestoneLabel(task.phase)}</Badge>}
@@ -3494,7 +3592,12 @@ export default function Vendors() {
                         <Card key={task.id} className="opacity-60 shadow-card">
                           <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                             <div>
-                              <p className="text-xl font-medium line-through text-foreground">{task.title}</p>
+                              <Link
+                                to={`/tasks?task=${encodeURIComponent(task.id)}`}
+                                className="text-xl font-medium text-foreground line-through underline-offset-4 hover:text-primary hover:underline"
+                              >
+                                {task.title}
+                              </Link>
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                                 <Badge variant="outline">{task.visibility === 'private' ? 'Private' : 'Public'}</Badge>
                                 {task.phase && <Badge variant="outline">{vendorMilestoneLabel(task.phase)}</Badge>}
@@ -4531,7 +4634,7 @@ export default function Vendors() {
                 <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Vendor-linked tasks</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Related tasks</p>
                       <p className="text-sm text-muted-foreground">
                         Keep quote, contract, and logistics work attached to this vendor.
                       </p>
@@ -4545,7 +4648,12 @@ export default function Vendors() {
                       {linkedTasks.slice(0, 3).map((task) => (
                         <div key={task.id} className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-medium text-foreground">{task.title}</p>
+                            <Link
+                              to={`/tasks?task=${encodeURIComponent(task.id)}`}
+                              className="text-sm font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
+                            >
+                              {task.title}
+                            </Link>
                             <Badge variant={task.completed ? 'success' : 'outline'} className="text-[10px]">
                               {task.completed ? 'Done' : 'Open'}
                             </Badge>

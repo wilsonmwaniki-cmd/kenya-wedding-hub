@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getConfirmedVendorForTask,
   getRecordedVendorsForBudgetCategory,
+  getRelatedTasksForVendor,
   getRelatedTasksForBudgetCategory,
   planningCategoryRelationScore,
 } from '@/lib/budgetRelations';
@@ -66,5 +68,48 @@ describe('budget relationships', () => {
       'vendor-task',
       'category-task',
     ]);
+  });
+
+  it('resolves an unlinked cake task to the confirmed cake vendor', () => {
+    const vendor = {
+      ...placeholderVendor,
+      id: 'keki-tamu',
+      name: 'Keki Tamu',
+      category: 'Cake',
+      selection_status: 'final',
+    };
+    const task = {
+      id: 'book-cake',
+      title: 'Lock in cake artist / baker with a deposit',
+      description: null,
+      category: 'Cake Artist & Baker',
+      completed: false,
+      source_vendor_id: null,
+    };
+
+    expect(getConfirmedVendorForTask(task, [vendor])).toEqual(vendor);
+    expect(getRelatedTasksForVendor(vendor, [task])).toEqual([task]);
+  });
+
+  it('never replaces an explicit task vendor with a category match', () => {
+    const confirmedVendor = {
+      ...placeholderVendor,
+      id: 'confirmed',
+      name: 'Keki Tamu',
+      category: 'Cake',
+      selection_status: 'final',
+    };
+    const explicitVendor = { ...confirmedVendor, id: 'explicit', name: 'Another Baker' };
+    const task = {
+      id: 'book-cake',
+      title: 'Lock in cake artist / baker',
+      description: null,
+      category: 'Cake Artist & Baker',
+      completed: false,
+      source_vendor_id: 'explicit',
+    };
+
+    expect(getConfirmedVendorForTask(task, [confirmedVendor, explicitVendor])).toEqual(explicitVendor);
+    expect(getRelatedTasksForVendor(confirmedVendor, [task])).toEqual([]);
   });
 });
