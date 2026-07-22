@@ -13,10 +13,13 @@ export function isAppleAuthEnabled() {
 export type ReleaseChannel = 'production' | 'staging';
 
 const productionLaunchPaths = new Set([
+  '/clients',
   '/dashboard',
   '/budget',
   '/tasks',
   '/vendors',
+  '/vendor-dashboard',
+  '/vendor-settings',
   '/settings',
 ]);
 

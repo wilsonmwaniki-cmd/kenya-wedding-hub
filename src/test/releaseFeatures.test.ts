@@ -6,12 +6,12 @@ describe('launch feature release controls', () => {
     expect(resolveReleaseChannel(undefined, false)).toBe('production');
   });
 
-  it('keeps only the launch workspace active in production', () => {
-    ['/dashboard', '/budget', '/tasks', '/vendors', '/settings'].forEach((path) => {
+  it('keeps the couple workspace and safe professional entry routes active in production', () => {
+    ['/clients', '/dashboard', '/budget', '/tasks', '/vendors', '/vendor-dashboard', '/vendor-settings', '/settings'].forEach((path) => {
       expect(isPathEnabledForRelease(path, 'production')).toBe(true);
     });
 
-    ['/guests', '/contributions', '/gift-registry', '/timeline', '/portfolio', '/ai-chat'].forEach((path) => {
+    ['/guests', '/contributions', '/gift-registry', '/timeline', '/portfolio', '/ai-chat', '/planner-documents', '/vendor-documents'].forEach((path) => {
       expect(isPathEnabledForRelease(path, 'production')).toBe(false);
     });
   });
