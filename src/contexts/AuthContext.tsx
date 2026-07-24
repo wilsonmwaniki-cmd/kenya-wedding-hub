@@ -58,6 +58,7 @@ interface Profile {
   wedding_location: string | null;
   wedding_county: string | null;
   wedding_town: string | null;
+  wedding_budget_goal: number | null;
   role: AppRole;
   company_name: string | null;
   company_email: string | null;

@@ -248,8 +248,8 @@ async function loadBudgetTasks(dataOrFilter: string): Promise<BudgetTaskOption[]
 }
 
 export default function Budget() {
-  const { user, profile } = useAuth();
-  const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
+  const { user, profile, updateProfile } = useAuth();
+  const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating, loadClients } = usePlanner();
   const { entitlements: weddingEntitlements, couplePlanTier, refresh } = useWeddingEntitlements();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -280,6 +280,8 @@ export default function Budget() {
   const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, BudgetWorkflowDraft>>({});
   const [savingSpentId, setSavingSpentId] = useState<string | null>(null);
   const [savingWorkflowId, setSavingWorkflowId] = useState<string | null>(null);
+  const [budgetGoalDraft, setBudgetGoalDraft] = useState('');
+  const [savingBudgetGoal, setSavingBudgetGoal] = useState(false);
   const [benchmarksLoading, setBenchmarksLoading] = useState(false);
   const [categoryBenchmarks, setCategoryBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
   const [addModalBenchmark, setAddModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
@@ -1025,6 +1027,62 @@ export default function Budget() {
   const visibleAllocationPercentage = visibleBudgetGoal > 0
     ? (visibleAllocated / visibleBudgetGoal) * 100
     : 0;
+  const remainingAllocationBudget = visibleBudgetGoal - visibleAllocated;
+
+  useEffect(() => {
+    setBudgetGoalDraft(String(Math.round(visibleBudgetGoal)));
+  }, [activeBudgetScope, visibleBudgetGoal]);
+
+  const saveBudgetGoal = async () => {
+    if (!user || activeBudgetScope !== 'wedding' || savingBudgetGoal) return;
+
+    const nextBudgetGoal = Number(budgetGoalDraft.replace(/,/g, ''));
+    if (!Number.isFinite(nextBudgetGoal) || nextBudgetGoal <= 0) {
+      setBudgetGoalDraft(String(Math.round(visibleBudgetGoal)));
+      toast({
+        title: 'Enter a valid budget',
+        description: 'Your wedding budget must be greater than zero.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const normalizedBudgetGoal = Math.round(nextBudgetGoal);
+    if (normalizedBudgetGoal === Math.round(visibleBudgetGoal)) {
+      setBudgetGoalDraft(String(normalizedBudgetGoal));
+      return;
+    }
+
+    setSavingBudgetGoal(true);
+    try {
+      if (isPlanner && selectedClient) {
+        const { error } = await supabase
+          .from('planner_clients')
+          .update({ wedding_budget_goal: normalizedBudgetGoal })
+          .eq('id', selectedClient.id)
+          .eq('planner_user_id', user.id);
+        if (error) throw error;
+        await loadClients();
+      } else {
+        await updateProfile({ wedding_budget_goal: normalizedBudgetGoal });
+      }
+
+      setBudgetGoalDraft(String(normalizedBudgetGoal));
+      toast({
+        title: 'Wedding budget updated',
+        description: `Your spending limit is now ${formatCurrency(normalizedBudgetGoal)}.`,
+      });
+    } catch (error) {
+      setBudgetGoalDraft(String(Math.round(visibleBudgetGoal)));
+      toast({
+        title: 'Could not update the budget',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingBudgetGoal(false);
+    }
+  };
   const totalFinalVendorContract = finalVendorPayments.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
   const totalFinalVendorPaid = finalVendorPayments.reduce((sum, vendor) => sum + vendor.amount_paid, 0);
   const totalFinalVendorOutstanding = finalVendorPayments.reduce(
@@ -1590,25 +1648,84 @@ export default function Budget() {
       </header>
 
       <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4">
-        {[
-          ['Overall budget', formatCurrency(visibleBudgetGoal)],
-          ['Allocated', formatCurrency(visibleAllocated)],
-          ['Spent', formatCurrency(visibleSpent)],
-          ['Remaining', formatCurrency(remainingBudget)],
-        ].map(([label, value], index) => (
-          <div key={label} className={`p-3 sm:p-4 ${index < 3 ? 'border-r border-border' : ''} ${index < 2 ? 'border-b border-border sm:border-b-0' : ''}`}>
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="mt-1 truncate text-base font-semibold text-foreground sm:text-lg">{value}</p>
-            {index === 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">Your spending limit</p>
-            ) : index === 1 ? (
-              <p className={`mt-1 text-xs ${visibleAllocationPercentage > 100 ? 'font-semibold text-destructive' : 'text-muted-foreground'}`}>{visibleAllocationPercentage.toFixed(1)}% planned</p>
-            ) : index === 2 ? (
-              <p className="mt-1 text-xs text-muted-foreground">{visibleSpentPercentage}% of budget</p>
-            ) : null}
-          </div>
-        ))}
+        <div className="border-b border-r border-border p-3 sm:border-b-0 sm:p-4">
+          {activeBudgetScope === 'wedding' ? (
+            <>
+              <Label htmlFor="workspace-total-budget" className="text-xs font-normal text-muted-foreground">
+                Overall budget
+              </Label>
+              <div className="relative mt-2">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
+                <Input
+                  id="workspace-total-budget"
+                  aria-label="Adjust wedding budget"
+                  type="number"
+                  min="1"
+                  inputMode="numeric"
+                  value={budgetGoalDraft}
+                  onChange={(event) => setBudgetGoalDraft(event.target.value)}
+                  onBlur={() => void saveBudgetGoal()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur();
+                  }}
+                  disabled={savingBudgetGoal}
+                  className="h-10 bg-background pl-12 text-sm font-semibold sm:h-11 sm:text-base"
+                />
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground" aria-live="polite">
+                {savingBudgetGoal ? 'Saving your budget...' : 'Your spending limit'}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">Overall budget</p>
+              <p className="mt-1 truncate text-base font-semibold text-foreground sm:text-lg">{formatCurrency(visibleBudgetGoal)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Private plan total</p>
+            </>
+          )}
+        </div>
+        <div className="border-b border-border p-3 sm:border-b-0 sm:border-r sm:p-4">
+          <p className="text-xs text-muted-foreground">Allocated</p>
+          <p className="mt-1 truncate text-base font-semibold text-foreground sm:text-lg">{formatCurrency(visibleAllocated)}</p>
+          <p className={`mt-1 text-xs ${visibleAllocationPercentage > 100 ? 'font-semibold text-destructive' : 'text-muted-foreground'}`}>
+            {visibleAllocationPercentage.toFixed(1)}% planned
+          </p>
+        </div>
+        <div className="border-r border-border p-3 sm:p-4">
+          <p className="text-xs text-muted-foreground">Spent</p>
+          <p className="mt-1 truncate text-base font-semibold text-foreground sm:text-lg">{formatCurrency(visibleSpent)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{visibleSpentPercentage}% of budget</p>
+        </div>
+        <div className="p-3 sm:p-4">
+          <p className="text-xs text-muted-foreground">{remainingAllocationBudget >= 0 ? 'Remaining' : 'Over budget'}</p>
+          <p className={`mt-1 truncate text-base font-semibold sm:text-lg ${remainingAllocationBudget < 0 ? 'text-destructive' : 'text-foreground'}`}>
+            {formatCurrency(Math.abs(remainingAllocationBudget))}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">After planned costs</p>
+        </div>
       </div>
+
+      {activeBudgetScope === 'wedding' ? (
+        <section className="overflow-hidden rounded-lg border border-border bg-card" aria-labelledby="vendor-payments-title">
+          <div className="border-b border-border px-4 py-3 sm:px-5">
+            <h2 id="vendor-payments-title" className="text-sm font-semibold text-foreground">Vendor Payments</h2>
+          </div>
+          <div className="grid grid-cols-3">
+            <div className="border-r border-border p-3 sm:p-4">
+              <p className="text-xs text-muted-foreground">Total Invoices</p>
+              <p className="mt-1 break-words text-sm font-semibold text-foreground sm:text-lg">{formatCurrency(totalFinalVendorContract)}</p>
+            </div>
+            <div className="border-r border-border p-3 sm:p-4">
+              <p className="text-xs text-muted-foreground">Total Payments</p>
+              <p className="mt-1 break-words text-sm font-semibold text-success sm:text-lg">{formatCurrency(totalFinalVendorPaid)}</p>
+            </div>
+            <div className="p-3 sm:p-4">
+              <p className="text-xs text-muted-foreground">Balance</p>
+              <p className="mt-1 break-words text-sm font-semibold text-primary sm:text-lg">{formatCurrency(totalFinalVendorOutstanding)}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-center gap-3 rounded-lg border border-border bg-card p-3 sm:p-4">
         <SlidingSegmentedControl
