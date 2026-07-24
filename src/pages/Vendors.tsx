@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, Pencil } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
@@ -126,6 +126,13 @@ interface PaymentDraft {
 interface WorkflowDraft {
   committeeRoleInCharge: string;
   contractStatus: string;
+}
+
+interface VendorDetailsDraft {
+  name: string;
+  category: string;
+  email: string;
+  phone: string;
 }
 
 interface VendorTaskItem {
@@ -392,12 +399,17 @@ async function loadVendorsWorkspace(dataOrFilter: string): Promise<VendorsWorksp
     contract_status: d.contract_status ?? 'not_started',
     deposit_amount: Number(d.deposit_amount ?? 0),
     price: d.price ? Number(d.price) : null,
-  })) as Vendor[]);
+  })) as Vendor[]).filter(hasRecordedVendor);
+  const recordedVendorIds = new Set(vendors.map((vendor) => vendor.id));
 
   return {
     vendors,
-    vendorTasks: (tasksResult.data as VendorTaskItem[] | null) ?? [],
-    vendorPayments: (paymentsResult.data as VendorPaymentRecord[] | null) ?? [],
+    vendorTasks: ((tasksResult.data as VendorTaskItem[] | null) ?? []).filter(
+      (task) => !task.source_vendor_id || recordedVendorIds.has(task.source_vendor_id),
+    ),
+    vendorPayments: ((paymentsResult.data as VendorPaymentRecord[] | null) ?? []).filter(
+      (payment) => !payment.vendor_id || recordedVendorIds.has(payment.vendor_id),
+    ),
   };
 }
 
@@ -439,6 +451,8 @@ export default function Vendors() {
   const [selectionSucceededId, setSelectionSucceededId] = useState<string | null>(null);
   const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, WorkflowDraft>>({});
   const [notesDrafts, setNotesDrafts] = useState<Record<string, string>>({});
+  const [vendorDetailsDrafts, setVendorDetailsDrafts] = useState<Record<string, VendorDetailsDraft>>({});
+  const [savingVendorDetailsId, setSavingVendorDetailsId] = useState<string | null>(null);
   const [comparisonCategory, setComparisonCategory] = useState<string>('all');
   const [modalBenchmark, setModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
   const [modalBenchmarkLoading, setModalBenchmarkLoading] = useState(false);
@@ -810,6 +824,7 @@ export default function Vendors() {
       setPaymentDrafts({});
       setWorkflowDrafts({});
       setNotesDrafts({});
+      setVendorDetailsDrafts({});
       return;
     }
 
@@ -839,6 +854,19 @@ export default function Vendors() {
       ),
     );
     setNotesDrafts(Object.fromEntries(vendors.map((row) => [row.id, row.notes ?? ''])));
+    setVendorDetailsDrafts(
+      Object.fromEntries(
+        vendors.map((row) => [
+          row.id,
+          {
+            name: row.name,
+            category: row.category,
+            email: row.email ?? '',
+            phone: row.phone ?? '',
+          },
+        ]),
+      ),
+    );
   }, [vendors]);
 
   const loadBenchmarks = async (rows: Vendor[]) => {
@@ -1208,6 +1236,77 @@ export default function Vendors() {
       await refreshVendorsWorkspace();
     }
     setSavingStatusId(null);
+  };
+
+  const updateVendorDetails = async (vendor: Vendor) => {
+    const draft = vendorDetailsDrafts[vendor.id];
+    if (!draft) return;
+
+    const name = draft.name.trim();
+    const email = draft.email.trim();
+    const phone = draft.phone.trim();
+    if (!name) {
+      toast({
+        title: 'Vendor name is required',
+        description: 'Add the business or vendor name before saving.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast({
+        title: 'Check the email address',
+        description: 'Enter a complete email address or leave the field empty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const updates = {
+      name,
+      category: draft.category,
+      email: email || null,
+      phone: phone || null,
+    };
+    setSavingVendorDetailsId(vendor.id);
+
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'vendors',
+          changeType: 'update',
+          targetId: vendor.id,
+          currentPayload: {
+            name: vendor.name,
+            category: vendor.category,
+            email: vendor.email,
+            phone: vendor.phone,
+          },
+          proposedPayload: updates,
+        });
+        toast({
+          title: 'Vendor details sent for approval',
+          description: `${vendor.name}'s details will update after the couple approves them.`,
+        });
+      } catch (error: any) {
+        toast({ title: 'Could not submit vendor details', description: error?.message, variant: 'destructive' });
+      } finally {
+        setSavingVendorDetailsId(null);
+      }
+      return;
+    }
+
+    const { error } = await supabase.from('vendors').update(updates).eq('id', vendor.id);
+    if (error) {
+      toast({ title: 'Could not save vendor details', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Vendor details saved', description: `${name} is up to date.` });
+      await refreshVendorsWorkspace();
+    }
+    setSavingVendorDetailsId(null);
   };
 
   const updateVendorPrice = async (vendor: Vendor) => {
@@ -2848,10 +2947,17 @@ export default function Vendors() {
       const openVendorTasks = vendorTasks.filter((task) => !task.completed).length;
       const vendorPayments = vendorPaymentsByVendorId[vendor.id] ?? [];
       const outstandingBalance = Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0);
+      const paymentProgress = vendor.price && vendor.price > 0
+        ? Math.min(((vendor.amount_paid ?? 0) / vendor.price) * 100, 100)
+        : 0;
       const dueDateLabel = vendor.payment_due_date ? safeDateLabel(vendor.payment_due_date) : null;
       const isActive = selectedVendorId === vendor.id;
-      const isRecorded = hasRecordedVendor(vendor);
-      const isChosen = isChosenVendor(vendor);
+      const detailsDraft = vendorDetailsDrafts[vendor.id] ?? {
+        name: vendor.name,
+        category: vendor.category,
+        email: vendor.email ?? '',
+        phone: vendor.phone ?? '',
+      };
       const vendorActiveInvite = (workspaceVendorInvites[vendor.id] ?? []).find((invite) =>
         ['draft', 'pending', 'sent', 'opened'].includes(invite.invite_status),
       ) ?? null;
@@ -2863,84 +2969,261 @@ export default function Vendors() {
           layout={!prefersReducedMotion}
           animate={prefersReducedMotion ? undefined : isActive ? { y: -1, scale: 1.006 } : { y: 0, scale: 1 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
-          className={`relative w-full overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200 ${isActive ? 'z-10 border-primary/70 bg-primary/[0.025] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15' : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'}`}
+          className={`relative w-full overflow-hidden rounded-xl border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200 ${isActive ? 'z-10 border-primary/55 bg-primary/[0.025] shadow-[0_16px_38px_-28px_hsl(var(--foreground)/0.6)] ring-1 ring-primary/10' : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'}`}
         >
-          <span aria-hidden="true" className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary transition-opacity ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+          <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 bg-primary transition-opacity ${isActive ? 'opacity-100' : 'opacity-0'}`} />
           <button
             type="button"
             onClick={() => setSelectedVendorId(isActive ? null : vendor.id)}
             aria-expanded={isActive}
-            className={`flex w-full flex-col gap-4 px-4 py-4 text-left transition-colors duration-200 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5 ${isActive ? 'bg-primary/[0.075]' : 'hover:bg-muted/30'}`}
+            className={`w-full px-5 py-5 text-left transition-colors duration-200 sm:px-7 ${isActive ? 'bg-primary/[0.07]' : 'hover:bg-muted/30'}`}
           >
-            <div className="min-w-0">
-              <p className="truncate text-lg font-semibold text-foreground">{vendor.name}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span>{vendor.category}</span>
-                {isChosen ? <Badge>Chosen</Badge> : null}
-                {openVendorTasks > 0 ? <span>{openVendorTasks} task{openVendorTasks === 1 ? '' : 's'}</span> : null}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-lg font-semibold text-foreground">{vendor.name}</p>
+                  <Badge variant={vendorSelectionTone(vendor.selection_status)} className="text-[10px]">
+                    {vendorSelectionLabel(vendor.selection_status)}
+                  </Badge>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {formatCurrency(vendor.amount_paid)} paid · {formatCurrency(outstandingBalance)} balance
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>{vendor.category}</span>
+                  {openVendorTasks > 0 ? <span>· {openVendorTasks} follow-up{openVendorTasks === 1 ? '' : 's'}</span> : null}
+                  {dueDateLabel && vendor.payment_status !== 'paid_full' ? <span>· Next payment {dueDateLabel}</span> : null}
+                </div>
+              </div>
+              <div className="shrink-0 text-left sm:text-right">
+                <p className="text-lg font-semibold text-foreground">{formatCurrency(vendor.price)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{vendorPaymentStatusLabel(vendor.payment_status)}</p>
+                <p className="mt-1 text-sm font-medium text-primary">{isActive ? 'Hide details' : 'View and edit'}</p>
               </div>
             </div>
-            <div className="text-left sm:text-right">
-              <p className="text-lg font-semibold text-foreground">{formatCurrency(vendor.price)}</p>
-              <p className="mt-1 text-sm font-medium text-primary">{isActive ? 'Hide details' : 'View details'}</p>
+            <div className="mt-4 h-1 overflow-hidden rounded-full bg-accent/60">
+              <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${paymentProgress}%` }} />
             </div>
           </button>
 
           <AnimatedCardDetails open={isActive}>
-            <div className="min-w-0 space-y-4 border-t border-border bg-background/60 px-4 pb-5 pt-4 sm:px-6">
+            <div className="min-w-0 space-y-5 border-t border-border bg-background/60 px-4 pb-6 pt-5 sm:px-7">
               <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-background/70 text-center">
-                <div className="p-3"><p className="text-xs text-muted-foreground">Quoted</p><p className="mt-1 font-semibold">{formatCurrency(vendor.price)}</p></div>
-                <div className="p-3"><p className="text-xs text-muted-foreground">Paid</p><p className="mt-1 font-semibold">{formatCurrency(vendor.amount_paid)}</p></div>
-                <div className="p-3"><p className="text-xs text-muted-foreground">Left</p><p className="mt-1 font-semibold">{formatCurrency(outstandingBalance)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Vendor invoice</p><p className="mt-1 font-semibold">{formatCurrency(vendor.price)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Payments made</p><p className="mt-1 font-semibold">{formatCurrency(vendor.amount_paid)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Balance</p><p className="mt-1 font-semibold">{formatCurrency(outstandingBalance)}</p></div>
               </div>
-              <div className="grid min-w-0 gap-4 text-sm sm:grid-cols-2">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-muted-foreground">Contact</p>
-                    {profile?.role === 'couple' ? (
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        className="h-auto gap-1 p-0 text-xs"
-                        onClick={() => openVendorContactEditor(vendor)}
-                      >
-                        <Pencil className="h-3 w-3" aria-hidden="true" />
-                        {vendor.email || vendor.phone ? 'Edit contact' : 'Add contact'}
-                      </Button>
-                    ) : null}
+
+              <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                <div>
+                  <p className="font-semibold text-foreground">Vendor details</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Update the information used throughout this wedding workspace.</p>
+                </div>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor={`vendor-name-${vendor.id}`}>Vendor name</Label>
+                    <Input
+                      id={`vendor-name-${vendor.id}`}
+                      value={detailsDraft.name}
+                      onChange={(event) => setVendorDetailsDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...detailsDraft, name: event.target.value },
+                      }))}
+                    />
                   </div>
-                  {vendor.email || vendor.phone ? (
-                    <div className="mt-1 space-y-1 break-words font-medium">
-                      {vendor.email ? <p>{vendor.email}</p> : null}
-                      {vendor.phone ? <p>{vendor.phone}</p> : null}
-                    </div>
-                  ) : (
-                    <p className="mt-1 font-medium text-muted-foreground">Not added</p>
-                  )}
-                  {dueDateLabel && vendor.payment_status !== 'paid_full' ? <p className="mt-1 text-muted-foreground">Payment due {dueDateLabel}</p> : null}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">Related tasks</p>
-                  {vendorTasks.filter((task) => !task.completed).slice(0, 3).map((task) => (
-                    <Link
-                      key={task.id}
-                      to={`/tasks?task=${encodeURIComponent(task.id)}`}
-                      className="mt-1 block break-words font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
+                  <div className="space-y-2">
+                    <Label>Category</Label>
+                    <Select
+                      value={detailsDraft.category}
+                      onValueChange={(value) => setVendorDetailsDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...detailsDraft, category: value },
+                      }))}
                     >
-                      {task.title}
-                    </Link>
-                  ))}
-                  {openVendorTasks === 0 ? <p className="mt-1 font-medium">No related tasks</p> : null}
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {[...new Set([detailsDraft.category, ...vendorCategories])].map((category) => (
+                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`vendor-email-${vendor.id}`}>Email</Label>
+                    <Input
+                      id={`vendor-email-${vendor.id}`}
+                      type="email"
+                      value={detailsDraft.email}
+                      onChange={(event) => setVendorDetailsDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...detailsDraft, email: event.target.value },
+                      }))}
+                      placeholder="vendor@example.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`vendor-phone-${vendor.id}`}>Phone</Label>
+                    <Input
+                      id={`vendor-phone-${vendor.id}`}
+                      value={detailsDraft.phone}
+                      onChange={(event) => setVendorDetailsDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...detailsDraft, phone: event.target.value },
+                      }))}
+                      placeholder="+254..."
+                    />
+                  </div>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Button type="button" variant="outline" onClick={() => updateVendorDetails(vendor)} disabled={savingVendorDetailsId === vendor.id}>
+                    {savingVendorDetailsId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Save vendor details
+                  </Button>
                 </div>
               </div>
+
+              <div className="grid gap-5 lg:grid-cols-2">
+                <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                  <p className="font-semibold text-foreground">Confirmation and contract</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Move this vendor from an option to a confirmed booking.</p>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Vendor decision</Label>
+                      <Select
+                        value={(vendor.selection_status || 'shortlisted') as VendorSelectionStatus}
+                        onValueChange={(value) => void updateSelection(vendor, value as VendorSelectionStatus)}
+                        disabled={savingSelectionId === vendor.id}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {selectionStatuses.map((status) => <SelectItem key={status} value={status}>{vendorSelectionLabel(status)}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Contract</Label>
+                      <Select
+                        value={workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status}
+                        onValueChange={(value) => setWorkflowDrafts((current) => ({
+                          ...current,
+                          [vendor.id]: {
+                            ...(current[vendor.id] ?? { committeeRoleInCharge: 'unassigned', contractStatus: vendor.contract_status }),
+                            contractStatus: value,
+                          },
+                        }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {contractStatusOptions.map((status) => <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <Button type="button" variant="outline" onClick={() => updateVendorWorkflow(vendor)} disabled={savingWorkflowId === vendor.id}>
+                      {savingWorkflowId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save contract
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                  <p className="font-semibold text-foreground">Invoice and payments</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Track the deposit, instalments, and final payment.</p>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`vendor-price-${vendor.id}`}>Invoiced amount</Label>
+                      <Input id={`vendor-price-${vendor.id}`} type="number" min="0" value={priceDrafts[vendor.id] ?? ''} onChange={(event) => setPriceDrafts((current) => ({ ...current, [vendor.id]: event.target.value }))} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`vendor-deposit-${vendor.id}`}>Deposit</Label>
+                      <Input id={`vendor-deposit-${vendor.id}`} type="number" min="0" value={paymentDrafts[vendor.id]?.depositAmount ?? '0'} onChange={(event) => setPaymentDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), depositAmount: event.target.value },
+                      }))} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`vendor-paid-${vendor.id}`}>Total payments made</Label>
+                      <Input id={`vendor-paid-${vendor.id}`} type="number" min="0" value={paymentDrafts[vendor.id]?.amountPaid ?? '0'} onChange={(event) => setPaymentDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), amountPaid: event.target.value },
+                      }))} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Payment stage</Label>
+                      <Select
+                        value={paymentDrafts[vendor.id]?.paymentStatus ?? 'unpaid'}
+                        onValueChange={(value) => setPaymentDrafts((current) => ({
+                          ...current,
+                          [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentStatus: value as VendorPaymentStatus },
+                        }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {vendorPaymentStatuses.map((status) => <SelectItem key={status} value={status}>{vendorPaymentStatusLabel(status)}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor={`vendor-due-${vendor.id}`}>Next payment date</Label>
+                      <Input id={`vendor-due-${vendor.id}`} type="date" value={paymentDrafts[vendor.id]?.paymentDueDate ?? ''} onChange={(event) => setPaymentDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentDueDate: event.target.value },
+                      }))} />
+                    </div>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <Button type="button" onClick={() => updateVendorPayment(vendor)} disabled={savingPaymentId === vendor.id}>
+                      {savingPaymentId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save payments
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid min-w-0 gap-5 lg:grid-cols-2">
+                <div className="rounded-xl border border-primary/20 bg-primary/[0.035] p-4 sm:p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-foreground">Follow-ups</p>
+                      <p className="mt-1 text-sm text-muted-foreground">Keep vendor tasks attached here.</p>
+                    </div>
+                    <Badge variant="outline">{openVendorTasks} open</Badge>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {vendorTasks.filter((task) => !task.completed).slice(0, 4).map((task) => (
+                      <div key={task.id} className="rounded-lg border border-border/70 bg-background/70 px-3 py-2 text-sm font-medium text-foreground">{task.title}</div>
+                    ))}
+                    {openVendorTasks === 0 ? <p className="text-sm text-muted-foreground">No open follow-ups.</p> : null}
+                  </div>
+                  <Button type="button" variant="link" className="mt-3 h-auto p-0" onClick={() => {
+                    resetVendorTaskForm();
+                    setVendorTaskDialogVendor(vendor);
+                  }}>
+                    Add a follow-up task
+                  </Button>
+                </div>
+                <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-foreground">Private notes</p>
+                      <p className="mt-1 text-sm text-muted-foreground">Keep comparison and booking details together.</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => updateVendorNotes(vendor)} disabled={savingNotesId === vendor.id}>
+                      {savingNotesId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save notes
+                    </Button>
+                  </div>
+                  <Textarea className="mt-4 min-h-28" value={notesDrafts[vendor.id] ?? ''} onChange={(event) => setNotesDrafts((current) => ({ ...current, [vendor.id]: event.target.value }))} placeholder="Why you shortlisted this vendor, contract notes, and anything to remember..." />
+                </div>
+              </div>
+
               {!vendor.vendor_listing_id ? (
-                <div className="rounded-lg border border-border bg-background/70 p-4 text-sm">
-                  <p className="font-medium text-foreground">Vendor account</p>
-                  <p className="mt-1 text-muted-foreground">Create a private link this vendor can use to claim this record when they join Zania.</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2 border-t border-border/70 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-muted-foreground">Want this vendor to collaborate in Zania?</p>
+                  <div className="flex flex-wrap gap-2">
                     {vendorActiveInvite ? (
-                      <Button asChild type="button" variant="outline" size="sm">
+                      <Button asChild type="button" variant="link" size="sm" className="h-auto p-0">
                         <Link to={`/vendor-claim?token=${encodeURIComponent(vendorActiveInvite.invite_token)}&email=${encodeURIComponent(vendorActiveInvite.invite_contact_email ?? '')}`}>
                           Open vendor claim link
                         </Link>
@@ -2948,21 +3231,20 @@ export default function Vendors() {
                     ) : (
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="link"
                         size="sm"
+                        className="h-auto p-0"
                         disabled={workspaceInviteLoadingVendorId === vendor.id || workspaceInviteSubmittingVendorId === vendor.id || !activeWeddingId}
                         onClick={() => void createQuickVendorClaimLink(vendor)}
                       >
                         {workspaceInviteLoadingVendorId === vendor.id || workspaceInviteSubmittingVendorId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        {vendor.email || vendor.phone ? 'Create vendor claim link' : 'Add contact & create claim link'}
+                        {vendor.email || vendor.phone ? 'Create private claim link' : 'Add contact and create link'}
                       </Button>
                     )}
                   </div>
                 </div>
               ) : null}
               <div className="grid gap-2 sm:flex sm:flex-wrap">
-                {!isChosen && isRecorded ? <Button type="button" className="w-full sm:w-auto" onClick={() => updateSelection(vendor, 'final')}>Choose vendor</Button> : null}
-                {!isRecorded ? <p className="text-sm text-muted-foreground">Add or link a vendor before choosing.</p> : null}
                 <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setSelectedVendorId(null)}>Close</Button>
                 <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Remove vendor" title="Remove vendor" onClick={() => deleteVendor(vendor.id)}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
               </div>
