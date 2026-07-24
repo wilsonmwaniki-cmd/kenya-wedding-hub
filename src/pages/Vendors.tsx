@@ -169,6 +169,7 @@ interface VendorPaymentForm {
 }
 
 interface VendorsWorkspaceData {
+  categories: string[];
   vendors: Vendor[];
   vendorTasks: VendorTaskItem[];
   vendorPayments: VendorPaymentRecord[];
@@ -392,17 +393,19 @@ async function loadVendorsWorkspace(dataOrFilter: string): Promise<VendorsWorksp
   if (tasksResult.error) throw tasksResult.error;
   if (paymentsResult.error) throw paymentsResult.error;
 
-  const vendors = ((vendorsResult.data ?? []).map((d) => ({
+  const allVendors = ((vendorsResult.data ?? []).map((d) => ({
     ...d,
     amount_paid: Number(d.amount_paid ?? 0),
     committee_role_in_charge: d.committee_role_in_charge ?? null,
     contract_status: d.contract_status ?? 'not_started',
     deposit_amount: Number(d.deposit_amount ?? 0),
     price: d.price ? Number(d.price) : null,
-  })) as Vendor[]).filter(hasRecordedVendor);
+  })) as Vendor[]);
+  const vendors = allVendors.filter(hasRecordedVendor);
   const recordedVendorIds = new Set(vendors.map((vendor) => vendor.id));
 
   return {
+    categories: [...new Set(allVendors.map((vendor) => vendor.category).filter(Boolean))],
     vendors,
     vendorTasks: ((tasksResult.data as VendorTaskItem[] | null) ?? []).filter(
       (task) => !task.source_vendor_id || recordedVendorIds.has(task.source_vendor_id),
@@ -560,7 +563,7 @@ export default function Vendors() {
   const vendorsQuery = useQuery({
     queryKey: vendorsQueryKey,
     queryFn: async () => {
-      if (!dataOrFilter) return { vendors: [], vendorTasks: [], vendorPayments: [] } as VendorsWorkspaceData;
+      if (!dataOrFilter) return { categories: [], vendors: [], vendorTasks: [], vendorPayments: [] } as VendorsWorkspaceData;
       return loadVendorsWorkspace(dataOrFilter);
     },
     enabled: Boolean(dataOrFilter),
@@ -2001,11 +2004,18 @@ export default function Vendors() {
   }, [sortedVendors, vendorWorkspaceQuery]);
 
   const vendorsGroupedByCategory = useMemo(() => {
+    const categories = vendorWorkspaceQuery.trim()
+      ? []
+      : (vendorsQuery.data?.categories ?? []);
+    const initialGroups = Object.fromEntries(
+      categories.map((category) => [category, [] as Vendor[]]),
+    ) as Record<string, Vendor[]>;
+
     return vendorWorkspaceVendors.reduce<Record<string, Vendor[]>>((summary, vendor) => {
       summary[vendor.category] = [...(summary[vendor.category] ?? []), vendor];
       return summary;
-    }, {});
-  }, [vendorWorkspaceVendors]);
+    }, initialGroups);
+  }, [vendorWorkspaceQuery, vendorWorkspaceVendors, vendorsQuery.data?.categories]);
 
   const filteredVendorsByName = useMemo(
     () => [...vendorWorkspaceVendors].sort((left, right) => left.name.localeCompare(right.name)),
@@ -3330,7 +3340,7 @@ export default function Vendors() {
               </CardContent>
             </Card>
 
-            {vendorWorkspaceVendors.length === 0 ? (
+            {vendorWorkspaceVendors.length === 0 && (vendorListView === 'by_name' || Boolean(vendorWorkspaceQuery.trim())) ? (
               <Card className="semantic-surface-info border-dashed shadow-card">
                 <CardContent className="flex flex-col items-start gap-4 p-6 sm:p-8">
                   <div className="space-y-2">
@@ -3367,7 +3377,23 @@ export default function Vendors() {
                       </div>
                     </div>
                     <div className="space-y-4">
-                      {group.map(renderVendorRow)}
+                      {group.length > 0 ? group.map(renderVendorRow) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMode('custom');
+                            setForm({ name: '', category, email: '', phone: '', price: '' });
+                            setOpen(true);
+                          }}
+                          className="flex w-full items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-card/60 px-5 py-5 text-left transition-colors hover:border-primary/30 hover:bg-primary/[0.025] sm:px-7"
+                        >
+                          <div>
+                            <p className="font-medium text-foreground">No vendor added yet</p>
+                            <p className="mt-1 text-sm text-muted-foreground">Add a {category.toLowerCase()} vendor when you are ready.</p>
+                          </div>
+                          <span className="shrink-0 text-sm font-medium text-primary">Add vendor</span>
+                        </button>
+                      )}
                     </div>
                   </section>
                 ))}
