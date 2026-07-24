@@ -13,6 +13,7 @@ interface UseMilestoneCelebrationOptions {
   entityKey: string | null | undefined;
   completedCount: number;
   milestoneLabels: string[];
+  completedMilestoneLabels?: string[];
   onReached?: (detail: WorkspaceMilestoneEventDetail) => void;
   durationMs?: number;
 }
@@ -21,10 +22,11 @@ export function useMilestoneCelebration({
   entityKey,
   completedCount,
   milestoneLabels,
+  completedMilestoneLabels,
   onReached,
   durationMs = 1400,
 }: UseMilestoneCelebrationOptions) {
-  const previousCountsRef = useRef(new Map<string, number>());
+  const previousProgressRef = useRef(new Map<string, { count: number; labels: string[] }>());
   const callbackRef = useRef(onReached);
   const timeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const [celebratingEntityKey, setCelebratingEntityKey] = useState<string | null>(null);
@@ -34,17 +36,20 @@ export function useMilestoneCelebration({
   useEffect(() => {
     if (!entityKey) return;
 
-    const previousCount = previousCountsRef.current.get(entityKey);
-    previousCountsRef.current.set(entityKey, completedCount);
+    const currentLabels = completedMilestoneLabels ?? milestoneLabels.slice(0, completedCount);
+    const previousProgress = previousProgressRef.current.get(entityKey);
+    previousProgressRef.current.set(entityKey, { count: completedCount, labels: currentLabels });
 
     // Hydration and entity switches establish a baseline; they are not milestones.
-    if (previousCount === undefined || completedCount <= previousCount) return;
+    if (!previousProgress || completedCount <= previousProgress.count) return;
 
-    const milestoneLabel = milestoneLabels[Math.max(0, completedCount - 1)] ?? 'Planning milestone';
+    const milestoneLabel = currentLabels.find((label) => !previousProgress.labels.includes(label))
+      ?? milestoneLabels[Math.max(0, completedCount - 1)]
+      ?? 'Planning milestone';
     const detail: WorkspaceMilestoneEventDetail = {
       entityKey,
       completedCount,
-      previousCount,
+      previousCount: previousProgress.count,
       milestoneLabel,
     };
 
@@ -59,7 +64,7 @@ export function useMilestoneCelebration({
       setCelebratingEntityKey((current) => current === entityKey ? null : current);
       timeoutRef.current = null;
     }, durationMs);
-  }, [completedCount, durationMs, entityKey, milestoneLabels]);
+  }, [completedCount, completedMilestoneLabels, durationMs, entityKey, milestoneLabels]);
 
   useEffect(() => () => {
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);

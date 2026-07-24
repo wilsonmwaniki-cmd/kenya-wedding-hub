@@ -80,4 +80,36 @@ describe('product interaction workflows', () => {
 
     window.removeEventListener(WORKSPACE_MILESTONE_EVENT, listener);
   });
+
+  it('announces the milestone that actually changed when progress is out of order', () => {
+    const onReached = vi.fn();
+    const { rerender } = renderHook(
+      ({ completedCount, completedMilestoneLabels }) => useMilestoneCelebration({
+        entityKey: 'vendor-1',
+        completedCount,
+        milestoneLabels: ['Research', 'Booking', 'Second payment', 'Closure'],
+        completedMilestoneLabels,
+        onReached,
+      }),
+      {
+        initialProps: {
+          completedCount: 2,
+          completedMilestoneLabels: ['Research', 'Second payment'],
+        },
+      },
+    );
+
+    act(() => {
+      rerender({
+        completedCount: 3,
+        completedMilestoneLabels: ['Research', 'Booking', 'Second payment'],
+      });
+    });
+
+    expect(onReached).toHaveBeenCalledWith(expect.objectContaining({
+      milestoneLabel: 'Booking',
+      previousCount: 2,
+      completedCount: 3,
+    }));
+  });
 });

@@ -2102,10 +2102,17 @@ export default function Vendors() {
     () => selectedVendorMilestones.map((milestone) => milestone.label),
     [selectedVendorMilestones],
   );
+  const selectedVendorCompletedMilestoneLabels = useMemo(
+    () => selectedVendorMilestones
+      .filter((milestone) => milestone.status === 'complete')
+      .map((milestone) => milestone.label),
+    [selectedVendorMilestones],
+  );
   const { celebrating: selectedVendorMilestoneCelebrating } = useMilestoneCelebration({
     entityKey: selectedVendor?.id,
     completedCount: selectedVendorCompletedMilestones,
     milestoneLabels: selectedVendorMilestoneLabels,
+    completedMilestoneLabels: selectedVendorCompletedMilestoneLabels,
     onReached: ({ milestoneLabel }) => {
       toast({
         title: 'Vendor milestone reached',
