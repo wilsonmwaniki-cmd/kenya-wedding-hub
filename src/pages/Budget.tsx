@@ -2084,6 +2084,10 @@ export default function Budget() {
                       ? (category.allocated / visibleBudgetGoal) * 100
                       : 0;
                     const allRelevantVendors = getRecordedVendorsForBudgetCategory(category.name, vendorOptions);
+                    const categoryInvoicedAmount = allRelevantVendors
+                      .filter((vendor) => vendor.selection_status === 'final')
+                      .reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
+                    const categoryBalance = categoryInvoicedAmount - category.spent;
                     const relevantVendors = allRelevantVendors
                       .sort((left, right) => Number(right.selection_status === 'final') - Number(left.selection_status === 'final'))
                       .slice(0, 2);
@@ -2141,7 +2145,7 @@ export default function Budget() {
                                 ) : null}
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                {formatCurrency(category.spent)} spent · {formatCurrency(Math.max(category.allocated - category.spent, 0))} left
+                                {formatCurrency(category.spent)} paid · {formatCurrency(categoryBalance)} balance
                               </p>
                             </div>
                             <div className="shrink-0 text-right">
@@ -2157,9 +2161,14 @@ export default function Budget() {
 
                         <AnimatedCardDetails open={isSelected}>
                           <div className="min-w-0 space-y-4 border-t border-border bg-background/60 p-4 sm:p-5">
+                            <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 sm:px-4">
+                              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                Tracing Intended Vendor Budget
+                              </p>
+                            </div>
                             <div className="grid gap-3 rounded-lg border border-border bg-card p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_auto] sm:items-end sm:p-4">
                               <div className="space-y-2">
-                                <Label htmlFor={`planned-allocation-${category.id}`}>Planned amount</Label>
+                                <Label htmlFor={`planned-allocation-${category.id}`}>Intended Vendor Budget</Label>
                                 <div className="relative">
                                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
                                   <Input
@@ -2167,7 +2176,7 @@ export default function Budget() {
                                     type="number"
                                     min="0"
                                     inputMode="numeric"
-                                    aria-label={`Edit planned allocation for ${category.name}`}
+                                    aria-label={`Edit intended vendor budget for ${category.name}`}
                                     value={allocationDrafts[category.id]?.amount ?? String(category.allocated)}
                                     onChange={(event) => updateAllocationDraft(category, overallShare, event.target.value, 'amount')}
                                     className="pl-12"
@@ -2175,7 +2184,7 @@ export default function Budget() {
                                 </div>
                               </div>
                               <div className="space-y-2">
-                                <Label htmlFor={`percentage-allocation-${category.id}`}>Percentage</Label>
+                                <Label htmlFor={`percentage-allocation-${category.id}`}>Allocation Percentage</Label>
                                 <div className="relative">
                                   <Input
                                     id={`percentage-allocation-${category.id}`}
@@ -2183,7 +2192,7 @@ export default function Budget() {
                                     min="0"
                                     step="0.1"
                                     inputMode="decimal"
-                                    aria-label={`Edit percentage allocation for ${category.name}`}
+                                    aria-label={`Edit allocation percentage for ${category.name}`}
                                     value={allocationDrafts[category.id]?.percentage ?? overallShare.toFixed(1)}
                                     onChange={(event) => updateAllocationDraft(category, overallShare, event.target.value, 'percentage')}
                                     className="pr-9"
@@ -2212,14 +2221,18 @@ export default function Budget() {
                               </Button>
                             </div>
 
-                            <div className="grid grid-cols-2 divide-x divide-border border-y border-border py-3 text-center">
+                            <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-card py-3 text-center">
                               <div className="px-2">
-                                <p className="text-xs text-muted-foreground">Spent</p>
+                                <p className="text-xs text-muted-foreground">Payments Made</p>
                                 <p className="mt-1 text-sm font-semibold">{formatCurrency(category.spent)}</p>
                               </div>
                               <div className="px-2">
-                                <p className="text-xs text-muted-foreground">{category.spent > category.allocated ? 'Over' : 'Left'}</p>
-                                <p className={`mt-1 text-sm font-semibold ${category.spent > category.allocated ? 'text-destructive' : ''}`}>{formatCurrency(Math.abs(category.allocated - category.spent))}</p>
+                                <p className="text-xs text-muted-foreground">Invoiced Amount</p>
+                                <p className="mt-1 text-sm font-semibold">{formatCurrency(categoryInvoicedAmount)}</p>
+                              </div>
+                              <div className="px-2">
+                                <p className="text-xs text-muted-foreground">Balance</p>
+                                <p className={`mt-1 text-sm font-semibold ${categoryBalance < 0 ? 'text-destructive' : ''}`}>{formatCurrency(categoryBalance)}</p>
                               </div>
                             </div>
 
@@ -2414,20 +2427,8 @@ export default function Budget() {
                               ) : null}
                             </AnimatePresence>
 
-                            <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
-                              <div className="space-y-2">
-                                <Label htmlFor={`quick-spent-${category.id}`}>Spent so far</Label>
-                                <Input
-                                  id={`quick-spent-${category.id}`}
-                                  type="number"
-                                  value={spentDrafts[category.id] ?? ''}
-                                  onChange={(event) => setSpentDrafts((current) => ({ ...current, [category.id]: event.target.value }))}
-                                />
-                              </div>
-                              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => saveSpent(category)} disabled={savingSpentId === category.id}>
-                                {savingSpentId === category.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
-                              </Button>
-                              <Button type="button" className="w-full sm:w-auto" onClick={() => openSpendRecorder(category)}>Record payment</Button>
+                            <div className="flex justify-end">
+                              <Button type="button" className="w-full sm:w-auto" onClick={() => openSpendRecorder(category)}>Record Payment</Button>
                             </div>
 
                             <div className="flex justify-end">
