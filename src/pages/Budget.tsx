@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -19,7 +20,19 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
-import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
+import {
+  updateVendorPaymentState,
+  vendorPaymentStatuses,
+  vendorPaymentStatusLabel,
+  vendorPaymentStatusTone,
+  type VendorPaymentStatus,
+} from '@/lib/vendorPayments';
+import {
+  setVendorSelectionStatus,
+  vendorSelectionLabel,
+  vendorSelectionStatuses,
+  type VendorSelectionStatus,
+} from '@/lib/vendorSelection';
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
 import { getEntitlementDecision } from '@/lib/entitlements';
@@ -98,6 +111,8 @@ interface BudgetVendorOption {
   category: string;
   price: number | null;
   amount_paid: number;
+  deposit_amount: number;
+  contract_status: string;
   payment_status: string;
   payment_due_date: string | null;
   selection_status?: string | null;
@@ -124,7 +139,30 @@ interface BudgetTaskOption {
   description: string | null;
   category: string | null;
   completed: boolean;
+  due_date: string | null;
   source_vendor_id: string | null;
+}
+
+interface VendorEditorDraft {
+  name: string;
+  category: string;
+  phone: string;
+  email: string;
+  price: string;
+  selectionStatus: VendorSelectionStatus;
+  contractStatus: string;
+  depositAmount: string;
+  amountPaid: string;
+  paymentStatus: VendorPaymentStatus;
+  paymentDueDate: string;
+  notes: string;
+}
+
+interface TaskEditorDraft {
+  title: string;
+  description: string;
+  dueDate: string;
+  completed: boolean;
 }
 
 interface PaymentCategoryOption {
@@ -193,7 +231,7 @@ async function loadBudgetCategories(dataOrFilter: string): Promise<BudgetCategor
 async function loadBudgetVendorOptions(dataOrFilter: string): Promise<BudgetVendorOption[]> {
   const { data, error } = await supabase
     .from('vendors')
-    .select('id, name, category, price, amount_paid, payment_status, payment_due_date, selection_status, status, vendor_listing_id, phone, email, notes')
+    .select('id, name, category, price, amount_paid, deposit_amount, contract_status, payment_status, payment_due_date, selection_status, status, vendor_listing_id, phone, email, notes')
     .or(dataOrFilter)
     .order('category');
 
@@ -202,6 +240,8 @@ async function loadBudgetVendorOptions(dataOrFilter: string): Promise<BudgetVend
   return ((data ?? []) as any[]).map((row) => ({
     ...row,
     amount_paid: Number(row.amount_paid ?? 0),
+    deposit_amount: Number(row.deposit_amount ?? 0),
+    contract_status: row.contract_status ?? 'not_started',
     price: row.price != null ? Number(row.price) : null,
   }));
 }
@@ -237,7 +277,7 @@ async function loadBudgetPaymentRecords(dataOrFilter: string): Promise<BudgetPay
 async function loadBudgetTasks(dataOrFilter: string): Promise<BudgetTaskOption[]> {
   const { data, error } = await supabase
     .from('tasks')
-    .select('id, title, description, category, completed, source_vendor_id')
+    .select('id, title, description, category, completed, due_date, source_vendor_id')
     .or(dataOrFilter)
     .order('completed');
 
@@ -271,6 +311,16 @@ export default function Budget() {
   const [inlineTaskDrafts, setInlineTaskDrafts] = useState<Record<string, string>>({});
   const [savingInlineVendorId, setSavingInlineVendorId] = useState<string | null>(null);
   const [savingInlineTaskId, setSavingInlineTaskId] = useState<string | null>(null);
+  const [vendorEditorCategory, setVendorEditorCategory] = useState<BudgetCategory | null>(null);
+  const [vendorEditorRecord, setVendorEditorRecord] = useState<BudgetVendorOption | null>(null);
+  const [vendorEditorOpen, setVendorEditorOpen] = useState(false);
+  const [savingVendorEditor, setSavingVendorEditor] = useState(false);
+  const [vendorEditorDraft, setVendorEditorDraft] = useState<VendorEditorDraft | null>(null);
+  const [taskEditorCategory, setTaskEditorCategory] = useState<BudgetCategory | null>(null);
+  const [taskEditorRecord, setTaskEditorRecord] = useState<BudgetTaskOption | null>(null);
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false);
+  const [savingTaskEditor, setSavingTaskEditor] = useState(false);
+  const [taskEditorDraft, setTaskEditorDraft] = useState<TaskEditorDraft | null>(null);
   const [spentDrafts, setSpentDrafts] = useState<Record<string, string>>({});
   const [allocationDrafts, setAllocationDrafts] = useState<Record<string, { amount: string; percentage: string; lastEditedField: 'amount' | 'percentage' }>>({});
   const [savingAllocationId, setSavingAllocationId] = useState<string | null>(null);
@@ -405,6 +455,180 @@ export default function Budget() {
       queryClient.invalidateQueries({ queryKey: paymentsQueryKey }),
       queryClient.invalidateQueries({ queryKey: tasksQueryKey }),
     ]);
+  };
+
+  const openVendorEditor = (category: BudgetCategory, vendor?: BudgetVendorOption) => {
+    setVendorEditorCategory(category);
+    setVendorEditorRecord(vendor ?? null);
+    setVendorEditorDraft({
+      name: vendor?.name ?? '',
+      category: vendor?.category ?? category.name,
+      phone: vendor?.phone ?? '',
+      email: vendor?.email ?? '',
+      price: vendor?.price == null ? '' : String(vendor.price),
+      selectionStatus: (vendor?.selection_status ?? 'shortlisted') as VendorSelectionStatus,
+      contractStatus: vendor?.contract_status ?? 'not_started',
+      depositAmount: String(vendor?.deposit_amount ?? 0),
+      amountPaid: String(vendor?.amount_paid ?? 0),
+      paymentStatus: (vendor?.payment_status ?? 'unpaid') as VendorPaymentStatus,
+      paymentDueDate: vendor?.payment_due_date ?? '',
+      notes: vendor?.notes ?? '',
+    });
+    setVendorEditorOpen(true);
+  };
+
+  const saveVendorEditor = async () => {
+    if (!user || !vendorEditorCategory || !vendorEditorDraft) return;
+    const name = vendorEditorDraft.name.trim();
+    const price = vendorEditorDraft.price.trim() === '' ? null : Number(vendorEditorDraft.price);
+    const depositAmount = Number(vendorEditorDraft.depositAmount || 0);
+    const amountPaid = Number(vendorEditorDraft.amountPaid || 0);
+    if (!name) {
+      toast({ title: 'Add the vendor name', description: 'A business or contact name is required.', variant: 'destructive' });
+      return;
+    }
+    if ((price != null && (!Number.isFinite(price) || price < 0)) || !Number.isFinite(depositAmount) || depositAmount < 0 || !Number.isFinite(amountPaid) || amountPaid < 0) {
+      toast({ title: 'Check the amounts', description: 'Invoice, deposit, and payment amounts must be zero or higher.', variant: 'destructive' });
+      return;
+    }
+
+    const updates = {
+      name,
+      category: vendorEditorCategory.name,
+      phone: vendorEditorDraft.phone.trim() || null,
+      email: vendorEditorDraft.email.trim() || null,
+      price,
+      contract_status: vendorEditorDraft.contractStatus,
+      deposit_amount: depositAmount,
+      amount_paid: amountPaid,
+      payment_status: vendorEditorDraft.paymentStatus,
+      payment_due_date: vendorEditorDraft.paymentDueDate || null,
+      notes: vendorEditorDraft.notes.trim() || null,
+      selection_status: vendorEditorDraft.selectionStatus,
+      status: vendorEditorDraft.selectionStatus === 'final' ? 'booked' : vendorEditorRecord?.status ?? 'contacted',
+    };
+
+    setSavingVendorEditor(true);
+    try {
+      if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'vendors',
+          changeType: vendorEditorRecord ? 'update' : 'create',
+          targetId: vendorEditorRecord?.id,
+          currentPayload: vendorEditorRecord ? vendorEditorRecord as unknown as Record<string, unknown> : undefined,
+          proposedPayload: updates,
+        });
+        toast({ title: vendorEditorRecord ? 'Vendor update sent for approval' : 'Vendor sent for approval', description: 'The couple will review these details.' });
+      } else if (vendorEditorRecord) {
+        const { selection_status: _selectionStatus, ...recordUpdates } = updates;
+        const { error } = await supabase.from('vendors').update(recordUpdates).eq('id', vendorEditorRecord.id);
+        if (error) throw error;
+        if (vendorEditorDraft.selectionStatus !== vendorEditorRecord.selection_status) {
+          await setVendorSelectionStatus(vendorEditorRecord.id, vendorEditorDraft.selectionStatus);
+        }
+        await updateVendorPaymentState({
+          vendorId: vendorEditorRecord.id,
+          contractAmount: price,
+          depositAmount,
+          amountPaid,
+          paymentStatus: vendorEditorDraft.paymentStatus,
+          paymentDueDate: vendorEditorDraft.paymentDueDate || null,
+        });
+        toast({ title: 'Vendor updated', description: `${name}'s details are now current.` });
+      } else {
+        const { selection_status: requestedSelectionStatus, ...newVendorDetails } = updates;
+        const { data: insertedVendor, error } = await supabase.from('vendors').insert({
+          user_id: user.id,
+          client_id: isPlanner && selectedClient ? selectedClient.id : null,
+          ...newVendorDetails,
+          selection_status: 'shortlisted',
+        }).select('id').single();
+        if (error) throw error;
+        if (requestedSelectionStatus !== 'shortlisted') {
+          await setVendorSelectionStatus(insertedVendor.id, requestedSelectionStatus);
+        }
+        toast({
+          title: 'Vendor added',
+          description: requestedSelectionStatus === 'final'
+            ? `${name} is now the confirmed ${vendorEditorCategory.name} vendor.`
+            : `${name} is now in the ${vendorEditorCategory.name} shortlist.`,
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: vendorsQueryKey });
+      setVendorEditorOpen(false);
+    } catch (error) {
+      toast({ title: 'Could not save vendor', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setSavingVendorEditor(false);
+    }
+  };
+
+  const openTaskEditor = (category: BudgetCategory, task?: BudgetTaskOption) => {
+    setTaskEditorCategory(category);
+    setTaskEditorRecord(task ?? null);
+    setTaskEditorDraft({
+      title: task?.title ?? '',
+      description: task?.description ?? '',
+      dueDate: task?.due_date ?? '',
+      completed: task?.completed ?? false,
+    });
+    setTaskEditorOpen(true);
+  };
+
+  const saveTaskEditor = async () => {
+    if (!user || !taskEditorCategory || !taskEditorDraft) return;
+    const title = taskEditorDraft.title.trim();
+    if (!title) {
+      toast({ title: 'Add a task title', description: 'Write the action that needs to be completed.', variant: 'destructive' });
+      return;
+    }
+    const updates = {
+      title,
+      description: taskEditorDraft.description.trim() || null,
+      due_date: taskEditorDraft.dueDate || null,
+      category: taskEditorCategory.name,
+      completed: taskEditorDraft.completed,
+    };
+
+    setSavingTaskEditor(true);
+    try {
+      if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'tasks',
+          changeType: taskEditorRecord ? 'update' : 'create',
+          targetId: taskEditorRecord?.id,
+          currentPayload: taskEditorRecord ? taskEditorRecord as unknown as Record<string, unknown> : undefined,
+          proposedPayload: updates,
+        });
+        toast({ title: taskEditorRecord ? 'Task update sent for approval' : 'Task sent for approval', description: 'The couple will review this change.' });
+      } else if (taskEditorRecord) {
+        const { error } = await supabase.from('tasks').update(updates).eq('id', taskEditorRecord.id);
+        if (error) throw error;
+        toast({ title: 'Task updated', description: `${title} is now current.` });
+      } else {
+        await createVendorTask({
+          userId: user.id,
+          clientId: isPlanner && selectedClient ? selectedClient.id : null,
+          title,
+          description: updates.description,
+          dueDate: updates.due_date,
+          category: taskEditorCategory.name,
+        });
+        toast({ title: 'Task added', description: `It is now connected to ${taskEditorCategory.name}.` });
+      }
+      await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+      setTaskEditorOpen(false);
+    } catch (error) {
+      toast({ title: 'Could not save task', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setSavingTaskEditor(false);
+    }
   };
 
   const addInlineVendor = async (category: BudgetCategory, suggestion?: DirectoryVendorSuggestion) => {
@@ -2254,178 +2478,70 @@ export default function Budget() {
                             ) : null}
 
                             <div className="grid gap-4 md:grid-cols-2 md:divide-x md:divide-border">
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium">Vendor Shortlist</p>
-                                {relevantVendors.length ? relevantVendors.map((vendor) => (
-                                  <div key={vendor.id} className="mt-2 flex min-w-0 items-start justify-between gap-3 text-sm">
-                                    <Link
-                                      to={`/vendors?vendor=${encodeURIComponent(vendor.id)}`}
-                                      className="min-w-0 flex-1 break-words font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
-                                    >
-                                      {vendor.name}
-                                    </Link>
-                                    <Badge variant={vendor.selection_status === 'final' ? 'default' : 'outline'}>
-                                      {vendor.status === 'booked'
-                                        ? 'Booked'
-                                        : vendor.selection_status === 'final'
-                                          ? 'Confirmed'
-                                          : 'Shortlisted'}
-                                    </Badge>
+                              <div className="min-w-0 rounded-lg border border-primary/20 bg-primary/[0.035] p-3 sm:p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-semibold">Vendor Shortlist</p>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">Open a vendor to review or update every detail here.</p>
                                   </div>
-                                )) : <p className="mt-2 text-sm text-muted-foreground">No vendors shortlisted yet.</p>}
+                                  <Badge variant="outline" className="shrink-0 bg-background/80">{allRelevantVendors.length}</Badge>
+                                </div>
+                                {relevantVendors.length ? relevantVendors.map((vendor) => (
+                                  <button
+                                    key={vendor.id}
+                                    type="button"
+                                    onClick={() => openVendorEditor(category, vendor)}
+                                    className="mt-3 flex w-full min-w-0 items-center justify-between gap-3 rounded-md border border-border/70 bg-background px-3 py-2.5 text-left transition-colors hover:border-primary/35 hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  >
+                                    <span className="min-w-0">
+                                      <span className="block truncate text-sm font-medium text-foreground">{vendor.name}</span>
+                                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                                        {contractStatusLabel(vendor.contract_status)} · {vendorPaymentStatusLabel(vendor.payment_status)}
+                                      </span>
+                                    </span>
+                                    <Badge variant={vendor.selection_status === 'final' ? 'default' : 'outline'} className="shrink-0">
+                                      {vendor.selection_status === 'final' ? 'Confirmed' : vendorSelectionLabel(vendor.selection_status)}
+                                    </Badge>
+                                  </button>
+                                )) : <p className="mt-3 text-sm text-muted-foreground">No vendors shortlisted yet.</p>}
                                 <Button
                                   type="button"
                                   variant="link"
                                   className="mt-2 h-auto p-0"
-                                  aria-expanded={activeInlineModule === 'vendor'}
-                                  onClick={() => setInlineModule(activeInlineModule === 'vendor' ? null : { categoryId: category.id, type: 'vendor' })}
+                                  onClick={() => openVendorEditor(category)}
                                 >
-                                  {activeInlineModule === 'vendor' ? 'Close vendor suggestions' : relevantVendors.length ? 'Add another vendor' : 'Find a vendor'}
+                                  {relevantVendors.length ? 'Add another vendor' : 'Add a vendor'}
                                 </Button>
                               </div>
 
                               <div className="min-w-0 md:pl-4">
                                 <p className="text-sm font-medium">Related tasks</p>
                                 {relevantTasks.length ? relevantTasks.map((task) => (
-                                  <div key={task.id} className="mt-2 flex min-w-0 items-start justify-between gap-3 text-sm">
-                                    <Link
-                                      to={`/tasks?task=${encodeURIComponent(task.id)}`}
-                                      className={task.completed
-                                        ? 'min-w-0 flex-1 break-words text-muted-foreground line-through underline-offset-4 hover:text-foreground hover:underline'
-                                        : 'min-w-0 flex-1 break-words font-medium text-foreground underline-offset-4 hover:text-primary hover:underline'}
+                                  <button
+                                    key={task.id}
+                                    type="button"
+                                    onClick={() => openTaskEditor(category, task)}
+                                    className="mt-2 flex w-full min-w-0 items-start justify-between gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  >
+                                    <span className={task.completed
+                                      ? 'min-w-0 flex-1 break-words text-muted-foreground line-through'
+                                      : 'min-w-0 flex-1 break-words font-medium text-foreground'}
                                     >
                                       {task.title}
-                                    </Link>
+                                    </span>
                                     <Badge variant="outline">{task.completed ? 'Done' : 'Next'}</Badge>
-                                  </div>
+                                  </button>
                                 )) : <p className="mt-2 text-sm text-muted-foreground">No matching task yet.</p>}
                                 <Button
                                   type="button"
                                   variant="link"
                                   className="mt-2 h-auto p-0"
-                                  aria-expanded={activeInlineModule === 'task'}
-                                  onClick={() => setInlineModule(activeInlineModule === 'task' ? null : { categoryId: category.id, type: 'task' })}
+                                  onClick={() => openTaskEditor(category)}
                                 >
-                                  {activeInlineModule === 'task' ? 'Close task suggestions' : relevantTasks.length ? 'Add another task' : 'Add a task'}
+                                  {relevantTasks.length ? 'Add another task' : 'Add a task'}
                                 </Button>
                               </div>
                             </div>
-
-                            <AnimatePresence initial={false} mode="wait">
-                              {activeInlineModule === 'vendor' ? (
-                                <motion.div
-                                  key="vendor-module"
-                                  initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={prefersReducedMotion ? undefined : { height: 0, opacity: 0 }}
-                                  transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: 'easeOut' }}
-                                  className="overflow-hidden"
-                                >
-                                  <div className="min-w-0 space-y-3 border-y border-border bg-muted/20 px-3 py-4 sm:px-4">
-                                    <div>
-                                      <p className="text-sm font-semibold">Suggested {category.name.toLowerCase()} vendors</p>
-                                      <p className="mt-1 text-xs text-muted-foreground">Approved Zania directory options you can add to this budget item.</p>
-                                    </div>
-                                    {directorySuggestionsQuery.isLoading ? (
-                                      <p className="text-sm text-muted-foreground">Finding suitable vendors…</p>
-                                    ) : suggestedVendors.length ? (
-                                      <div className="divide-y divide-border rounded-md border border-border bg-card">
-                                        {suggestedVendors.map((vendor) => (
-                                          <div key={vendor.id} className="flex min-w-0 items-start justify-between gap-3 px-3 py-3">
-                                            <div className="min-w-0">
-                                              <p className="truncate text-sm font-medium">{vendor.business_name}</p>
-                                              <p className="mt-0.5 text-xs text-muted-foreground">
-                                                {[vendor.location, vendor.is_verified ? 'Verified' : null].filter(Boolean).join(' · ') || vendor.category}
-                                              </p>
-                                            </div>
-                                            <Button
-                                              type="button"
-                                              size="sm"
-                                              variant="outline"
-                                              disabled={savingInlineVendorId !== null}
-                                              onClick={() => void addInlineVendor(category, vendor)}
-                                            >
-                                              {savingInlineVendorId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
-                                            </Button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-sm text-muted-foreground">No directory match yet. Add a vendor you already know below.</p>
-                                    )}
-                                    <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                                      <Input
-                                        aria-label={`Vendor name for ${category.name}`}
-                                        placeholder="Vendor business name"
-                                        value={inlineVendorDrafts[category.id] ?? ''}
-                                        onChange={(event) => setInlineVendorDrafts((current) => ({ ...current, [category.id]: event.target.value }))}
-                                      />
-                                      <Button
-                                        type="button"
-                                        disabled={savingInlineVendorId !== null}
-                                        onClick={() => void addInlineVendor(category)}
-                                      >
-                                        {savingInlineVendorId === `custom-${category.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add vendor'}
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </motion.div>
-                              ) : activeInlineModule === 'task' ? (
-                                <motion.div
-                                  key="task-module"
-                                  initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
-                                  animate={{ height: 'auto', opacity: 1 }}
-                                  exit={prefersReducedMotion ? undefined : { height: 0, opacity: 0 }}
-                                  transition={{ duration: prefersReducedMotion ? 0 : 0.2, ease: 'easeOut' }}
-                                  className="overflow-hidden"
-                                >
-                                  <div className="min-w-0 space-y-3 border-y border-border bg-muted/20 px-3 py-4 sm:px-4">
-                                    <div>
-                                      <p className="text-sm font-semibold">Suggested next tasks</p>
-                                      <p className="mt-1 text-xs text-muted-foreground">Based on this budget item and Zania’s wedding checklist.</p>
-                                    </div>
-                                    {suggestedTasks.length ? (
-                                      <div className="divide-y divide-border rounded-md border border-border bg-card">
-                                        {suggestedTasks.map((task) => (
-                                          <div key={task.key} className="flex min-w-0 items-start justify-between gap-3 px-3 py-3">
-                                            <div className="min-w-0">
-                                              <p className="break-words text-sm font-medium">{task.title}</p>
-                                              {task.description ? <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{task.description}</p> : null}
-                                            </div>
-                                            <Button
-                                              type="button"
-                                              size="sm"
-                                              variant="outline"
-                                              disabled={savingInlineTaskId !== null}
-                                              onClick={() => void addInlineTask(category, task)}
-                                            >
-                                              {savingInlineTaskId === task.key ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
-                                            </Button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-sm text-muted-foreground">The suggested checklist tasks are already in your plan.</p>
-                                    )}
-                                    <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                                      <Input
-                                        aria-label={`New task for ${category.name}`}
-                                        placeholder="Write a short task"
-                                        value={inlineTaskDrafts[category.id] ?? ''}
-                                        onChange={(event) => setInlineTaskDrafts((current) => ({ ...current, [category.id]: event.target.value }))}
-                                      />
-                                      <Button
-                                        type="button"
-                                        disabled={savingInlineTaskId !== null}
-                                        onClick={() => void addInlineTask(category)}
-                                      >
-                                        {savingInlineTaskId === `custom-${category.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add task'}
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </motion.div>
-                              ) : null}
-                            </AnimatePresence>
 
                             <div className="flex justify-end">
                               <Button type="button" className="w-full sm:w-auto" onClick={() => openSpendRecorder(category)}>Record Payment</Button>
@@ -2947,6 +3063,139 @@ export default function Budget() {
           ) : null}
         </div>
       </details>
+
+      <Dialog open={vendorEditorOpen} onOpenChange={setVendorEditorOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {vendorEditorRecord ? 'Vendor Details' : 'Add Vendor'}
+            </DialogTitle>
+          </DialogHeader>
+          {vendorEditorDraft && vendorEditorCategory ? (
+            <form
+              className="space-y-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveVendorEditor();
+              }}
+            >
+              <div className="rounded-lg border border-primary/20 bg-primary/[0.04] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Category</p>
+                <p className="mt-1 font-medium text-foreground">{vendorEditorCategory.name}</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="vendor-editor-name">Vendor name</Label>
+                  <Input id="vendor-editor-name" value={vendorEditorDraft.name} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, name: event.target.value } : current)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-editor-phone">Phone</Label>
+                  <Input id="vendor-editor-phone" value={vendorEditorDraft.phone} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, phone: event.target.value } : current)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-editor-email">Email</Label>
+                  <Input id="vendor-editor-email" type="email" value={vendorEditorDraft.email} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, email: event.target.value } : current)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Vendor decision</Label>
+                  <Select value={vendorEditorDraft.selectionStatus} onValueChange={(value) => setVendorEditorDraft((current) => current ? { ...current, selectionStatus: value as VendorSelectionStatus } : current)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {vendorSelectionStatuses.map((status) => <SelectItem key={status} value={status}>{vendorSelectionLabel(status)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Contract</Label>
+                  <Select value={vendorEditorDraft.contractStatus} onValueChange={(value) => setVendorEditorDraft((current) => current ? { ...current, contractStatus: value } : current)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {contractStatusOptions.map((status) => <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-editor-price">Invoiced / contract amount (KES)</Label>
+                  <Input id="vendor-editor-price" type="number" min="0" value={vendorEditorDraft.price} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, price: event.target.value } : current)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-editor-deposit">Deposit amount (KES)</Label>
+                  <Input id="vendor-editor-deposit" type="number" min="0" value={vendorEditorDraft.depositAmount} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, depositAmount: event.target.value } : current)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-editor-paid">Total paid (KES)</Label>
+                  <Input id="vendor-editor-paid" type="number" min="0" value={vendorEditorDraft.amountPaid} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, amountPaid: event.target.value } : current)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Payment stage</Label>
+                  <Select value={vendorEditorDraft.paymentStatus} onValueChange={(value) => setVendorEditorDraft((current) => current ? { ...current, paymentStatus: value as VendorPaymentStatus } : current)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {vendorPaymentStatuses.map((status) => <SelectItem key={status} value={status}>{vendorPaymentStatusLabel(status)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="vendor-editor-due">Next payment due</Label>
+                  <Input id="vendor-editor-due" type="date" value={vendorEditorDraft.paymentDueDate} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, paymentDueDate: event.target.value } : current)} />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="vendor-editor-notes">Notes</Label>
+                  <Textarea id="vendor-editor-notes" rows={4} value={vendorEditorDraft.notes} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, notes: event.target.value } : current)} placeholder="Scope, contact notes, contract details, or payment context" />
+                </div>
+              </div>
+              <Button type="submit" className="w-full" disabled={savingVendorEditor}>
+                {savingVendorEditor ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {vendorEditorRecord ? 'Save Vendor Details' : 'Add Vendor'}
+              </Button>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={taskEditorOpen} onOpenChange={setTaskEditorOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">{taskEditorRecord ? 'Task Details' : 'Add Task'}</DialogTitle>
+          </DialogHeader>
+          {taskEditorDraft && taskEditorCategory ? (
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveTaskEditor();
+              }}
+            >
+              <div className="rounded-lg border border-border/70 bg-muted/30 px-4 py-3 text-sm">
+                <span className="text-muted-foreground">Category: </span>
+                <span className="font-medium text-foreground">{taskEditorCategory.name}</span>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="task-editor-title">Task</Label>
+                <Input id="task-editor-title" value={taskEditorDraft.title} onChange={(event) => setTaskEditorDraft((current) => current ? { ...current, title: event.target.value } : current)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="task-editor-description">Details</Label>
+                <Textarea id="task-editor-description" rows={4} value={taskEditorDraft.description} onChange={(event) => setTaskEditorDraft((current) => current ? { ...current, description: event.target.value } : current)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="task-editor-due">Due date</Label>
+                <Input id="task-editor-due" type="date" value={taskEditorDraft.dueDate} onChange={(event) => setTaskEditorDraft((current) => current ? { ...current, dueDate: event.target.value } : current)} />
+              </div>
+              {taskEditorRecord ? (
+                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+                  <Checkbox id="task-editor-completed" checked={taskEditorDraft.completed} onCheckedChange={(checked) => setTaskEditorDraft((current) => current ? { ...current, completed: checked === true } : current)} />
+                  <Label htmlFor="task-editor-completed" className="cursor-pointer">Task completed</Label>
+                </div>
+              ) : null}
+              <Button type="submit" className="w-full" disabled={savingTaskEditor}>
+                {savingTaskEditor ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {taskEditorRecord ? 'Save Task' : 'Add Task'}
+              </Button>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(recordingCategory)} onOpenChange={(nextOpen) => { if (!nextOpen) setRecordingCategory(null); }}>
         <DialogContent>
