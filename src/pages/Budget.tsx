@@ -1652,7 +1652,7 @@ export default function Budget() {
           {activeBudgetScope === 'wedding' ? (
             <>
               <Label htmlFor="workspace-total-budget" className="text-xs font-normal text-muted-foreground">
-                Overall budget
+                Intended Wedding Budget
               </Label>
               <div className="relative mt-2">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
@@ -1685,21 +1685,21 @@ export default function Budget() {
           )}
         </div>
         <div className="border-b border-border p-3 sm:border-b-0 sm:border-r sm:p-4">
-          <p className="text-xs text-muted-foreground">Allocated</p>
+          <p className="text-xs text-muted-foreground">Total Vendor Invoice</p>
           <p className="mt-1 truncate text-base font-semibold text-foreground sm:text-lg">{formatCurrency(visibleAllocated)}</p>
           <p className={`mt-1 text-xs ${visibleAllocationPercentage > 100 ? 'font-semibold text-destructive' : 'text-muted-foreground'}`}>
             {visibleAllocationPercentage.toFixed(1)}% planned
           </p>
         </div>
         <div className="border-r border-border p-3 sm:p-4">
-          <p className="text-xs text-muted-foreground">Spent</p>
+          <p className="text-xs text-muted-foreground">Total Vendor Payments</p>
           <p className="mt-1 truncate text-base font-semibold text-foreground sm:text-lg">{formatCurrency(visibleSpent)}</p>
           <p className="mt-1 text-xs text-muted-foreground">{visibleSpentPercentage}% of budget</p>
         </div>
         <div className="p-3 sm:p-4">
-          <p className="text-xs text-muted-foreground">{remainingAllocationBudget >= 0 ? 'Remaining' : 'Over budget'}</p>
+          <p className="text-xs text-muted-foreground">Balance</p>
           <p className={`mt-1 truncate text-base font-semibold sm:text-lg ${remainingAllocationBudget < 0 ? 'text-destructive' : 'text-foreground'}`}>
-            {formatCurrency(Math.abs(remainingAllocationBudget))}
+            {formatCurrency(remainingAllocationBudget)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">After planned costs</p>
         </div>
