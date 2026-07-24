@@ -133,8 +133,6 @@ interface PaymentCategoryOption {
   budgetCategoryId: string | null;
 }
 
-type BudgetViewMode = 'by_category' | 'payments_made';
-
 interface PaymentLogForm {
   budgetScope: BudgetScope;
   categorySelection: string;
@@ -266,7 +264,6 @@ export default function Budget() {
   const [selectedTemplateName, setSelectedTemplateName] = useState('');
   const [newCategoryScope, setNewCategoryScope] = useState<BudgetScope>('wedding');
   const [activeBudgetScope, setActiveBudgetScope] = useState<BudgetScope>('wedding');
-  const [budgetViewMode, setBudgetViewMode] = useState<BudgetViewMode>('by_category');
   const [categorySearch, setCategorySearch] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [inlineModule, setInlineModule] = useState<{ categoryId: string; type: 'vendor' | 'task' } | null>(null);
@@ -1644,7 +1641,24 @@ export default function Budget() {
           <h1 className="mt-2 font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Where is the money going?</h1>
           <p className="mt-2 text-sm text-muted-foreground">Plan each cost and record what you pay.</p>
         </div>
-        <Button type="button" onClick={() => setOpen(true)}>Add category</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (!exportDecision.allowed) {
+                setExportUpgradeOpen(true);
+                return;
+              }
+              exportBudgetData();
+            }}
+          >
+            Export Budget
+          </Button>
+          <Button type="button" onClick={() => setOpen(true)}>Add Category</Button>
+        </div>
       </header>
 
       <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4">
@@ -1736,14 +1750,6 @@ export default function Budget() {
             ? [{ value: 'wedding', label: 'Wedding' }, { value: 'personal', label: 'Personal' }]
             : [{ value: 'wedding', label: 'Wedding' }]}
           onChange={setActiveBudgetScope}
-          reducedMotion={Boolean(prefersReducedMotion)}
-        />
-        <SlidingSegmentedControl
-          label="Budget view"
-          layoutId="budget-view-selection"
-          value={budgetViewMode}
-          options={[{ value: 'by_category', label: 'Categories' }, { value: 'payments_made', label: 'Payments' }]}
-          onChange={setBudgetViewMode}
           reducedMotion={Boolean(prefersReducedMotion)}
         />
       </div>
@@ -1909,20 +1915,6 @@ export default function Budget() {
               </form>
             </DialogContent>
           </Dialog>
-          <Button
-            type="button"
-            className="w-full sm:w-auto"
-            variant="outline"
-            onClick={() => {
-              if (!exportDecision.allowed) {
-                setExportUpgradeOpen(true);
-                return;
-              }
-              exportBudgetData();
-            }}
-          >
-            Export budget
-          </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent>
               <DialogHeader>
@@ -2928,32 +2920,7 @@ export default function Budget() {
             </Card>
           )}
 
-          {budgetViewMode === 'payments_made' ? (
-            <Card className="shadow-card">
-              <CardContent className="py-5">
-                <p className="text-sm font-medium text-foreground">Payments made</p>
-                {currentScopePayments.length > 0 ? (
-                  <div className="mt-4 space-y-3">
-                    {currentScopePayments.map((payment) => (
-                      <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{payment.payee_name}</p>
-                          <p className="text-xs text-muted-foreground">{payment.category_name}</p>
-                        </div>
-                        <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
-                        <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
-                        <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-4 text-sm text-muted-foreground">
-                    No payments recorded yet. Use “Record Payment Made” to start building your payment history.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          ) : currentScopePayments.length > 0 ? (
+          {currentScopePayments.length > 0 ? (
             <Card className="shadow-card">
               <CardContent className="py-5">
                 <p className="text-sm font-medium text-foreground">Payments by category</p>
