@@ -34,6 +34,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ToastAction } from '@/components/ui/toast';
 import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
+import { HierarchyGroup } from '@/components/HierarchyGroup';
 import { getConfirmedVendorForTask, getRelatedBudgetCategoryForTask } from '@/lib/budgetRelations';
 
 interface Task {
@@ -226,6 +227,7 @@ export default function Tasks() {
   const [taskScopeFilter, setTaskScopeFilter] = useState<TaskScopeFilter>('all');
   const [taskSearch, setTaskSearch] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [expandedTaskGroups, setExpandedTaskGroups] = useState<Record<string, boolean>>({});
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [submittingTask, setSubmittingTask] = useState(false);
@@ -1368,22 +1370,71 @@ export default function Tasks() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-5">
-                {taskGroups.map((group) => (
-                  <div key={group.label} className="space-y-3">
-                    <div className="flex items-center justify-between gap-3 border-t border-border pt-5 first:border-t-0 first:pt-0">
-                      <h3 className={cn('text-lg font-semibold', group.tone === 'urgent' ? 'text-destructive' : 'text-foreground')}>
-                        {group.label}
-                      </h3>
-                      <Badge variant="outline" className="rounded-full">{group.tasks.length}</Badge>
-                    </div>
-                    <div className="space-y-3">
-                      <AnimatePresence initial={false} mode="popLayout">
-                      {group.tasks.map((task) => renderTaskRow(task, task.completed))}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-                ))}
+              <div className="space-y-6">
+                {taskGroups.map((group) => {
+                  const completedCount = group.tasks.filter((task) => task.completed).length;
+                  const openCount = group.tasks.length - completedCount;
+                  const urgentCount = group.tasks.filter((task) => isUrgentTask(task)).length;
+                  const vendorLinkedCount = group.tasks.filter((task) => resolveTaskVendor(task)).length;
+                  const nextDueTask = group.tasks
+                    .filter((task) => !task.completed && task.due_date)
+                    .sort(sortTasksByDateAndPriority)[0] ?? null;
+                  const allComplete = completedCount === group.tasks.length;
+                  const groupOpen = expandedTaskGroups[group.label] ?? true;
+                  const groupTone = allComplete
+                    ? 'success'
+                    : urgentCount > 0
+                      ? 'danger'
+                      : vendorLinkedCount > 0
+                        ? 'warning'
+                        : 'neutral';
+                  const groupStatus = allComplete
+                    ? 'Complete'
+                    : urgentCount > 0
+                      ? `${urgentCount} urgent`
+                      : `${openCount} open`;
+                  const groupEyebrow = taskViewMode === 'by_date'
+                    ? 'Task date'
+                    : taskViewMode === 'completed'
+                      ? 'Completed category'
+                      : 'Task category';
+
+                  return (
+                    <HierarchyGroup
+                      key={group.label}
+                      eyebrow={groupEyebrow}
+                      title={group.label}
+                      status={groupStatus}
+                      tone={groupTone}
+                      open={groupOpen}
+                      onToggle={() => {
+                        setExpandedTaskGroups((current) => ({
+                          ...current,
+                          [group.label]: !(current[group.label] ?? true),
+                        }));
+                      }}
+                      meta={`${group.tasks.length} task${group.tasks.length === 1 ? '' : 's'}`}
+                      summary={(
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                          <span>{completedCount} complete</span>
+                          <span>{openCount} remaining</span>
+                          {vendorLinkedCount > 0 ? (
+                            <span>{vendorLinkedCount} vendor-linked</span>
+                          ) : null}
+                          {nextDueTask?.due_date ? (
+                            <span>Next due {new Date(nextDueTask.due_date).toLocaleDateString()}</span>
+                          ) : null}
+                        </div>
+                      )}
+                    >
+                      <div className="space-y-3">
+                        <AnimatePresence initial={false} mode="popLayout">
+                          {group.tasks.map((task) => renderTaskRow(task, task.completed))}
+                        </AnimatePresence>
+                      </div>
+                    </HierarchyGroup>
+                  );
+                })}
               </div>
             )}
           </CardContent>

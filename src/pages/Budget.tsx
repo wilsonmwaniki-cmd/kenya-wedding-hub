@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
+import { HierarchyGroup } from '@/components/HierarchyGroup';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -2315,8 +2315,31 @@ export default function Budget() {
                     const relevantVendors = allRelevantVendors
                       .sort((left, right) => Number(right.selection_status === 'final') - Number(left.selection_status === 'final'))
                       .slice(0, 2);
-                    const relevantTasks = getRelatedTasksForBudgetCategory(category.name, budgetTasks, allRelevantVendors)
-                      .slice(0, 3);
+                    const allRelevantTasks = getRelatedTasksForBudgetCategory(category.name, budgetTasks, allRelevantVendors);
+                    const relevantTasks = allRelevantTasks.slice(0, 3);
+                    const openRelevantTaskCount = allRelevantTasks.filter((task) => !task.completed).length;
+                    const confirmedVendor = allRelevantVendors.find((vendor) => vendor.selection_status === 'final') ?? null;
+                    const featuredVendor = confirmedVendor ?? allRelevantVendors[0] ?? null;
+                    const categoryAttentionTone = isOverBudget
+                      ? 'danger'
+                      : isNearLimit
+                        ? 'warning'
+                        : categoryInvoicedAmount > 0 && categoryBalance <= 0
+                          ? 'success'
+                          : allRelevantVendors.length > 0
+                            ? 'warning'
+                            : 'neutral';
+                    const categoryAttentionStatus = isOverBudget
+                      ? 'Over budget'
+                      : isNearLimit
+                        ? 'Near limit'
+                        : categoryInvoicedAmount > 0 && categoryBalance <= 0
+                          ? 'Settled'
+                          : confirmedVendor
+                            ? 'Payment pending'
+                            : allRelevantVendors.length > 0
+                              ? 'Needs confirmation'
+                              : 'Planning';
                     const linkedDirectoryIds = new Set(
                       vendorOptions.map((vendor) => vendor.vendor_listing_id).filter(Boolean),
                     );
@@ -2341,50 +2364,49 @@ export default function Budget() {
                         key={category.id}
                         animate={prefersReducedMotion ? undefined : isSelected ? { y: -1, scale: 1.006 } : { y: 0, scale: 1 }}
                         transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
-                        className={`relative overflow-hidden rounded-lg border bg-card transition-[border-color,background-color,box-shadow,opacity] duration-200 ${isSelected ? 'z-10 border-primary/70 bg-primary/[0.025] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15' : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'}`}
+                        className="relative"
                       >
-                        <span
-                          aria-hidden="true"
-                          className={`absolute inset-y-3 left-0 z-10 w-[3px] rounded-r-full bg-primary transition-opacity duration-200 ${isSelected ? 'opacity-100' : 'opacity-0'}`}
-                        />
-                        <button
-                          type="button"
-                          aria-expanded={isSelected}
-                          onClick={() => {
+                        <HierarchyGroup
+                          compact
+                          eyebrow="Budget category"
+                          title={category.name}
+                          status={categoryAttentionStatus}
+                          tone={categoryAttentionTone}
+                          open={isSelected}
+                          onToggle={() => {
                             setSelectedCategoryId(isSelected ? null : category.id);
                             setInlineModule(null);
                           }}
-                          className={`min-h-[4.75rem] w-full px-4 py-3 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5 ${isSelected ? 'bg-primary/[0.075]' : 'hover:bg-muted/30'}`}
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-semibold text-foreground">{category.name}</p>
-                                {isSelected ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-primary">Open</span> : null}
-                                {category.visibility === 'private' ? <span className="text-xs text-muted-foreground">Private</span> : null}
-                                {isOverBudget ? (
-                                  <span className="text-xs font-semibold text-destructive">Over budget</span>
-                                ) : isNearLimit ? (
-                                  <span className="text-xs font-semibold text-warning-foreground">Near limit</span>
+                          meta={formatCurrency(category.allocated)}
+                          summary={(
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                                <span className="font-medium text-foreground">
+                                  {featuredVendor?.name ?? 'No vendor linked yet'}
+                                </span>
+                                {featuredVendor ? (
+                                  <span className="text-muted-foreground">
+                                    {featuredVendor.selection_status === 'final'
+                                      ? 'Confirmed vendor'
+                                      : vendorSelectionLabel(featuredVendor.selection_status)}
+                                  </span>
+                                ) : null}
+                                {allRelevantVendors.length > 1 ? (
+                                  <span className="text-muted-foreground">+ {allRelevantVendors.length - 1} more</span>
                                 ) : null}
                               </div>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {formatCurrency(category.spent)} paid · {formatCurrency(categoryBalance)} balance
-                              </p>
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground sm:text-sm">
+                                <span>{openRelevantTaskCount} task{openRelevantTaskCount === 1 ? '' : 's'} remaining</span>
+                                <span>{formatCurrency(categoryInvoicedAmount)} invoiced</span>
+                                <span>{formatCurrency(category.spent)} paid</span>
+                                <span>{formatCurrency(categoryBalance)} balance</span>
+                                {category.visibility === 'private' ? <span>Private</span> : null}
+                              </div>
                             </div>
-                            <div className="shrink-0 text-right">
-                              <p className="text-sm font-semibold text-foreground">{formatCurrency(category.allocated)}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">{overallShare.toFixed(1)}% of total</p>
-                              <p className={`mt-1.5 text-xs font-semibold ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
-                                {isSelected ? 'Hide details' : 'View details'}
-                              </p>
-                            </div>
-                          </div>
-                          <Progress value={categoryProgress} className="mt-3 h-1" />
-                        </button>
-
-                        <AnimatedCardDetails open={isSelected}>
-                          <div className="min-w-0 space-y-4 border-t border-border bg-background/60 p-4 sm:p-5">
+                          )}
+                          footer={<Progress value={categoryProgress} className="mt-3 h-1.5 max-w-2xl" />}
+                        >
+                          <div className="min-w-0 space-y-4 rounded-xl border border-border/80 bg-background/75 p-4 shadow-[0_12px_30px_-28px_hsl(var(--foreground)/0.5)] sm:p-5">
                             <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 sm:px-4">
                               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                                 Tracing Intended Vendor Budget
@@ -2553,7 +2575,7 @@ export default function Budget() {
                               </Button>
                             </div>
                           </div>
-                        </AnimatedCardDetails>
+                        </HierarchyGroup>
                       </motion.div>
                     );
                   })
