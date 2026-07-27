@@ -3308,6 +3308,133 @@ export default function Vendors() {
     return (
       <div className="space-y-8">
         {vendorContactDialog}
+        <Dialog
+          open={Boolean(vendorTaskDialogVendor)}
+          onOpenChange={(openState) => {
+            if (!openState) {
+              setVendorTaskDialogVendor(null);
+              resetVendorTaskForm();
+            }
+          }}
+        >
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="font-display">
+                Add task for {vendorTaskDialogVendor?.name}
+              </DialogTitle>
+            </DialogHeader>
+            {vendorTaskDialogVendor && (
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitVendorTask(vendorTaskDialogVendor);
+                }}
+              >
+                <FormSubmitError message={vendorTaskSubmitError} />
+                <div className="space-y-2">
+                  <Label>Vendor category</Label>
+                  <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm font-medium text-foreground">
+                    {vendorTaskDialogVendor.category}
+                  </div>
+                  {resolvedVendorTaskDefaults && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline" className="rounded-full text-[11px]">
+                        {resolvedVendorTaskDefaults.visibility === 'private' ? 'Private' : 'Public'}
+                      </Badge>
+                      <Badge variant="outline" className="rounded-full text-[11px]">
+                        P{resolvedVendorTaskDefaults.priorityLevel}
+                      </Badge>
+                      {resolvedVendorTaskDefaults.delegatable && resolvedVendorTaskDefaults.recommendedRole && (
+                        <Badge variant="outline" className="rounded-full text-[11px]">
+                          Delegate to {resolvedVendorTaskDefaults.recommendedRole}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Suggested task</Label>
+                  <Select
+                    value={vendorTaskTemplateKey}
+                    onValueChange={(value) => {
+                      setVendorTaskTemplateKey(value);
+                      if (value === 'none') return;
+                      const template = vendorTaskSuggestedOptions.find((option) => option.key === value);
+                      if (!template) return;
+                      setVendorTaskForm((prev) => ({
+                        ...prev,
+                        title: template.title,
+                        description: template.description,
+                        assignedTo: prev.assignedTo || template.recommendedRole || '',
+                      }));
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a suggested task" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Custom task</SelectItem>
+                      {vendorTaskSuggestedOptions.map((template) => (
+                        <SelectItem key={template.key} value={template.key}>
+                          {template.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedVendorTaskTemplate && (
+                    <p className="text-xs text-muted-foreground">
+                      {selectedVendorTaskTemplate.description}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Task title</Label>
+                  <Input
+                    value={vendorTaskForm.title}
+                    onChange={(event) => {
+                      setVendorTaskForm((prev) => ({ ...prev, title: event.target.value }));
+                      setVendorTaskFormErrors((current) => ({ ...current, title: undefined }));
+                      setVendorTaskSubmitError(null);
+                    }}
+                    placeholder={selectedVendorTaskTemplate?.title ?? `Confirm contract with ${vendorTaskDialogVendor.name}`}
+                    required
+                  />
+                  <FormFieldError message={vendorTaskFormErrors.title} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Assign to (optional)</Label>
+                  <Input
+                    value={vendorTaskForm.assignedTo}
+                    onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, assignedTo: event.target.value }))}
+                    placeholder="Couple, committee lead, planner, MC..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Due date (optional)</Label>
+                  <Input
+                    type="date"
+                    value={vendorTaskForm.dueDate}
+                    onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, dueDate: event.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Description (optional)</Label>
+                  <Textarea
+                    rows={3}
+                    value={vendorTaskForm.description}
+                    onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, description: event.target.value }))}
+                    placeholder="Add quote follow-up, payment notes, arrival details, or files to send..."
+                  />
+                </div>
+                <Button type="submit" className="w-full gap-2" disabled={vendorTaskSubmitting}>
+                  {vendorTaskSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
+                  Save vendor task
+                </Button>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
         {showCoupleVendorWorkspace ? (
           <>
             <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
