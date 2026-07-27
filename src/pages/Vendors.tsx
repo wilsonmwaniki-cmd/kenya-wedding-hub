@@ -2024,7 +2024,7 @@ export default function Vendors() {
   }, [activeComparisonCategory, sortedVendors]);
 
   const isCommitteeWorkspace = profile?.role === 'planner' && profile?.planner_type === 'committee';
-  const showCoupleVendorWorkspace = profile?.role === 'couple' || isCommitteeWorkspace;
+  const showCoupleVendorWorkspace = profile?.role === 'couple' || isCommitteeWorkspace || (isPlanner && Boolean(selectedClient));
   const exportFeature = profile?.role === 'planner'
     ? profile?.planner_type === 'committee'
       ? 'committee.export_progress'
