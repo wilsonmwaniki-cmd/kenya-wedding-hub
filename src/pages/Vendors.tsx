@@ -3306,7 +3306,7 @@ export default function Vendors() {
     };
 
     return (
-      <div className="space-y-8">
+      <div className="w-full min-w-0 max-w-full space-y-8">
         {vendorContactDialog}
         <Dialog
           open={Boolean(vendorTaskDialogVendor)}
@@ -3585,7 +3585,7 @@ export default function Vendors() {
                       : 'outline';
 
                   return (
-                    <section key={category}>
+                    <section key={category} className="w-full min-w-0 max-w-full">
                       <button
                         type="button"
                         aria-expanded={isExpanded}
@@ -3664,7 +3664,7 @@ export default function Vendors() {
                       </button>
 
                       <AnimatedCardDetails open={isExpanded}>
-                        <div className="relative ml-3 pl-5 pt-4 sm:ml-7 sm:pl-7">
+                        <div className="relative ml-2 min-w-0 max-w-[calc(100%_-_0.5rem)] pl-4 pt-4 sm:ml-7 sm:max-w-[calc(100%_-_1.75rem)] sm:pl-7">
                           <span
                             aria-hidden="true"
                             className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-primary/45 via-primary/20 to-transparent"

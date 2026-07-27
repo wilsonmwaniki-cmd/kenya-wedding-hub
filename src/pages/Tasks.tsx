@@ -909,9 +909,9 @@ export default function Tasks() {
             className="min-w-0 flex-1 text-left"
           >
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className={cn('font-medium text-card-foreground', isDone && 'line-through text-muted-foreground')}>{t.title}</p>
+                  <p className={cn('break-words font-medium text-card-foreground', isDone && 'line-through text-muted-foreground')}>{t.title}</p>
                   {active ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-primary">Open</span> : null}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1322,8 +1322,8 @@ export default function Tasks() {
         </div>
       </details>
 
-      <div>
-        <Card className="border-primary/15 shadow-card">
+      <div className="w-full min-w-0 max-w-full">
+        <Card className="w-full min-w-0 max-w-full border-primary/15 shadow-card">
           <CardContent className="space-y-5 p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>

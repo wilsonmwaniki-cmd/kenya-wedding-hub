@@ -19,7 +19,7 @@ export function AnimatedCardDetails({ children, open }: AnimatedCardDetailsProps
           animate={{ height: 'auto', opacity: 1, y: 0 }}
           exit={prefersReducedMotion ? undefined : { height: 0, opacity: 0, y: -4 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.32, ease: expansionEase }}
-          className="overflow-hidden"
+          className="w-full min-w-0 max-w-full overflow-hidden"
         >
           {children}
         </motion.div>
