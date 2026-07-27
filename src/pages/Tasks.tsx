@@ -884,10 +884,10 @@ export default function Tasks() {
         key={t.id}
         id={`task-${t.id}`}
         layout={!prefersReducedMotion}
-        animate={prefersReducedMotion ? undefined : active ? { y: -1, scale: 1.006 } : { y: 0, scale: 1 }}
+        animate={prefersReducedMotion ? undefined : active ? { y: -1 } : { y: 0 }}
         transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
         className={cn(
-          'relative w-full scroll-mt-24 overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200',
+          'relative w-full min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200',
           active
             ? 'z-10 border-primary/70 bg-primary/[0.075] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15'
             : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card',
