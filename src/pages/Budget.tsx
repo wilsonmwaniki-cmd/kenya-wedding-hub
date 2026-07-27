@@ -2370,9 +2370,9 @@ export default function Budget() {
                       <motion.div
                         layout={!prefersReducedMotion}
                         key={category.id}
-                        animate={prefersReducedMotion ? undefined : isSelected ? { y: -1, scale: 1.006 } : { y: 0, scale: 1 }}
+                        animate={prefersReducedMotion ? undefined : isSelected ? { y: -1 } : { y: 0 }}
                         transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
-                        className="relative"
+                        className="relative w-full min-w-0 max-w-full"
                       >
                         <HierarchyGroup
                           compact

@@ -3017,9 +3017,9 @@ export default function Vendors() {
           key={vendor.id}
           id={`vendor-${vendor.id}`}
           layout={!prefersReducedMotion}
-          animate={prefersReducedMotion ? undefined : isActive ? { y: -1, scale: 1.006 } : { y: 0, scale: 1 }}
+          animate={prefersReducedMotion ? undefined : isActive ? { y: -1 } : { y: 0 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
-          className={`relative w-full overflow-hidden rounded-xl border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200 ${isActive ? 'z-10 border-primary/55 bg-primary/[0.025] shadow-[0_16px_38px_-28px_hsl(var(--foreground)/0.6)] ring-1 ring-primary/10' : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'}`}
+          className={`relative w-full min-w-0 max-w-full overflow-hidden rounded-xl border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200 ${isActive ? 'z-10 border-primary/55 bg-primary/[0.025] shadow-[0_16px_38px_-28px_hsl(var(--foreground)/0.6)] ring-1 ring-primary/10' : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'}`}
         >
           <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 bg-primary transition-opacity ${isActive ? 'opacity-100' : 'opacity-0'}`} />
           <button
