@@ -648,15 +648,22 @@ export type Database = {
           delegatable: boolean
           description: string | null
           due_date: string | null
+          due_date_source: string
           id: string
+          last_auto_scheduled_at: string | null
+          manually_scheduled_at: string | null
           phase: string | null
           priority_level: number | null
           recommended_role: string | null
+          schedule_anchor_date: string | null
           source_vendor_id: string | null
+          template_key: string | null
           template_source: string | null
+          timeline_offset_days: number | null
           title: string
           user_id: string
           visibility: string
+          wedding_id: string | null
         }
         Insert: {
           assigned_to?: string | null
@@ -667,15 +674,22 @@ export type Database = {
           delegatable?: boolean
           description?: string | null
           due_date?: string | null
+          due_date_source?: string
           id?: string
+          last_auto_scheduled_at?: string | null
+          manually_scheduled_at?: string | null
           phase?: string | null
           priority_level?: number | null
           recommended_role?: string | null
+          schedule_anchor_date?: string | null
           source_vendor_id?: string | null
+          template_key?: string | null
           template_source?: string | null
+          timeline_offset_days?: number | null
           title: string
           user_id: string
           visibility?: string
+          wedding_id?: string | null
         }
         Update: {
           assigned_to?: string | null
@@ -686,15 +700,22 @@ export type Database = {
           delegatable?: boolean
           description?: string | null
           due_date?: string | null
+          due_date_source?: string
           id?: string
+          last_auto_scheduled_at?: string | null
+          manually_scheduled_at?: string | null
           phase?: string | null
           priority_level?: number | null
           recommended_role?: string | null
+          schedule_anchor_date?: string | null
           source_vendor_id?: string | null
+          template_key?: string | null
           template_source?: string | null
+          timeline_offset_days?: number | null
           title?: string
           user_id?: string
           visibility?: string
+          wedding_id?: string | null
         }
         Relationships: [
           {
@@ -709,6 +730,13 @@ export type Database = {
             columns: ["source_vendor_id"]
             isOneToOne: false
             referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_wedding_id_fkey"
+            columns: ["wedding_id"]
+            isOneToOne: false
+            referencedRelation: "weddings"
             referencedColumns: ["id"]
           },
         ]

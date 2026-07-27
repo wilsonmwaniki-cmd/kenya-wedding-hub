@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSeededTasksFromTemplates,
   compareTasksByWeddingChecklistOrder,
   getNextWeddingChecklistTask,
   getWeddingChecklistStep,
@@ -48,5 +49,26 @@ describe('wedding checklist guidance order', () => {
 
     expect(recommendation?.task.title).toBe('Lock in selected marriage preparation therapy / classes with deposit | Plan to attend');
     expect(recommendation?.step.step).toBe(2);
+  });
+
+  it('seeds generated tasks with adaptive scheduling metadata', () => {
+    const tasks = buildSeededTasksFromTemplates({
+      vendorCategories: [],
+      role: 'couple',
+      weddingDate: '2026-07-01',
+      planningStartDate: '2026-01-01',
+    });
+    const firstTask = tasks.find((task) => task.title === 'Research marriage preparation therapy / classes.');
+    const finalWeekTask = tasks.find((task) => task.description.includes('Timeline: 1 Week.'));
+
+    expect(firstTask).toMatchObject({
+      due_date: '2026-01-03',
+      due_date_source: 'automatic',
+      schedule_anchor_date: '2026-01-01',
+      template_source: 'zania_checklist_v2',
+      timeline_offset_days: 548,
+    });
+    expect(firstTask?.template_key).toBeTruthy();
+    expect(finalWeekTask?.due_date).toBe('2026-06-24');
   });
 });

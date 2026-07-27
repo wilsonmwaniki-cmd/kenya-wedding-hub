@@ -261,7 +261,7 @@ export async function seedWeddingPlanFromEstimator({
       });
 
   const vendorCategories = buildVendorCategories(draft, estimateRows);
-  const [existingBudgetRes, existingVendorRes, existingTaskRes, profileRes, clientRes] = await Promise.all([
+  const [existingBudgetRes, existingVendorRes, existingTaskRes, profileRes, clientRes, weddingRes] = await Promise.all([
     scopedQuery(
       supabase.from('budget_categories').select('name, budget_scope').eq('user_id', userId),
       clientId,
@@ -274,10 +274,21 @@ export async function seedWeddingPlanFromEstimator({
       supabase.from('tasks').select('title').eq('user_id', userId),
       clientId,
     ),
-    supabase.from('profiles').select('wedding_location, wedding_date').eq('user_id', userId).maybeSingle(),
+    supabase.from('profiles').select('wedding_location, wedding_date, created_at').eq('user_id', userId).maybeSingle(),
     clientId
-      ? supabase.from('planner_clients').select('wedding_date').eq('id', clientId).maybeSingle()
+      ? supabase.from('planner_clients').select('wedding_date, created_at, wedding_id').eq('id', clientId).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    clientId
+      ? Promise.resolve({ data: null, error: null })
+      : supabase
+          .from('weddings')
+          .select('id, wedding_date, created_at')
+          .eq('created_by_user_id', userId)
+          .eq('status', 'active')
+          .is('deleted_at', null)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle(),
   ]);
 
   if (existingBudgetRes.error) throw existingBudgetRes.error;
@@ -285,6 +296,7 @@ export async function seedWeddingPlanFromEstimator({
   if (existingTaskRes.error) throw existingTaskRes.error;
   if (profileRes.error) throw profileRes.error;
   if (clientRes.error) throw clientRes.error;
+  if (weddingRes.error) throw weddingRes.error;
 
   const existingWeddingBudgetNames = new Set(
     (existingBudgetRes.data ?? [])
@@ -299,13 +311,22 @@ export async function seedWeddingPlanFromEstimator({
   const existingVendorKeys = new Set((existingVendorRes.data ?? []).map((item) => `${item.category}::${item.name}`));
   const existingTaskTitles = new Set((existingTaskRes.data ?? []).map((item) => item.title));
   const seededWeddingDate = clientRes.data?.wedding_date
+    ?? weddingRes.data?.wedding_date
     ?? profileRes.data?.wedding_date
     ?? null;
+  const scheduleAnchorDate = (
+    clientRes.data?.created_at
+    ?? weddingRes.data?.created_at
+    ?? profileRes.data?.created_at
+    ?? new Date().toISOString()
+  ).slice(0, 10);
+  const weddingId = clientRes.data?.wedding_id ?? weddingRes.data?.id ?? null;
   const starterTasks = buildSeededTasksFromTemplates({
     vendorCategories,
     role,
     plannerType,
     weddingDate: seededWeddingDate,
+    planningStartDate: scheduleAnchorDate,
   });
 
   const budgetInserts = estimateRows
@@ -362,6 +383,7 @@ export async function seedWeddingPlanFromEstimator({
       ...task,
       user_id: userId,
       client_id: clientId,
+      wedding_id: weddingId,
     }));
 
   if (budgetInserts.length) {

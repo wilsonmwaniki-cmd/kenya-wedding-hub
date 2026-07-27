@@ -483,6 +483,10 @@ export default function ProfileSettings() {
 
     setSaveSucceeded(false);
     setSaving(true);
+    const weddingDateChanged = isCouple
+      && Boolean(ownedWedding?.weddingId)
+      && (ownedWedding?.weddingDate ?? '') !== (form.wedding_date || '');
+
     try {
       const updates: Record<string, any> = { full_name: form.full_name, account_purpose: form.account_purpose };
       if (isProfessionalPlanner) {
@@ -533,7 +537,9 @@ export default function ProfileSettings() {
       }
       toast({
         title: 'Profile updated',
-        description: 'Your latest account and business details are now saved.',
+        description: weddingDateChanged
+          ? 'Your wedding date and unfinished Zania task schedule were recalibrated. Completed and manually dated tasks stayed unchanged.'
+          : 'Your latest account and business details are now saved.',
         variant: 'success',
       });
       setSaveSucceeded(true);

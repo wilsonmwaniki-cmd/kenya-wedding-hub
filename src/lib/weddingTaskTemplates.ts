@@ -1,4 +1,9 @@
 import type { PlannerType } from '@/lib/roles';
+import {
+  getMaximumTimelineDays,
+  resolveAdaptiveTaskDueDate,
+  timelineLabelToOffsetDays,
+} from '@/lib/adaptiveTaskSchedule';
 
 export type WeddingTaskPhase =
   | 'foundation'
@@ -1583,18 +1588,33 @@ export function buildSeededTasksFromTemplates(input: {
   role: string | null | undefined;
   plannerType?: PlannerType | null;
   weddingDate?: string | null;
+  planningStartDate?: string | null;
 }) {
   const templates = getWeddingTaskTemplates(input);
-  const weddingDate = input.weddingDate ? new Date(input.weddingDate) : null;
+  const offsets = templates.map((template) => timelineLabelToOffsetDays(template.timelineLabel));
+  const maximumTimelineDays = getMaximumTimelineDays(offsets);
 
-  return templates.map((template) => {
-    const resolvedDueDate = weddingDate ? resolveDueDateFromTimeline(weddingDate, template.timelineLabel) : null;
+  return templates.map((template, index) => {
+    const timelineOffsetDays = offsets[index];
+    const resolvedDueDate = input.planningStartDate
+      ? resolveAdaptiveTaskDueDate({
+          weddingDate: input.weddingDate,
+          planningStartDate: input.planningStartDate,
+          timelineOffsetDays,
+          maximumTimelineDays,
+        })
+      : input.weddingDate
+        ? resolveDueDateFromTimeline(new Date(input.weddingDate), template.timelineLabel)
+            ?.toISOString()
+            .slice(0, 10) ?? null
+        : null;
+
     return {
       title: template.title,
       description: template.description,
       category: template.category,
       assigned_to: template.recommendedRole,
-      due_date: resolvedDueDate ? resolvedDueDate.toISOString().slice(0, 10) : null,
+      due_date: resolvedDueDate,
       completed: false,
       phase: template.phase,
       visibility: template.visibility,
@@ -1602,6 +1622,11 @@ export function buildSeededTasksFromTemplates(input: {
       recommended_role: template.recommendedRole,
       priority_level: template.priorityLevel,
       template_source: 'zania_checklist_v2',
+      template_key: template.key,
+      timeline_offset_days: timelineOffsetDays,
+      due_date_source: resolvedDueDate ? 'automatic' : 'unscheduled',
+      schedule_anchor_date: input.planningStartDate ?? null,
+      last_auto_scheduled_at: resolvedDueDate ? new Date().toISOString() : null,
     };
   });
 }
