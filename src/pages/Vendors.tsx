@@ -1930,6 +1930,36 @@ export default function Vendors() {
     };
   }, [vendorTasksByVendorId]);
 
+  const nextVendorFollowUpTask = useMemo(() => {
+    const uniqueTasks = new Map<string, VendorTaskItem>();
+    Object.values(vendorTasksByVendorId)
+      .flat()
+      .filter((task) => !task.completed)
+      .forEach((task) => uniqueTasks.set(task.id, task));
+
+    return [...uniqueTasks.values()].sort((left, right) => {
+      if (!left.due_date && !right.due_date) return left.title.localeCompare(right.title);
+      if (!left.due_date) return 1;
+      if (!right.due_date) return -1;
+      return left.due_date.localeCompare(right.due_date);
+    })[0] ?? null;
+  }, [vendorTasksByVendorId]);
+
+  const vendorConfirmationSummary = useMemo(() => {
+    const categoriesToConfirm = new Set(vendorsQuery.data?.categories ?? []);
+    const confirmedCategories = new Set(
+      finalVendorEntries
+        .map((vendor) => vendor.category)
+        .filter((category) => categoriesToConfirm.has(category)),
+    );
+
+    return {
+      total: categoriesToConfirm.size,
+      confirmed: confirmedCategories.size,
+      pending: Math.max(categoriesToConfirm.size - confirmedCategories.size, 0),
+    };
+  }, [finalVendorEntries, vendorsQuery.data?.categories]);
+
   const categoriesNeedingFinalChoice = useMemo(() => {
     const grouped = new Map<string, Vendor[]>();
     vendors.forEach((vendor) => {
@@ -2320,11 +2350,13 @@ export default function Vendors() {
 
     if (vendorTaskSummary.openTasks > 0) {
       return {
-        title: 'Clear the vendor follow-up queue',
-        body: `${vendorTaskSummary.openTasks} open vendor follow-up${vendorTaskSummary.openTasks === 1 ? '' : 's'} are still active across your wedding workspace.`,
-        actionLabel: 'Summarize follow-ups',
-        actionType: 'assistant_prompt' as const,
-        prompt: 'Summarize the vendor follow-ups still open and tell me what to chase first.',
+        title: nextVendorFollowUpTask?.title ?? 'Review pending vendor tasks',
+        body: nextVendorFollowUpTask
+          ? `Open this task in Tasks. ${vendorTaskSummary.openTasks} vendor task${vendorTaskSummary.openTasks === 1 ? '' : 's'} remain pending.`
+          : `${vendorTaskSummary.openTasks} vendor task${vendorTaskSummary.openTasks === 1 ? '' : 's'} remain pending.`,
+        actionLabel: nextVendorFollowUpTask ? 'Open task' : null,
+        actionType: nextVendorFollowUpTask ? 'task_link' as const : 'none' as const,
+        taskId: nextVendorFollowUpTask?.id ?? null,
       };
     }
 
@@ -2334,7 +2366,7 @@ export default function Vendors() {
       actionLabel: null,
       actionType: 'none' as const,
     };
-  }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, vendorTaskSummary.openTasks, vendors.length]);
+  }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, nextVendorFollowUpTask, vendorTaskSummary.openTasks, vendors.length]);
 
   useEffect(() => {
     if (selectedVendorId && !selectedVendor) {
@@ -3287,23 +3319,41 @@ export default function Vendors() {
             </header>
 
             <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
-              <CardContent className="p-5">
-                <h2 className="mt-2 text-lg font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
-              </CardContent>
+              {vendorPrimaryAction.actionType === 'task_link' && vendorPrimaryAction.taskId ? (
+                <Link
+                  to={`/tasks?task=${encodeURIComponent(vendorPrimaryAction.taskId)}`}
+                  className="group block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                >
+                  <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next vendor task</p>
+                      <h2 className="mt-2 text-lg font-semibold text-foreground group-hover:text-primary">{vendorPrimaryAction.title}</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">{vendorPrimaryAction.body}</p>
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold text-primary">Open in Tasks</span>
+                  </CardContent>
+                </Link>
+              ) : (
+                <CardContent className="p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next vendor action</p>
+                  <h2 className="mt-2 text-lg font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">{vendorPrimaryAction.body}</p>
+                </CardContent>
+              )}
             </Card>
 
             <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
               <div className="border-r border-border p-3 sm:p-4">
-                <p className="text-xs text-muted-foreground">Saved</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{vendors.length}</p>
+                <p className="text-xs text-muted-foreground">Total vendors to confirm</p>
+                <p className="mt-1 text-xl font-semibold text-foreground">{vendorConfirmationSummary.total}</p>
               </div>
               <div className="border-r border-border p-3 sm:p-4">
-                <p className="text-xs text-muted-foreground">Chosen</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{finalVendorEntries.length}</p>
+                <p className="text-xs text-muted-foreground">Total vendors confirmed</p>
+                <p className="mt-1 text-xl font-semibold text-foreground">{vendorConfirmationSummary.confirmed}</p>
               </div>
               <div className="p-3 sm:p-4">
-                <p className="text-xs text-muted-foreground">Follow-ups</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{vendorTaskSummary.openTasks}</p>
+                <p className="text-xs text-muted-foreground">Total Pending Vendors</p>
+                <p className="mt-1 text-xl font-semibold text-foreground">{vendorConfirmationSummary.pending}</p>
               </div>
             </div>
 
