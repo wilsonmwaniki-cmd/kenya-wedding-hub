@@ -383,7 +383,7 @@ export default function PlannerDashboard() {
 
   const openClientRoute = (client: PlannerClient, path: string) => {
     selectClient(client);
-    window.requestAnimationFrame(() => navigate(path));
+    navigate(path);
   };
 
   return (

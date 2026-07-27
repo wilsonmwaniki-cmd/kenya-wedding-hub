@@ -50,14 +50,13 @@ function getSelectedPlannerClientStorageKey(userId: string) {
 
 export function PlannerProvider({ children }: { children: ReactNode }) {
   const { user, profile } = useAuth();
-  const [clients, setClients] = useState<PlannerClient[]>([]);
-  const [selectedClient, setSelectedClient] = useState<PlannerClient | null>(null);
-  const [linkedPlanner, setLinkedPlanner] = useState<LinkedPlannerInfo | null>(null);
-  const [plannerClientHydrating, setPlannerClientHydrating] = useState(false);
-
   const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
   const isPlanner = profile?.role === 'planner' && !isCommittee;
   const isCouple = profile?.role === 'couple';
+  const [clients, setClients] = useState<PlannerClient[]>([]);
+  const [selectedClient, setSelectedClient] = useState<PlannerClient | null>(null);
+  const [linkedPlanner, setLinkedPlanner] = useState<LinkedPlannerInfo | null>(null);
+  const [plannerClientHydrating, setPlannerClientHydrating] = useState(isPlanner);
 
   const loadClients = async () => {
     if (!user || !isPlanner) return;
