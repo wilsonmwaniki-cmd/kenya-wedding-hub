@@ -975,7 +975,7 @@ export default function Tasks() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Tasks</p>
@@ -985,35 +985,56 @@ export default function Tasks() {
         <Button type="button" onClick={() => setOpen(true)}>Add task</Button>
       </header>
 
-      <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
-        <CardContent className="p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next task</p>
-          <p className="mt-2 text-lg font-semibold text-foreground">{nextPendingTask?.title ?? 'Add your first task'}</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {nextPendingTask?.due_date
-              ? `Due ${new Date(nextPendingTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-              : nextPendingTask ? 'No due date' : 'A short checklist makes planning easier.'}
-          </p>
+      <Card className="overflow-hidden rounded-lg border-primary/25 bg-card shadow-none">
+        <CardContent className="grid p-0 md:grid-cols-[minmax(0,1fr)_18rem] md:divide-x md:divide-border">
+          <button
+            type="button"
+            className="group min-w-0 bg-primary/5 px-4 py-3 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset sm:px-5"
+            onClick={() => {
+              if (nextPendingTask) {
+                navigate(`/tasks?task=${encodeURIComponent(nextPendingTask.id)}`);
+                return;
+              }
+              setOpen(true);
+            }}
+          >
+            <div className="flex min-w-0 items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">Next task</p>
+                <p className="mt-1 line-clamp-2 text-sm font-semibold text-foreground transition-colors group-hover:text-primary sm:text-base">
+                  {nextPendingTask?.title ?? 'Add your first task'}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-xs text-muted-foreground">
+                  {nextPendingTask?.due_date
+                    ? `Due ${new Date(nextPendingTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                    : nextPendingTask ? 'No due date' : 'Get started'}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-primary">{nextPendingTask ? 'Open task' : 'Add task'}</p>
+              </div>
+            </div>
+          </button>
+
+          <div className="grid grid-cols-3 border-t border-border md:border-t-0">
+            <div className="border-r border-border px-3 py-2.5">
+              <p className="text-[11px] text-muted-foreground">Open</p>
+              <p className="mt-0.5 text-base font-semibold text-foreground">{pending.length}</p>
+            </div>
+            <div className="border-r border-border px-3 py-2.5">
+              <p className="text-[11px] text-muted-foreground">Urgent</p>
+              <p className="mt-0.5 text-base font-semibold text-foreground">{urgentPending.length}</p>
+            </div>
+            <div className="px-3 py-2.5">
+              <p className="text-[11px] text-muted-foreground">Done</p>
+              <p className="mt-0.5 text-base font-semibold text-foreground">{done.length}</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
-        <div className="border-r border-border p-3 sm:p-4">
-          <p className="text-xs text-muted-foreground">Open</p>
-          <p className="mt-1 text-xl font-semibold text-foreground">{pending.length}</p>
-        </div>
-        <div className="border-r border-border p-3 sm:p-4">
-          <p className="text-xs text-muted-foreground">Urgent</p>
-          <p className="mt-1 text-xl font-semibold text-foreground">{urgentPending.length}</p>
-        </div>
-        <div className="p-3 sm:p-4">
-          <p className="text-xs text-muted-foreground">Done</p>
-          <p className="mt-1 text-xl font-semibold text-foreground">{done.length}</p>
-        </div>
-      </div>
-
-      <div className="space-y-3 rounded-lg border border-border bg-card p-3 sm:p-4">
-        <div className="flex justify-center overflow-x-auto">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-border bg-card p-2">
+        <div className="min-w-0">
           <SlidingSegmentedControl
             label="Task view"
             layoutId="task-view-selection"
@@ -1024,7 +1045,7 @@ export default function Tasks() {
             minWidthClassName="w-full min-w-0"
           />
         </div>
-        <div className="flex w-full flex-col justify-center gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="contents">
           <UpgradePromptDialog
             open={upgradeOpen}
             onOpenChange={setUpgradeOpen}
@@ -1037,8 +1058,9 @@ export default function Tasks() {
           />
           <Button
             type="button"
-            variant="outline"
-            className="w-full gap-2 sm:w-auto"
+            variant="ghost"
+            size="sm"
+            className="shrink-0 px-3 text-muted-foreground hover:text-foreground"
             onClick={() => {
               if (!exportDecision.allowed) {
                 setExportUpgradeOpen(true);
@@ -1047,7 +1069,7 @@ export default function Tasks() {
               exportTasks();
             }}
           >
-            Export Tasks
+            Export
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
