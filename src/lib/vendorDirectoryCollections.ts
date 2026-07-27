@@ -23,13 +23,13 @@ export const vendorCollections: VendorCollection[] = [
     slug: 'top-wedding-photographers-kenya',
     title: 'Top Wedding Photographers in Kenya',
     description: 'Studios and independent photographers trusted for full-day coverage, storytelling, and polished delivery.',
-    category: 'Photography',
+    category: 'Photographer',
   },
   {
     slug: 'wedding-venues-naivasha',
     title: 'Wedding Venues in Naivasha',
     description: 'Lake, garden, and destination-ready venues couples can browse in one place.',
-    category: 'Venue',
+    category: 'Wedding Venue',
     county: 'Nakuru',
     town: 'Naivasha',
   },
@@ -37,7 +37,7 @@ export const vendorCollections: VendorCollection[] = [
     slug: 'luxury-decor-vendors-nairobi',
     title: 'Luxury Decor Vendors in Nairobi',
     description: 'Higher-touch design and styling teams for elegant, immersive wedding spaces in Nairobi.',
-    category: 'Décor',
+    category: 'Décor, Tents, Chairs, Tables',
     county: 'Nairobi City',
     searchTerms: ['luxury', 'high-end', 'premium', 'styling', 'floral design'],
   },
@@ -64,7 +64,7 @@ export function matchesVendorCollection(
   listing: VendorCollectionListing,
   collection: VendorCollection,
 ) {
-  if (collection.category && listing.category !== collection.category) return false;
+  if (collection.category && !vendorCategoriesMatch(listing.category ?? '', collection.category)) return false;
   if (collection.county) {
     const servesCounty =
       listing.location_county?.toLowerCase() === collection.county.toLowerCase()
@@ -90,3 +90,4 @@ export function matchesVendorCollection(
 
   return collection.searchTerms.some((term) => searchableText.includes(term.toLowerCase()));
 }
+import { vendorCategoriesMatch } from '@/lib/vendorCategories';

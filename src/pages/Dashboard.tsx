@@ -27,6 +27,7 @@ import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isLaunchFeatureEnabl
 import { buildConciergeContext } from '@/lib/conciergeContext';
 import AnimatedNumber from '@/components/AnimatedNumber';
 import { compareTasksByWeddingChecklistOrder, getNextWeddingChecklistTask } from '@/lib/weddingTaskTemplates';
+import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 
 interface DashboardStats {
   totalBudget: number;
@@ -222,6 +223,7 @@ async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWo
     })),
     vendorDigestRows: vendorRows.map((row) => ({
       ...row,
+      category: canonicalizeVendorCategory(row.category || 'Other'),
       selection_status: row.selection_status ?? 'shortlisted',
       payment_due_date: row.payment_due_date ?? null,
       payment_status: row.payment_status ?? 'not_started',

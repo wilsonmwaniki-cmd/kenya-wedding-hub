@@ -53,6 +53,11 @@ import {
   getRelatedTasksForBudgetCategory,
   planningCategoryRelationScore,
 } from '@/lib/budgetRelations';
+import {
+  canonicalizeVendorCategory,
+  getVendorCategoryScope,
+  vendorCategoriesMatch,
+} from '@/lib/vendorCategories';
 
 interface BudgetCategory {
   id: string;
@@ -239,6 +244,7 @@ async function loadBudgetVendorOptions(dataOrFilter: string): Promise<BudgetVend
 
   return ((data ?? []) as any[]).map((row) => ({
     ...row,
+    category: canonicalizeVendorCategory(row.category),
     amount_paid: Number(row.amount_paid ?? 0),
     deposit_amount: Number(row.deposit_amount ?? 0),
     contract_status: row.contract_status ?? 'not_started',
@@ -256,7 +262,10 @@ async function loadDirectoryVendorSuggestions(): Promise<DirectoryVendorSuggesti
     .limit(200);
 
   if (error) throw error;
-  return (data ?? []) as DirectoryVendorSuggestion[];
+  return ((data ?? []) as DirectoryVendorSuggestion[]).map((row) => ({
+    ...row,
+    category: canonicalizeVendorCategory(row.category),
+  }));
 }
 
 async function loadBudgetPaymentRecords(dataOrFilter: string): Promise<BudgetPaymentRecord[]> {
@@ -1396,10 +1405,11 @@ export default function Budget() {
   }, [currentScopePayments]);
 
   const availableVendorsForPayment = useMemo(() => {
-    if (paymentLog.budgetScope !== 'wedding') return [];
     const selectedCategory = selectedPaymentCategoryOption?.name;
-    if (!selectedCategory) return vendorOptions;
-    return vendorOptions.filter((vendor) => vendor.category === selectedCategory);
+    return vendorOptions.filter((vendor) => (
+      getVendorCategoryScope(vendor.category) === paymentLog.budgetScope
+      && (!selectedCategory || vendorCategoriesMatch(vendor.category, selectedCategory))
+    ));
   }, [paymentLog.budgetScope, selectedPaymentCategoryOption, vendorOptions]);
 
   const recordPaymentMade = async (e: React.FormEvent) => {

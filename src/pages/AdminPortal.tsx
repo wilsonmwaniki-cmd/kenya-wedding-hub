@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkspacePageSkeleton } from "@/components/AppLoadingSkeletons";
+import { weddingVendorCategoryNames } from "@/lib/vendorCategories";
 
 interface AdminDashboardMetrics {
   total_users: number;
@@ -350,7 +351,7 @@ type EstimatorPriceType = "quote" | "booked" | "final_paid";
 type EstimatorWeddingStyle = "intimate" | "classic" | "garden" | "luxury";
 
 const roleOptions: AppRole[] = ["couple", "planner", "vendor", "admin"];
-const estimatorCategories = ["Venue", "Catering", "Photography", "Videography", "Flowers", "Music/DJ", "Décor", "Transport", "MC", "Cake", "Other"] as const;
+const estimatorCategories = weddingVendorCategoryNames;
 const estimatorPriceTypes: EstimatorPriceType[] = ["quote", "booked", "final_paid"];
 const estimatorWeddingStyles: EstimatorWeddingStyle[] = ["intimate", "classic", "garden", "luxury"];
 
@@ -655,7 +656,7 @@ export default function AdminPortal() {
   const [loadingEstimatorSeeds, setLoadingEstimatorSeeds] = useState(false);
   const [estimatorSeedForm, setEstimatorSeedForm] = useState({
     vendorName: "Beta market backfill",
-    category: "Venue",
+    category: "Wedding Venue",
     amount: "",
     priceType: "quote" as EstimatorPriceType,
     county: "Nairobi",

@@ -5,6 +5,7 @@ import SafeMarkdown from '@/components/SafeMarkdown';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
+import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 import { getEntitlementDecision, type EntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
@@ -319,7 +320,7 @@ async function loadWorkspaceSnapshot(args: {
     const bookings = bookingsRes.data ?? [];
     const followUps = followUpsRes.data ?? [];
     const categoryCounts = bookings.reduce<Record<string, number>>((acc, booking: any) => {
-      const key = booking.category || 'booking';
+      const key = canonicalizeVendorCategory(booking.category) || 'booking';
       acc[key] = (acc[key] ?? 0) + 1;
       return acc;
     }, {});
@@ -392,7 +393,7 @@ async function loadWorkspaceSnapshot(args: {
     .sort((a, b) => b.ratio - a.ratio);
   const vendorCounts = vendors.reduce<Record<string, number>>((acc, vendor: any) => {
     if (vendor.selection_status === 'final') return acc;
-    const key = vendor.category || 'vendor';
+    const key = canonicalizeVendorCategory(vendor.category) || 'vendor';
     acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, {});

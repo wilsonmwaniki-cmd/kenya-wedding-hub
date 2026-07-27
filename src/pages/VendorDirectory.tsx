@@ -42,8 +42,11 @@ import { getVendorReputationOverview, type VendorReputationOverview } from '@/li
 import { DirectoryResultsSkeleton } from '@/components/AppLoadingSkeletons';
 import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
 import PublicSiteFooter from '@/components/PublicSiteFooter';
-
-const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
+import {
+  canonicalizeVendorCategory,
+  vendorCategoriesMatch,
+  vendorCategoryCatalog,
+} from '@/lib/vendorCategories';
 
 interface VendorListing {
   id: string;
@@ -86,7 +89,7 @@ interface VendorNetworkSignalSummary {
 
 const emptySuggestionForm = {
   vendorName: '',
-  category: 'Venue',
+  category: 'Wedding Venue',
   instagramOrWebsite: '',
   location: '',
   recommendationReason: '',
@@ -155,7 +158,10 @@ export default function VendorDirectory() {
           : Promise.resolve({ data: [] }),
       ]);
 
-      setVendors((listingsRes.data as VendorListing[]) || []);
+      setVendors(((listingsRes.data as VendorListing[]) || []).map((listing) => ({
+        ...listing,
+        category: canonicalizeVendorCategory(listing.category),
+      })));
 
       const ratingsMap: Record<string, { total: number; count: number }> = {};
       ((ratingsRes.data || []) as Array<{ vendor_listing_id: string; rating: number }>).forEach((rating) => {
@@ -285,7 +291,7 @@ export default function VendorDirectory() {
     return vendors
       .filter((vendor) => {
         if (collection && !matchesVendorCollection(vendor, collection)) return false;
-        if (category !== 'All' && vendor.category !== category) return false;
+        if (category !== 'All' && !vendorCategoriesMatch(vendor.category, category)) return false;
         if (locationCounty !== 'all') {
           const servesCounty =
             vendor.location_county?.toLowerCase() === locationCounty.toLowerCase()
@@ -470,8 +476,11 @@ export default function VendorDirectory() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {vendorCategories.map((item) => (
-                <SelectItem key={item} value={item}>{item}</SelectItem>
+              <SelectItem value="All">All categories</SelectItem>
+              {vendorCategoryCatalog.map((item) => (
+                <SelectItem key={item.name} value={item.name}>
+                  {item.name} · {item.scope === 'personal' ? 'Personal' : 'Wedding'}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -764,8 +773,10 @@ export default function VendorDirectory() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {vendorCategories.filter((item) => item !== 'All').map((item) => (
-                    <SelectItem key={item} value={item}>{item}</SelectItem>
+                  {vendorCategoryCatalog.map((item) => (
+                    <SelectItem key={item.name} value={item.name}>
+                      {item.name} · {item.scope === 'personal' ? 'Personal' : 'Wedding'}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

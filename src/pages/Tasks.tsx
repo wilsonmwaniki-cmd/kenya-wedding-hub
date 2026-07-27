@@ -36,6 +36,7 @@ import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
 import { HierarchyGroup } from '@/components/HierarchyGroup';
 import { getConfirmedVendorForTask, getRelatedBudgetCategoryForTask } from '@/lib/budgetRelations';
+import { canonicalizeVendorCategory, vendorCategoriesMatch } from '@/lib/vendorCategories';
 
 interface Task {
   id: string;
@@ -193,6 +194,7 @@ async function loadTasksWorkspace(dataOrFilter: string): Promise<TasksWorkspaceD
     tasks: (tasksResult.data ?? []) as Task[],
     vendorOptions: ((vendorsResult.data ?? []) as any[]).map((vendor) => ({
       ...vendor,
+      category: canonicalizeVendorCategory(vendor.category),
       price: vendor.price != null ? Number(vendor.price) : null,
       amount_paid: Number(vendor.amount_paid ?? 0),
     })) as VendorOption[],
@@ -1215,7 +1217,9 @@ export default function Tasks() {
                       if (value === 'none') return;
                       const vendor = vendorLookup[value];
                       if (!vendor) return;
-                      const matchedCategory = categoryOptions.find((category) => category.label.toLowerCase() === vendor.category.toLowerCase());
+                      const matchedCategory = categoryOptions.find((category) => (
+                        vendorCategoriesMatch(category.label, vendor.category)
+                      ));
                       if (matchedCategory) {
                         setTaskCategory(matchedCategory.value);
                         const nextTemplates = getSuggestedTaskTemplates({

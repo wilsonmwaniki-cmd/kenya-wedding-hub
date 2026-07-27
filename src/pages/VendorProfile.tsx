@@ -15,6 +15,7 @@ import { getVendorReputationOverview, type VendorReputationOverview } from '@/li
 import { getProfessionalNetworkPath, isProfessionalNetworkEnabled } from '@/lib/featureFlags';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl, normalizePhoneHref } from '@/lib/security';
+import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 
 interface VendorProfileData {
   id: string;
@@ -111,7 +112,10 @@ export default function VendorProfile() {
         return;
       }
 
-      setVendor(vendorRes.data as VendorProfileData);
+      setVendor({
+        ...(vendorRes.data as VendorProfileData),
+        category: canonicalizeVendorCategory(vendorRes.data.category),
+      });
       setRecommendations((recommendationsRes.data as PlannerRecommendation[] | null) ?? []);
       const summary = ((signalsRes.data as Array<{ relationship_type: string; target_acknowledged: boolean }> | null) ?? []).reduce((acc, row) => {
         acc.total += 1;

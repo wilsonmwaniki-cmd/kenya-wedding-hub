@@ -85,6 +85,13 @@ import {
 import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 import { getRelatedTasksForVendor } from '@/lib/budgetRelations';
 import {
+  canonicalizeVendorCategory,
+  getVendorCategoryOptions,
+  getVendorCategoryScope,
+  vendorCategoriesMatch,
+  vendorCategoryCatalog,
+} from '@/lib/vendorCategories';
+import {
   coupleVendorContractMessage,
   coupleVendorContractShareUrl,
   coupleVendorContractStatusLabel,
@@ -183,7 +190,6 @@ interface VendorsWorkspaceData {
 
 type VendorMilestoneStatus = 'not_started' | 'in_progress' | 'complete';
 
-const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 const vendorStatuses = ['contacted', 'quoted', 'booked', 'completed', 'rejected'] as const;
 const selectionStatuses: VendorSelectionStatus[] = ['shortlisted', 'final', 'backup', 'declined'];
 const selectionSortOrder: Record<string, number> = {
@@ -401,6 +407,7 @@ async function loadVendorsWorkspace(dataOrFilter: string): Promise<VendorsWorksp
 
   const allVendors = ((vendorsResult.data ?? []).map((d) => ({
     ...d,
+    category: canonicalizeVendorCategory(d.category),
     amount_paid: Number(d.amount_paid ?? 0),
     committee_role_in_charge: d.committee_role_in_charge ?? null,
     contract_status: d.contract_status ?? 'not_started',
@@ -411,7 +418,12 @@ async function loadVendorsWorkspace(dataOrFilter: string): Promise<VendorsWorksp
   const recordedVendorIds = new Set(vendors.map((vendor) => vendor.id));
 
   return {
-    categories: [...new Set(allVendors.map((vendor) => vendor.category).filter(Boolean))],
+    categories: [
+      ...new Set([
+        ...vendorCategoryCatalog.map((category) => category.name),
+        ...allVendors.map((vendor) => vendor.category).filter(Boolean),
+      ]),
+    ],
     vendors,
     vendorTasks: ((tasksResult.data as VendorTaskItem[] | null) ?? []).filter(
       (task) => !task.source_vendor_id || recordedVendorIds.has(task.source_vendor_id),
@@ -436,7 +448,7 @@ export default function Vendors() {
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'directory' | 'custom'>('custom');
-  const [form, setForm] = useState({ name: '', category: 'Venue', email: '', phone: '', price: '' });
+  const [form, setForm] = useState({ name: '', category: 'Wedding Venue', email: '', phone: '', price: '' });
   const [addingVendor, setAddingVendor] = useState(false);
   const [vendorFormErrors, setVendorFormErrors] = useState<{ name?: string; email?: string; phone?: string; price?: string }>({});
   const [vendorSubmitError, setVendorSubmitError] = useState<string | null>(null);
@@ -1182,7 +1194,7 @@ export default function Vendors() {
             wedding_id: insert.wedding_id ?? null,
           },
         });
-        setForm({ name: '', category: 'Venue', email: '', phone: '', price: '' });
+        setForm({ name: '', category: 'Wedding Venue', email: '', phone: '', price: '' });
         setOpen(false);
         toast({
           title: 'Vendor request sent for approval',
@@ -1205,7 +1217,7 @@ export default function Vendors() {
       return;
     }
 
-    setForm({ name: '', category: 'Venue', email: '', phone: '', price: '' });
+    setForm({ name: '', category: 'Wedding Venue', email: '', phone: '', price: '' });
     setOpen(false);
     await refreshVendorsWorkspace();
     setAddingVendor(false);
@@ -2612,16 +2624,17 @@ export default function Vendors() {
 
     setRecordingVendorPayment(true);
     try {
+      const vendorBudgetScope = getVendorCategoryScope(selectedVendor.category);
       const { data: categoryRows, error: categoryLoadError } = await supabase
         .from('budget_categories')
         .select('*')
         .or(dataOrFilter)
-        .eq('budget_scope', 'wedding');
+        .eq('budget_scope', vendorBudgetScope);
 
       if (categoryLoadError) throw categoryLoadError;
 
       let selectedCategory = ((categoryRows ?? []) as any[]).find(
-        (category) => normalizeCategoryName(category.name) === normalizeCategoryName(selectedVendor.category),
+        (category) => vendorCategoriesMatch(category.name, selectedVendor.category),
       );
 
       if (!selectedCategory) {
@@ -2633,8 +2646,8 @@ export default function Vendors() {
           name: selectedVendor.category,
           allocated: selectedVendor.price ?? 0,
           spent: 0,
-          budget_scope: 'wedding',
-          visibility: 'public',
+          budget_scope: vendorBudgetScope,
+          visibility: vendorBudgetScope === 'personal' ? 'private' : 'public',
         };
 
         if (isPlanner && selectedClient) {
@@ -2673,7 +2686,7 @@ export default function Vendors() {
           proposedPayload: {
             budget_category_id: selectedCategory.id,
             vendor_id: selectedVendor.id,
-            budget_scope: 'wedding',
+            budget_scope: vendorBudgetScope,
             category_name: selectedCategory.name,
             payee_name: payeeName,
             amount,
@@ -2700,7 +2713,7 @@ export default function Vendors() {
         client_id: selectedClient?.id ?? null,
         budget_category_id: selectedCategory.id,
         vendor_id: selectedVendor.id,
-        budget_scope: 'wedding',
+        budget_scope: vendorBudgetScope,
         category_name: selectedCategory.name,
         payee_name: payeeName,
         amount,
@@ -2764,7 +2777,7 @@ export default function Vendors() {
           setMode('custom');
           setDirSearch('');
           setDirResults([]);
-          setForm({ name: '', category: 'Venue', email: '', phone: '', price: '' });
+          setForm({ name: '', category: 'Wedding Venue', email: '', phone: '', price: '' });
         }
       }}
     >
@@ -2845,7 +2858,11 @@ export default function Vendors() {
               <Select value={form.category} onValueChange={value => setForm(f => ({ ...f, category: value }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {vendorCategories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                  {vendorCategoryCatalog.map((category) => (
+                    <SelectItem key={category.name} value={category.name}>
+                      {category.name} · {category.scope === 'personal' ? 'Personal' : 'Wedding'}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -3109,8 +3126,10 @@ export default function Vendors() {
                     >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {[...new Set([detailsDraft.category, ...vendorCategories])].map((category) => (
-                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        {getVendorCategoryOptions(detailsDraft.category).map((category) => (
+                          <SelectItem key={category.name} value={category.name}>
+                            {category.name} · {category.scope === 'personal' ? 'Personal' : 'Wedding'}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -3661,6 +3680,9 @@ export default function Vendors() {
                               <h2 className="break-words text-2xl font-semibold text-foreground sm:text-3xl">{category}</h2>
                               <Badge variant={statusBadgeVariant} className="text-[10px] uppercase tracking-[0.12em]">
                                 {statusLabel}
+                              </Badge>
+                              <Badge variant="outline" className="text-[10px] uppercase tracking-[0.12em]">
+                                {getVendorCategoryScope(category) === 'personal' ? 'Personal' : 'Wedding'}
                               </Badge>
                             </div>
                             {featuredVendor ? (

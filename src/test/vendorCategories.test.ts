@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  canonicalizeVendorCategory,
+  getVendorCategoryOptions,
+  getVendorCategoryScope,
+  vendorCategoriesMatch,
+  vendorCategoryCatalog,
+} from '@/lib/vendorCategories';
+
+describe('vendor category catalog', () => {
+  it('contains the spreadsheet vendor categories without the task-only row', () => {
+    expect(vendorCategoryCatalog).toHaveLength(21);
+    expect(vendorCategoryCatalog.some((category) => category.name === "Couple's Tasks")).toBe(false);
+  });
+
+  it('retains each Wedding or Personal designation', () => {
+    expect(getVendorCategoryScope('Wedding Venue')).toBe('wedding');
+    expect(getVendorCategoryScope('Marriage Preparation')).toBe('personal');
+    expect(getVendorCategoryScope('Rings')).toBe('personal');
+    expect(getVendorCategoryScope("Bride's Make-up Artist")).toBe('personal');
+    expect(getVendorCategoryScope('Photographer')).toBe('wedding');
+  });
+
+  it('maps existing short labels to canonical names', () => {
+    expect(canonicalizeVendorCategory('Cake')).toBe('Cake Artist & Baker');
+    expect(canonicalizeVendorCategory('Catering')).toBe('Caterer');
+    expect(canonicalizeVendorCategory('MC')).toBe('Master of Ceremonies');
+    expect(canonicalizeVendorCategory('Photography')).toBe('Photographer');
+    expect(canonicalizeVendorCategory('Videography')).toBe('Cinematographer');
+  });
+
+  it('keeps legacy-only records selectable without adding them for new records', () => {
+    expect(getVendorCategoryOptions().some((category) => category.name === 'Flowers')).toBe(false);
+    expect(getVendorCategoryOptions('Flowers').at(-1)).toEqual({
+      name: 'Flowers',
+      scope: 'wedding',
+    });
+  });
+
+  it('matches canonical categories to existing budget and vendor labels', () => {
+    expect(vendorCategoriesMatch('Cake', 'Cake Artist & Baker')).toBe(true);
+    expect(vendorCategoriesMatch('Wedding Bands', 'Rings')).toBe(true);
+    expect(vendorCategoriesMatch('Bride Attire & Body Prep', 'Bridal Gown, Accessories, Preparation')).toBe(true);
+    expect(vendorCategoriesMatch('Flowers', 'Décor, Tents, Chairs, Tables')).toBe(false);
+  });
+});

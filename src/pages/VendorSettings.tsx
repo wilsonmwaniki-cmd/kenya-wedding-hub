@@ -20,8 +20,11 @@ import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocation
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { displaySafeUrl, normalizeExternalUrl as normalizeSafeExternalUrl } from '@/lib/security';
-
-const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
+import {
+  canonicalizeVendorCategory,
+  getVendorCategoryOptions,
+  vendorCategoriesMatch,
+} from '@/lib/vendorCategories';
 
 interface VendorListing {
   id: string;
@@ -150,7 +153,7 @@ export default function VendorSettings() {
   const [listing, setListing] = useState<VendorListing | null>(null);
   const [form, setForm] = useState({
     business_name: '',
-    category: 'Photography',
+    category: 'Photographer',
     description: '',
     phone: '',
     email: '',
@@ -180,7 +183,7 @@ export default function VendorSettings() {
   const [venueSpacesLoading, setVenueSpacesLoading] = useState(false);
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
-  const isVenueCategory = form.category === 'Venue';
+  const isVenueCategory = vendorCategoriesMatch(form.category, 'Wedding Venue');
   const effectiveListing = listing
     ? {
         ...listing,
@@ -204,7 +207,7 @@ export default function VendorSettings() {
         setListing(data as any);
         setForm({
           business_name: data.business_name || '',
-          category: data.category || 'Photography',
+          category: canonicalizeVendorCategory(data.category || 'Photographer'),
           description: data.description || '',
           phone: data.phone || '',
           email: data.email || '',
@@ -868,7 +871,11 @@ export default function VendorSettings() {
                 }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {vendorCategories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {getVendorCategoryOptions(form.category).map((category) => (
+                      <SelectItem key={category.name} value={category.name}>
+                        {category.name} · {category.scope === 'personal' ? 'Personal' : 'Wedding'}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormFieldError message={formErrors.category} />

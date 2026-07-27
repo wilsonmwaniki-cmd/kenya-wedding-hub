@@ -33,6 +33,7 @@ import {
   listVendorTaskSuggestions,
   type VendorTaskSuggestion,
 } from '@/lib/vendorTaskSuggestions';
+import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 
 interface Booking {
   id: string;
@@ -340,7 +341,7 @@ export default function VendorDashboard() {
       id: row.id,
       user_id: row.user_id,
       name: row.name,
-      category: row.category,
+      category: canonicalizeVendorCategory(row.category),
       status: null,
       price: row.price != null ? Number(row.price) : null,
       phone: row.phone ?? null,
@@ -379,7 +380,7 @@ export default function VendorDashboard() {
           vendorId: invite.vendor_id,
           userId: vendor?.user_id ?? '',
           vendorName: vendor?.name ?? 'Vendor workspace',
-          vendorCategory: vendor?.category ?? 'Vendor',
+          vendorCategory: canonicalizeVendorCategory(vendor?.category) || 'Vendor',
           vendorPhone: vendor?.phone ?? null,
           vendorEmail: vendor?.email ?? null,
           vendorNotes: vendor?.notes ?? null,
@@ -581,7 +582,7 @@ export default function VendorDashboard() {
         await supabase.from('vendors').insert({
           user_id: request.requester_user_id,
           name: listing.business_name,
-          category: listing.category,
+          category: canonicalizeVendorCategory(listing.category),
           phone: listing.phone,
           email: listing.email,
           status: 'booked',

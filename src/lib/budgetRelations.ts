@@ -1,4 +1,5 @@
 import { hasRecordedVendor, type VendorAttachmentCandidate } from '@/lib/vendorSelection';
+import { vendorCategoriesMatch } from '@/lib/vendorCategories';
 
 type RelatedVendor = VendorAttachmentCandidate & {
   id: string;
@@ -74,6 +75,8 @@ function conceptIndexes(value: string) {
 }
 
 export function planningCategoryRelationScore(categoryName: string, candidate?: string | null) {
+  if (candidate && vendorCategoriesMatch(categoryName, candidate)) return 100;
+
   const category = normalizeRelationText(categoryName);
   const value = normalizeRelationText(candidate);
   if (!category || !value) return 0;

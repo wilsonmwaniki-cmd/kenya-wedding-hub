@@ -3,6 +3,7 @@ import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/pub
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import type { PlannerType } from '@/lib/roles';
 import { buildSeededTasksFromTemplates } from '@/lib/weddingTaskTemplates';
+import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 
 export type EstimatorWeddingStyle = 'intimate' | 'classic' | 'luxury' | 'garden';
 export type EstimatorVenueTier = 'budget' | 'mid_tier' | 'luxury';
@@ -45,9 +46,20 @@ interface SeedWeddingPlanResult {
 
 const ESTIMATOR_PLAN_DRAFT_KEY = 'centerpiece-estimator-plan-draft';
 
-const alwaysVendorCategories = ['Venue', 'Catering', 'Photography', 'Flowers', 'Décor', 'Transport'] as const;
+const alwaysVendorCategories = [
+  'Wedding Venue',
+  'Caterer',
+  'Photographer',
+  'Décor, Tents, Chairs, Tables',
+  'Transport',
+] as const;
 
-const expandedVendorCategories = ['Videography', 'Music/DJ', 'MC', 'Cake'] as const;
+const expandedVendorCategories = [
+  'Cinematographer',
+  'DJ (or Band) and Sound',
+  'Master of Ceremonies',
+  'Cake Artist & Baker',
+] as const;
 
 function scopedQuery<T extends {
   is(column: string, value: null): T;
@@ -62,16 +74,20 @@ function scopedQuery<T extends {
 function normalizeVendorCategory(category: string): string | null {
   const normalized = category.toLowerCase().trim();
 
-  if (normalized.includes('venue')) return 'Venue';
-  if (normalized.includes('cater')) return 'Catering';
-  if (normalized.includes('photo')) return 'Photography';
-  if (normalized.includes('video')) return 'Videography';
-  if (normalized.includes('flower') || normalized.includes('flor')) return 'Flowers';
-  if (normalized.includes('decor')) return 'Décor';
-  if (normalized.includes('music') || normalized.includes('dj') || normalized.includes('entertainment')) return 'Music/DJ';
+  if (normalized.includes('photo shoot')) return 'Photo Shoot Venue';
+  if (normalized.includes('venue')) return 'Wedding Venue';
+  if (normalized.includes('cater')) return 'Caterer';
+  if (normalized.includes('photo')) return 'Photographer';
+  if (normalized.includes('video') || normalized.includes('cinema')) return 'Cinematographer';
+  if (normalized.includes('flower') || normalized.includes('flor') || normalized.includes('decor')) {
+    return 'Décor, Tents, Chairs, Tables';
+  }
+  if (normalized.includes('music') || normalized.includes('dj') || normalized.includes('entertainment')) {
+    return 'DJ (or Band) and Sound';
+  }
   if (normalized.includes('transport')) return 'Transport';
-  if (normalized === 'mc') return 'MC';
-  if (normalized.includes('cake')) return 'Cake';
+  if (normalized === 'mc') return 'Master of Ceremonies';
+  if (normalized.includes('cake')) return 'Cake Artist & Baker';
 
   return null;
 }
@@ -84,8 +100,8 @@ function buildVendorCategories(draft: EstimatorPlanDraft, rows: PublicBudgetEsti
   }
 
   if (draft.weddingStyle === 'luxury' || draft.weddingStyle === 'garden') {
-    seeded.add('Videography');
-    seeded.add('Flowers');
+    seeded.add('Cinematographer');
+    seeded.add('Décor, Tents, Chairs, Tables');
   }
 
   rows.forEach((row) => {
@@ -93,7 +109,7 @@ function buildVendorCategories(draft: EstimatorPlanDraft, rows: PublicBudgetEsti
     if (mapped) seeded.add(mapped);
   });
 
-  return [...seeded];
+  return [...seeded].map(canonicalizeVendorCategory);
 }
 
 function buildVendorPlaceholder(category: string, county: string) {
