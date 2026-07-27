@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, ChevronDown, ExternalLink, FileSignature } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
@@ -84,6 +84,12 @@ import {
 } from '@/lib/vendorTaskSuggestions';
 import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 import { getRelatedTasksForVendor } from '@/lib/budgetRelations';
+import {
+  coupleVendorContractMessage,
+  coupleVendorContractShareUrl,
+  coupleVendorContractStatusLabel,
+  getCoupleVendorContract,
+} from '@/lib/coupleVendorContracts';
 
 interface Vendor {
   amount_paid: number;
@@ -2058,6 +2064,13 @@ export default function Vendors() {
     [selectedVendorId, visibleVendors],
   );
 
+  const selectedVendorContractQuery = useQuery({
+    queryKey: ['couple-vendor-contract', selectedVendorId],
+    queryFn: () => getCoupleVendorContract(selectedVendorId!),
+    enabled: Boolean(showCoupleVendorWorkspace && selectedVendorId),
+    staleTime: 30_000,
+  });
+
   const vendorTaskSuggestedOptions = useMemo(() => {
     if (!vendorTaskDialogVendor) return [];
     return getSuggestedTaskTemplates({
@@ -3011,6 +3024,10 @@ export default function Vendors() {
       const vendorActiveInvite = (workspaceVendorInvites[vendor.id] ?? []).find((invite) =>
         ['draft', 'pending', 'sent', 'opened'].includes(invite.invite_status),
       ) ?? null;
+      const vendorContract = isActive ? selectedVendorContractQuery.data ?? null : null;
+      const vendorContractUrl = vendorContract
+        ? coupleVendorContractShareUrl(vendorContract, window.location.origin)
+        : null;
 
       return (
         <motion.div
@@ -3135,7 +3152,7 @@ export default function Vendors() {
               <div className="grid gap-5 lg:grid-cols-2">
                 <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
                   <p className="font-semibold text-foreground">Confirmation and contract</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Move this vendor from an option to a confirmed booking.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Confirm your choice here. The vendor creates and manages the contract from their professional account.</p>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Vendor decision</Label>
@@ -3150,30 +3167,51 @@ export default function Vendors() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Contract</Label>
-                      <Select
-                        value={workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status}
-                        onValueChange={(value) => setWorkflowDrafts((current) => ({
-                          ...current,
-                          [vendor.id]: {
-                            ...(current[vendor.id] ?? { committeeRoleInCharge: 'unassigned', contractStatus: vendor.contract_status }),
-                            contractStatus: value,
-                          },
-                        }))}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {contractStatusOptions.map((status) => <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                    <div className="min-w-0 rounded-lg border border-border/70 bg-background/80 p-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <FileSignature className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium text-foreground">Vendor contract</p>
+                            {vendorContract ? (
+                              <Badge variant="outline" className="text-[10px]">
+                                {coupleVendorContractStatusLabel(vendorContract)}
+                              </Badge>
+                            ) : null}
+                          </div>
+
+                          {selectedVendorContractQuery.isLoading ? (
+                            <p className="mt-1 text-xs text-muted-foreground">Checking for a shared contract...</p>
+                          ) : selectedVendorContractQuery.isError ? (
+                            <p className="mt-1 text-xs text-destructive">The contract could not be loaded. Please try again.</p>
+                          ) : vendorContract ? (
+                            <>
+                              <p className="mt-1 truncate text-sm font-medium text-foreground">{vendorContract.title}</p>
+                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                {coupleVendorContractMessage(vendorContract)}
+                              </p>
+                              {vendorContractUrl ? (
+                                <Button asChild type="button" variant="link" className="mt-2 h-auto p-0 text-xs">
+                                  <a href={vendorContractUrl} target="_blank" rel="noreferrer">
+                                    Open contract
+                                    <ExternalLink className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                                  </a>
+                                </Button>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>
+                              <p className="mt-1 text-sm font-medium text-foreground">No contract shared yet</p>
+                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                {vendor.vendor_listing_id
+                                  ? 'This vendor has not sent a contract through Zania yet.'
+                                  : 'Connect this vendor to their professional account so they can create and share the contract here.'}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-4 flex justify-end">
-                    <Button type="button" variant="outline" onClick={() => updateVendorWorkflow(vendor)} disabled={savingWorkflowId === vendor.id}>
-                      {savingWorkflowId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Save contract
-                    </Button>
                   </div>
                 </div>
 
