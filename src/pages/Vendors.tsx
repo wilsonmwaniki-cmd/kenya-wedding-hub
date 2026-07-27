@@ -2024,7 +2024,8 @@ export default function Vendors() {
   }, [activeComparisonCategory, sortedVendors]);
 
   const isCommitteeWorkspace = profile?.role === 'planner' && profile?.planner_type === 'committee';
-  const showCoupleVendorWorkspace = profile?.role === 'couple' || isCommitteeWorkspace || (isPlanner && Boolean(selectedClient));
+  const showSharedVendorWorkspace =
+    profile?.role === 'couple' || isCommitteeWorkspace || Boolean(selectedClient);
   const exportFeature = profile?.role === 'planner'
     ? profile?.planner_type === 'committee'
       ? 'committee.export_progress'
@@ -2079,7 +2080,7 @@ export default function Vendors() {
   const selectedVendorContractQuery = useQuery({
     queryKey: ['couple-vendor-contract', selectedVendorId],
     queryFn: () => getCoupleVendorContract(selectedVendorId!),
-    enabled: Boolean(showCoupleVendorWorkspace && selectedVendorId),
+    enabled: Boolean(showSharedVendorWorkspace && selectedVendorId),
     staleTime: 30_000,
   });
 
@@ -2448,7 +2449,7 @@ export default function Vendors() {
   }, [selectedVendor, selectedVendorActiveInvite]);
 
   useEffect(() => {
-    if (showCoupleVendorWorkspace || !selectedVendor) return;
+    if (showSharedVendorWorkspace || !selectedVendor) return;
 
     let cancelled = false;
     setVendorWorkspaceUpdatesLoadingId(selectedVendor.id);
@@ -2487,7 +2488,7 @@ export default function Vendors() {
     return () => {
       cancelled = true;
     };
-  }, [selectedVendor, showCoupleVendorWorkspace, toast]);
+  }, [selectedVendor, showSharedVendorWorkspace, toast]);
 
   useEffect(() => {
     if (!selectedVendor?.vendor_listing_id) return;
@@ -2994,7 +2995,7 @@ export default function Vendors() {
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
   if (vendorsQuery.isLoading) return <WorkspacePageSkeleton compact />;
 
-  if (showCoupleVendorWorkspace) {
+  if (showSharedVendorWorkspace) {
     const exportVendorData = () => {
       downloadCsv(
         `zania-vendors-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -3492,7 +3493,7 @@ export default function Vendors() {
             )}
           </DialogContent>
         </Dialog>
-        {showCoupleVendorWorkspace ? (
+        {showSharedVendorWorkspace ? (
           <>
             <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
               <div>
