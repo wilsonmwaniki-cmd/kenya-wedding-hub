@@ -72,15 +72,6 @@ const plannerNavItems: NavItem[] = [
       { path: '/planner-documents/templates', label: 'Templates' },
     ],
   },
-  { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
-  { path: '/budget', label: 'Budget', icon: Wallet },
-  { path: '/tasks', label: 'Tasks', icon: CheckSquare },
-  { path: '/guests', label: 'Guests', icon: Users },
-  { path: '/contributions', label: 'Contributions', icon: HandCoins },
-  { path: '/gift-registry', label: 'Gift Registry', icon: Gift },
-  { path: '/vendors', label: 'Vendors', icon: Store },
-  { path: '/timeline', label: 'Timeline', icon: Clock },
-  { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -231,7 +222,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (professionalSetupPending) return professionalSetupNavItems;
     if (isAdmin) return adminNavItems;
     if (isVendor) return [...vendorNavItems.slice(0, 2), ...previewNavItems, ...vendorNavItems.slice(2)];
-    if (isPlanner) return [...plannerNavItems.slice(0, 9), ...previewNavItems, ...plannerNavItems.slice(9)];
+    if (isPlanner) {
+      if (selectedClient) return resolvedCoupleNavItems;
+      return plannerNavItems;
+    }
     return resolvedCoupleNavItems;
   }, [
     isAdmin,
@@ -240,6 +234,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     labsEnabled,
     professionalNetworkEnabled,
     professionalSetupPending,
+    selectedClient,
     spaceTablePlanEnabled,
   ]);
 

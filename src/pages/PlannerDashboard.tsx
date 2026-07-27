@@ -9,18 +9,70 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Users, Calendar, MapPin, ArrowRight, Trash2, LinkIcon, CheckCircle2, XCircle, NotebookPen } from 'lucide-react';
+import {
+  Plus,
+  Users,
+  Calendar,
+  MapPin,
+  ArrowRight,
+  Trash2,
+  LinkIcon,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Clock3,
+  ListTodo,
+  Sparkles,
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import MyConnections from '@/components/MyConnections';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { isCommitteePlanner, plannerCanCollaborate } from '@/lib/plannerAccess';
 import { approvePlannerCodeLinkRequest, requestPlannerLinkByCode } from '@/lib/collaborationCodes';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { usePlannerFreeWeddingStatus } from '@/hooks/usePlannerFreeWeddingStatus';
-import ContextualAssistantAction from '@/components/ContextualAssistantAction';
+
+interface PlannerTaskPulse {
+  id: string;
+  title: string;
+  due_date: string | null;
+  completed: boolean;
+  created_at: string;
+  client_id: string | null;
+  user_id: string;
+  priority_level: number | null;
+  client: PlannerClient;
+}
+
+type PlannerTaskPulseRow = Omit<PlannerTaskPulse, 'client'>;
+
+interface PlannerWeddingOverview {
+  client: PlannerClient;
+  open: number;
+  overdue: number;
+  dueSoon: number;
+  recent: number;
+  nextTask: PlannerTaskPulse | null;
+  latestTask: PlannerTaskPulse | null;
+}
+
+const DAY_MS = 86400000;
+
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function formatTaskDate(value: string | null) {
+  if (!value) return 'No date';
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-KE', {
+    day: 'numeric',
+    month: 'short',
+  });
+}
 
 interface LinkRequest {
   id: string;
@@ -46,6 +98,8 @@ export default function PlannerDashboard() {
   const [collabNote, setCollabNote] = useState('');
   const [submittingCode, setSubmittingCode] = useState(false);
   const [addingClient, setAddingClient] = useState(false);
+  const [taskPulse, setTaskPulse] = useState<PlannerTaskPulse[]>([]);
+  const [taskPulseLoading, setTaskPulseLoading] = useState(true);
   const [codeFormErrors, setCodeFormErrors] = useState<{ collabCode?: string }>({});
   const [codeSubmitError, setCodeSubmitError] = useState<string | null>(null);
   const [clientFormErrors, setClientFormErrors] = useState<{ client_name?: string; email?: string; phone?: string }>({});
@@ -79,6 +133,63 @@ export default function PlannerDashboard() {
   };
 
   useEffect(() => { if (user) loadLinkRequests(); }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTaskPulse = async () => {
+      if (!user || clients.length === 0) {
+        if (!cancelled) {
+          setTaskPulse([]);
+          setTaskPulseLoading(false);
+        }
+        return;
+      }
+
+      setTaskPulseLoading(true);
+      const clientIds = clients.map((client) => client.id);
+      const linkedUserIds = clients
+        .map((client) => client.linked_user_id)
+        .filter((id): id is string => Boolean(id));
+      const fields = 'id,title,due_date,completed,created_at,client_id,user_id,priority_level' as const;
+
+      const { data: clientTasks } = await supabase
+        .from('tasks')
+        .select(fields)
+        .in('client_id', clientIds);
+      let linkedTasks: PlannerTaskPulseRow[] = [];
+      if (linkedUserIds.length > 0) {
+        const { data } = await supabase
+          .from('tasks')
+          .select(fields)
+          .in('user_id', linkedUserIds);
+        linkedTasks = data ?? [];
+      }
+
+      if (cancelled) return;
+
+      const clientsById = new Map(clients.map((client) => [client.id, client]));
+      const clientsByUserId = new Map(
+        clients
+          .filter((client) => client.linked_user_id)
+          .map((client) => [client.linked_user_id as string, client]),
+      );
+      const rows: PlannerTaskPulseRow[] = [...(clientTasks ?? []), ...linkedTasks];
+      const uniqueRows = Array.from(new Map(rows.map((row) => [row.id, row])).values());
+
+      setTaskPulse(uniqueRows.flatMap((row) => {
+        const client = (row.client_id ? clientsById.get(row.client_id) : null)
+          ?? clientsByUserId.get(row.user_id);
+        return client ? [{ ...row, client } as PlannerTaskPulse] : [];
+      }));
+      setTaskPulseLoading(false);
+    };
+
+    void loadTaskPulse();
+    return () => {
+      cancelled = true;
+    };
+  }, [clients, user]);
 
   const incomingLinkRequests = linkRequests.filter((req) => req.request_source !== 'planner_code');
   const outgoingCodeRequests = linkRequests.filter((req) => req.request_source === 'planner_code');
@@ -206,11 +317,6 @@ export default function PlannerDashboard() {
     });
   };
 
-  const openClientDashboard = (client: PlannerClient) => {
-    selectClient(client);
-    navigate('/dashboard');
-  };
-
   const plannerPreviewMode = isSuperAdmin && (rolePreview === 'planner' || rolePreview === 'committee');
   const isCommittee = isCommitteePlanner(profile);
   const { status: plannerFreeWeddingStatus } = usePlannerFreeWeddingStatus(!isCommittee);
@@ -227,10 +333,58 @@ export default function PlannerDashboard() {
     bypass: plannerPreviewMode,
   });
   const fullPlannerAccess = workspaceDecision.allowed;
-  const workspaceLabel = isCommittee ? 'committee workspace' : 'planner workspace';
-  const collectionHeading = isCommittee ? 'Committee Weddings' : 'My Clients';
+  const collectionHeading = isCommittee ? 'Committee Weddings' : 'My Weddings';
   const addLabel = isCommittee ? 'Add Wedding' : 'Add Client';
   const committeeAtCapacity = isCommittee && clients.length >= 1;
+  const today = startOfToday();
+  const dueSoonLimit = new Date(today.getTime() + (14 * DAY_MS));
+  const recentLimit = new Date(Date.now() - (7 * DAY_MS));
+
+  const weddingOverviews: PlannerWeddingOverview[] = clients.map((client) => {
+    const tasks = taskPulse.filter((task) => task.client.id === client.id);
+    const openTasks = tasks.filter((task) => !task.completed);
+    const scheduledOpenTasks = openTasks
+      .filter((task) => task.due_date)
+      .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+    const overdue = scheduledOpenTasks.filter(
+      (task) => new Date(`${task.due_date}T00:00:00`) < today,
+    ).length;
+    const dueSoon = scheduledOpenTasks.filter((task) => {
+      const dueDate = new Date(`${task.due_date}T00:00:00`);
+      return dueDate >= today && dueDate <= dueSoonLimit;
+    }).length;
+    const recentTasks = tasks.filter((task) => new Date(task.created_at) >= recentLimit);
+    const latestTask = [...tasks].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0] ?? null;
+
+    return {
+      client,
+      open: openTasks.length,
+      overdue,
+      dueSoon,
+      recent: recentTasks.length,
+      nextTask: scheduledOpenTasks[0] ?? openTasks[0] ?? null,
+      latestTask,
+    };
+  });
+
+  const attentionTasks = taskPulse
+    .filter((task) => !task.completed && task.due_date)
+    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)))
+    .slice(0, 5);
+  const recentChanges = [...taskPulse]
+    .filter((task) => new Date(task.created_at) >= recentLimit)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 5);
+  const totalOpen = weddingOverviews.reduce((total, overview) => total + overview.open, 0);
+  const totalOverdue = weddingOverviews.reduce((total, overview) => total + overview.overdue, 0);
+  const totalDueSoon = weddingOverviews.reduce((total, overview) => total + overview.dueSoon, 0);
+
+  const openClientRoute = (client: PlannerClient, path: string) => {
+    selectClient(client);
+    navigate(path);
+  };
 
   return (
     <div className="space-y-6">
@@ -305,50 +459,15 @@ export default function PlannerDashboard() {
         </Card>
       )}
 
-      {/* Planner's vendor connections */}
-      {fullPlannerAccess && <MyConnections />}
-
-      {!isCommittee && (
-        <Card className="border-border/70 bg-muted/20">
-          <CardHeader>
-            <CardTitle className="text-base">Professional workspace</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 lg:grid-cols-3">
-            {[
-              { key: 'portfolio', title: 'Advanced portfolio', description: 'Included with Professional for richer business presentation.', badge: 'Professional' },
-              { key: 'analytics', title: 'Business analytics', description: 'Included with Professional for clearer inquiry and booking insights.', badge: 'Professional' },
-              { key: 'team', title: 'Team workspace', description: 'Team roles and shared professional operations are in development.', badge: 'Coming soon' },
-            ].map((item) => (
-              <div key={item.key} className="rounded-xl border border-border bg-card p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-card-foreground">{item.title}</p>
-                    <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
-                  </div>
-                  <Badge variant="info">{item.badge}</Badge>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">{collectionHeading}</h1>
-          <p className="text-muted-foreground">{clients.length} wedding{clients.length !== 1 ? 's' : ''} in this {workspaceLabel}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Planner home</p>
+          <h1 className="mt-1 font-display text-3xl font-bold text-foreground">{collectionHeading}</h1>
+          <p className="mt-1 text-muted-foreground">
+            See what needs attention across {clients.length} wedding{clients.length !== 1 ? 's' : ''}.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ContextualAssistantAction
-            prompt="Look at my planner workspace and tell me the one thing I should do next."
-            context={`This planner is managing ${clients.length} wedding${clients.length === 1 ? '' : 's'} and has ${linkRequests.length} waiting link request${linkRequests.length === 1 ? '' : 's'}.`}
-          />
-          <Button asChild variant="outline" className="gap-2">
-            <Link to="/planner-documents">
-              <NotebookPen className="h-4 w-4" />
-              Documents
-            </Link>
-          </Button>
           <Dialog open={codeDialogOpen} onOpenChange={setCodeDialogOpen}>
             <Button
               variant="outline"
@@ -467,9 +586,126 @@ export default function PlannerDashboard() {
         </Card>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {clients.map((c, i) => {
-          const weddingDate = c.wedding_date ? new Date(c.wedding_date) : null;
+      {clients.length > 0 && (
+        <>
+          <section aria-labelledby="planner-attention-heading" className="space-y-4">
+            <div className="grid overflow-hidden rounded-2xl border border-border/80 bg-card shadow-card sm:grid-cols-3">
+              <div className="flex items-center gap-3 border-b border-border/70 px-4 py-3 sm:border-b-0 sm:border-r">
+                <span className="rounded-full bg-muted p-2 text-muted-foreground">
+                  <ListTodo className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-xs text-muted-foreground">Open tasks</p>
+                  <p className="text-xl font-semibold text-foreground">{taskPulseLoading ? '...' : totalOpen}</p>
+                </div>
+              </div>
+              <div className={`flex items-center gap-3 border-b border-border/70 px-4 py-3 sm:border-b-0 sm:border-r ${totalOverdue > 0 ? 'semantic-surface-danger' : ''}`}>
+                <span className="rounded-full bg-background/70 p-2 text-destructive">
+                  <AlertCircle className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-xs text-muted-foreground">Overdue</p>
+                  <p className="text-xl font-semibold text-foreground">{taskPulseLoading ? '...' : totalOverdue}</p>
+                </div>
+              </div>
+              <div className={`flex items-center gap-3 px-4 py-3 ${totalDueSoon > 0 ? 'semantic-surface-warning' : ''}`}>
+                <span className="rounded-full bg-background/70 p-2 text-warning">
+                  <Clock3 className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-xs text-muted-foreground">Due in 14 days</p>
+                  <p className="text-xl font-semibold text-foreground">{taskPulseLoading ? '...' : totalDueSoon}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+              <Card className={totalOverdue > 0 ? 'semantic-surface-danger shadow-card' : 'shadow-card'}>
+                <CardHeader className="pb-3">
+                  <CardTitle id="planner-attention-heading" className="font-display text-xl">
+                    {totalOverdue > 0 ? 'Needs attention' : 'Coming up next'}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Open a task in the right wedding workspace.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {attentionTasks.map((task) => {
+                    const overdue = new Date(`${task.due_date}T00:00:00`) < today;
+                    return (
+                      <button
+                        key={task.id}
+                        type="button"
+                        onClick={() => openClientRoute(task.client, `/tasks?task=${task.id}`)}
+                        className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-border/75 bg-card px-3 py-2.5 text-left transition-colors hover:border-primary/35 hover:bg-background"
+                      >
+                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${overdue ? 'bg-destructive' : 'bg-warning'}`} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-foreground">{task.title}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {task.client.client_name}{task.client.partner_name ? ` & ${task.client.partner_name}` : ''}
+                          </span>
+                        </span>
+                        <span className={`shrink-0 text-xs font-medium ${overdue ? 'text-destructive' : 'text-warning'}`}>
+                          {overdue ? 'Overdue' : formatTaskDate(task.due_date)}
+                        </span>
+                        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      </button>
+                    );
+                  })}
+                  {!taskPulseLoading && attentionTasks.length === 0 && (
+                    <div className="semantic-surface-success rounded-xl border px-4 py-5">
+                      <p className="font-medium text-foreground">Nothing urgent right now</p>
+                      <p className="mt-1 text-sm text-muted-foreground">Your linked wedding tasks are up to date.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 font-display text-xl">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Recent changes
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">Tasks added in the last seven days.</p>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {recentChanges.map((task) => (
+                    <button
+                      key={task.id}
+                      type="button"
+                      onClick={() => openClientRoute(task.client, `/tasks?task=${task.id}`)}
+                      className="flex min-h-12 w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-muted/45"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">{task.title}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          Added for {task.client.client_name}{task.client.partner_name ? ` & ${task.client.partner_name}` : ''}
+                        </span>
+                      </span>
+                      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  ))}
+                  {!taskPulseLoading && recentChanges.length === 0 && (
+                    <p className="rounded-xl bg-muted/35 px-4 py-5 text-sm text-muted-foreground">
+                      No new tasks were added this week.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          <section aria-labelledby="planner-weddings-heading" className="space-y-3">
+            <div>
+              <h2 id="planner-weddings-heading" className="font-display text-2xl font-semibold text-foreground">Your weddings</h2>
+              <p className="text-sm text-muted-foreground">Choose a wedding to open its full planning workspace.</p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {weddingOverviews.map((overview, i) => {
+          const c = overview.client;
+          const weddingDate = c.wedding_date ? new Date(`${c.wedding_date}T00:00:00`) : null;
           const daysUntil = weddingDate ? Math.max(0, Math.ceil((weddingDate.getTime() - Date.now()) / 86400000)) : null;
           return (
             <motion.div
@@ -478,7 +714,10 @@ export default function PlannerDashboard() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
             >
-              <Card className="group shadow-card">
+              <Card className={`group overflow-hidden shadow-card transition-[transform,border-color,box-shadow] hover:-translate-y-0.5 hover:border-primary/35 ${
+                overview.overdue > 0 ? 'border-destructive/30' : overview.dueSoon > 0 ? 'border-warning/30' : ''
+              }`}>
+                <div className={`h-1 ${overview.overdue > 0 ? 'bg-destructive' : overview.dueSoon > 0 ? 'bg-warning' : 'bg-success'}`} />
                 <CardHeader className="flex flex-row items-start justify-between pb-2">
                   <div>
                     <CardTitle className="text-lg font-display">
@@ -499,7 +738,8 @@ export default function PlannerDashboard() {
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteClient(c.id); }}
-                    className="text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                    aria-label={`Archive ${c.client_name}'s wedding`}
+                    className="rounded-md p-2 text-muted-foreground opacity-0 transition-colors hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus:opacity-100"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -518,19 +758,44 @@ export default function PlannerDashboard() {
                       )}
                     </div>
                   )}
+                  <div className="grid grid-cols-3 overflow-hidden rounded-xl border border-border/70 bg-muted/20 text-center">
+                    <div className="px-2 py-2.5">
+                      <p className="text-lg font-semibold text-foreground">{overview.open}</p>
+                      <p className="text-[11px] text-muted-foreground">Open</p>
+                    </div>
+                    <div className={`border-x border-border/70 px-2 py-2.5 ${overview.overdue > 0 ? 'semantic-surface-danger' : ''}`}>
+                      <p className="text-lg font-semibold text-foreground">{overview.overdue}</p>
+                      <p className="text-[11px] text-muted-foreground">Overdue</p>
+                    </div>
+                    <div className="px-2 py-2.5">
+                      <p className="text-lg font-semibold text-foreground">{overview.dueSoon}</p>
+                      <p className="text-[11px] text-muted-foreground">Due soon</p>
+                    </div>
+                  </div>
+                  <div className="min-h-11 rounded-xl bg-muted/30 px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      {overview.latestTask ? 'Latest change' : 'Next step'}
+                    </p>
+                    <p className="mt-0.5 truncate text-sm text-foreground">
+                      {overview.latestTask?.title ?? overview.nextTask?.title ?? 'Add the first wedding task'}
+                    </p>
+                  </div>
                   <Button
-                    variant="outline"
+                    variant={overview.overdue > 0 ? 'default' : 'outline'}
                     className="w-full gap-2"
-                    onClick={() => openClientDashboard(c)}
+                    onClick={() => openClientRoute(c, '/dashboard')}
                   >
-                    Open Dashboard <ArrowRight className="h-4 w-4" />
+                    Open wedding <ArrowRight className="h-4 w-4" />
                   </Button>
                 </CardContent>
               </Card>
             </motion.div>
           );
         })}
-      </div>
+            </div>
+          </section>
+        </>
+      )}
 
       {clients.length === 0 && (
         <Card className="border-border/70 bg-muted/10 shadow-card">
