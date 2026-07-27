@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Link2, Trash2 } from 'lucide-react';
+import { Download, Link2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
@@ -1062,7 +1062,8 @@ export default function Tasks() {
             type="button"
             variant="ghost"
             size="sm"
-            className="shrink-0 px-3 text-muted-foreground hover:text-foreground"
+            aria-label="Export tasks"
+            className="shrink-0 px-2 text-muted-foreground hover:text-foreground sm:px-3"
             onClick={() => {
               if (!exportDecision.allowed) {
                 setExportUpgradeOpen(true);
@@ -1071,7 +1072,8 @@ export default function Tasks() {
               exportTasks();
             }}
           >
-            Export
+            <Download className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+            <span className="hidden sm:inline">Export</span>
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">

@@ -34,7 +34,7 @@ export function SlidingSegmentedControl<T extends string>({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(option.value)}
-            className={`relative min-h-10 min-w-0 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-4 ${active ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`relative min-h-10 min-w-0 rounded-md px-2 py-2 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:px-4 sm:text-sm ${active ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
           >
             {active ? (
               <motion.span
