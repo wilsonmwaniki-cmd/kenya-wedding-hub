@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, ChevronDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
@@ -472,6 +472,7 @@ export default function Vendors() {
   const [creatingVendorTaskBundleId, setCreatingVendorTaskBundleId] = useState<string | null>(null);
   const [vendorListView, setVendorListView] = useState<'by_category' | 'by_name'>('by_category');
   const [vendorWorkspaceQuery, setVendorWorkspaceQuery] = useState('');
+  const [expandedVendorCategories, setExpandedVendorCategories] = useState<Record<string, boolean>>({});
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [selectedVendorTab, setSelectedVendorTab] = useState<'details' | 'tasks' | 'payments'>('details');
@@ -3424,36 +3425,122 @@ export default function Vendors() {
                 {filteredVendorsByName.map(renderVendorRow)}
               </div>
             ) : (
-              <div className="space-y-7">
-                {Object.entries(vendorsGroupedByCategory).map(([category, group]) => (
-                  <section key={category} className="space-y-4">
-                    <div className="border-t border-border/70 pt-6">
-                      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                        <h2 className="break-words text-2xl font-semibold text-foreground sm:text-3xl">{category}</h2>
-                        <p className="text-sm text-muted-foreground">{group.length} vendor{group.length === 1 ? '' : 's'} in this category</p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      {group.length > 0 ? group.map(renderVendorRow) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMode('custom');
-                            setForm({ name: '', category, email: '', phone: '', price: '' });
-                            setOpen(true);
-                          }}
-                          className="flex w-full items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-card/60 px-5 py-5 text-left transition-colors hover:border-primary/30 hover:bg-primary/[0.025] sm:px-7"
-                        >
-                          <div>
-                            <p className="font-medium text-foreground">No vendor added yet</p>
-                            <p className="mt-1 text-sm text-muted-foreground">Add a {category.toLowerCase()} vendor when you are ready.</p>
+              <div className="space-y-4">
+                {Object.entries(vendorsGroupedByCategory).map(([category, group]) => {
+                  const chosenVendor = group.find(isChosenVendor) ?? null;
+                  const featuredVendor = chosenVendor
+                    ?? group.find((vendor) => vendor.selection_status !== 'declined')
+                    ?? group[0]
+                    ?? null;
+                  const openTasks = new Map<string, VendorTaskItem>();
+                  group.forEach((vendor) => {
+                    (vendorTasksByVendorId[vendor.id] ?? [])
+                      .filter((task) => !task.completed)
+                      .forEach((task) => openTasks.set(task.id, task));
+                  });
+                  const openTaskCount = openTasks.size;
+                  const outstandingBalance = group.reduce(
+                    (total, vendor) => total + Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0),
+                    0,
+                  );
+                  const isExpanded = expandedVendorCategories[category] ?? group.length > 0;
+                  const statusLabel = chosenVendor
+                    ? 'Confirmed'
+                    : group.length > 0
+                      ? 'Needs confirmation'
+                      : 'Pending';
+
+                  return (
+                    <section key={category} className="border-t border-border/70 pt-4">
+                      <button
+                        type="button"
+                        aria-expanded={isExpanded}
+                        onClick={() => {
+                          setExpandedVendorCategories((current) => ({
+                            ...current,
+                            [category]: !(current[category] ?? group.length > 0),
+                          }));
+                        }}
+                        className={`group w-full rounded-xl border px-5 py-4 text-left transition-[border-color,background-color,box-shadow] sm:px-6 ${
+                          chosenVendor
+                            ? 'border-primary/25 bg-primary/[0.035] hover:border-primary/40'
+                            : group.length > 0
+                              ? 'border-border bg-card/90 hover:border-primary/30'
+                              : 'border-dashed border-border/80 bg-card/55 hover:border-primary/30 hover:bg-primary/[0.02]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h2 className="break-words text-xl font-semibold text-foreground sm:text-2xl">{category}</h2>
+                              <Badge variant={chosenVendor ? 'default' : 'outline'} className="text-[10px] uppercase tracking-[0.12em]">
+                                {statusLabel}
+                              </Badge>
+                            </div>
+                            {featuredVendor ? (
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                                <span className="font-medium text-foreground">{featuredVendor.name}</span>
+                                <span className="text-muted-foreground">
+                                  {vendorSelectionLabel(featuredVendor.selection_status)}
+                                </span>
+                                {group.length > 1 ? (
+                                  <span className="text-muted-foreground">+ {group.length - 1} more</span>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <p className="text-sm font-medium text-foreground">No vendor added yet</p>
+                            )}
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground sm:text-sm">
+                              <span>
+                                {openTaskCount} task{openTaskCount === 1 ? '' : 's'} remaining
+                              </span>
+                              {group.length > 0 ? (
+                                <span>{formatCurrency(outstandingBalance)} balance</span>
+                              ) : (
+                                <span>Add a vendor to start this category</span>
+                              )}
+                            </div>
                           </div>
-                          <span className="shrink-0 text-sm font-medium text-primary">Add vendor</span>
-                        </button>
-                      )}
-                    </div>
-                  </section>
-                ))}
+                          <div className="flex shrink-0 items-center gap-3">
+                            <span className="hidden text-xs text-muted-foreground sm:inline">
+                              {group.length} vendor{group.length === 1 ? '' : 's'}
+                            </span>
+                            <ChevronDown
+                              aria-hidden="true"
+                              className={`h-5 w-5 text-muted-foreground transition-transform duration-200 ${
+                                isExpanded ? 'rotate-180' : ''
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      </button>
+
+                      <AnimatedCardDetails open={isExpanded}>
+                        <div className="space-y-4 pt-4">
+                          {group.length > 0 ? group.map(renderVendorRow) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMode('custom');
+                                setForm({ name: '', category, email: '', phone: '', price: '' });
+                                setOpen(true);
+                              }}
+                              className="flex w-full items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-card/60 px-5 py-5 text-left transition-colors hover:border-primary/30 hover:bg-primary/[0.025] sm:px-7"
+                            >
+                              <div>
+                                <p className="font-medium text-foreground">Add your {category.toLowerCase()} vendor</p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  Save their contact, quote, payments, and next tasks here.
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-sm font-medium text-primary">Add vendor</span>
+                            </button>
+                          )}
+                        </div>
+                      </AnimatedCardDetails>
+                    </section>
+                  );
+                })}
               </div>
             )}
 
