@@ -3359,42 +3359,44 @@ export default function Vendors() {
             </div>
 
             <Card className="rounded-lg border-border shadow-none">
-              <CardContent className="flex flex-col items-center gap-4 p-5">
-                <div className="w-full max-w-xl">
+              <CardContent className="grid gap-2 p-2.5 sm:p-3 md:grid-cols-[minmax(16rem,1fr)_auto_auto] md:items-center">
+                <div className="min-w-0">
                   <Input
                     value={vendorWorkspaceQuery}
                     onChange={(event) => setVendorWorkspaceQuery(event.target.value)}
                     placeholder="Search vendors by name, category, contact, or status"
                   />
                 </div>
-                <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap">
-                  <SlidingSegmentedControl
-                    label="Vendor view"
-                    layoutId="vendor-list-view-selection"
-                    value={vendorListView}
-                    options={[{ value: 'by_category', label: 'Categories' }, { value: 'by_name', label: 'Name' }]}
-                    onChange={setVendorListView}
-                    minWidthClassName="w-full min-w-0 sm:min-w-[18rem]"
-                  />
-                  <UpgradePromptDialog
-                    open={exportUpgradeOpen}
-                    onOpenChange={setExportUpgradeOpen}
-                    decision={exportDecision.allowed ? null : exportDecision}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      if (!exportDecision.allowed) {
-                        setExportUpgradeOpen(true);
-                        return;
-                      }
-                      exportVendorData();
-                    }}
-                  >
-                    Export Vendors
-                  </Button>
-                </div>
+
+                <SlidingSegmentedControl
+                  label="Vendor view"
+                  layoutId="vendor-list-view-selection"
+                  value={vendorListView}
+                  options={[{ value: 'by_category', label: 'Categories' }, { value: 'by_name', label: 'Name' }]}
+                  onChange={setVendorListView}
+                  minWidthClassName="w-full min-w-0 md:min-w-[15rem]"
+                />
+
+                <UpgradePromptDialog
+                  open={exportUpgradeOpen}
+                  onOpenChange={setExportUpgradeOpen}
+                  decision={exportDecision.allowed ? null : exportDecision}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full md:w-auto"
+                  variant="outline"
+                  onClick={() => {
+                    if (!exportDecision.allowed) {
+                      setExportUpgradeOpen(true);
+                      return;
+                    }
+                    exportVendorData();
+                  }}
+                >
+                  Export Vendors
+                </Button>
               </CardContent>
             </Card>
 
