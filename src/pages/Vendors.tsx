@@ -3425,7 +3425,7 @@ export default function Vendors() {
                 {filteredVendorsByName.map(renderVendorRow)}
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {Object.entries(vendorsGroupedByCategory).map(([category, group]) => {
                   const chosenVendor = group.find(isChosenVendor) ?? null;
                   const featuredVendor = chosenVendor
@@ -3449,31 +3449,50 @@ export default function Vendors() {
                     : group.length > 0
                       ? 'Needs confirmation'
                       : 'Pending';
+                  const statusBadgeVariant = chosenVendor
+                    ? 'success'
+                    : group.length > 0
+                      ? 'warning'
+                      : 'outline';
 
                   return (
-                    <section key={category} className="border-t border-border/70 pt-4">
+                    <section key={category}>
                       <button
                         type="button"
                         aria-expanded={isExpanded}
+                        aria-label={`${category} vendor category. ${statusLabel}. ${isExpanded ? 'Collapse' : 'Expand'}`}
                         onClick={() => {
                           setExpandedVendorCategories((current) => ({
                             ...current,
                             [category]: !(current[category] ?? group.length > 0),
                           }));
                         }}
-                        className={`group w-full rounded-xl border px-5 py-4 text-left transition-[border-color,background-color,box-shadow] sm:px-6 ${
+                        className={`group relative w-full overflow-hidden rounded-2xl border px-5 py-5 text-left shadow-[0_12px_32px_-30px_hsl(var(--foreground)/0.5)] transition-[border-color,background-color,box-shadow] hover:shadow-[0_18px_38px_-28px_hsl(var(--foreground)/0.5)] sm:px-7 ${
                           chosenVendor
-                            ? 'border-primary/25 bg-primary/[0.035] hover:border-primary/40'
+                            ? 'semantic-surface-success hover:border-success/40'
                             : group.length > 0
-                              ? 'border-border bg-card/90 hover:border-primary/30'
-                              : 'border-dashed border-border/80 bg-card/55 hover:border-primary/30 hover:bg-primary/[0.02]'
+                              ? 'semantic-surface-warning hover:border-warning/40'
+                              : 'border-border/80 bg-muted/35 hover:border-primary/30 hover:bg-muted/50'
                         }`}
                       >
+                        <span
+                          aria-hidden="true"
+                          className={`absolute inset-y-0 left-0 w-1.5 ${
+                            chosenVendor
+                              ? 'bg-success'
+                              : group.length > 0
+                                ? 'bg-warning'
+                                : 'bg-primary/30'
+                          }`}
+                        />
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0 space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h2 className="break-words text-xl font-semibold text-foreground sm:text-2xl">{category}</h2>
-                              <Badge variant={chosenVendor ? 'default' : 'outline'} className="text-[10px] uppercase tracking-[0.12em]">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                              Vendor category
+                            </p>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <h2 className="break-words text-2xl font-semibold text-foreground sm:text-3xl">{category}</h2>
+                              <Badge variant={statusBadgeVariant} className="text-[10px] uppercase tracking-[0.12em]">
                                 {statusLabel}
                               </Badge>
                             </div>
@@ -3516,26 +3535,39 @@ export default function Vendors() {
                       </button>
 
                       <AnimatedCardDetails open={isExpanded}>
-                        <div className="space-y-4 pt-4">
-                          {group.length > 0 ? group.map(renderVendorRow) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setMode('custom');
-                                setForm({ name: '', category, email: '', phone: '', price: '' });
-                                setOpen(true);
-                              }}
-                              className="flex w-full items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-card/60 px-5 py-5 text-left transition-colors hover:border-primary/30 hover:bg-primary/[0.025] sm:px-7"
-                            >
-                              <div>
-                                <p className="font-medium text-foreground">Add your {category.toLowerCase()} vendor</p>
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                  Save their contact, quote, payments, and next tasks here.
-                                </p>
-                              </div>
-                              <span className="shrink-0 text-sm font-medium text-primary">Add vendor</span>
-                            </button>
-                          )}
+                        <div className="relative ml-3 pl-5 pt-4 sm:ml-7 sm:pl-7">
+                          <span
+                            aria-hidden="true"
+                            className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-primary/45 via-primary/20 to-transparent"
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="absolute left-[-3px] top-7 h-[7px] w-[7px] rounded-full bg-primary/55 ring-4 ring-background"
+                          />
+                          <div className="space-y-4">
+                            {group.length > 0 ? group.map(renderVendorRow) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMode('custom');
+                                  setForm({ name: '', category, email: '', phone: '', price: '' });
+                                  setOpen(true);
+                                }}
+                                className="flex w-full items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-card/80 px-5 py-5 text-left shadow-[0_10px_28px_-28px_hsl(var(--foreground)/0.5)] transition-colors hover:border-primary/30 hover:bg-primary/[0.025] sm:px-7"
+                              >
+                                <div>
+                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                    Vendor
+                                  </p>
+                                  <p className="mt-1 font-medium text-foreground">Add your {category.toLowerCase()} vendor</p>
+                                  <p className="mt-1 text-sm text-muted-foreground">
+                                    Save their contact, quote, payments, and next tasks here.
+                                  </p>
+                                </div>
+                                <span className="shrink-0 text-sm font-medium text-primary">Add vendor</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </AnimatedCardDetails>
                     </section>
