@@ -1965,27 +1965,45 @@ export default function Budget() {
         </section>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-center gap-3 rounded-lg border border-border bg-card p-3 sm:p-4">
-        <SlidingSegmentedControl
-          label="Budget type"
-          layoutId="budget-scope-selection"
-          value={activeBudgetScope}
-          options={showPersonalBudget
-            ? [{ value: 'wedding', label: 'Wedding' }, { value: 'personal', label: 'Personal' }]
-            : [{ value: 'wedding', label: 'Wedding' }]}
-          onChange={setActiveBudgetScope}
-          reducedMotion={Boolean(prefersReducedMotion)}
-        />
-      </div>
+      <section
+        className="rounded-lg border border-border bg-card p-2.5 sm:p-3"
+        aria-label="Budget view and actions"
+      >
+        <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
+          <div className="order-1">
+            <SlidingSegmentedControl
+              label="Budget type"
+              layoutId="budget-scope-selection"
+              value={activeBudgetScope}
+              options={showPersonalBudget
+                ? [{ value: 'wedding', label: 'Wedding' }, { value: 'personal', label: 'Personal' }]
+                : [{ value: 'wedding', label: 'Wedding' }]}
+              onChange={setActiveBudgetScope}
+              reducedMotion={Boolean(prefersReducedMotion)}
+              minWidthClassName="w-full sm:min-w-[13rem]"
+            />
+          </div>
 
-      <div className="flex w-full flex-col justify-center gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <div className="flex w-full flex-col justify-center gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-          <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="w-full sm:w-auto" variant="outline">
-                Record payment
-              </Button>
-            </DialogTrigger>
+          <motion.div
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
+            className={`${contextualBudgetMessage.className} order-2 min-w-0 rounded-md border px-3 py-2`}
+            aria-live="polite"
+          >
+            <div className="flex min-w-0 flex-col gap-0.5 lg:flex-row lg:items-baseline lg:gap-2">
+              <p className="shrink-0 text-xs font-semibold text-foreground">{contextualBudgetMessage.label}</p>
+              <p className="text-xs text-muted-foreground sm:truncate">{contextualBudgetMessage.message}</p>
+            </div>
+          </motion.div>
+
+          <div className="contents">
+            <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="order-3 w-full sm:w-auto" variant="outline">
+                  Record payment
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
               <DialogHeader>
                 <DialogTitle className="font-display">Record Payment Made</DialogTitle>
@@ -2255,19 +2273,9 @@ export default function Budget() {
             onOpenChange={setExportUpgradeOpen}
             decision={exportDecision.allowed ? null : exportDecision}
           />
+          </div>
         </div>
-      </div>
-
-      <motion.div
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
-        className={`${contextualBudgetMessage.className} rounded-lg border px-4 py-3`}
-        aria-live="polite"
-      >
-        <p className="text-sm font-semibold text-foreground">{contextualBudgetMessage.label}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{contextualBudgetMessage.message}</p>
-      </motion.div>
+      </section>
 
       <Card className="overflow-hidden border-border bg-card shadow-none">
         <CardContent className="p-0">
