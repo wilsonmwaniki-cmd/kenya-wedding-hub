@@ -3,7 +3,7 @@ import {
   buildInteractiveBudgetPlan,
   getBudgetUtilizationPercentage,
   getBudgetUtilizationStatus,
-  getGuestExperienceCost,
+  getCoreGuestCost,
   resetAllInteractiveBudgetAllocations,
   resetInteractiveBudgetAllocation,
   removeInteractiveBudgetCategory,
@@ -26,7 +26,26 @@ describe('interactive budget plan', () => {
     const intimatePlan = buildInteractiveBudgetPlan(2_000_000, 60);
     const largePlan = buildInteractiveBudgetPlan(2_000_000, 240);
 
-    expect(getGuestExperienceCost(largePlan)).toBeGreaterThan(getGuestExperienceCost(intimatePlan));
+    expect(getCoreGuestCost(largePlan)).toBeGreaterThan(getCoreGuestCost(intimatePlan));
+  });
+
+  it('calculates core cost per guest from catering, décor, and cake only', () => {
+    const plan = buildInteractiveBudgetPlan(1_500_000, 120);
+    const expectedCoreGuestCost = plan.allocations
+      .filter((item) => ['Catering', 'Décor', 'Cake'].includes(item.name))
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    expect(getCoreGuestCost(plan)).toBe(expectedCoreGuestCost);
+
+    const venueEdited = updateInteractiveBudgetAllocation(plan, 'Reception Venue', 900_000);
+    expect(getCoreGuestCost(venueEdited)).toBe(expectedCoreGuestCost);
+
+    const cateringEdited = updateInteractiveBudgetAllocation(plan, 'Catering', 600_000);
+    expect(getCoreGuestCost(cateringEdited)).toBe(
+      expectedCoreGuestCost
+        - (plan.allocations.find((item) => item.name === 'Catering')?.amount ?? 0)
+        + 600_000,
+    );
   });
 
   it('does not rebalance other categories after an edit', () => {

@@ -1,4 +1,5 @@
 import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
+import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 
 export interface InteractiveBudgetAllocation {
   name: string;
@@ -30,6 +31,11 @@ type AllocationRule = {
 };
 
 const BASELINE_GUEST_COUNT = 120;
+const CORE_PER_GUEST_CATEGORIES = new Set([
+  'Caterer',
+  'Cake Artist & Baker',
+  'Décor, Tents, Chairs, Tables',
+]);
 
 const allocationRules: AllocationRule[] = [
   { name: 'Venue', weight: 0 },
@@ -281,9 +287,9 @@ export function getBudgetUtilizationStatus(utilizationPercentage: number): Budge
   return 'under';
 }
 
-export function getGuestExperienceCost(plan: InteractiveBudgetPlan) {
+export function getCoreGuestCost(plan: InteractiveBudgetPlan) {
   return plan.allocations
-    .filter((allocation) => allocation.guestSensitive)
+    .filter((allocation) => CORE_PER_GUEST_CATEGORIES.has(canonicalizeVendorCategory(allocation.name)))
     .reduce((sum, allocation) => sum + allocation.amount, 0);
 }
 

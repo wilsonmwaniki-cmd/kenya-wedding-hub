@@ -21,7 +21,7 @@ import {
   calculatePlannedAmount,
   getBudgetUtilizationPercentage,
   getBudgetUtilizationStatus,
-  getGuestExperienceCost,
+  getCoreGuestCost,
   removeInteractiveBudgetCategory,
   resetAllInteractiveBudgetAllocations,
   resetInteractiveBudgetAllocation,
@@ -81,8 +81,8 @@ export default function Landing() {
     };
   }, [allocationDraft, plan, selectedAllocationName]);
 
-  const guestExperienceCost = useMemo(
-    () => previewPlan ? getGuestExperienceCost(previewPlan) : 0,
+  const coreGuestCost = useMemo(
+    () => previewPlan ? getCoreGuestCost(previewPlan) : 0,
     [previewPlan],
   );
 
@@ -549,7 +549,7 @@ export default function Landing() {
                   }}
                   className="mt-2 h-10 bg-background text-sm font-semibold sm:h-11 sm:text-base"
                 />
-                <p className="mt-2 text-xs text-muted-foreground sm:text-sm">{formatCurrency(guestExperienceCost / plan.guestCount)} per guest</p>
+                <p className="mt-2 text-xs text-muted-foreground sm:text-sm">{formatCurrency(coreGuestCost / plan.guestCount)} per guest</p>
               </div>
             </CardContent>
           </Card>
