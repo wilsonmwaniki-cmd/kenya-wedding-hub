@@ -92,8 +92,22 @@ export function describeAiInvokeError(statusCode: number | null, message: string
     return 'Your session expired for the AI workspace. Please sign in again and retry.';
   }
 
-  if (statusCode === 402 || statusCode === 403) {
+  if (/OpenAI credits exhausted|insufficient_quota/i.test(message)) {
+    return 'Zania’s AI service is temporarily unavailable. Your workspace access is active; this is not a subscription issue. Please try again later.';
+  }
+
+  if (statusCode === 503 || /AI service unavailable/i.test(message)) {
+    return 'Zania’s AI service is temporarily unavailable. Your workspace access is not the issue. Please try again later.';
+  }
+
+  if (statusCode === 402) {
     return 'AI access is not enabled for this workspace yet. Upgrade or switch to a workspace with AI access.';
+  }
+
+  if (statusCode === 403) {
+    return /disabled/i.test(message)
+      ? 'The AI assistant is temporarily disabled for this plan. Your subscription is not the issue.'
+      : 'AI access is not enabled for this workspace yet. Upgrade or switch to a workspace with AI access.';
   }
 
   if (statusCode === 429) {

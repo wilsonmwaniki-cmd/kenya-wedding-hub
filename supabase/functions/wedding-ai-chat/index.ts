@@ -1543,8 +1543,18 @@ Operating rules:
             parsedError?.error?.type === "insufficient_quota" ||
             /insufficient_quota|quota/i.test(details);
           if (quotaMessage) {
+            await logFunctionEvent({
+              functionName: "wedding-ai-chat",
+              severity: "error",
+              status: "failure",
+              eventType: "ai_provider_quota_exhausted",
+              message: "The configured AI provider account has insufficient quota.",
+              userId: user.id,
+              audience: aiAudience,
+              requestId,
+            });
             return new Response(JSON.stringify({ error: "OpenAI credits exhausted. Please top up later.", details, usage: usageStatus }), {
-              status: 402,
+              status: 503,
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           }
