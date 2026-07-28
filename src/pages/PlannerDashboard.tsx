@@ -33,6 +33,7 @@ import { approvePlannerCodeLinkRequest, requestPlannerLinkByCode } from '@/lib/c
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { usePlannerFreeWeddingStatus } from '@/hooks/usePlannerFreeWeddingStatus';
+import AttentionInbox from '@/components/AttentionInbox';
 
 interface PlannerTaskPulse {
   id: string;
@@ -571,6 +572,8 @@ export default function PlannerDashboard() {
           </Dialog>
         </div>
       </div>
+
+      <AttentionInbox showEmpty />
 
       <UpgradePromptDialog
         open={upgradeDialogOpen}

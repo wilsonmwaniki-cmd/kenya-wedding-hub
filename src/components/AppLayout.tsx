@@ -169,7 +169,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
   const { user, signOut, profile, baseProfile, isSuperAdmin, rolePreview, setRolePreview } = useAuth();
   const { isPlanner, selectedClient, selectClient, plannerClientHydrating } = usePlanner();
-  const { vendorRequestCount, plannerRequestCount } = useNotifications();
+  const { vendorRequestCount, plannerRequestCount, unreadAttentionCount } = useNotifications();
 
   const professionalNetworkEnabled = isProfessionalNetworkEnabled();
   const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
@@ -241,10 +241,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Map paths to badge counts
   const badgeCounts: Record<string, number> = {};
   if (isVendor) {
-    badgeCounts['/vendor-dashboard'] = vendorRequestCount;
+    badgeCounts['/vendor-dashboard'] = vendorRequestCount + unreadAttentionCount;
   }
   if (isPlanner) {
-    badgeCounts['/clients'] = plannerRequestCount;
+    badgeCounts['/clients'] = plannerRequestCount + unreadAttentionCount;
+  }
+  if (isCouple) {
+    badgeCounts['/dashboard'] = unreadAttentionCount;
   }
 
   // For planners, disable planning pages if no client selected (except /clients and /settings)

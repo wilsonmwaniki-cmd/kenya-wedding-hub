@@ -23,6 +23,7 @@ import {
   type AiUsageStatus,
   type PendingWriteAction,
 } from '@/lib/aiAssistant';
+import { listAttentionItems } from '@/lib/attention';
 
 interface VendorListingAccess {
   id: string;
@@ -46,6 +47,9 @@ interface AssistantExperience {
 }
 
 interface WorkspaceSnapshot {
+  openAttentionItems: number;
+  urgentAttentionItems: number;
+  nextAttentionTitle: string | null;
   overdueTasks: number;
   pendingTasks: number;
   pendingGuests: number;
@@ -99,6 +103,9 @@ function getSmartStarterActions(
 
   if (role === 'vendor') {
     const actions: string[] = [];
+    if (snapshot.openAttentionItems > 0 && snapshot.nextAttentionTitle) {
+      actions.push(`Brief me on "${snapshot.nextAttentionTitle}" and tell me the fastest safe next step.`);
+    }
     if (snapshot.openVendorFollowUps > 0) actions.push('Summarize my open follow-up reminders and tell me who I should contact first.');
     if (snapshot.vendorBookings > 0) actions.push('Review my current bookings and tell me which booking status updates I should make next.');
     actions.push('Draft a short sales plan for my most active bookings this week.');
@@ -107,6 +114,7 @@ function getSmartStarterActions(
 
   if (role === 'planner' && plannerType === 'committee') {
     const actions: string[] = [];
+    if (snapshot.openAttentionItems > 0) actions.push('Brief the committee on new Zania attention items and assign the next actions.');
     if (snapshot.overdueTasks > 0) actions.push('Turn my overdue committee tasks into a delegation plan for this week.');
     if (snapshot.trackedVendors > snapshot.finalVendors && snapshot.mostUrgentVendorCategory) {
       actions.push(`Tell me how the committee should close the remaining ${snapshot.mostUrgentVendorCategory} vendor decisions.`);
@@ -117,6 +125,9 @@ function getSmartStarterActions(
 
   if (role === 'planner') {
     const actions: string[] = [];
+    if (snapshot.openAttentionItems > 0) {
+      actions.push('Brief me on the verified Zania attention items across my weddings and tell me what to handle first.');
+    }
     if (snapshot.overdueTasks > 0) {
       actions.push(
         selectedClientName
@@ -134,6 +145,7 @@ function getSmartStarterActions(
   }
 
   const actions: string[] = [];
+  if (snapshot.openAttentionItems > 0) actions.push('Explain our new Zania attention items and give us the simplest next steps.');
   if (snapshot.overdueTasks > 0) actions.push('What overdue tasks should we tackle first this week?');
   if (snapshot.trackedVendors > snapshot.finalVendors && snapshot.mostUrgentVendorCategory) {
     actions.push(`Turn our ${snapshot.mostUrgentVendorCategory} vendor decision into concrete next steps.`);
@@ -301,7 +313,7 @@ async function loadWorkspaceSnapshot(args: {
   const { profileRole, dataOrFilter, vendorListingId } = args;
 
   if (profileRole === 'vendor' && vendorListingId) {
-    const [bookingsRes, followUpsRes] = await Promise.all([
+    const [bookingsRes, followUpsRes, attentionItems] = await Promise.all([
       supabase
         .from('vendors')
         .select('id, category, status')
@@ -312,6 +324,7 @@ async function loadWorkspaceSnapshot(args: {
         .select('id, status')
         .eq('vendor_listing_id', vendorListingId)
         .limit(100),
+      listAttentionItems(),
     ]);
 
     if (bookingsRes.error) throw bookingsRes.error;
@@ -327,6 +340,9 @@ async function loadWorkspaceSnapshot(args: {
     const mostUrgentVendorCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
     return {
+      openAttentionItems: attentionItems.length,
+      urgentAttentionItems: attentionItems.filter((item) => item.priority === 'urgent').length,
+      nextAttentionTitle: attentionItems[0]?.title ?? null,
       overdueTasks: 0,
       pendingTasks: 0,
       pendingGuests: 0,
@@ -346,7 +362,7 @@ async function loadWorkspaceSnapshot(args: {
 
   if (!dataOrFilter) return null;
 
-  const [tasksRes, budgetRes, paymentsRes, guestsRes, vendorsRes] = await Promise.all([
+  const [tasksRes, budgetRes, paymentsRes, guestsRes, vendorsRes, attentionItems] = await Promise.all([
     supabase
       .from('tasks')
       .select('title, due_date, completed, category')
@@ -373,6 +389,7 @@ async function loadWorkspaceSnapshot(args: {
       .select('category, selection_status')
       .or(dataOrFilter)
       .limit(100),
+    listAttentionItems(),
   ]);
 
   if (tasksRes.error) throw tasksRes.error;
@@ -399,6 +416,9 @@ async function loadWorkspaceSnapshot(args: {
   }, {});
 
   return {
+    openAttentionItems: attentionItems.length,
+    urgentAttentionItems: attentionItems.filter((item) => item.priority === 'urgent').length,
+    nextAttentionTitle: attentionItems[0]?.title ?? null,
     overdueTasks: tasks.filter((task: any) => !task.completed && task.due_date && task.due_date < new Date().toISOString().slice(0, 10)).length,
     pendingTasks: tasks.filter((task: any) => !task.completed).length,
     pendingGuests: guests.filter((guest: any) => guest.rsvp_status === 'pending').length,

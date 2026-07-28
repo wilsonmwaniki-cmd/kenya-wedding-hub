@@ -1199,6 +1199,7 @@ serve(async (req) => {
     let vendorBookingPayments: any[] = [];
     let vendorRequests: any[] = [];
     let vendorFollowUps: any[] = [];
+    let attentionItems: any[] = [];
 
     if (role === "vendor" && vendorListing?.id) {
       const [
@@ -1306,6 +1307,14 @@ serve(async (req) => {
       }
     }
 
+    const attentionRes = await supabase
+      .from("attention_items")
+      .select("id, created_at, wedding_id, attention_kind, priority, status, title, summary, action_label, action_path, due_at, metadata")
+      .in("status", ["unread", "read"])
+      .order("created_at", { ascending: false })
+      .limit(20);
+    attentionItems = attentionRes.error ? [] : (attentionRes.data || []);
+
     const pendingTasks = tasksList.filter((task: any) => !task.completed);
     const completedTasks = tasksList.filter((task: any) => task.completed);
     const overdueTasks = pendingTasks.filter((task: any) => task.due_date && task.due_date < today);
@@ -1355,11 +1364,13 @@ Location: ${vendorListing?.location || vendorListing?.location_county || "Not se
 Subscription: ${vendorListing?.subscription_status || "inactive"}
 Bookings: ${vendorBookings.length}
 Direct requests: ${vendorRequests.length}
+Attention items: ${attentionItems.length} open, ${attentionItems.filter((item: any) => item.priority === "urgent").length} urgent
 Open reminders: ${openVendorFollowUps}
 Quoted total: ${formatCurrency(vendorTotalQuoted)}
 Paid total: ${formatCurrency(vendorTotalPaid)}`
       : `Workspace: ${workspaceLabel || (role === "planner" ? "Planner advisory mode" : "Wedding workspace")}
 Tasks: ${pendingTasks.length} pending, ${completedTasks.length} completed${overdueTasks.length ? `, ${overdueTasks.length} overdue` : ""}
+Attention items: ${attentionItems.length} open, ${attentionItems.filter((item: any) => item.priority === "urgent").length} urgent
 Budget allocated: ${formatCurrency(totalAllocated)}
 Budget spent: ${formatCurrency(totalSpent)}
 Payments recorded: ${formatCurrency(totalPayments)}
@@ -1420,6 +1431,9 @@ ${workspaceNotice ? `\nImportant workspace note: ${workspaceNotice}` : ""}
 
 ${role === "planner" ? `\nPlanner clients:\n${plannerClientSummary}` : ""}
 
+Verified Zania attention items:
+${attentionItems.map((item: any) => `- ${String(item.priority).toUpperCase()} · ${item.title}${item.summary ? ` — ${item.summary}` : ""}${item.due_at ? ` · due ${item.due_at}` : ""}${item.action_label ? ` · next: ${item.action_label}` : ""}`).join("\n") || "No active attention items."}
+
 ${role === "vendor" ? `\nBookings:
 ${vendorBookingSummaries.map((booking: any) => `- ${booking.couple_name} — ${booking.category}, status ${booking.status || "unknown"}, quoted ${formatCurrency(booking.price || 0)}, paid ${formatCurrency(booking.amount_paid || 0)}, payment ${booking.payment_status}${booking.wedding_date ? `, wedding ${booking.wedding_date}` : ""}${booking.wedding_location ? ` in ${booking.wedding_location}` : ""}`).join("\n") || "No bookings yet."}
 
@@ -1453,6 +1467,8 @@ ${timelineShares.slice(0, 12).map((share: any) => `- ${share.assignee_name}${sha
 
 Operating rules:
 - Give advice that reflects the actual workspace data above.
+- Treat Zania attention items as verified system signals. Rank and explain them, but never invent an event, payment, signature, response, or deadline that is not present.
+- Use attention items to decide what needs immediate notice; use the wider workspace data to explain context and suggest the safest next action.
 - If the user asks you to perform an action and a matching tool exists, use the tool instead of only describing what to do.
 - ${assistantWritePolicy}
 - If the user is a planner without an active client selected, stay advisory and ask them to select a client before writing workspace data.

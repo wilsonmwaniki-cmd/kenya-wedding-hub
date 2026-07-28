@@ -34,6 +34,7 @@ import {
   type VendorTaskSuggestion,
 } from '@/lib/vendorTaskSuggestions';
 import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
+import AttentionInbox from '@/components/AttentionInbox';
 
 interface Booking {
   id: string;
@@ -1164,6 +1165,8 @@ export default function VendorDashboard() {
           context={`This vendor has ${bookedCount} confirmed bookings, ${contactedCount} inquiries, ${workspaceInvites.length} workspace invites, and KES ${totalRevenue.toLocaleString()} in quoted revenue.`}
         />
       </div>
+
+      <AttentionInbox showEmpty />
 
       {claimedWorkspaceInvite && (
         <Card className="semantic-surface-success shadow-card">

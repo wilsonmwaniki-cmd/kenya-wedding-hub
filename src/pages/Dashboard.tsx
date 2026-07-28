@@ -10,6 +10,7 @@ import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlu
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
+import AttentionInbox from '@/components/AttentionInbox';
 import MyConnections from '@/components/MyConnections';
 import PlannerChangeRequestsCard from '@/components/PlannerChangeRequestsCard';
 import InfoTip from '@/components/InfoTip';
@@ -1112,6 +1113,8 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
+
+      <AttentionInbox />
 
       <div className="space-y-3">
         <div>
