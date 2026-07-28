@@ -337,7 +337,7 @@ export default function AssistantPanel({
             transition={{ type: 'spring', stiffness: 220, damping: 24 }}
             whileHover={{ y: -4, scale: 1.01 }}
             whileTap={{ scale: 0.98 }}
-            className={`fixed right-3 z-30 grid h-14 w-14 place-items-center overflow-hidden rounded-full border border-primary/30 bg-primary p-0 text-left text-primary-foreground shadow-card bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:bottom-5 sm:right-4 sm:block sm:h-auto sm:w-[calc(100vw-2rem)] sm:max-w-[420px] sm:rounded-2xl sm:p-3.5 lg:bottom-6 lg:right-5 ${
+            className={`fixed right-3 z-30 grid h-12 w-12 place-items-center overflow-hidden rounded-full border border-primary/30 bg-primary p-0 text-left text-primary-foreground shadow-card bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:bottom-5 sm:right-4 sm:block sm:h-auto sm:w-[calc(100vw-2rem)] sm:max-w-[420px] sm:rounded-2xl sm:p-3.5 lg:bottom-6 lg:right-5 ${
               compactDesktopLauncher
                 ? 'lg:w-[172px] lg:max-w-[172px] lg:rounded-xl lg:px-2.5 lg:py-2'
                 : 'lg:w-[232px] lg:max-w-[232px] lg:rounded-xl lg:p-2.5'
@@ -350,9 +350,9 @@ export default function AssistantPanel({
                 src="/assistant-badge.svg"
                 alt=""
                 aria-hidden="true"
-                className="h-11 w-11 select-none object-contain"
+                className="h-9 w-9 select-none object-contain"
               />
-              <span className="absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full bg-success ring-2 ring-primary" />
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-success ring-2 ring-primary" />
             </div>
             <div className={`relative hidden items-center justify-between gap-3 sm:flex ${
               compactDesktopLauncher ? 'mb-2.5 sm:mb-3 lg:mb-0' : 'mb-2.5 sm:mb-3 lg:mb-1'
@@ -397,7 +397,7 @@ export default function AssistantPanel({
       <AnimatePresence>
         {assistantPanel.open ? (
           <motion.div
-            className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center p-3 sm:p-4 lg:justify-end lg:p-6"
+            className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-4 lg:justify-end lg:p-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -407,29 +407,29 @@ export default function AssistantPanel({
               role="dialog"
               aria-modal="true"
               aria-label="Ask Zania assistant"
-              className="pointer-events-auto relative flex h-[min(700px,calc(100dvh-0.75rem))] w-full max-w-[460px] flex-col overflow-hidden rounded-3xl border border-border bg-background text-foreground shadow-elevated sm:h-[min(620px,calc(100dvh-3rem))] sm:max-w-[500px]"
+              className="pointer-events-auto relative flex h-[min(620px,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-0.75rem))] w-full max-w-[460px] flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-elevated sm:h-[min(620px,calc(100dvh-3rem))] sm:max-w-[500px] sm:rounded-3xl"
               initial={{ opacity: 0, y: 34, scale: 0.94, filter: 'blur(10px)' }}
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 24, scale: 0.95, filter: 'blur(8px)' }}
               transition={{ type: 'spring', stiffness: 210, damping: 24 }}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="relative flex justify-center pt-2.5 sm:hidden">
-                <span className="h-1.5 w-12 rounded-full bg-muted" />
+              <div className="relative flex justify-center pt-2 sm:hidden">
+                <span className="h-1 w-10 rounded-full bg-muted" />
               </div>
 
-              <header className="relative border-b border-border bg-card px-4 pb-3 pt-4 sm:px-5 sm:pt-[1.125rem]">
+              <header className="relative border-b border-border bg-card px-3.5 pb-3 pt-3 sm:px-5 sm:pt-[1.125rem]">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex items-baseline gap-x-3">
-                      <h2 className="shrink-0 font-display text-[1.65rem] leading-none text-foreground sm:text-[1.8rem]">
+                      <h2 className="shrink-0 font-display text-[1.5rem] leading-none text-foreground sm:text-[1.8rem]">
                         Ask Zania
                       </h2>
-                      <span className="min-w-0 truncate text-[0.58rem] font-semibold uppercase tracking-[0.30em] text-muted-foreground sm:text-[0.64rem]">
+                      <span className="hidden min-w-0 truncate text-[0.64rem] font-semibold uppercase tracking-[0.30em] text-muted-foreground sm:inline">
                         Planning assistant
                       </span>
                     </div>
-                      <div className="mt-1.5 flex items-center gap-2 text-[0.85rem] text-muted-foreground">
+                    <div className="mt-1.5 flex items-center gap-2 text-[0.8rem] text-muted-foreground sm:text-[0.85rem]">
                       <span className="h-2 w-2 rounded-full bg-success" />
                       Ready to help
                     </div>
@@ -437,7 +437,7 @@ export default function AssistantPanel({
                   <button
                     type="button"
                     onClick={() => assistantPanel.setOpen(false)}
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:h-10 sm:w-10"
                     aria-label="Close Zania assistant"
                   >
                     <X className="h-[18px] w-[18px]" />
@@ -446,7 +446,7 @@ export default function AssistantPanel({
               </header>
 
               <div className="relative flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3 sm:px-5 sm:py-4">
                   {assistant.decision && !assistant.canUseAssistant ? (
                     <div className="rounded-2xl border border-border bg-card p-4 text-foreground shadow-card">
                       <InlineUpgradePrompt decision={assistant.decision} />
@@ -456,7 +456,7 @@ export default function AssistantPanel({
                       <motion.div
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="semantic-surface-info max-w-[92%] rounded-2xl border px-4 py-3.5 text-sm font-medium leading-6 text-foreground"
+                        className="semantic-surface-info max-w-[94%] rounded-2xl border px-3.5 py-3 text-sm font-medium leading-6 text-foreground sm:max-w-[92%] sm:px-4 sm:py-3.5"
                       >
                         Hi, I'm your planning assistant. What would you like help with?
                       </motion.div>
@@ -523,7 +523,7 @@ export default function AssistantPanel({
                 </div>
 
                 {!(assistant.decision && !assistant.canUseAssistant) && !assistantBusy && !assistant.error ? (
-                  <div className="relative border-t border-border bg-card/50 px-4 py-3 sm:px-5">
+                  <div className="relative border-t border-border bg-card/50 px-3.5 py-2.5 sm:px-5 sm:py-3">
                     <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
                       {surface.prompts.map((prompt) => (
                         <button
@@ -539,10 +539,10 @@ export default function AssistantPanel({
                   </div>
                 ) : null}
 
-                <footer className="relative border-t border-border bg-card px-4 pb-4 pt-3 sm:px-5">
-                  <div className="mb-3 rounded-2xl border border-input bg-background p-2">
-                    <div className="flex min-h-[3.5rem] items-center gap-3">
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+                <footer className="relative border-t border-border bg-card px-3.5 pb-3 pt-2.5 sm:px-5 sm:pb-4 sm:pt-3">
+                  <div className="mb-2.5 rounded-2xl border border-input bg-background p-2 sm:mb-3">
+                    <div className="flex min-h-[3.25rem] items-center gap-2.5 sm:min-h-[3.5rem] sm:gap-3">
+                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary sm:h-9 sm:w-9">
                         <ZaniaMonogram className="text-[0.72rem]" accentClassName="text-accent" />
                       </div>
                       <Textarea
