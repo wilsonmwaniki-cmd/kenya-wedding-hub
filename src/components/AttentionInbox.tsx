@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 interface AttentionInboxProps {
   maxItems?: number;
   showEmpty?: boolean;
+  compact?: boolean;
   className?: string;
   supplementaryItems?: AttentionItem[];
   onSupplementaryAction?: (item: AttentionItem) => void;
@@ -32,6 +33,7 @@ function priorityLabel(item: AttentionItem) {
 export default function AttentionInbox({
   maxItems = 4,
   showEmpty = false,
+  compact = false,
   className,
   supplementaryItems = [],
   onSupplementaryAction,
@@ -61,7 +63,7 @@ export default function AttentionInbox({
   if (attentionLoading && combinedItems.length === 0) {
     return (
       <Card className={cn('border-border/70 bg-card/80', className)}>
-        <CardContent className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
+        <CardContent className={cn('flex items-center gap-3 text-sm text-muted-foreground', compact ? 'py-3' : 'py-4')}>
           <BellRing className="h-4 w-4 animate-pulse text-primary" />
           Checking what needs your attention...
         </CardContent>
@@ -72,7 +74,7 @@ export default function AttentionInbox({
   if (visibleItems.length === 0) {
     if (!showEmpty) return null;
     return (
-      <section className={cn('space-y-3', className)} aria-labelledby="zania-attention-heading">
+      <section className={cn(compact ? 'space-y-2' : 'space-y-3', className)} aria-labelledby="zania-attention-heading">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Zania attention</p>
           <h2 id="zania-attention-heading" className="workspace-h2 mt-1">What needs you now</h2>
@@ -103,7 +105,7 @@ export default function AttentionInbox({
   };
 
   return (
-    <section className={cn('space-y-3', className)} aria-labelledby="zania-attention-heading">
+    <section className={cn(compact ? 'space-y-2' : 'space-y-3', className)} aria-labelledby="zania-attention-heading">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -130,7 +132,10 @@ export default function AttentionInbox({
           const persisted = persistedIds.has(item.id);
           return (
           <Card key={item.id} className={cn('overflow-hidden shadow-none', itemTone(item))}>
-            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+            <CardContent className={cn(
+              'flex flex-col sm:flex-row sm:items-center',
+              compact ? 'gap-2 p-3' : 'gap-3 p-4',
+            )}>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge
@@ -140,16 +145,22 @@ export default function AttentionInbox({
                     {priorityLabel(item)}
                   </Badge>
                   {item.status === 'unread' && <span className="h-2 w-2 rounded-full bg-primary" aria-label="Unread" />}
-                  {typeof item.metadata.wedding_name === 'string' && item.metadata.wedding_name && (
+                  {!compact && typeof item.metadata.wedding_name === 'string' && item.metadata.wedding_name && (
                     <Badge variant="outline" className="max-w-full truncate rounded-full normal-case tracking-normal">
                       {item.metadata.wedding_name}
                     </Badge>
                   )}
                 </div>
-                <h3 className="mt-2 text-sm font-semibold text-foreground sm:text-base">{item.title}</h3>
-                {item.summary && <p className="mt-1 text-sm text-muted-foreground">{item.summary}</p>}
+                <h3 className={cn('font-semibold text-foreground', compact ? 'mt-1 line-clamp-2 text-sm' : 'mt-2 text-sm sm:text-base')}>
+                  {item.title}
+                </h3>
+                {item.summary && (
+                  <p className={cn('text-muted-foreground', compact ? 'mt-0.5 line-clamp-1 text-xs' : 'mt-1 text-sm')}>
+                    {item.summary}
+                  </p>
+                )}
                 {item.dueAt && (
-                  <p className="mt-1 text-xs font-medium text-muted-foreground">
+                  <p className={cn('text-xs font-medium text-muted-foreground', compact ? 'mt-0.5' : 'mt-1')}>
                     Due {new Date(item.dueAt).toLocaleDateString('en-KE', { day: 'numeric', month: 'short' })}
                   </p>
                 )}

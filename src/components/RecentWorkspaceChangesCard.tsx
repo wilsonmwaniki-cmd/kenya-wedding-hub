@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface RecentWorkspaceChangesCardProps {
   maxItems?: number;
+  compact?: boolean;
   className?: string;
 }
 
@@ -22,6 +23,7 @@ function changeDate(value: string) {
 
 export default function RecentWorkspaceChangesCard({
   maxItems = 5,
+  compact = false,
   className,
 }: RecentWorkspaceChangesCardProps) {
   const { user } = useAuth();
@@ -39,13 +41,13 @@ export default function RecentWorkspaceChangesCard({
 
   return (
     <Card className={cn('shadow-card', className)}>
-      <CardHeader className="pb-3">
-        <CardTitle className="font-display text-xl">Recent changes</CardTitle>
+      <CardHeader className={compact ? 'p-4 pb-2' : 'pb-3'}>
+        <CardTitle className={cn('font-display', compact ? 'text-lg' : 'text-xl')}>Recent changes</CardTitle>
         <p className="text-sm text-muted-foreground">
           Updates shared with you across this workspace.
         </p>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className={cn('space-y-2', compact && 'p-4 pt-0')}>
         {changes.map((change) => {
           const weddingName = typeof change.metadata.wedding_name === 'string'
             ? change.metadata.wedding_name
@@ -74,12 +76,15 @@ export default function RecentWorkspaceChangesCard({
             <Link
               key={change.id}
               to={change.actionPath}
-              className="flex min-h-14 w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-muted/45"
+              className={cn(
+                'flex w-full items-center gap-3 rounded-xl px-2 text-left transition-colors hover:bg-muted/45',
+                compact ? 'min-h-12 py-1.5' : 'min-h-14 py-2',
+              )}
             >
               {content}
             </Link>
           ) : (
-            <div key={change.id} className="flex min-h-14 items-center gap-3 rounded-xl px-2 py-2">
+            <div key={change.id} className={cn('flex items-center gap-3 rounded-xl px-2', compact ? 'min-h-12 py-1.5' : 'min-h-14 py-2')}>
               {content}
             </div>
           );
@@ -91,7 +96,7 @@ export default function RecentWorkspaceChangesCard({
           </p>
         )}
         {!changesQuery.isLoading && changes.length === 0 && (
-          <p className="rounded-xl bg-muted/35 px-4 py-5 text-sm text-muted-foreground">
+          <p className={cn('rounded-xl bg-muted/35 px-4 text-sm text-muted-foreground', compact ? 'py-3' : 'py-5')}>
             No shared changes yet. New requests, payments, signatures, and collaboration updates will appear here.
           </p>
         )}

@@ -912,53 +912,55 @@ export default function Dashboard() {
     const remainingBudget = stats.totalBudget - stats.totalSpent;
 
     return (
-      <div className="mx-auto max-w-5xl space-y-6">
-        <header className="border-b border-border/70 pb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Wedding Home</p>
-          <h1 className="mt-2 font-editorial text-3xl font-semibold text-foreground sm:text-4xl">{weddingTitle}</h1>
-          {weddingMeta.length > 0 ? (
-            <p className="mt-2 text-sm text-muted-foreground">{weddingMeta.join(' · ')}</p>
-          ) : (
-            <p className="mt-2 text-sm text-muted-foreground">Your wedding plan starts here.</p>
-          )}
-        </header>
+      <div className="mx-auto max-w-5xl space-y-4">
+        <div className="grid gap-4 border-b border-border/70 pb-4 lg:grid-cols-[0.72fr_1.45fr] lg:items-stretch">
+          <header className="flex flex-col justify-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Wedding Home</p>
+            <h1 className="mt-1.5 font-editorial text-3xl font-semibold text-foreground">{weddingTitle}</h1>
+            {weddingMeta.length > 0 ? (
+              <p className="mt-1 text-sm text-muted-foreground">{weddingMeta.join(' · ')}</p>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">Your wedding plan starts here.</p>
+            )}
+          </header>
 
-        <Card className="rounded-xl border-primary/25 bg-primary/5 shadow-none">
-          <CardContent className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-            <div className="max-w-2xl">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Do this next</p>
-              <h2 className="mt-2 text-2xl font-semibold text-foreground">{homePrimaryAction.label}</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{homePrimaryAction.description}</p>
-            </div>
-            <Button asChild className="shrink-0 sm:min-w-36">
-              <Link to={homePrimaryAction.href}>{homePrimaryAction.cta ?? homePrimaryAction.label}</Link>
-            </Button>
-          </CardContent>
-        </Card>
+          <Card className="rounded-xl border-primary/25 bg-primary/5 shadow-none">
+            <CardContent className="flex h-full flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 max-w-2xl">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Do this next</p>
+                <h2 className="mt-1.5 line-clamp-2 text-xl font-semibold text-foreground">{homePrimaryAction.label}</h2>
+                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{homePrimaryAction.description}</p>
+              </div>
+              <Button asChild size="sm" className="shrink-0 sm:min-w-32">
+                <Link to={homePrimaryAction.href}>{homePrimaryAction.cta ?? homePrimaryAction.label}</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
 
         <section aria-labelledby="plan-overview-title">
-          <h2 id="plan-overview-title" className="text-lg font-semibold text-foreground">Your plan</h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <Link to="/budget" className="rounded-lg border border-border bg-card p-4 transition-colors duration-200 hover:border-primary/40">
+          <h2 id="plan-overview-title" className="text-base font-semibold text-foreground">Your plan</h2>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            <Link to="/budget" className="rounded-lg border border-border bg-card p-3 transition-colors duration-200 hover:border-primary/40">
               <p className="text-sm font-medium text-muted-foreground">Budget</p>
-              <p className={`mt-2 text-xl font-semibold ${remainingBudget < 0 ? 'text-destructive' : 'text-foreground'}`}>
+              <p className={`mt-1 text-lg font-semibold ${remainingBudget < 0 ? 'text-destructive' : 'text-foreground'}`}>
                 {stats.totalBudget > 0 ? `KES ${Math.abs(remainingBudget).toLocaleString()} ${remainingBudget < 0 ? 'over' : 'left'}` : 'Not started'}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">{stats.totalBudget > 0 ? `${budgetUsagePercentage}% used` : 'Add your estimate'}</p>
+              <p className="text-xs text-muted-foreground">{stats.totalBudget > 0 ? `${budgetUsagePercentage}% used` : 'Add your estimate'}</p>
             </Link>
-            <Link to="/tasks" className="rounded-lg border border-border bg-card p-4 transition-colors duration-200 hover:border-primary/40">
+            <Link to="/tasks" className="rounded-lg border border-border bg-card p-3 transition-colors duration-200 hover:border-primary/40">
               <p className="text-sm font-medium text-muted-foreground">Tasks</p>
-              <p className="mt-2 text-xl font-semibold text-foreground">
+              <p className="mt-1 text-lg font-semibold text-foreground">
                 {stats.totalTasks > 0 ? `${pendingTasks.length} left` : 'Not started'}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">{stats.totalTasks > 0 ? `${taskCompletionPercentage}% complete` : 'Create your checklist'}</p>
+              <p className="text-xs text-muted-foreground">{stats.totalTasks > 0 ? `${taskCompletionPercentage}% complete` : 'Create your checklist'}</p>
             </Link>
-            <Link to="/vendors" className="rounded-lg border border-border bg-card p-4 transition-colors duration-200 hover:border-primary/40">
+            <Link to="/vendors" className="rounded-lg border border-border bg-card p-3 transition-colors duration-200 hover:border-primary/40">
               <p className="text-sm font-medium text-muted-foreground">Vendors</p>
-              <p className="mt-2 text-xl font-semibold text-foreground">
+              <p className="mt-1 text-lg font-semibold text-foreground">
                 {stats.totalVendors > 0 ? `${stats.totalVendors} saved` : 'None saved'}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">Browse your options</p>
+              <p className="text-xs text-muted-foreground">Browse your options</p>
             </Link>
           </div>
         </section>
@@ -967,6 +969,7 @@ export default function Dashboard() {
           <AttentionInbox
             showEmpty
             maxItems={3}
+            compact
             supplementaryItems={coupleTaskAttentionItems}
             onSupplementaryAction={(item) => {
               if (item.actionPath) navigate(item.actionPath);
@@ -975,6 +978,7 @@ export default function Dashboard() {
           />
           <RecentWorkspaceChangesCard
             maxItems={5}
+            compact
             className="rounded-xl border-border shadow-none"
           />
         </div>
