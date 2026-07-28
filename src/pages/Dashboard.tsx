@@ -920,6 +920,18 @@ export default function Dashboard() {
           </div>
         </section>
 
+        <div className="grid gap-4 lg:grid-cols-2">
+          <AttentionInbox
+            showEmpty
+            maxItems={3}
+            className="rounded-xl border border-border bg-card p-4 shadow-none sm:p-5"
+          />
+          <RecentWorkspaceChangesCard
+            maxItems={5}
+            className="rounded-xl border-border shadow-none"
+          />
+        </div>
+
         {supportingActions.length > 0 ? (
           <section aria-labelledby="coming-up-title">
             <h2 id="coming-up-title" className="text-lg font-semibold text-foreground">Coming up</h2>
