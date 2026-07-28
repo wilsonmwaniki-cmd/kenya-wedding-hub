@@ -596,7 +596,7 @@ export default function PlannerDashboard() {
       <div className="grid gap-4 lg:grid-cols-2">
         <AttentionInbox
           showEmpty
-          maxItems={5}
+          maxItems={3}
           className="rounded-2xl border border-border/80 bg-card p-4 shadow-card sm:p-5"
           supplementaryItems={plannerTaskAttentionItems}
           onSupplementaryAction={(item) => {
