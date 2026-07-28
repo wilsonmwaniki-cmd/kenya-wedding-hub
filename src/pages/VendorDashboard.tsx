@@ -35,6 +35,7 @@ import {
 } from '@/lib/vendorTaskSuggestions';
 import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 import AttentionInbox from '@/components/AttentionInbox';
+import RecentWorkspaceChangesCard from '@/components/RecentWorkspaceChangesCard';
 
 interface Booking {
   id: string;
@@ -1166,7 +1167,14 @@ export default function VendorDashboard() {
         />
       </div>
 
-      <AttentionInbox showEmpty />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AttentionInbox
+          showEmpty
+          maxItems={3}
+          className="rounded-2xl border border-border/80 bg-card p-4 shadow-card sm:p-5"
+        />
+        <RecentWorkspaceChangesCard maxItems={5} />
+      </div>
 
       {claimedWorkspaceInvite && (
         <Card className="semantic-surface-success shadow-card">

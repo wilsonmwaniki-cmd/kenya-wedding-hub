@@ -11,6 +11,7 @@ import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
 import AttentionInbox from '@/components/AttentionInbox';
+import RecentWorkspaceChangesCard from '@/components/RecentWorkspaceChangesCard';
 import MyConnections from '@/components/MyConnections';
 import PlannerChangeRequestsCard from '@/components/PlannerChangeRequestsCard';
 import InfoTip from '@/components/InfoTip';
@@ -1114,7 +1115,14 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <AttentionInbox />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AttentionInbox
+          showEmpty
+          maxItems={3}
+          className="rounded-2xl border border-border/80 bg-card p-4 shadow-card sm:p-5"
+        />
+        <RecentWorkspaceChangesCard maxItems={5} />
+      </div>
 
       <div className="space-y-3">
         <div>
