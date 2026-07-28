@@ -1,4 +1,4 @@
-import { ArrowRight, BellRing, Check, Sparkles, X } from 'lucide-react';
+import { ArrowRight, BellRing, Check, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { useNotifications } from '@/contexts/NotificationContext';
@@ -120,8 +120,7 @@ export default function AttentionInbox({
             Verified requests and updates, ordered by importance.
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" className="gap-2 self-start" onClick={openBriefing}>
-          <Sparkles className="h-4 w-4" />
+        <Button type="button" variant="outline" size="sm" className="self-start" onClick={openBriefing}>
           Brief me
         </Button>
       </div>

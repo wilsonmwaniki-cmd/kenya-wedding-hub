@@ -22,7 +22,6 @@ import {
   AlertCircle,
   Clock3,
   ListTodo,
-  Sparkles,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -594,18 +593,53 @@ export default function PlannerDashboard() {
         </div>
       </div>
 
-      <AttentionInbox
-        showEmpty
-        maxItems={5}
-        supplementaryItems={plannerTaskAttentionItems}
-        onSupplementaryAction={(item) => {
-          const clientId = typeof item.metadata.planner_client_id === 'string'
-            ? item.metadata.planner_client_id
-            : null;
-          const client = clients.find((candidate) => candidate.id === clientId);
-          if (client && item.sourceId) openClientRoute(client, `/tasks?task=${item.sourceId}`);
-        }}
-      />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AttentionInbox
+          showEmpty
+          maxItems={5}
+          className="rounded-2xl border border-border/80 bg-card p-4 shadow-card sm:p-5"
+          supplementaryItems={plannerTaskAttentionItems}
+          onSupplementaryAction={(item) => {
+            const clientId = typeof item.metadata.planner_client_id === 'string'
+              ? item.metadata.planner_client_id
+              : null;
+            const client = clients.find((candidate) => candidate.id === clientId);
+            if (client && item.sourceId) openClientRoute(client, `/tasks?task=${item.sourceId}`);
+          }}
+        />
+
+        {clients.length > 0 && (
+          <Card className="shadow-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="font-display text-xl">Recent changes</CardTitle>
+              <p className="text-sm text-muted-foreground">Tasks added in the last seven days.</p>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {recentChanges.map((task) => (
+                <button
+                  key={task.id}
+                  type="button"
+                  onClick={() => openClientRoute(task.client, `/tasks?task=${task.id}`)}
+                  className="flex min-h-12 w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-muted/45"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">{task.title}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      Added for {task.client.client_name}{task.client.partner_name ? ` & ${task.client.partner_name}` : ''}
+                    </span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              ))}
+              {!taskPulseLoading && recentChanges.length === 0 && (
+                <p className="rounded-xl bg-muted/35 px-4 py-5 text-sm text-muted-foreground">
+                  No new tasks were added this week.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       <UpgradePromptDialog
         open={upgradeDialogOpen}
@@ -653,39 +687,6 @@ export default function PlannerDashboard() {
                 </div>
               </div>
             </div>
-
-              <Card className="shadow-card">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 font-display text-xl">
-                    <Sparkles className="h-4 w-4 text-primary" />
-                    Recent changes
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">Tasks added in the last seven days.</p>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {recentChanges.map((task) => (
-                    <button
-                      key={task.id}
-                      type="button"
-                      onClick={() => openClientRoute(task.client, `/tasks?task=${task.id}`)}
-                      className="flex min-h-12 w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-muted/45"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-foreground">{task.title}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          Added for {task.client.client_name}{task.client.partner_name ? ` & ${task.client.partner_name}` : ''}
-                        </span>
-                      </span>
-                      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    </button>
-                  ))}
-                  {!taskPulseLoading && recentChanges.length === 0 && (
-                    <p className="rounded-xl bg-muted/35 px-4 py-5 text-sm text-muted-foreground">
-                      No new tasks were added this week.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
           </section>
 
           <section aria-labelledby="planner-weddings-heading" className="space-y-3">
