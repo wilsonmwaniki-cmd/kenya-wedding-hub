@@ -1553,7 +1553,11 @@ Operating rules:
               audience: aiAudience,
               requestId,
             });
-            return new Response(JSON.stringify({ error: "OpenAI credits exhausted. Please top up later.", details, usage: usageStatus }), {
+            return new Response(JSON.stringify({
+              error: "Zania's AI service is temporarily unavailable. Your workspace access is active; this is not a subscription issue. Please try again later.",
+              details,
+              usage: usageStatus,
+            }), {
               status: 503,
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
