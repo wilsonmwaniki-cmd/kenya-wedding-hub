@@ -111,6 +111,9 @@ export function describeAiInvokeError(statusCode: number | null, message: string
   }
 
   if (statusCode === 429) {
+    if (/fair-use allowance|included.*allowance/i.test(message)) {
+      return 'This account has used its included Zania Assistant allowance for the month. It refreshes next month.';
+    }
     return 'This workspace has reached its AI limit for the month. Try again later or raise the limit in admin controls.';
   }
 

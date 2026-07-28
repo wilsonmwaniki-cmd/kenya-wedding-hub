@@ -43,6 +43,11 @@ describe("describeAiInvokeError", () => {
     expect(describeAiInvokeError(429, "quota")).toContain("raise the limit");
   });
 
+  it("describes internal cost ceilings as an included assistant allowance", () => {
+    expect(describeAiInvokeError(429, "You have reached this month's assistant fair-use allowance."))
+      .toContain("included Zania Assistant allowance");
+  });
+
   it("maps missing AI configuration into a clear setup message", () => {
     expect(describeAiInvokeError(500, "OPENAI_API_KEY is not configured")).toContain("not fully configured");
   });

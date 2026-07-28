@@ -583,6 +583,16 @@ export default function AiChat() {
       return;
     }
 
+    if (usage && usage.remaining_cost_usd <= 0) {
+      setSubmitError('This account has used its included Zania Assistant allowance for the current month.');
+      toast({
+        title: 'Assistant allowance used',
+        description: 'The included Zania Assistant allowance refreshes next month.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const shouldEchoUser = !options?.skipUserEcho;
     const userMsg: Message = { role: 'user', content: nextInput.trim() };
     const updatedMessages = shouldEchoUser ? [...messages, userMsg] : messages;
@@ -825,7 +835,7 @@ export default function AiChat() {
                 </div>
                 <div className="w-full rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm lg:min-w-72 lg:max-w-[22rem]">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="font-medium text-foreground">Monthly AI usage</span>
+                    <span className="font-medium text-foreground">Monthly Assistant usage</span>
                     <span className="text-muted-foreground">
                       {usageQuery.isLoading
                         ? 'Loading...'
@@ -847,8 +857,10 @@ export default function AiChat() {
                   <p className="mt-2 text-xs text-muted-foreground">
                     {usage
                       ? usage.remaining_messages > 0
-                        ? `${usage.remaining_messages} messages remaining this month`
-                        : 'This month’s AI allowance is fully used'
+                        ? usage.remaining_cost_usd > 0
+                          ? `${usage.remaining_messages} assisted requests remaining this month`
+                          : 'This month’s included Assistant allowance is fully used'
+                        : 'This month’s included Assistant allowance is fully used'
                       : 'Usage resets monthly based on your active plan'}
                   </p>
                 </div>

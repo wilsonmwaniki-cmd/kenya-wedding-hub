@@ -966,6 +966,25 @@ serve(async (req) => {
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4.1-mini";
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
+    const defaultModelPricing = OPENAI_MODEL.startsWith("gpt-4.1-mini")
+      ? { input: 0.4, cachedInput: 0.1, output: 1.6 }
+      : { input: 0, cachedInput: 0, output: 0 };
+    const resolveModelPrice = (configuredValue: string | undefined, fallback: number) => {
+      const parsed = Number(configuredValue ?? fallback);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+    };
+    const inputCostPerMillion = resolveModelPrice(
+      Deno.env.get("OPENAI_INPUT_COST_PER_MILLION_USD"),
+      defaultModelPricing.input,
+    );
+    const cachedInputCostPerMillion = resolveModelPrice(
+      Deno.env.get("OPENAI_CACHED_INPUT_COST_PER_MILLION_USD"),
+      defaultModelPricing.cachedInput,
+    );
+    const outputCostPerMillion = resolveModelPrice(
+      Deno.env.get("OPENAI_OUTPUT_COST_PER_MILLION_USD"),
+      defaultModelPricing.output,
+    );
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -1015,7 +1034,16 @@ serve(async (req) => {
 
     await assertActiveAuthSession(adminClient, authHeader, user.id);
 
-    const { messages, selectedClientId, allowWriteActions = false, confirmedActions = [] } = await req.json();
+    const {
+      messages,
+      selectedClientId,
+      allowWriteActions = false,
+      confirmedActions = [],
+      surface,
+    } = await req.json();
+    const usageFeature = typeof surface === "string" && /^[a-z0-9_-]{1,64}$/i.test(surface)
+      ? surface
+      : "ai_assistant";
     assertMessageCount(messages, 24);
     for (const message of messages) {
       if (!message || typeof message !== "object") {
@@ -1144,6 +1172,19 @@ serve(async (req) => {
     if ((usageStatus?.remaining_messages ?? 0) <= 0) {
       return new Response(JSON.stringify({
         error: "You have reached this month's AI message limit for your plan.",
+        usage: usageStatus,
+      }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (
+      usageStatus?.monthly_cost_cap_usd != null &&
+      Number(usageStatus.remaining_cost_usd ?? 0) <= 0
+    ) {
+      return new Response(JSON.stringify({
+        error: "You have reached this month's assistant fair-use allowance.",
         usage: usageStatus,
       }), {
         status: 429,
@@ -1496,6 +1537,10 @@ Operating rules:
     const MAX_TOOL_ROUNDS = 5;
     let finalContent = "";
     let pendingActions: PendingWriteAction[] = [];
+    let providerRequestCount = 0;
+    let inputTokens = 0;
+    let cachedInputTokens = 0;
+    let outputTokens = 0;
 
     if (Array.isArray(confirmedActions) && confirmedActions.length > 0) {
       const results: string[] = [];
@@ -1524,6 +1569,7 @@ Operating rules:
           messages: aiMessages,
           tools,
           tool_choice: "auto",
+          max_tokens: 1200,
           stream: false,
         }),
       });
@@ -1579,6 +1625,10 @@ Operating rules:
       }
 
       const data = await response.json();
+      providerRequestCount += 1;
+      inputTokens += Number(data.usage?.prompt_tokens ?? 0);
+      cachedInputTokens += Number(data.usage?.prompt_tokens_details?.cached_tokens ?? 0);
+      outputTokens += Number(data.usage?.completion_tokens ?? 0);
       const choice = data.choices?.[0];
       if (!choice) break;
 
@@ -1640,8 +1690,20 @@ Operating rules:
 
     let finalUsage = usageStatus;
     if (finalContent.trim()) {
+      const nonCachedInputTokens = Math.max(inputTokens - cachedInputTokens, 0);
+      const estimatedCostUsd = (
+        (nonCachedInputTokens * inputCostPerMillion) +
+        (cachedInputTokens * cachedInputCostPerMillion) +
+        (outputTokens * outputCostPerMillion)
+      ) / 1_000_000;
       const { data: loggedUsageResult, error: loggedUsageError } = await (supabase.rpc as any)("log_ai_assistant_message", {
-        feature_input: "ai_assistant",
+        feature_input: usageFeature,
+        model_input: OPENAI_MODEL,
+        provider_request_count_input: providerRequestCount,
+        input_tokens_input: inputTokens,
+        cached_input_tokens_input: cachedInputTokens,
+        output_tokens_input: outputTokens,
+        estimated_cost_usd_input: estimatedCostUsd,
       });
 
       if (loggedUsageError) {

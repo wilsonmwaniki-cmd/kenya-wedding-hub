@@ -173,6 +173,11 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
         return null;
       }
 
+      if (usage && usage.remaining_cost_usd <= 0) {
+        setError('This account has used its included Zania Assistant allowance for the current month.');
+        return null;
+      }
+
       setLoading(true);
       setError(null);
 

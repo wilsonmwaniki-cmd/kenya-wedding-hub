@@ -23,6 +23,9 @@ export interface AiUsageStatus {
   add_on_separate: boolean;
   add_on_lookup_key: string | null;
   add_on_annual_lookup_key: string | null;
+  monthly_cost_cap_usd: number;
+  estimated_cost_used_usd: number;
+  remaining_cost_usd: number;
 }
 
 export interface WeddingAiInvokeParams {
