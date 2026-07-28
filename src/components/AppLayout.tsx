@@ -662,12 +662,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/80 bg-background/95 px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),0.4rem)] shadow-[0_-12px_32px_rgba(41,27,21,0.08)] backdrop-blur-xl lg:hidden"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pt-3 pb-[max(env(safe-area-inset-bottom),0.6rem)] lg:hidden"
       >
         <div
-          className="mx-auto grid max-w-xl gap-1"
+          className="pointer-events-auto relative mx-auto grid max-w-xl gap-1 overflow-hidden rounded-[1.4rem] border border-[#e5d4c3]/90 bg-[linear-gradient(180deg,rgba(255,253,250,0.97),rgba(248,241,233,0.95))] p-1.5 shadow-[0_18px_50px_rgba(55,35,26,0.14),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-2xl"
           style={{ gridTemplateColumns: `repeat(${Math.max(mobileNavItems.length, 1)}, minmax(0, 1fr))` }}
         >
+          <span
+            className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent"
+            aria-hidden="true"
+          />
           {mobileNavItems.map((item) => {
             const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
             const releaseDisabled = !isLaunchFeatureEnabled(item.path);
@@ -688,29 +692,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   }
                   setSidebarOpen(false);
                 }}
-                className={`relative flex min-h-14 min-w-0 touch-manipulation flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[10px] font-semibold transition-colors ${
+                className={`relative isolate flex min-h-14 min-w-0 touch-manipulation flex-col items-center justify-center gap-1 overflow-hidden rounded-[1rem] px-1 py-1.5 text-[10px] font-semibold tracking-[0.01em] transition-colors ${
                   disabled
                     ? 'cursor-not-allowed text-muted-foreground/45'
                     : isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground active:bg-muted'
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hover:text-foreground active:bg-white/55'
                 }`}
               >
                 {isActive ? (
-                  <span className="absolute -top-1.5 h-0.5 w-8 rounded-full bg-primary" aria-hidden="true" />
+                  <motion.span
+                    layoutId="zania-mobile-nav-active"
+                    className="absolute inset-0 -z-10 rounded-[inherit] border border-primary/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,231,218,0.82))] shadow-[0_8px_22px_rgba(112,67,44,0.10),inset_0_1px_0_rgba(255,255,255,0.9)]"
+                    transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 30 }}
+                    aria-hidden="true"
+                  />
                 ) : null}
-                <span className="relative">
-                  <item.icon className="h-5 w-5" strokeWidth={isActive ? 2.25 : 1.8} />
+                <span className={`relative z-10 ${isActive ? 'text-primary' : ''}`}>
+                  <item.icon className="h-[1.15rem] w-[1.15rem]" strokeWidth={isActive ? 2.15 : 1.75} />
                   {itemBadgeCount > 0 ? (
                     <span
-                      className="absolute -right-2.5 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground"
+                      className="absolute -right-2.5 -top-2 z-20 flex h-4 min-w-4 items-center justify-center rounded-full border border-background/70 bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground shadow-sm"
                       aria-label={`${itemBadgeCount} new ${mobileLabel.toLowerCase()} notification${itemBadgeCount === 1 ? '' : 's'}`}
                     >
                       {itemBadgeCount > 99 ? '99+' : itemBadgeCount}
                     </span>
                   ) : null}
                 </span>
-                <span className="w-full truncate text-center">{mobileLabel}</span>
+                <span className="relative z-10 w-full truncate text-center">{mobileLabel}</span>
               </Link>
             );
           })}
