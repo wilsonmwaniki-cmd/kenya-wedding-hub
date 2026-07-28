@@ -97,6 +97,7 @@ import {
   coupleVendorContractStatusLabel,
   getCoupleVendorContract,
 } from '@/lib/coupleVendorContracts';
+import { requestVendorQuote } from '@/lib/documentRequests';
 
 interface Vendor {
   amount_paid: number;
@@ -474,6 +475,7 @@ export default function Vendors() {
   const [notesDrafts, setNotesDrafts] = useState<Record<string, string>>({});
   const [vendorDetailsDrafts, setVendorDetailsDrafts] = useState<Record<string, VendorDetailsDraft>>({});
   const [savingVendorDetailsId, setSavingVendorDetailsId] = useState<string | null>(null);
+  const [requestingQuoteVendorId, setRequestingQuoteVendorId] = useState<string | null>(null);
   const [comparisonCategory, setComparisonCategory] = useState<string>('all');
   const [modalBenchmark, setModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
   const [modalBenchmarkLoading, setModalBenchmarkLoading] = useState(false);
@@ -1754,6 +1756,38 @@ export default function Vendors() {
     }
 
     setSavingNotesId(null);
+  };
+
+  const sendVendorQuoteRequest = async (vendor: Vendor) => {
+    if (!vendor.vendor_listing_id) {
+      toast({
+        title: 'Connect the vendor first',
+        description: 'This vendor needs a professional Zania account before they can receive quote requests.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setRequestingQuoteVendorId(vendor.id);
+    try {
+      await requestVendorQuote(vendor.id, {
+        message: `Please send a quote for ${vendor.category}.`,
+        budgetAmount: vendor.price,
+      });
+      toast({
+        title: 'Quote requested',
+        description: `${vendor.name} will see this request at the top of their document desk.`,
+      });
+    } catch (error) {
+      console.error('Could not request vendor quote:', error);
+      toast({
+        title: 'Could not request quote',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRequestingQuoteVendorId(null);
+    }
   };
 
   const buildVendorTaskBundle = async (vendor: Vendor) => {
@@ -3353,6 +3387,21 @@ export default function Vendors() {
                 </div>
               ) : null}
               <div className="grid gap-2 sm:flex sm:flex-wrap">
+                {vendor.vendor_listing_id ? (
+                  <Button
+                    type="button"
+                    className="w-full gap-2 sm:w-auto"
+                    onClick={() => void sendVendorQuoteRequest(vendor)}
+                    disabled={requestingQuoteVendorId === vendor.id}
+                  >
+                    {requestingQuoteVendorId === vendor.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Receipt className="h-4 w-4" />
+                    )}
+                    Request quote
+                  </Button>
+                ) : null}
                 <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setSelectedVendorId(null)}>Close</Button>
                 <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Remove vendor" title="Remove vendor" onClick={() => deleteVendor(vendor.id)}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
               </div>

@@ -35,9 +35,9 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
+import DocumentActionOverview from '@/components/documents/DocumentActionOverview';
 import DocumentMomentumCard from '@/components/documents/DocumentMomentumCard';
 import DocumentMetricLink from '@/components/documents/DocumentMetricLink';
-import ContextualAssistantAction from '@/components/ContextualAssistantAction';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
 import InfoTip from '@/components/InfoTip';
 import {
@@ -77,6 +77,12 @@ import {
   type VendorListingOption,
 } from '@/lib/commercialDocuments';
 import { buildDocumentMomentumSummary } from '@/lib/documentMomentum';
+import {
+  listIncomingDocumentRequests,
+  markDocumentRequestViewed,
+  respondToDocumentRequest,
+  type DocumentRequestRecord,
+} from '@/lib/documentRequests';
 
 type CreateDocumentDraft = {
   documentType: CommercialDocumentType;
@@ -148,6 +154,8 @@ export default function VendorDocuments() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [documents, setDocuments] = useState<CommercialDocumentRecord[]>([]);
+  const [documentRequests, setDocumentRequests] = useState<DocumentRequestRecord[]>([]);
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<CommercialDocumentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -236,21 +244,24 @@ export default function VendorDocuments() {
 
     const load = async () => {
       try {
-        const [listingsResult, bookingsResult, templatesResult] = await Promise.allSettled([
+        const [listingsResult, bookingsResult, templatesResult, requestsResult] = await Promise.allSettled([
           listVendorListingOptions(),
           listVendorBookingOptions(),
           listDocumentTemplates({ role: 'vendor' }),
+          listIncomingDocumentRequests('vendor'),
         ]);
 
         const listings = listingsResult.status === 'fulfilled' ? listingsResult.value : [];
         const bookings = bookingsResult.status === 'fulfilled' ? bookingsResult.value : [];
         const templates = templatesResult.status === 'fulfilled' ? templatesResult.value : [];
+        const requests = requestsResult.status === 'fulfilled' ? requestsResult.value : [];
 
         if (cancelled) return;
 
         setVendorListings(listings);
         setVendorBookings(bookings);
         setDocumentTemplates(templates.filter((template) => template.templateType !== 'contract'));
+        setDocumentRequests(requests);
         setCreateDraft((current) => ({
           ...current,
           vendorListingId: current.vendorListingId || listings[0]?.id || '',
@@ -264,6 +275,9 @@ export default function VendorDocuments() {
         }
         if (templatesResult.status === 'rejected') {
           console.error('Could not load vendor template options:', templatesResult.reason);
+        }
+        if (requestsResult.status === 'rejected') {
+          console.error('Could not load vendor document requests:', requestsResult.reason);
         }
 
         await loadDocuments();
@@ -512,15 +526,29 @@ export default function VendorDocuments() {
         notes: createDraft.notes.trim() || null,
         terms: createDraft.terms.trim() || null,
         status: defaultStatusFor(createDraft.documentType),
-        metadata: selectedTemplate
-          ? {
+        metadata: {
+          ...(selectedTemplate
+            ? {
               sourceTemplateId: selectedTemplate.id,
               sourceTemplateName: selectedTemplate.name,
             }
-          : undefined,
+            : {}),
+          ...(activeRequestId ? { documentRequestId: activeRequestId } : {}),
+        },
       });
 
       if (selectedTemplate) {
+        if (selectedTemplate.defaultItems.length > 0) {
+          await saveCommercialDocumentItems(
+            created.id,
+            selectedTemplate.defaultItems.map((item, index) => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              sortOrder: index,
+            })),
+          );
+        }
         const currentUseCount = Number(selectedTemplate.metadata?.useCount ?? 0);
         await updateDocumentTemplate(selectedTemplate.id, {
           metadata: {
@@ -531,8 +559,16 @@ export default function VendorDocuments() {
         });
       }
 
+      if (activeRequestId) {
+        const answeredRequest = await respondToDocumentRequest(activeRequestId, { documentId: created.id });
+        setDocumentRequests((current) =>
+          current.map((request) => (request.id === answeredRequest.id ? answeredRequest : request)),
+        );
+      }
+
       await loadDocuments(created.id);
       setCreateOpen(false);
+      setActiveRequestId(null);
       setCreateDraft((current) => ({
         ...current,
         title: '',
@@ -563,6 +599,40 @@ export default function VendorDocuments() {
     } finally {
       setSavingHeader(false);
     }
+  };
+
+  const handleOpenDocumentRequest = async (request: DocumentRequestRecord) => {
+    if (request.responseDocumentId) {
+      setSelectedDocumentId(request.responseDocumentId);
+      return;
+    }
+
+    try {
+      const viewed = await markDocumentRequestViewed(request.id);
+      setDocumentRequests((current) =>
+        current.map((item) => (item.id === viewed.id ? viewed : item)),
+      );
+    } catch (error) {
+      console.error('Could not mark vendor document request as viewed:', error);
+    }
+
+    setActiveRequestId(request.id);
+    setCreateDraft({
+      documentType: 'quote',
+      title: request.title,
+      recipientName: request.requesterName,
+      recipientEmail: request.requesterEmail ?? '',
+      recipientPhone: request.requesterPhone ?? '',
+      weddingName: request.weddingName ?? request.requesterName,
+      vendorListingId: request.vendorListingId ?? vendorListings[0]?.id ?? '',
+      vendorId: request.vendorId ?? '',
+      templateId: documentTemplates.find((template) => template.templateType === 'quote')?.id ?? '',
+      issueDate: todayIso(),
+      dueDate: nextDueDateValue('quote'),
+      notes: request.message ?? '',
+      terms: '',
+    });
+    setCreateOpen(true);
   };
 
   const handleSaveHeader = async () => {
@@ -1035,11 +1105,6 @@ export default function VendorDocuments() {
                 <FilePlus2 className="h-4 w-4" />
                 {documentPrimaryAction.actionLabel}
               </Button>
-              <ContextualAssistantAction
-                prompt="Help me prepare the next client document. What should I include?"
-                context={`This vendor is viewing the ${pageTitle.toLowerCase()} workspace with ${stats.total} total documents, ${stats.quotes} quotes, ${formatCurrency(stats.collected)} collected, and ${formatCurrency(stats.outstanding)} still due.`}
-                className="w-full"
-              />
               <div className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground">
                 {documents.length === 0
                   ? 'No live documents yet.'
@@ -1049,6 +1114,16 @@ export default function VendorDocuments() {
           </div>
         </CardContent>
       </Card>
+
+      {activeSection === 'overview' && (
+        <DocumentActionOverview
+          requests={documentRequests}
+          documents={documents}
+          loading={loading}
+          onOpenRequest={(request) => void handleOpenDocumentRequest(request)}
+          onOpenDocument={setSelectedDocumentId}
+        />
+      )}
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <Card className="border-border/70 shadow-card">
@@ -1562,10 +1637,16 @@ export default function VendorDocuments() {
         </Card>
       </section>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setActiveRequestId(null);
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Create a commercial document</DialogTitle>
+            <DialogTitle>{activeRequestId ? 'Review quote request' : 'Create a commercial document'}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2 md:grid-cols-2">
             <div className="space-y-2">

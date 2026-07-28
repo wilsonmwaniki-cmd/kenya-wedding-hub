@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, CheckCircle2, Clock, MapPin } from 'lucide-react';
+import { Mail, Phone, Globe, ArrowLeft, Loader2, UserCircle, CheckCircle2, Clock, MapPin, FileText } from 'lucide-react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -18,6 +18,7 @@ import BrandWordmark from '@/components/BrandWordmark';
 import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl, normalizePhoneHref } from '@/lib/security';
+import { requestPlannerQuote } from '@/lib/documentRequests';
 
 interface PlannerData {
   id: string;
@@ -49,6 +50,7 @@ export default function PlannerProfile() {
   const [notFound, setNotFound] = useState(false);
   const [requestStatus, setRequestStatus] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [requestingQuote, setRequestingQuote] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [message, setMessage] = useState('');
@@ -75,6 +77,8 @@ export default function PlannerProfile() {
       } else {
         setPlanner(data as PlannerData);
         if (professionalNetworkEnabled) {
+          // The generated client types do not include this feature-flagged table yet.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: signalRows } = await (supabase as any)
             .from('professional_network_relationships')
             .select('relationship_type')
@@ -136,6 +140,28 @@ export default function PlannerProfile() {
           requestId: inserted?.id || null,
         },
       }).catch(() => {});
+    }
+  };
+
+  const sendQuoteRequest = async () => {
+    if (!planner) return;
+    setRequestingQuote(true);
+    try {
+      await requestPlannerQuote(planner.user_id, {
+        message: 'Please send us a wedding planning quote.',
+      });
+      toast({
+        title: 'Quote requested',
+        description: 'This planner will see your wedding at the top of their document desk.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Could not request quote',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRequestingQuote(false);
     }
   };
 
@@ -204,6 +230,10 @@ export default function PlannerProfile() {
                     <p className="font-medium text-card-foreground">You're linked with this planner</p>
                     <p className="text-sm text-muted-foreground">Your wedding progress is shared.</p>
                   </div>
+                  <Button onClick={() => void sendQuoteRequest()} disabled={requestingQuote} size="sm" className="gap-1.5">
+                    {requestingQuote ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    Request quote
+                  </Button>
                 </>
               ) : requestStatus === 'pending' ? (
                 <>
@@ -225,6 +255,16 @@ export default function PlannerProfile() {
                     className="gap-1.5"
                   >
                     Interested
+                  </Button>
+                  <Button
+                    onClick={() => void sendQuoteRequest()}
+                    disabled={requestingQuote}
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                  >
+                    {requestingQuote ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    Request quote
                   </Button>
                 </>
               )}
