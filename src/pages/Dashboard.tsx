@@ -30,6 +30,7 @@ import { buildConciergeContext } from '@/lib/conciergeContext';
 import AnimatedNumber from '@/components/AnimatedNumber';
 import { compareTasksByWeddingChecklistOrder, getNextWeddingChecklistTask } from '@/lib/weddingTaskTemplates';
 import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
+import type { AttentionItem } from '@/lib/attention';
 
 interface DashboardStats {
   totalBudget: number;
@@ -136,6 +137,13 @@ function guidedTimelineDescription(timelineLabel: string | null) {
   if (timelineLabel.toLowerCase() === 'wedding day') return 'Plan this for the wedding day.';
   if (timelineLabel.toLowerCase() === 'post wedding') return 'Complete this after the wedding.';
   return `${timelineLabel} before the wedding.`;
+}
+
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWorkspaceData> {
@@ -460,6 +468,41 @@ export default function Dashboard() {
     () => taskDigestRows.filter((task) => !task.completed),
     [taskDigestRows],
   );
+  const coupleTaskAttentionItems = useMemo<AttentionItem[]>(() => {
+    const todayKey = localDateKey(new Date());
+    const horizon = new Date();
+    horizon.setDate(horizon.getDate() + 14);
+    const horizonKey = localDateKey(horizon);
+
+    return pendingTasks
+      .filter((task) => task.due_date && task.due_date <= horizonKey)
+      .sort((left, right) => String(left.due_date).localeCompare(String(right.due_date)))
+      .map((task) => {
+        const overdue = Boolean(task.due_date && task.due_date < todayKey);
+        const dueAt = task.due_date ? `${task.due_date}T00:00:00` : null;
+
+        return {
+          id: `wedding-home-task:${task.id}`,
+          createdAt: dueAt ?? new Date().toISOString(),
+          updatedAt: dueAt ?? new Date().toISOString(),
+          recipientRole: isPlanner ? 'planner' : 'couple',
+          weddingId: null,
+          sourceType: 'task',
+          sourceId: task.id,
+          kind: 'action',
+          priority: overdue ? 'urgent' : 'action',
+          status: 'read',
+          title: task.title,
+          summary: overdue ? 'This task is overdue.' : 'This task is due soon.',
+          actionLabel: 'Open task',
+          actionPath: `/tasks?task=${task.id}`,
+          dueAt,
+          metadata: {
+            wedding_name: weddingTitle,
+          },
+        };
+      });
+  }, [isPlanner, pendingTasks, weddingTitle]);
   const privateTasks = useMemo(
     () => pendingTasks.filter((task) => task.visibility === 'private'),
     [pendingTasks],
@@ -924,6 +967,10 @@ export default function Dashboard() {
           <AttentionInbox
             showEmpty
             maxItems={3}
+            supplementaryItems={coupleTaskAttentionItems}
+            onSupplementaryAction={(item) => {
+              if (item.actionPath) navigate(item.actionPath);
+            }}
             className="rounded-xl border border-border bg-card p-4 shadow-none sm:p-5"
           />
           <RecentWorkspaceChangesCard
@@ -1131,6 +1178,10 @@ export default function Dashboard() {
         <AttentionInbox
           showEmpty
           maxItems={3}
+          supplementaryItems={coupleTaskAttentionItems}
+          onSupplementaryAction={(item) => {
+            if (item.actionPath) navigate(item.actionPath);
+          }}
           className="rounded-2xl border border-border/80 bg-card p-4 shadow-card sm:p-5"
         />
         <RecentWorkspaceChangesCard maxItems={5} />
