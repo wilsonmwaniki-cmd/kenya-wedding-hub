@@ -280,6 +280,7 @@ export default function Dashboard() {
   const assistantPanel = useAssistantPanel();
   const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
   const showPlanningDigest = profile?.role === 'couple' || isCommittee;
+  const showSharedWeddingHome = !isPlanner || Boolean(selectedClient);
   const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
   const labsEnabled = isLabsEnabled();
   const [dashboardNudgeDismissed, setDashboardNudgeDismissed] = useState(false);
@@ -859,7 +860,7 @@ export default function Dashboard() {
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton />;
   if (pageLoading) return <WorkspacePageSkeleton />;
 
-  if (!isPlanner) {
+  if (showSharedWeddingHome) {
     const supportingActions = homeActionCards
       .filter((action) => action.href !== homePrimaryAction.href && isLaunchFeatureEnabled(action.href))
       .slice(0, 2);
