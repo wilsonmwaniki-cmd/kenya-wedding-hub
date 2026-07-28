@@ -62,7 +62,26 @@ export async function listAttentionItems(limit = 20) {
     .limit(limit);
 
   if (error) throw error;
-  return ((data ?? []) as Record<string, unknown>[]).map(mapAttentionItem);
+  const priorityOrder: Record<AttentionPriority, number> = {
+    urgent: 0,
+    action: 1,
+    info: 2,
+  };
+
+  return ((data ?? []) as Record<string, unknown>[])
+    .map(mapAttentionItem)
+    .sort((left, right) => {
+      const priorityDifference = priorityOrder[left.priority] - priorityOrder[right.priority];
+      if (priorityDifference !== 0) return priorityDifference;
+
+      if (left.status !== right.status) return left.status === 'unread' ? -1 : 1;
+
+      if (left.dueAt && right.dueAt) return left.dueAt.localeCompare(right.dueAt);
+      if (left.dueAt) return -1;
+      if (right.dueAt) return 1;
+
+      return right.createdAt.localeCompare(left.createdAt);
+    });
 }
 
 export async function setAttentionItemState(

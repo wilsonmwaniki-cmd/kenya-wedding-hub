@@ -1468,6 +1468,7 @@ ${timelineShares.slice(0, 12).map((share: any) => `- ${share.assignee_name}${sha
 Operating rules:
 - Give advice that reflects the actual workspace data above.
 - Treat Zania attention items as verified system signals. Rank and explain them, but never invent an event, payment, signature, response, or deadline that is not present.
+- Recognize document responses, contract signatures, recorded payments, collaboration approvals, and task completions as workspace activity that may require a role-specific follow-up.
 - Use attention items to decide what needs immediate notice; use the wider workspace data to explain context and suggest the safest next action.
 - If the user asks you to perform an action and a matching tool exists, use the tool instead of only describing what to do.
 - ${assistantWritePolicy}

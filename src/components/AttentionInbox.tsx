@@ -40,6 +40,7 @@ export default function AttentionInbox({
   } = useNotifications();
   const assistantPanel = useAssistantPanel();
   const visibleItems = attentionItems.slice(0, maxItems);
+  const remainingCount = Math.max(0, attentionItems.length - visibleItems.length);
 
   if (attentionLoading && attentionItems.length === 0) {
     return (
@@ -85,6 +86,9 @@ export default function AttentionInbox({
             <Badge variant="outline" className="rounded-full bg-background/80">
               {unreadAttentionCount} new
             </Badge>
+            {attentionItems.length > unreadAttentionCount && (
+              <span className="text-xs text-muted-foreground">{attentionItems.length} active</span>
+            )}
           </div>
           <h2 id="zania-attention-heading" className="workspace-h2 mt-1">What needs you now</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -110,6 +114,11 @@ export default function AttentionInbox({
                     {priorityLabel(item)}
                   </Badge>
                   {item.status === 'unread' && <span className="h-2 w-2 rounded-full bg-primary" aria-label="Unread" />}
+                  {typeof item.metadata.wedding_name === 'string' && item.metadata.wedding_name && (
+                    <Badge variant="outline" className="max-w-full truncate rounded-full normal-case tracking-normal">
+                      {item.metadata.wedding_name}
+                    </Badge>
+                  )}
                 </div>
                 <h3 className="mt-2 text-sm font-semibold text-foreground sm:text-base">{item.title}</h3>
                 {item.summary && <p className="mt-1 text-sm text-muted-foreground">{item.summary}</p>}
@@ -148,6 +157,11 @@ export default function AttentionInbox({
           </Card>
         ))}
       </div>
+      {remainingCount > 0 && (
+        <p className="text-xs font-medium text-muted-foreground">
+          Showing the highest-priority {visibleItems.length} of {attentionItems.length} active items.
+        </p>
+      )}
     </section>
   );
 }
