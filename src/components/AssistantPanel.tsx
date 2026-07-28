@@ -202,7 +202,12 @@ export default function AssistantPanel({
   const starterPrompt = surface.prompts[0] ?? '';
   const activePrompt = surface.prompts[promptIndex % Math.max(surface.prompts.length, 1)] ?? starterPrompt;
   const assistantBusy = assistant.loading || assistant.usageLoading || assistant.accessLoading;
-  const inputPlaceholder = animatedPrompt || 'Ask anything about your wedding plans...';
+  const launcherPrompt = animatedPrompt || 'Ask Zania what needs attention...';
+  const composerPlaceholder = surface.page === 'planner_dashboard'
+    ? 'Ask about your client weddings...'
+    : surface.page === 'vendor_workspace'
+      ? 'Ask about your vendor workspace...'
+      : 'Ask about this wedding...';
 
   useEffect(() => {
     assistant.clearResponse();
@@ -321,7 +326,8 @@ export default function AssistantPanel({
   };
 
   const submitCustomPrompt = async () => {
-    await runAssistantPrompt(customPrompt.trim() || activePrompt.trim());
+    if (!customPrompt.trim()) return;
+    await runAssistantPrompt(customPrompt.trim());
   };
 
   return (
@@ -383,7 +389,7 @@ export default function AssistantPanel({
                 <ZaniaMonogram className="text-[0.4rem] sm:text-[0.42rem] lg:text-[0.28rem]" accentClassName="text-accent" />
               </span>
               <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium leading-none text-primary-foreground/90 sm:text-[1.03rem] lg:text-[0.72rem]">
-                {inputPlaceholder}
+                {launcherPrompt}
                 <span className="ml-0.5 animate-pulse">|</span>
               </span>
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary-foreground/15 text-primary-foreground sm:h-10 sm:w-10 lg:h-7 lg:w-7">
@@ -540,9 +546,9 @@ export default function AssistantPanel({
                 ) : null}
 
                 <footer className="relative border-t border-border bg-card px-3.5 pb-3 pt-2.5 sm:px-5 sm:pb-4 sm:pt-3">
-                  <div className="mb-2.5 rounded-2xl border border-input bg-background p-2 sm:mb-3">
-                    <div className="flex min-h-[3.25rem] items-center gap-2.5 sm:min-h-[3.5rem] sm:gap-3">
-                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary sm:h-9 sm:w-9">
+                  <div className="mb-2.5 rounded-xl border border-input bg-background px-2.5 py-1.5 sm:mb-3 sm:rounded-2xl sm:p-2">
+                    <div className="flex min-h-12 items-center gap-2 sm:min-h-[3.5rem] sm:gap-3">
+                      <div className="hidden h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary sm:grid">
                         <ZaniaMonogram className="text-[0.72rem]" accentClassName="text-accent" />
                       </div>
                       <Textarea
@@ -555,16 +561,17 @@ export default function AssistantPanel({
                             void submitCustomPrompt();
                           }
                         }}
-                        placeholder={inputPlaceholder}
-                        className="min-h-10 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-[0.92rem] font-medium leading-6 text-foreground placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+                        placeholder={composerPlaceholder}
+                        rows={1}
+                        className="h-12 min-h-12 max-h-24 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-3 text-[0.92rem] font-medium leading-6 text-foreground placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
                         disabled={assistant.decision ? !assistant.canUseAssistant : false}
                       />
                       <Button
                         type="button"
                         size="icon"
                         onClick={submitCustomPrompt}
-                        disabled={assistantBusy || (!customPrompt.trim() && !activePrompt.trim()) || (assistant.decision ? !assistant.canUseAssistant : false)}
-                        className="h-10 w-10 shrink-0 rounded-full disabled:opacity-50"
+                        disabled={assistantBusy || !customPrompt.trim() || (assistant.decision ? !assistant.canUseAssistant : false)}
+                        className="h-9 w-9 shrink-0 rounded-full disabled:opacity-50 sm:h-10 sm:w-10"
                         aria-label="Ask Zania"
                       >
                         {assistant.loading ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Send className="h-[18px] w-[18px]" />}
