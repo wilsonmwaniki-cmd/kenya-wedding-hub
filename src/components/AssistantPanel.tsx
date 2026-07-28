@@ -343,7 +343,7 @@ export default function AssistantPanel({
             transition={{ type: 'spring', stiffness: 220, damping: 24 }}
             whileHover={{ y: -4, scale: 1.01 }}
             whileTap={{ scale: 0.98 }}
-            className={`fixed right-3 z-[35] grid h-12 w-12 place-items-center overflow-hidden rounded-full border border-primary/30 bg-primary p-0 text-left text-primary-foreground shadow-card bottom-[calc(env(safe-area-inset-bottom)+5.75rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+6.25rem)] sm:right-4 sm:block sm:h-auto sm:w-[calc(100vw-2rem)] sm:max-w-[420px] sm:rounded-2xl sm:p-3.5 lg:bottom-6 lg:right-5 ${
+            className={`fixed right-3 z-[35] grid h-12 w-12 place-items-center overflow-hidden rounded-full border border-primary/30 bg-primary p-0 text-left text-primary-foreground shadow-card bottom-[calc(env(safe-area-inset-bottom)+5.1rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+5.6rem)] sm:right-4 sm:block sm:h-auto sm:w-[calc(100vw-2rem)] sm:max-w-[420px] sm:rounded-2xl sm:p-3.5 lg:bottom-6 lg:right-5 ${
               compactDesktopLauncher
                 ? 'lg:w-[172px] lg:max-w-[172px] lg:rounded-xl lg:px-2.5 lg:py-2'
                 : 'lg:w-[232px] lg:max-w-[232px] lg:rounded-xl lg:p-2.5'

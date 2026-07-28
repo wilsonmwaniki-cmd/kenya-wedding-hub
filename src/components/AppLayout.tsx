@@ -662,14 +662,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Primary mobile navigation"
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pt-3 pb-[max(env(safe-area-inset-bottom),0.6rem)] lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-[#e5d4c3]/90 bg-[linear-gradient(180deg,rgba(255,253,250,0.97),rgba(248,241,233,0.98))] pb-[max(env(safe-area-inset-bottom),0.35rem)] shadow-[0_-12px_36px_rgba(55,35,26,0.08),inset_0_1px_0_rgba(255,255,255,0.92)] backdrop-blur-2xl lg:hidden"
       >
         <div
-          className="pointer-events-auto relative mx-auto grid max-w-xl gap-1 overflow-hidden rounded-[1.4rem] border border-[#e5d4c3]/90 bg-[linear-gradient(180deg,rgba(255,253,250,0.97),rgba(248,241,233,0.95))] p-1.5 shadow-[0_18px_50px_rgba(55,35,26,0.14),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-2xl"
+          className="relative mx-auto grid max-w-xl gap-1 overflow-hidden px-2 py-1.5"
           style={{ gridTemplateColumns: `repeat(${Math.max(mobileNavItems.length, 1)}, minmax(0, 1fr))` }}
         >
           <span
-            className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent"
+            className="pointer-events-none absolute inset-x-12 top-0 h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent"
             aria-hidden="true"
           />
           {mobileNavItems.map((item) => {
