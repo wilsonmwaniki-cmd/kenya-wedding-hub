@@ -725,7 +725,7 @@ export default function AiChat() {
         )}
 
         {decision?.allowed && (
-          <Card className="rounded-3xl border-border/70 p-5 shadow-card">
+          <Card className="semantic-surface-info rounded-3xl border p-5 shadow-card">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">Workspace signal</p>
@@ -739,13 +739,27 @@ export default function AiChat() {
               </div>
               {workspaceSnapshot && (
                 <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-                  <div className="rounded-2xl bg-muted/30 px-3 py-2">
+                  <div className={`rounded-2xl border px-3 py-2 ${
+                    workspaceSnapshot.overdueTasks > 0 ? 'semantic-surface-danger' : 'semantic-surface-success'
+                  }`}>
                     <p className="text-xs uppercase tracking-[0.16em]">Overdue</p>
-                    <p className="mt-1 font-medium text-foreground">{workspaceSnapshot.overdueTasks} tasks</p>
+                    <p className={`mt-1 font-medium ${
+                      workspaceSnapshot.overdueTasks > 0 ? 'text-destructive' : 'text-success'
+                    }`}>
+                      {workspaceSnapshot.overdueTasks} tasks
+                    </p>
                   </div>
-                  <div className="rounded-2xl bg-muted/30 px-3 py-2">
+                  <div className={`rounded-2xl border px-3 py-2 ${
+                    workspaceSnapshot.trackedVendors - workspaceSnapshot.finalVendors > 0
+                      ? 'semantic-surface-warning'
+                      : 'semantic-surface-success'
+                  }`}>
                     <p className="text-xs uppercase tracking-[0.16em]">Vendor gap</p>
-                    <p className="mt-1 font-medium text-foreground">
+                    <p className={`mt-1 font-medium ${
+                      workspaceSnapshot.trackedVendors - workspaceSnapshot.finalVendors > 0
+                        ? 'text-warning'
+                        : 'text-success'
+                    }`}>
                       {Math.max(workspaceSnapshot.trackedVendors - workspaceSnapshot.finalVendors, 0)} unresolved
                     </p>
                   </div>
@@ -846,7 +860,7 @@ export default function AiChat() {
                     className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm ${
                       message.role === 'user'
                         ? 'rounded-br-sm bg-primary text-primary-foreground'
-                        : 'rounded-bl-sm bg-secondary text-secondary-foreground'
+                        : 'semantic-surface-info rounded-bl-sm border text-foreground'
                     }`}
                   >
                     {message.role === 'assistant' ? (
@@ -925,8 +939,8 @@ export default function AiChat() {
 
               {loading && (
                 <div className="flex justify-start">
-                  <div className="rounded-2xl rounded-bl-sm bg-secondary px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <div className="semantic-surface-info rounded-2xl rounded-bl-sm border px-4 py-3">
+                    <Loader2 className="h-4 w-4 animate-spin text-info" />
                   </div>
                 </div>
               )}
