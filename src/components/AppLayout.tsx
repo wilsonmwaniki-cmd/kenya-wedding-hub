@@ -104,6 +104,13 @@ const professionalSetupNavItems: NavItem[] = [
   { path: '/settings', label: 'Complete Setup', icon: Settings },
 ];
 
+const mobileNavLabels: Record<string, string> = {
+  '/dashboard': 'Home',
+  '/clients': 'Weddings',
+  '/vendor-dashboard': 'Home',
+  '/vendor-settings': 'Listing',
+};
+
 function AssistantPanelSlot({
   role,
   plannerType,
@@ -237,6 +244,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     selectedClient,
     spaceTablePlanEnabled,
   ]);
+  const mobileNavItems = useMemo<NavItem[]>(() => {
+    const preferredPaths = professionalSetupPending
+      ? ['/settings']
+      : isAdmin
+        ? ['/admin', '/settings']
+        : isVendor
+          ? ['/vendor-dashboard', '/vendor-documents', '/vendor-settings', '/settings']
+          : isPlanner && !selectedClient
+            ? ['/clients', '/planner-documents', '/settings']
+            : ['/dashboard', '/budget', '/tasks', '/vendors', '/settings'];
+
+    return preferredPaths
+      .map((path) => navItems.find((item) => item.path === path))
+      .filter((item): item is NavItem => Boolean(item));
+  }, [isAdmin, isPlanner, isVendor, navItems, professionalSetupPending, selectedClient]);
 
   // Map paths to badge counts
   const badgeCounts: Record<string, number> = {};
@@ -637,6 +659,63 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           />
         </div>
       </main>
+
+      <nav
+        aria-label="Primary mobile navigation"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/80 bg-background/95 px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),0.4rem)] shadow-[0_-12px_32px_rgba(41,27,21,0.08)] backdrop-blur-xl lg:hidden"
+      >
+        <div
+          className="mx-auto grid max-w-xl gap-1"
+          style={{ gridTemplateColumns: `repeat(${Math.max(mobileNavItems.length, 1)}, minmax(0, 1fr))` }}
+        >
+          {mobileNavItems.map((item) => {
+            const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+            const releaseDisabled = !isLaunchFeatureEnabled(item.path);
+            const disabled = releaseDisabled || (needsClient && planningPaths.includes(item.path));
+            const itemBadgeCount = badgeCounts[item.path] || 0;
+            const mobileLabel = mobileNavLabels[item.path] ?? item.label;
+
+            return (
+              <Link
+                key={item.path}
+                to={disabled ? '#' : item.path}
+                aria-current={isActive ? 'page' : undefined}
+                aria-disabled={disabled || undefined}
+                onClick={(event) => {
+                  if (disabled) {
+                    event.preventDefault();
+                    return;
+                  }
+                  setSidebarOpen(false);
+                }}
+                className={`relative flex min-h-14 min-w-0 touch-manipulation flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[10px] font-semibold transition-colors ${
+                  disabled
+                    ? 'cursor-not-allowed text-muted-foreground/45'
+                    : isActive
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground active:bg-muted'
+                }`}
+              >
+                {isActive ? (
+                  <span className="absolute -top-1.5 h-0.5 w-8 rounded-full bg-primary" aria-hidden="true" />
+                ) : null}
+                <span className="relative">
+                  <item.icon className="h-5 w-5" strokeWidth={isActive ? 2.25 : 1.8} />
+                  {itemBadgeCount > 0 ? (
+                    <span
+                      className="absolute -right-2.5 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground"
+                      aria-label={`${itemBadgeCount} new ${mobileLabel.toLowerCase()} notification${itemBadgeCount === 1 ? '' : 's'}`}
+                    >
+                      {itemBadgeCount > 99 ? '99+' : itemBadgeCount}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="w-full truncate text-center">{mobileLabel}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
     </AssistantPanelProvider>
   );
