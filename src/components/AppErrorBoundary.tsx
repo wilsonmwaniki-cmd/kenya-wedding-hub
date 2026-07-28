@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import BrandWordmark from '@/components/BrandWordmark';
 import { Button } from '@/components/ui/button';
+import { tryRecoverFromBundleError } from '@/lib/bundleRecovery';
 
 type BoundaryScope = 'public' | 'workspace';
 
@@ -35,6 +36,8 @@ class ErrorBoundaryInner extends React.Component<ErrorBoundaryInnerProps, ErrorB
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    if (tryRecoverFromBundleError(error)) return;
+
     this.setState({
       errorMessage: error?.message || 'Unknown render error',
       componentStack: errorInfo.componentStack || '',

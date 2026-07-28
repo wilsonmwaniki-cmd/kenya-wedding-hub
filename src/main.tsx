@@ -2,6 +2,7 @@ import "./instrument";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { installBundleRecovery } from "./lib/bundleRecovery";
 
 function startApp() {
   createRoot(document.getElementById("root")!).render(<App />);
@@ -14,6 +15,10 @@ async function bootstrapPricingCatalog() {
   } catch (error) {
     console.warn("Could not bootstrap pricing catalog from Supabase. Continuing with local defaults.", error);
   }
+}
+
+if (typeof window !== "undefined") {
+  installBundleRecovery();
 }
 
 startApp();
