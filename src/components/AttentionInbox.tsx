@@ -2,7 +2,7 @@ import { ArrowRight, BellRing, Check, Sparkles, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { useNotifications } from '@/contexts/NotificationContext';
-import { buildAttentionBrief, type AttentionItem } from '@/lib/attention';
+import { buildAttentionBrief, sortAttentionItems, type AttentionItem } from '@/lib/attention';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,8 @@ interface AttentionInboxProps {
   maxItems?: number;
   showEmpty?: boolean;
   className?: string;
+  supplementaryItems?: AttentionItem[];
+  onSupplementaryAction?: (item: AttentionItem) => void;
 }
 
 function itemTone(item: AttentionItem) {
@@ -31,6 +33,8 @@ export default function AttentionInbox({
   maxItems = 4,
   showEmpty = false,
   className,
+  supplementaryItems = [],
+  onSupplementaryAction,
 }: AttentionInboxProps) {
   const {
     attentionItems,
@@ -39,10 +43,22 @@ export default function AttentionInbox({
     updateAttentionState,
   } = useNotifications();
   const assistantPanel = useAssistantPanel();
-  const visibleItems = attentionItems.slice(0, maxItems);
-  const remainingCount = Math.max(0, attentionItems.length - visibleItems.length);
+  const persistedIds = new Set(attentionItems.map((item) => item.id));
+  const persistedSources = new Set(
+    attentionItems
+      .filter((item) => item.sourceId)
+      .map((item) => `${item.sourceType}:${item.sourceId}`),
+  );
+  const combinedItems = sortAttentionItems([
+    ...attentionItems,
+    ...supplementaryItems.filter(
+      (item) => !persistedSources.has(`${item.sourceType}:${item.sourceId}`),
+    ),
+  ]);
+  const visibleItems = combinedItems.slice(0, maxItems);
+  const remainingCount = Math.max(0, combinedItems.length - visibleItems.length);
 
-  if (attentionLoading && attentionItems.length === 0) {
+  if (attentionLoading && combinedItems.length === 0) {
     return (
       <Card className={cn('border-border/70 bg-card/80', className)}>
         <CardContent className="flex items-center gap-3 py-4 text-sm text-muted-foreground">
@@ -56,17 +72,26 @@ export default function AttentionInbox({
   if (visibleItems.length === 0) {
     if (!showEmpty) return null;
     return (
-      <Card className={cn('semantic-surface-success', className)}>
-        <CardContent className="flex items-center gap-3 py-4">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-background/80">
-            <Check className="h-4 w-4 text-success" />
-          </span>
-          <div>
-            <p className="text-sm font-semibold text-foreground">You are caught up</p>
-            <p className="text-xs text-muted-foreground">Zania will place the next important update here.</p>
-          </div>
-        </CardContent>
-      </Card>
+      <section className={cn('space-y-3', className)} aria-labelledby="zania-attention-heading">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Zania attention</p>
+          <h2 id="zania-attention-heading" className="workspace-h2 mt-1">What needs you now</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Verified requests and updates, ordered by importance.
+          </p>
+        </div>
+        <Card className="semantic-surface-success">
+          <CardContent className="flex items-center gap-3 py-4">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-background/80">
+              <Check className="h-4 w-4 text-success" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-foreground">You are caught up</p>
+              <p className="text-xs text-muted-foreground">Zania will place the next important update here.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
     );
   }
 
@@ -83,12 +108,12 @@ export default function AttentionInbox({
         <div>
           <div className="flex items-center gap-2">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Zania attention</p>
-            <Badge variant="outline" className="rounded-full bg-background/80">
-              {unreadAttentionCount} new
-            </Badge>
-            {attentionItems.length > unreadAttentionCount && (
-              <span className="text-xs text-muted-foreground">{attentionItems.length} active</span>
+            {unreadAttentionCount > 0 && (
+              <Badge variant="outline" className="rounded-full bg-background/80">
+                {unreadAttentionCount} new
+              </Badge>
             )}
+            <span className="text-xs text-muted-foreground">{combinedItems.length} active</span>
           </div>
           <h2 id="zania-attention-heading" className="workspace-h2 mt-1">What needs you now</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -102,7 +127,9 @@ export default function AttentionInbox({
       </div>
 
       <div className="grid gap-3">
-        {visibleItems.map((item) => (
+        {visibleItems.map((item) => {
+          const persisted = persistedIds.has(item.id);
+          return (
           <Card key={item.id} className={cn('overflow-hidden shadow-none', itemTone(item))}>
             <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
@@ -130,7 +157,7 @@ export default function AttentionInbox({
               </div>
 
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                {item.actionPath && item.actionLabel && (
+                {item.actionLabel && persisted && item.actionPath && (
                   <Button asChild size="sm" className="gap-2">
                     <Link
                       to={item.actionPath}
@@ -143,23 +170,32 @@ export default function AttentionInbox({
                     </Link>
                   </Button>
                 )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Dismiss attention item"
-                  onClick={() => void updateAttentionState(item.id, 'dismissed')}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                {item.actionLabel && !persisted && onSupplementaryAction && (
+                  <Button type="button" size="sm" className="gap-2" onClick={() => onSupplementaryAction(item)}>
+                    {item.actionLabel}
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                )}
+                {persisted && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Dismiss attention item"
+                    onClick={() => void updateAttentionState(item.id, 'dismissed')}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
       {remainingCount > 0 && (
         <p className="text-xs font-medium text-muted-foreground">
-          Showing the highest-priority {visibleItems.length} of {attentionItems.length} active items.
+          Showing the highest-priority {visibleItems.length} of {combinedItems.length} active items.
         </p>
       )}
     </section>

@@ -34,6 +34,7 @@ import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { usePlannerFreeWeddingStatus } from '@/hooks/usePlannerFreeWeddingStatus';
 import AttentionInbox from '@/components/AttentionInbox';
+import type { AttentionItem } from '@/lib/attention';
 
 interface PlannerTaskPulse {
   id: string;
@@ -65,14 +66,6 @@ function startOfToday() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return today;
-}
-
-function formatTaskDate(value: string | null) {
-  if (!value) return 'No date';
-  return new Date(`${value}T00:00:00`).toLocaleDateString('en-KE', {
-    day: 'numeric',
-    month: 'short',
-  });
 }
 
 interface LinkRequest {
@@ -371,9 +364,11 @@ export default function PlannerDashboard() {
   });
 
   const attentionTasks = taskPulse
-    .filter((task) => !task.completed && task.due_date)
-    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)))
-    .slice(0, 5);
+    .filter((task) => {
+      if (task.completed || !task.due_date) return false;
+      return new Date(`${task.due_date}T00:00:00`) <= dueSoonLimit;
+    })
+    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
   const recentChanges = [...taskPulse]
     .filter((task) => new Date(task.created_at) >= recentLimit)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -381,6 +376,32 @@ export default function PlannerDashboard() {
   const totalOpen = weddingOverviews.reduce((total, overview) => total + overview.open, 0);
   const totalOverdue = weddingOverviews.reduce((total, overview) => total + overview.overdue, 0);
   const totalDueSoon = weddingOverviews.reduce((total, overview) => total + overview.dueSoon, 0);
+  const plannerTaskAttentionItems: AttentionItem[] = attentionTasks.map((task) => {
+    const overdue = new Date(`${task.due_date}T00:00:00`) < today;
+    const weddingName = `${task.client.client_name}${task.client.partner_name ? ` & ${task.client.partner_name}` : ''}`;
+
+    return {
+      id: `planner-task:${task.id}`,
+      createdAt: task.created_at,
+      updatedAt: task.created_at,
+      recipientRole: 'planner',
+      weddingId: null,
+      sourceType: 'task',
+      sourceId: task.id,
+      kind: 'action',
+      priority: overdue ? 'urgent' : 'action',
+      status: 'read',
+      title: task.title,
+      summary: overdue ? 'This task is overdue.' : 'This task is due soon.',
+      actionLabel: 'Open task',
+      actionPath: null,
+      dueAt: task.due_date ? `${task.due_date}T00:00:00` : null,
+      metadata: {
+        wedding_name: weddingName,
+        planner_client_id: task.client.id,
+      },
+    };
+  });
 
   const openClientRoute = (client: PlannerClient, path: string) => {
     selectClient(client);
@@ -573,7 +594,18 @@ export default function PlannerDashboard() {
         </div>
       </div>
 
-      <AttentionInbox showEmpty />
+      <AttentionInbox
+        showEmpty
+        maxItems={5}
+        supplementaryItems={plannerTaskAttentionItems}
+        onSupplementaryAction={(item) => {
+          const clientId = typeof item.metadata.planner_client_id === 'string'
+            ? item.metadata.planner_client_id
+            : null;
+          const client = clients.find((candidate) => candidate.id === clientId);
+          if (client && item.sourceId) openClientRoute(client, `/tasks?task=${item.sourceId}`);
+        }}
+      />
 
       <UpgradePromptDialog
         open={upgradeDialogOpen}
@@ -591,7 +623,7 @@ export default function PlannerDashboard() {
 
       {clients.length > 0 && (
         <>
-          <section aria-labelledby="planner-attention-heading" className="space-y-4">
+          <section aria-label="Wedding workload overview" className="space-y-4">
             <div className="grid overflow-hidden rounded-2xl border border-border/80 bg-card shadow-card sm:grid-cols-3">
               <div className="flex items-center gap-3 border-b border-border/70 px-4 py-3 sm:border-b-0 sm:border-r">
                 <span className="rounded-full bg-muted p-2 text-muted-foreground">
@@ -621,49 +653,6 @@ export default function PlannerDashboard() {
                 </div>
               </div>
             </div>
-
-            <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-              <Card className={totalOverdue > 0 ? 'semantic-surface-danger shadow-card' : 'shadow-card'}>
-                <CardHeader className="pb-3">
-                  <CardTitle id="planner-attention-heading" className="font-display text-xl">
-                    {totalOverdue > 0 ? 'Needs attention' : 'Coming up next'}
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Open a task in the right wedding workspace.
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {attentionTasks.map((task) => {
-                    const overdue = new Date(`${task.due_date}T00:00:00`) < today;
-                    return (
-                      <button
-                        key={task.id}
-                        type="button"
-                        onClick={() => openClientRoute(task.client, `/tasks?task=${task.id}`)}
-                        className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-border/75 bg-card px-3 py-2.5 text-left transition-colors hover:border-primary/35 hover:bg-background"
-                      >
-                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${overdue ? 'bg-destructive' : 'bg-warning'}`} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium text-foreground">{task.title}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {task.client.client_name}{task.client.partner_name ? ` & ${task.client.partner_name}` : ''}
-                          </span>
-                        </span>
-                        <span className={`shrink-0 text-xs font-medium ${overdue ? 'text-destructive' : 'text-warning'}`}>
-                          {overdue ? 'Overdue' : formatTaskDate(task.due_date)}
-                        </span>
-                        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      </button>
-                    );
-                  })}
-                  {!taskPulseLoading && attentionTasks.length === 0 && (
-                    <div className="semantic-surface-success rounded-xl border px-4 py-5">
-                      <p className="font-medium text-foreground">Nothing urgent right now</p>
-                      <p className="mt-1 text-sm text-muted-foreground">Your linked wedding tasks are up to date.</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
 
               <Card className="shadow-card">
                 <CardHeader className="pb-3">
@@ -697,7 +686,6 @@ export default function PlannerDashboard() {
                   )}
                 </CardContent>
               </Card>
-            </div>
           </section>
 
           <section aria-labelledby="planner-weddings-heading" className="space-y-3">
