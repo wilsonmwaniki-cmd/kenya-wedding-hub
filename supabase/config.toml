@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.paystack-webhook]
 verify_jwt = false
+
+[functions.submit-support-request]
+verify_jwt = true

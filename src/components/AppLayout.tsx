@@ -6,7 +6,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  Settings, LogOut, Menu, X, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown, HeartHandshake, FlaskConical, Map
+  Settings, LogOut, Menu, X, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown, HeartHandshake, FlaskConical, Map, LifeBuoy
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isLaunc
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
 import { professionalPlanEntitlementMap } from '@/lib/pricingPlans';
+import SupportFeedbackDialog from '@/components/SupportFeedbackDialog';
 
 const AssistantPanel = lazy(() => import('@/components/AssistantPanel'));
 
@@ -153,6 +154,7 @@ function AccountPlanBadge({ label, paid }: { label: string; paid: boolean }) {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [supportDialogOpen, setSupportDialogOpen] = useState(false);
   const [expandedNavItems, setExpandedNavItems] = useState<Record<string, boolean>>(readExpandedNavItems);
   const navScrollRef = useRef<HTMLElement | null>(null);
   const prefersReducedMotion = useReducedMotion();
@@ -589,6 +591,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           <div className="shrink-0 border-t border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
             <button
+              type="button"
+              onClick={() => {
+                setSidebarOpen(false);
+                setSupportDialogOpen(true);
+              }}
+              className="mb-1 flex w-full items-center gap-3 rounded-[1.15rem] border border-transparent px-4 py-2.5 text-sm font-medium text-white/72 transition-[color,border-color,background-color,transform] duration-200 hover:border-white/12 hover:bg-white/[0.1] hover:text-white active:scale-[0.985] motion-reduce:transition-none"
+            >
+              <LifeBuoy className="h-4.5 w-4.5" />
+              Help & feedback
+            </button>
+            <button
               onClick={handleSignOut}
               className="flex w-full items-center gap-3 rounded-[1.15rem] border border-transparent bg-[linear-gradient(180deg,rgba(0,0,0,0.16),rgba(255,255,255,0.03))] px-4 py-3 text-sm font-medium text-white/90 transition-[color,border-color,background-color,transform] duration-200 hover:border-white/12 hover:bg-white/[0.12] hover:text-white active:scale-[0.985] motion-reduce:transition-none"
             >
@@ -617,6 +630,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {selectedClient.client_name}
             </Badge>
           )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Help and feedback"
+            onClick={() => setSupportDialogOpen(true)}
+            className={`${isPlanner && selectedClient ? '' : 'ml-auto'} h-11 w-11 touch-manipulation`}
+          >
+            <LifeBuoy className="h-5 w-5" />
+          </Button>
         </header>
         <div className="min-w-0 flex-1 p-4 pb-28 sm:p-6 sm:pb-32 lg:p-8 lg:pb-36">
           {isSuperAdmin && (
@@ -725,6 +748,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </div>
       </nav>
+
+      <SupportFeedbackDialog
+        open={supportDialogOpen}
+        onOpenChange={setSupportDialogOpen}
+        workspaceLabel={
+          selectedClient
+            ? [selectedClient.client_name, selectedClient.partner_name].filter(Boolean).join(' & ')
+            : profile?.company_name ?? profile?.full_name ?? null
+        }
+        weddingId={selectedClient?.wedding_id ?? null}
+        plannerClientId={selectedClient?.id ?? null}
+      />
     </div>
     </AssistantPanelProvider>
   );

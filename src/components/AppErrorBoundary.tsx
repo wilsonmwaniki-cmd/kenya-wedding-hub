@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import BrandWordmark from '@/components/BrandWordmark';
 import { Button } from '@/components/ui/button';
 import { tryRecoverFromBundleError } from '@/lib/bundleRecovery';
+import SupportFeedbackDialog from '@/components/SupportFeedbackDialog';
 
 type BoundaryScope = 'public' | 'workspace';
 
@@ -85,6 +86,7 @@ function ErrorFallback({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [supportDialogOpen, setSupportDialogOpen] = React.useState(false);
   const showPreviewDiagnostics =
     window.location.hostname === 'localhost'
     || window.location.hostname.endsWith('.vercel.app');
@@ -126,6 +128,17 @@ function ErrorFallback({
             <Button variant="outline" onClick={() => navigate(primaryTarget)}>
               {primaryLabel}
             </Button>
+            {scope === 'workspace' ? (
+              <Button variant="outline" onClick={() => setSupportDialogOpen(true)}>
+                Tell us what happened
+              </Button>
+            ) : (
+              <Button variant="outline" asChild>
+                <a href={`mailto:hello@planwithzania.com?subject=${encodeURIComponent(`Zania page issue ${errorId || ''}`)}`}>
+                  Email Zania
+                </a>
+              </Button>
+            )}
           </div>
           {errorId ? (
             <p className="mt-6 text-xs uppercase tracking-[0.22em] text-muted-foreground">
@@ -151,6 +164,14 @@ function ErrorFallback({
           ) : null}
         </div>
       </div>
+      {scope === 'workspace' ? (
+        <SupportFeedbackDialog
+          open={supportDialogOpen}
+          onOpenChange={setSupportDialogOpen}
+          errorReference={errorId}
+          initialCategory="bug"
+        />
+      ) : null}
     </div>
   );
 }
