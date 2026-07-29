@@ -3685,11 +3685,17 @@ export default function Vendors() {
                     : group.length > 0
                       ? 'Needs confirmation'
                       : 'Pending';
-                  const statusBadgeVariant = chosenVendor
-                    ? 'success'
+                  const statusTextClass = chosenVendor
+                    ? 'text-success'
                     : group.length > 0
-                      ? 'warning'
-                      : 'outline';
+                      ? 'text-warning-foreground'
+                      : 'text-muted-foreground';
+                  const statusDotClass = chosenVendor
+                    ? 'bg-success'
+                    : group.length > 0
+                      ? 'bg-warning'
+                      : 'bg-primary/35';
+                  const categoryScope = getVendorCategoryScope(category) === 'personal' ? 'Personal' : 'Wedding';
 
                   return (
                     <section key={category} className="w-full min-w-0 max-w-full">
@@ -3723,18 +3729,17 @@ export default function Vendors() {
                         />
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0 space-y-2">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                              Vendor category
-                            </p>
-                            <div className="flex flex-wrap items-center gap-3">
-                              <h2 className="break-words text-2xl font-semibold text-foreground sm:text-3xl">{category}</h2>
-                              <Badge variant={statusBadgeVariant} className="text-[10px] uppercase tracking-[0.12em]">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                Vendor category
+                              </p>
+                              <span className={`inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${statusTextClass}`}>
+                                <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
                                 {statusLabel}
-                              </Badge>
-                              <Badge variant="outline" className="text-[10px] uppercase tracking-[0.12em]">
-                                {getVendorCategoryScope(category) === 'personal' ? 'Personal' : 'Wedding'}
-                              </Badge>
+                              </span>
                             </div>
+                            <h2 className="break-words text-2xl font-semibold text-foreground sm:text-3xl">{category}</h2>
+                            <p className="text-xs font-medium text-muted-foreground">{categoryScope} workspace</p>
                             {featuredVendor ? (
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                                 <span className="font-medium text-foreground">{featuredVendor.name}</span>

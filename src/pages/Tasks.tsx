@@ -916,23 +916,26 @@ export default function Tasks() {
                   <p className={cn('break-words font-medium text-card-foreground', isDone && 'line-through text-muted-foreground')}>{t.title}</p>
                   {active ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-primary">Open</span> : null}
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {resolvedCategory && (
-                    <Badge variant="secondary" className="rounded-full text-[11px]">
+                <div className="mt-3 border-l-2 border-primary/30 pl-3">
+                  {resolvedCategory ? (
+                    <p className="break-words text-[0.66rem] font-semibold uppercase leading-4 tracking-[0.14em] text-muted-foreground">
                       {resolvedCategory}
-                    </Badge>
-                  )}
-                  <Badge variant={t.visibility === 'private' ? 'destructive' : 'outline'} className="rounded-full text-[11px]">
-                    {t.visibility === 'private' ? 'Private' : 'Shared'}
-                  </Badge>
-                  {isUrgent && !isDone && (
-                    <Badge className="rounded-full bg-destructive/10 text-destructive hover:bg-destructive/10">
-                      Urgent
-                    </Badge>
-                  )}
+                    </p>
+                  ) : null}
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
+                    <span className={t.visibility === 'private' ? 'text-destructive' : 'text-muted-foreground'}>
+                      {t.visibility === 'private' ? 'Private' : 'Shared'}
+                    </span>
+                    {isUrgent && !isDone ? (
+                      <span className="inline-flex items-center gap-1.5 text-destructive">
+                        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                        Urgent
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-              <span className={cn('mt-0.5 shrink-0 text-xs font-semibold', active ? 'text-primary' : 'text-muted-foreground')}>
+              <span className={cn('mt-0.5 hidden shrink-0 text-xs font-semibold sm:inline', active ? 'text-primary' : 'text-muted-foreground')}>
                 {active ? 'Hide details' : 'View details'}
               </span>
             </div>

@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 type HierarchyTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
@@ -20,30 +19,30 @@ interface HierarchyGroupProps {
   tone?: HierarchyTone;
 }
 
-const toneClasses: Record<HierarchyTone, { accent: string; badge: 'outline' | 'info' | 'success' | 'warning' | 'destructive'; surface: string }> = {
+const toneClasses: Record<HierarchyTone, { accent: string; status: string; surface: string }> = {
   neutral: {
     accent: 'bg-primary/35',
-    badge: 'outline',
+    status: 'text-muted-foreground',
     surface: 'border-border/80 bg-muted/35 hover:border-primary/30 hover:bg-muted/50',
   },
   info: {
     accent: 'bg-info',
-    badge: 'info',
+    status: 'text-info',
     surface: 'semantic-surface-info hover:border-info/40',
   },
   success: {
     accent: 'bg-success',
-    badge: 'success',
+    status: 'text-success',
     surface: 'semantic-surface-success hover:border-success/40',
   },
   warning: {
     accent: 'bg-warning',
-    badge: 'warning',
+    status: 'text-warning-foreground',
     surface: 'semantic-surface-warning hover:border-warning/40',
   },
   danger: {
     accent: 'bg-destructive',
-    badge: 'destructive',
+    status: 'text-destructive',
     surface: 'semantic-surface-danger hover:border-destructive/40',
   },
 };
@@ -81,18 +80,19 @@ export function HierarchyGroup({
         <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-1.5', styles.accent)} />
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{eyebrow}</p>
-            <div className="flex flex-wrap items-center gap-3">
-              <h3 className={cn(
-                'break-words font-semibold text-foreground',
-                compact ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl',
-              )}>
-                {title}
-              </h3>
-              <Badge variant={styles.badge} className="text-[10px] uppercase tracking-[0.12em]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{eyebrow}</p>
+              <span className={cn('inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em]', styles.status)}>
+                <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', styles.accent)} />
                 {status}
-              </Badge>
+              </span>
             </div>
+            <h3 className={cn(
+              'break-words font-semibold text-foreground',
+              compact ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl',
+            )}>
+              {title}
+            </h3>
             {summary}
             {footer}
           </div>

@@ -1560,13 +1560,13 @@ export default function ProfileSettings() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle className="font-display">Device Sessions</CardTitle>
-            <CardDescription>See where your account is active and sign out old devices.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <TonalCard tone="porcelain">
+          <TonalCardHeader>
+            <TonalCardTitle>Device Sessions</TonalCardTitle>
+            <TonalCardDescription>See where your account is active and sign out old devices.</TonalCardDescription>
+          </TonalCardHeader>
+          <TonalCardBody className="space-y-5">
+            <TonalSection className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">Current trusted devices</p>
                 <p className="text-xs text-muted-foreground">
@@ -1577,31 +1577,44 @@ export default function ProfileSettings() {
                 {signingOutOtherDevices ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Sign out other devices
               </Button>
-            </div>
+            </TonalSection>
 
-            <div className="space-y-3">
+            <div className="border-t border-current/10">
               {deviceSessions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No device sessions have been recorded yet.</p>
+                <p className="py-5 text-sm text-muted-foreground">No device sessions have been recorded yet.</p>
               ) : deviceSessions.map((device) => (
-                <div key={device.id} className="rounded-lg border border-border/70 p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div key={device.id} className="border-b border-current/10 py-5 last:border-b-0">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
                     <div>
                       <p className="font-medium text-foreground">{device.device_name || `${device.browser || 'Browser'} on ${device.platform || 'device'}`}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         Last active {new Date(device.last_seen_at).toLocaleString()}
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {device.is_current && !device.revoked_at ? <Badge variant="secondary">Current</Badge> : null}
-                      {device.trusted_at && !device.revoked_at ? <Badge variant="outline">Trusted</Badge> : null}
-                      {device.revoked_at ? <Badge variant="destructive">Signed out</Badge> : null}
-                    </div>
+                    {device.revoked_at ? (
+                      <StatusLine label="Session" value="Signed out" tone="danger" className="sm:min-w-28" />
+                    ) : device.is_current ? (
+                      <StatusLine
+                        label="Session"
+                        value="Current device"
+                        detail={device.trusted_at ? 'Trusted' : 'Not trusted'}
+                        tone="success"
+                        className="sm:min-w-28"
+                      />
+                    ) : (
+                      <StatusLine
+                        label="Session"
+                        value={device.trusted_at ? 'Trusted' : 'Active'}
+                        tone={device.trusted_at ? 'info' : 'neutral'}
+                        className="sm:min-w-28"
+                      />
+                    )}
                   </div>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </TonalCardBody>
+        </TonalCard>
 
         {isProfessionalPlanner ? (
           <>
