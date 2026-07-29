@@ -1,5 +1,4 @@
 import { ArrowRight, CheckCircle2, Clock3, FileCheck2, Inbox, PencilLine } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import type { CommercialDocumentRecord } from '@/lib/commercialDocuments';
@@ -45,10 +44,19 @@ export default function DocumentActionOverview({
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">Start with the first card. Everything else can wait.</p>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <Badge variant={needsAction.length > 0 ? 'destructive' : 'secondary'}>{needsAction.length} need you</Badge>
-          <Badge variant="warning">{waitingDocuments.length} waiting</Badge>
-          <Badge variant="success">{completedDocuments.length} filed</Badge>
+        <div className="grid grid-cols-3 divide-x divide-border/70 text-right">
+          {[
+            { label: 'Need you', value: needsAction.length, className: needsAction.length > 0 ? 'text-destructive' : 'text-foreground' },
+            { label: 'Waiting', value: waitingDocuments.length, className: 'text-warning-foreground' },
+            { label: 'Filed', value: completedDocuments.length, className: 'text-success' },
+          ].map((metric) => (
+            <div key={metric.label} className="min-w-16 px-3 first:pl-0 last:pr-0">
+              <p className={`text-lg font-semibold leading-none ${metric.className}`}>{metric.value}</p>
+              <p className="mt-1 text-[0.6rem] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
+                {metric.label}
+              </p>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -72,7 +80,7 @@ export default function DocumentActionOverview({
               <CardContent className="flex h-full flex-col gap-4 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 gap-3">
-                    <div className={`mt-0.5 rounded-full p-2 ${index === 0 ? 'bg-[#f8d9ce] text-[#a6422d]' : 'bg-[#f4e6bd] text-[#755517]'}`}>
+                    <div className={`mt-0.5 border-l-2 pl-2 ${index === 0 ? 'border-[#a6422d] text-[#a6422d]' : 'border-[#a67618] text-[#755517]'}`}>
                       {request.status === 'changes_requested' ? <PencilLine className="h-4 w-4" /> : <Inbox className="h-4 w-4" />}
                     </div>
                     <div className="min-w-0">
@@ -82,7 +90,12 @@ export default function DocumentActionOverview({
                       <h3 className="mt-1 break-words text-lg font-semibold text-foreground">{request.requesterName}</h3>
                     </div>
                   </div>
-                  {request.dueAt ? <Badge variant="outline">By {formatDate(request.dueAt)}</Badge> : null}
+                  {request.dueAt ? (
+                    <div className="shrink-0 text-right">
+                      <p className="text-[0.6rem] font-semibold uppercase tracking-[0.13em] text-muted-foreground">Due</p>
+                      <p className="mt-1 text-xs font-medium text-foreground">{formatDate(request.dueAt)}</p>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="space-y-1 text-sm">
@@ -105,7 +118,7 @@ export default function DocumentActionOverview({
       ) : (
         <Card className="border-[#b9dec7] bg-[#f1fbf4] shadow-card">
           <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
-            <div className="rounded-full bg-[#d9f2e1] p-2 text-[#247b47]">
+            <div className="border-l-2 border-[#247b47] pl-2 text-[#247b47]">
               <CheckCircle2 className="h-5 w-5" />
             </div>
             <div>
@@ -123,7 +136,7 @@ export default function DocumentActionOverview({
               <div className="flex items-center gap-2 text-[#315f92]">
                 <Clock3 className="h-4 w-4" />
                 <h3 className="font-semibold">Waiting for client</h3>
-                <Badge variant="outline" className="ml-auto">{waitingDocuments.length}</Badge>
+                <span className="ml-auto text-lg font-semibold leading-none text-[#315f92]">{waitingDocuments.length}</span>
               </div>
               <div className="mt-3 space-y-2">
                 {waitingDocuments.slice(0, 3).map((document) => (
@@ -149,7 +162,7 @@ export default function DocumentActionOverview({
               <div className="flex items-center gap-2 text-muted-foreground">
                 <FileCheck2 className="h-4 w-4" />
                 <h3 className="font-semibold text-foreground">Completed and filed</h3>
-                <Badge variant="outline" className="ml-auto">{completedDocuments.length}</Badge>
+                <span className="ml-auto text-lg font-semibold leading-none text-foreground">{completedDocuments.length}</span>
               </div>
               <p className="mt-3 text-sm text-muted-foreground">
                 Accepted quotes, paid invoices, and issued receipts stay safely filed in the library below.

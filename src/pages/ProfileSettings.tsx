@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { EditorialEyebrow } from '@/components/ui/editorial-eyebrow';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -1053,14 +1054,7 @@ export default function ProfileSettings() {
       {professionalSetupPending && (
         <Card className="overflow-hidden border-primary/20 bg-[linear-gradient(180deg,rgba(241,115,64,0.08),rgba(255,255,255,0.96)_48%)] shadow-card">
           <CardHeader className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="info" className="border border-primary/20 bg-background/80 text-foreground">
-                Professional onboarding
-              </Badge>
-              <Badge variant="outline" className="border-primary/25 bg-background/65 text-muted-foreground">
-                1 step left
-              </Badge>
-            </div>
+            <EditorialEyebrow>Professional onboarding · 1 step left</EditorialEyebrow>
             <div className="max-w-3xl space-y-2">
               <CardTitle className="font-display text-4xl leading-tight sm:text-[2.7rem]">
                 Finish Your Professional Setup
@@ -1176,13 +1170,19 @@ export default function ProfileSettings() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={plannerSubscriptionActive ? 'success' : 'warning'}>
-                {betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'trial' : profile.planner_subscription_status}
-              </Badge>
-              <Badge variant={profile.planner_verified ? 'success' : profile.planner_verification_requested ? 'info' : 'warning'}>
-                {profile.planner_verified ? 'Verified' : profile.planner_verification_requested ? 'Verification requested' : 'Unverified'}
-              </Badge>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <StatusLine
+                label="Subscription"
+                value={betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'Trial' : profile.planner_subscription_status}
+                tone={plannerSubscriptionActive ? 'success' : 'warning'}
+                className="capitalize"
+              />
+              <StatusLine
+                label="Verification"
+                value={profile.planner_verified ? 'Verified' : profile.planner_verification_requested ? 'Requested' : 'Unverified'}
+                detail={profile.planner_verification_requested && !profile.planner_verified ? 'Waiting for review' : undefined}
+                tone={profile.planner_verified ? 'success' : profile.planner_verification_requested ? 'info' : 'warning'}
+              />
             </div>
 
             <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
@@ -1232,16 +1232,23 @@ export default function ProfileSettings() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={plannerSubscriptionActive ? 'success' : 'warning'}>
-                {betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'trial' : profile.planner_subscription_status}
-              </Badge>
-              <Badge variant={profile.planner_verified ? 'success' : 'warning'}>
-                {profile.planner_verified ? 'Verified' : 'Verification pending'}
-              </Badge>
-              <Badge variant={committeeExportDecision.allowed ? 'success' : 'warning'}>
-                {committeeExportDecision.allowed ? 'Exports enabled' : 'Exports locked'}
-              </Badge>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <StatusLine
+                label="Subscription"
+                value={betaTrialActive && profile.planner_subscription_status === 'inactive' ? 'Trial' : profile.planner_subscription_status}
+                tone={plannerSubscriptionActive ? 'success' : 'warning'}
+                className="capitalize"
+              />
+              <StatusLine
+                label="Verification"
+                value={profile.planner_verified ? 'Verified' : 'Pending'}
+                tone={profile.planner_verified ? 'success' : 'warning'}
+              />
+              <StatusLine
+                label="Exports"
+                value={committeeExportDecision.allowed ? 'Enabled' : 'Locked'}
+                tone={committeeExportDecision.allowed ? 'success' : 'warning'}
+              />
             </div>
 
             <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
@@ -1957,10 +1964,11 @@ export default function ProfileSettings() {
                           <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" /> {member.phone}</span>
                           {member.email && <span>{member.email}</span>}
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="outline">{member.responsibility}</Badge>
-                          <Badge variant="info">{member.permission_level}</Badge>
-                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">{member.responsibility}</span>
+                          {' · '}
+                          <span className="capitalize">{member.permission_level} access</span>
+                        </p>
                       </div>
                       <Button
                         type="button"

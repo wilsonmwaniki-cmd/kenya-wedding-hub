@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1136,28 +1135,19 @@ export default function Tasks() {
                     </SelectContent>
                   </Select>
                   {resolvedTaskDefaults && (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline" className="rounded-full text-[11px]">
-                        {resolvedTaskDefaults.visibility === 'private' ? 'Private' : 'Public'}
-                      </Badge>
-                      <Badge variant="outline" className="rounded-full text-[11px]">
-                        P{resolvedTaskDefaults.priorityLevel} · {priorityLabel(resolvedTaskDefaults.priorityLevel)}
-                      </Badge>
-                      {resolvedTaskDefaults.delegatable && resolvedTaskDefaults.recommendedRole && (
-                        <Badge variant="outline" className="rounded-full text-[11px]">
-                          Delegate to {resolvedTaskDefaults.recommendedRole}
-                        </Badge>
-                      )}
-                      {selectedTaskTemplate?.timelineLabel && (
-                        <Badge variant="outline" className="rounded-full text-[11px]">
-                          {selectedTaskTemplate.timelineLabel}
-                        </Badge>
-                      )}
-                      {selectedTaskTemplate?.phase && (
-                        <Badge variant="outline" className="rounded-full text-[11px]">
-                          {phaseLabel(selectedTaskTemplate.phase)}
-                        </Badge>
-                      )}
+                    <div className="border-l-2 border-primary/25 pl-3 text-xs leading-5 text-muted-foreground">
+                      <p className="font-medium text-foreground">Suggested setup</p>
+                      <p>
+                        {[
+                          resolvedTaskDefaults.visibility === 'private' ? 'Private' : 'Public',
+                          `P${resolvedTaskDefaults.priorityLevel} · ${priorityLabel(resolvedTaskDefaults.priorityLevel)}`,
+                          resolvedTaskDefaults.delegatable && resolvedTaskDefaults.recommendedRole
+                            ? `Delegate to ${resolvedTaskDefaults.recommendedRole}`
+                            : null,
+                          selectedTaskTemplate?.timelineLabel ?? null,
+                          selectedTaskTemplate?.phase ? phaseLabel(selectedTaskTemplate.phase) : null,
+                        ].filter(Boolean).join(' · ')}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1356,14 +1346,15 @@ export default function Tasks() {
       <div className="w-full min-w-0 max-w-full">
         <Card className="w-full min-w-0 max-w-full border-primary/15 shadow-card">
           <CardContent className="space-y-5 p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-end justify-between gap-4">
               <div>
                 <h2 className="workspace-h2">Tasks</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Choose a task to see more.</p>
               </div>
-              <Badge variant="outline" className="rounded-full px-3 py-1">
-                {visibleTasks.length} visible
-              </Badge>
+              <div className="shrink-0 border-l border-primary/25 pl-3 text-right" aria-live="polite">
+                <p className="text-lg font-semibold leading-none text-foreground">{visibleTasks.length}</p>
+                <p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">visible</p>
+              </div>
             </div>
 
             <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
@@ -1480,14 +1471,16 @@ export default function Tasks() {
                   {selectedTask?.title ?? 'Pick a task from the queue'}
                 </h2>
               </div>
-              {selectedTask?.completed ? (
-                <Badge variant="success" className="rounded-full">
-                  Done
-                </Badge>
-              ) : selectedTask ? (
-                <Badge variant="outline" className="rounded-full">
-                  Active
-                </Badge>
+              {selectedTask ? (
+                <span className={`inline-flex shrink-0 items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] ${
+                  selectedTask.completed ? 'text-success' : 'text-muted-foreground'
+                }`}>
+                  <span
+                    aria-hidden="true"
+                    className={`h-1.5 w-1.5 rounded-full ${selectedTask.completed ? 'bg-success' : 'bg-primary/45'}`}
+                  />
+                  {selectedTask.completed ? 'Done' : 'Active'}
+                </span>
               ) : null}
             </div>
 
@@ -1500,23 +1493,19 @@ export default function Tasks() {
 
               return (
                 <div className="space-y-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {resolvedCategory && (
-                      <Badge variant="secondary" className="rounded-full">{resolvedCategory}</Badge>
-                    )}
-                    <Badge variant={selectedTask.visibility === 'private' ? 'destructive' : 'outline'} className="rounded-full">
-                      {selectedTask.visibility === 'private' ? 'Private' : 'Shared'}
-                    </Badge>
-                    {selectedTask.priority_level != null && (
-                      <Badge variant="outline" className="rounded-full">
-                        P{selectedTask.priority_level} · {priorityLabel(selectedTask.priority_level)}
-                      </Badge>
-                    )}
-                    {phaseLabel(selectedTask.phase) && (
-                      <Badge variant="outline" className="rounded-full">
-                        {phaseLabel(selectedTask.phase)}
-                      </Badge>
-                    )}
+                  <div className="border-l-2 border-primary/25 pl-3">
+                    {resolvedCategory ? (
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{resolvedCategory}</p>
+                    ) : null}
+                    <p className="mt-1 text-sm text-foreground">
+                      {[
+                        selectedTask.visibility === 'private' ? 'Private' : 'Shared',
+                        selectedTask.priority_level != null
+                          ? `P${selectedTask.priority_level} · ${priorityLabel(selectedTask.priority_level)}`
+                          : null,
+                        phaseLabel(selectedTask.phase),
+                      ].filter(Boolean).join(' · ')}
+                    </p>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">

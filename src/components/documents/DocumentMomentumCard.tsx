@@ -1,6 +1,5 @@
 import { BadgeCheck } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
 import { type DocumentMomentumSummary } from '@/lib/documentMomentum';
 
 type Props = {
@@ -17,7 +16,10 @@ export default function DocumentMomentumCard({ title, subtitle, summary }: Props
           <p className="text-sm font-semibold text-foreground">{title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
         </div>
-        <Badge variant="info">{summary.readinessLabel}</Badge>
+        <div className="border-l-2 border-info/35 pl-3 text-right">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-info">Readiness</p>
+          <p className="mt-1 text-sm font-medium text-foreground">{summary.readinessLabel}</p>
+        </div>
       </div>
 
       <div className="mt-4 space-y-2">
@@ -28,11 +30,17 @@ export default function DocumentMomentumCard({ title, subtitle, summary }: Props
         <Progress value={summary.readinessScore} className="h-2.5" />
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
         {summary.milestones.map((milestone) => (
-          <Badge key={milestone.key} variant={milestone.active ? 'success' : 'info'}>
-            {milestone.label}
-          </Badge>
+          <div key={milestone.key} className="flex items-center gap-2 border-l-2 border-border py-1 pl-3 text-sm">
+            <span
+              aria-hidden="true"
+              className={`h-1.5 w-1.5 rounded-full ${milestone.active ? 'bg-success' : 'bg-info/55'}`}
+            />
+            <span className={milestone.active ? 'font-medium text-foreground' : 'text-muted-foreground'}>
+              {milestone.label}
+            </span>
+          </div>
         ))}
       </div>
 

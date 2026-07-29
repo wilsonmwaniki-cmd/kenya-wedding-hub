@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { EditorialEyebrow } from '@/components/ui/editorial-eyebrow';
 import {
+  StatusLine,
   TonalCard,
   TonalCardBody,
   TonalCardDescription,
@@ -615,10 +616,10 @@ export default function Pricing() {
         <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
           <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
             <CardHeader className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="rounded-full px-3 py-1">{targetPlan.paidTierName}</Badge>
-                {highlightedFeature ? <Badge variant="outline" className="rounded-full px-3 py-1">For {highlightedFeature}</Badge> : null}
-              </div>
+              <EditorialEyebrow>{targetPlan.paidTierName}</EditorialEyebrow>
+              {highlightedFeature ? (
+                <StatusLine label="Unlocks" value={highlightedFeature} tone="info" className="max-w-md" />
+              ) : null}
               <div>
                 <CardTitle className="marketing-h2">{targetPlan.paidTierName}</CardTitle>
                 <CardDescription className="mt-3 max-w-2xl text-base leading-8">
@@ -718,9 +719,7 @@ export default function Pricing() {
           <section className="mx-auto max-w-[1500px] px-6 py-16 sm:px-8 lg:py-24 xl:px-12">
             <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-14">
               <div className="max-w-[46rem]">
-                <Badge variant="info" className="rounded-full px-3 py-1">
-                  Free to start
-                </Badge>
+                <EditorialEyebrow tone="info">Free to start</EditorialEyebrow>
                 <h1 className="marketing-h1 mt-8 max-w-[12ch] text-foreground">
                   Plan freely. Upgrade when you are ready to collaborate.
                 </h1>
@@ -806,9 +805,7 @@ export default function Pricing() {
                     <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">{contextMessage.body}</p>
                   </div>
                   {targetPlan && (
-                    <Badge variant="secondary" className="w-fit rounded-full px-3 py-1 text-sm">
-                      {targetPlan.paidTierName}
-                    </Badge>
+                    <StatusLine label="Plan" value={targetPlan.paidTierName} tone="info" className="min-w-36" />
                   )}
                 </CardContent>
               </Card>
@@ -839,9 +836,7 @@ export default function Pricing() {
 
           <section className="mx-auto max-w-[1500px] px-6 pb-16 sm:px-8 lg:pb-22 xl:px-12">
             <div className="mb-8 max-w-[38rem]">
-              <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                Couples
-              </Badge>
+              <EditorialEyebrow>Couples</EditorialEyebrow>
               <h2 className="marketing-h2 mt-4">For couples who want one calm place to run the whole wedding</h2>
               <p className="mt-4 text-base leading-8 text-muted-foreground">
                 Use Zania freely while planning as a couple. Upgrade only when you want vendors or a planner inside your workspace.
@@ -873,7 +868,12 @@ export default function Pricing() {
                           <CardDescription className="mt-2 text-base leading-7">{plan.tagline}</CardDescription>
                         </div>
                         {plan.tier === 'collaborative' ? (
-                          <Badge className="rounded-full px-3 py-1">Collaborate together</Badge>
+                          <StatusLine
+                            label="Workspace"
+                            value="Collaborate together"
+                            tone="info"
+                            className="max-w-44 shrink-0"
+                          />
                         ) : null}
                       </div>
                       <div>
@@ -942,9 +942,7 @@ export default function Pricing() {
 
           <section className="mx-auto max-w-[1500px] px-6 pb-16 sm:px-8 lg:pb-22 xl:px-12">
             <div className="mb-8 max-w-[38rem]">
-              <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                Professional plans
-              </Badge>
+              <EditorialEyebrow>Professional plans</EditorialEyebrow>
               <h2 className="marketing-h2 mt-4">For planners and vendors building real wedding businesses</h2>
               <p className="mt-4 text-base leading-8 text-muted-foreground">
                 Both roles begin free and can join a paying couple's workspace. Upgrade only when Zania becomes part of how you run your wider business.
@@ -1170,9 +1168,7 @@ export default function Pricing() {
 
           <section className="mx-auto max-w-[1500px] px-6 pb-16 sm:px-8 lg:pb-22 xl:px-12">
             <div className="mb-8 max-w-[38rem]">
-              <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                FAQ
-              </Badge>
+              <EditorialEyebrow>FAQ</EditorialEyebrow>
               <h2 className="marketing-h2 mt-4">A few practical questions</h2>
             </div>
             <div className="grid gap-5 lg:grid-cols-2">

@@ -2524,14 +2524,19 @@ export default function Budget() {
                                     <p className="text-sm font-semibold">Vendor Shortlist</p>
                                     <p className="mt-0.5 text-xs text-muted-foreground">Open a vendor to review or update every detail here.</p>
                                   </div>
-                                  <Badge variant="outline" className="shrink-0 bg-background/80">{allRelevantVendors.length}</Badge>
+                                  <div className="shrink-0 border-l border-primary/25 pl-3 text-right">
+                                    <p className="text-lg font-semibold leading-none text-foreground">{allRelevantVendors.length}</p>
+                                    <p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                      options
+                                    </p>
+                                  </div>
                                 </div>
                                 {relevantVendors.length ? relevantVendors.map((vendor) => (
                                   <button
                                     key={vendor.id}
                                     type="button"
                                     onClick={() => openVendorEditor(category, vendor)}
-                                    className="mt-3 flex w-full min-w-0 items-center justify-between gap-3 rounded-md border border-border/70 bg-background px-3 py-2.5 text-left transition-colors hover:border-primary/35 hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    className="mt-3 flex w-full min-w-0 flex-col gap-3 rounded-md border border-border/70 bg-background px-3 py-2.5 text-left transition-colors hover:border-primary/35 hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center sm:justify-between"
                                   >
                                     <span className="min-w-0">
                                       <span className="block truncate text-sm font-medium text-foreground">{vendor.name}</span>
@@ -2539,9 +2544,17 @@ export default function Budget() {
                                         {contractStatusLabel(vendor.contract_status)} · {vendorPaymentStatusLabel(vendor.payment_status)}
                                       </span>
                                     </span>
-                                    <Badge variant={vendor.selection_status === 'final' ? 'default' : 'outline'} className="shrink-0">
+                                    <span className={`inline-flex shrink-0 items-center gap-2 text-[0.66rem] font-semibold uppercase tracking-[0.14em] ${
+                                      vendor.selection_status === 'final' ? 'text-success' : 'text-muted-foreground'
+                                    }`}>
+                                      <span
+                                        aria-hidden="true"
+                                        className={`h-1.5 w-1.5 rounded-full ${
+                                          vendor.selection_status === 'final' ? 'bg-success' : 'bg-primary/45'
+                                        }`}
+                                      />
                                       {vendor.selection_status === 'final' ? 'Confirmed' : vendorSelectionLabel(vendor.selection_status)}
-                                    </Badge>
+                                    </span>
                                   </button>
                                 )) : <p className="mt-3 text-sm text-muted-foreground">No vendors shortlisted yet.</p>}
                                 <Button
@@ -2569,7 +2582,15 @@ export default function Budget() {
                                     >
                                       {task.title}
                                     </span>
-                                    <Badge variant="outline">{task.completed ? 'Done' : 'Next'}</Badge>
+                                    <span className={`inline-flex shrink-0 items-center gap-2 text-[0.66rem] font-semibold uppercase tracking-[0.14em] ${
+                                      task.completed ? 'text-success' : 'text-muted-foreground'
+                                    }`}>
+                                      <span
+                                        aria-hidden="true"
+                                        className={`h-1.5 w-1.5 rounded-full ${task.completed ? 'bg-success' : 'bg-primary/45'}`}
+                                      />
+                                      {task.completed ? 'Done' : 'Next'}
+                                    </span>
                                   </button>
                                 )) : <p className="mt-2 text-sm text-muted-foreground">No matching task yet.</p>}
                                 <Button

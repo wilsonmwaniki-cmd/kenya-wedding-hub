@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -410,8 +409,11 @@ export default function TemplatesWorkspace({ role }: Props) {
                           <p className="break-words font-semibold leading-5 text-foreground">{template.name}</p>
                           <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{template.description || 'No description yet'}</p>
                         </div>
-                        <div>
-                          <Badge variant="info">{professionalTemplateTypeLabel(template.templateType)}</Badge>
+                        <div className="border-l-2 border-info/35 pl-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-info">Type</p>
+                          <p className="mt-1 text-xs font-medium text-foreground">
+                            {professionalTemplateTypeLabel(template.templateType)}
+                          </p>
                         </div>
                         <div className="min-w-0 break-words text-sm leading-5 text-muted-foreground">{template.defaultTitle || 'No default title yet'}</div>
                       </button>
@@ -453,9 +455,19 @@ export default function TemplatesWorkspace({ role }: Props) {
                         {detailDraft.defaultItems.filter((item) => item.description.trim().length > 0).length === 1 ? '' : 's'} ready to reuse
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="info">{professionalTemplateTypeLabel(detailDraft.templateType)}</Badge>
-                      <Badge variant="outline">Used {selectedTemplateUseCount} time{selectedTemplateUseCount === 1 ? '' : 's'}</Badge>
+                    <div className="grid grid-cols-2 gap-4 border-l-2 border-info/35 pl-3">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-info">Type</p>
+                        <p className="mt-1 text-xs font-medium text-foreground">
+                          {professionalTemplateTypeLabel(detailDraft.templateType)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Usage</p>
+                        <p className="mt-1 text-xs font-medium text-foreground">
+                          {selectedTemplateUseCount} time{selectedTemplateUseCount === 1 ? '' : 's'}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -558,7 +570,12 @@ export default function TemplatesWorkspace({ role }: Props) {
           {starterTemplates.map((starter) => (
             <div key={starter.key} className="rounded-2xl border border-border bg-muted/5 p-4">
               <div className="flex items-center justify-between gap-3">
-                <Badge variant="secondary">{professionalTemplateTypeLabel(starter.templateType)}</Badge>
+                <div className="border-l-2 border-info/35 pl-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-info">Starter</p>
+                  <p className="mt-1 text-xs font-medium text-foreground">
+                    {professionalTemplateTypeLabel(starter.templateType)}
+                  </p>
+                </div>
                 <Button type="button" variant="outline" size="sm" onClick={() => openStarter(starter)}>
                   Use starter
                 </Button>

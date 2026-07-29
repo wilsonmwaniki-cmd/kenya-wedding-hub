@@ -20,7 +20,6 @@ import {
   Wallet,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -1105,11 +1104,21 @@ export default function PlannerDocuments() {
                             ? new Date(document.dueDate).toLocaleDateString()
                             : 'No due date'}
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="secondary">{commercialDocumentTypeLabel(document.documentType)}</Badge>
-                          <Badge variant={document.status === 'paid' || document.status === 'accepted' || document.status === 'issued' ? 'success' : 'warning'}>
+                        <div className="border-l-2 border-border pl-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                            {commercialDocumentTypeLabel(document.documentType)}
+                          </p>
+                          <p className="mt-1 flex items-center gap-2 text-xs font-medium text-foreground">
+                            <span
+                              aria-hidden="true"
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                document.status === 'paid' || document.status === 'accepted' || document.status === 'issued'
+                                  ? 'bg-success'
+                                  : 'bg-warning'
+                              }`}
+                            />
                             {commercialDocumentStatusLabel(document.status)}
-                          </Badge>
+                          </p>
                         </div>
                       </button>
                     );
@@ -1184,10 +1193,14 @@ export default function PlannerDocuments() {
                   </Button>
                 </div>
                 <div className="w-full rounded-2xl border border-border/70 bg-muted/10 p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={selectedShareActive ? 'success' : 'outline'}>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <span className="flex items-center gap-2 text-xs font-medium text-foreground">
+                      <span
+                        aria-hidden="true"
+                        className={`h-1.5 w-1.5 rounded-full ${selectedShareActive ? 'bg-success' : 'bg-muted-foreground/45'}`}
+                      />
                       {selectedShareActive ? 'Share link active' : 'Share link inactive'}
-                    </Badge>
+                    </span>
                     {shareState?.expiresAt && (
                       <span className="text-xs text-muted-foreground">
                         Expires {new Date(shareState.expiresAt).toLocaleDateString()}

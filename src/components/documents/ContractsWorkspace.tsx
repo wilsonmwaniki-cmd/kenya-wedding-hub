@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -577,18 +576,18 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                           <p className="mt-1 break-all text-xs leading-5 text-muted-foreground">{contract.recipientEmail || contract.recipientPhone || 'No contact yet'}</p>
                         </div>
                         <div className="text-sm text-muted-foreground">{contract.eventDate ? new Date(contract.eventDate).toLocaleDateString() : 'No event date'}</div>
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant={
+                        <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+                          <span
+                            aria-hidden="true"
+                            className={`h-1.5 w-1.5 rounded-full ${
                               contract.status === 'completed'
-                                ? 'success'
+                                ? 'bg-success'
                                 : contract.status === 'cancelled'
-                                  ? 'destructive'
-                                  : 'warning'
-                            }
-                          >
-                            {professionalContractStatusLabel(contract.status)}
-                          </Badge>
+                                  ? 'bg-destructive'
+                                  : 'bg-warning'
+                            }`}
+                          />
+                          {professionalContractStatusLabel(contract.status)}
                         </div>
                       </button>
                     );
