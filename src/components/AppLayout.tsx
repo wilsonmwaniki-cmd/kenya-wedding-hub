@@ -133,21 +133,15 @@ function AssistantPanelSlot({
   );
 }
 
-function AccountPlanBadge({ label, paid }: { label: string; paid: boolean }) {
+function AccountPlanStatus({ label, paid }: { label: string; paid: boolean }) {
   return (
     <span
       aria-label={`Current plan: ${label}`}
       title={`Current plan: ${label}`}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] ${
-        paid
-          ? 'border-[#d4bb7d]/45 bg-[#d4bb7d]/12 text-[#ead8aa]'
-          : 'border-white/15 bg-white/[0.04] text-white/55'
+      className={`shrink-0 border-l pl-2 text-[9px] font-semibold uppercase tracking-[0.16em] ${
+        paid ? 'border-[#d4bb7d]/45 text-[#ead8aa]' : 'border-white/20 text-white/55'
       }`}
     >
-      <span
-        aria-hidden="true"
-        className={`h-1.5 w-1.5 rounded-full ${paid ? 'bg-[#d4bb7d]' : 'bg-white/35'}`}
-      />
       {label}
     </span>
   );
@@ -393,7 +387,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {isSuperAdmin && rolePreview !== 'admin' ? ` · previewing as ${rolePreview}` : ''}
                 </p>
                 {!isSuperAdmin && accountPlan && !accountPlan.loading && !professionalSetupPending && (
-                  <AccountPlanBadge label={accountPlan.label} paid={accountPlan.paid} />
+                  <AccountPlanStatus label={accountPlan.label} paid={accountPlan.paid} />
                 )}
               </div>
               {isSuperAdmin && baseProfile && (
