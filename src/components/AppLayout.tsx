@@ -20,6 +20,7 @@ import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
 import { professionalPlanEntitlementMap } from '@/lib/pricingPlans';
 import SupportFeedbackDialog from '@/components/SupportFeedbackDialog';
+import { SegmentedNav } from '@/components/SegmentedNav';
 
 const AssistantPanel = lazy(() => import('@/components/AssistantPanel'));
 
@@ -685,80 +686,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-[#eadfd3]/80 bg-[linear-gradient(180deg,rgba(255,253,250,0.95),rgba(247,239,230,0.99))] px-3 pt-2.5 pb-[max(env(safe-area-inset-bottom),0.65rem)] shadow-[0_-14px_38px_rgba(55,35,26,0.07),inset_0_1px_0_rgba(255,255,255,0.96)] backdrop-blur-2xl lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/55 bg-background/96 px-3 pt-2 pb-[max(env(safe-area-inset-bottom),0.6rem)] shadow-[0_-8px_24px_rgba(55,35,26,0.035),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-md lg:hidden"
       >
-        <div
-          className="relative mx-auto grid min-h-[3.6rem] max-w-xl overflow-hidden rounded-full bg-[rgba(255,253,250,0.78)] p-1.5 ring-1 ring-[#e3d4c6]/75 shadow-[0_10px_28px_rgba(73,45,32,0.09),inset_0_1px_0_rgba(255,255,255,0.98)]"
-          style={{ gridTemplateColumns: `repeat(${Math.max(mobileNavItems.length, 1)}, minmax(0, 1fr))` }}
-        >
-          {mobileNavItems.map((item, index) => {
-            const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+        <SegmentedNav
+          ariaLabel="Primary mobile navigation"
+          value={
+            mobileNavItems.find(
+              (item) =>
+                location.pathname === item.path ||
+                location.pathname.startsWith(`${item.path}/`),
+            )?.path ?? ''
+          }
+          onValueChange={() => setSidebarOpen(false)}
+          items={mobileNavItems.map((item) => {
             const releaseDisabled = !isLaunchFeatureEnabled(item.path);
             const disabled = releaseDisabled || (needsClient && planningPaths.includes(item.path));
             const itemBadgeCount = badgeCounts[item.path] || 0;
             const mobileLabel = mobileNavLabels[item.path] ?? item.label;
 
-            return (
-              <Link
-                key={item.path}
-                to={disabled ? '#' : item.path}
-                aria-current={isActive ? 'page' : undefined}
-                aria-disabled={disabled || undefined}
-                onClick={(event) => {
-                  if (disabled) {
-                    event.preventDefault();
-                    return;
-                  }
-                  setSidebarOpen(false);
-                }}
-                style={{ zIndex: isActive ? 0 : mobileNavItems.length - index }}
-                className={`group relative isolate flex min-h-11 min-w-0 touch-manipulation items-center justify-center gap-1 overflow-visible rounded-full px-1 py-2 text-[9px] font-semibold tracking-[-0.01em] transition-[color,transform] duration-200 active:scale-[0.97] motion-reduce:transition-none min-[390px]:gap-1.5 min-[390px]:text-[10px] ${
-                  disabled
-                    ? 'cursor-not-allowed text-muted-foreground/45'
-                    : isActive
-                      ? 'text-primary-foreground'
-                      : 'text-[#8a7b73] hover:text-foreground'
-                }`}
-              >
-                {isActive ? (
-                  <motion.span
-                    layoutId="zania-mobile-nav-active"
-                    className={`absolute -inset-y-0.5 -z-10 rounded-full border border-[#b95f38]/35 bg-[linear-gradient(145deg,#d77b51,#c9633b)] shadow-[0_8px_20px_rgba(147,72,39,0.24),inset_0_1px_0_rgba(255,255,255,0.3)] ${
-                      index > 0 ? '-left-2 right-0' : 'inset-x-0'
-                    }`}
-                    transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 360, damping: 32, mass: 0.8 }}
-                    aria-hidden="true"
-                  >
-                    {index > 0 ? (
-                      <span className="absolute -left-3 top-1/2 h-[calc(100%+0.65rem)] w-7 -translate-y-1/2 rounded-full bg-[#fffdfa] shadow-[7px_0_14px_-12px_rgba(76,48,35,0.35)]" />
-                    ) : null}
-                  </motion.span>
-                ) : (
-                  <span
-                    className="pointer-events-none absolute -inset-y-0.5 -left-0.5 -right-2 -z-10 rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,252,248,0.92))] shadow-[7px_0_18px_-15px_rgba(73,45,32,0.42),inset_0_1px_0_rgba(255,255,255,1)]"
-                    aria-hidden="true"
-                  />
-                )}
-                <span className="relative z-10 shrink-0">
-                  <item.icon className="h-3.5 w-3.5 min-[390px]:h-4 min-[390px]:w-4" strokeWidth={isActive ? 2.15 : 1.75} />
-                  {itemBadgeCount > 0 ? (
-                    <span
-                      className={`absolute -right-2.5 -top-2 z-20 flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-[9px] font-bold leading-none shadow-sm ${
-                        isActive
-                          ? 'border-white/75 bg-[#fff8f1] text-[#a8482e]'
-                          : 'border-background/70 bg-destructive text-destructive-foreground'
-                      }`}
-                      aria-label={`${itemBadgeCount} new ${mobileLabel.toLowerCase()} notification${itemBadgeCount === 1 ? '' : 's'}`}
-                    >
-                      {itemBadgeCount > 99 ? '99+' : itemBadgeCount}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="relative z-10 min-w-0 truncate text-center">{mobileLabel}</span>
-              </Link>
-            );
+            return {
+              id: item.path,
+              href: item.path,
+              label: mobileLabel,
+              icon: <item.icon />,
+              disabled,
+              badge: itemBadgeCount > 0 ? (itemBadgeCount > 99 ? '99+' : itemBadgeCount) : undefined,
+              badgeLabel:
+                itemBadgeCount > 0
+                  ? `${itemBadgeCount} new ${mobileLabel.toLowerCase()} notification${itemBadgeCount === 1 ? '' : 's'}`
+                  : undefined,
+            };
           })}
-        </div>
+        />
       </nav>
 
       <SupportFeedbackDialog
