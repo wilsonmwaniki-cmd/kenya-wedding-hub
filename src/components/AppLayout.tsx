@@ -685,18 +685,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-[#e5d4c3]/90 bg-[linear-gradient(180deg,rgba(255,253,250,0.97),rgba(248,241,233,0.98))] pb-[max(env(safe-area-inset-bottom),0.35rem)] shadow-[0_-12px_36px_rgba(55,35,26,0.08),inset_0_1px_0_rgba(255,255,255,0.92)] backdrop-blur-2xl lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dfcdbc]/85 bg-[linear-gradient(180deg,rgba(255,253,250,0.96),rgba(247,239,230,0.99))] px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),0.55rem)] shadow-[0_-14px_38px_rgba(55,35,26,0.08),inset_0_1px_0_rgba(255,255,255,0.94)] backdrop-blur-2xl lg:hidden"
       >
         <div
-          className="relative mx-auto grid max-w-xl gap-1 overflow-hidden px-2 py-1.5"
+          className="relative mx-auto grid min-h-[3.45rem] max-w-xl overflow-hidden rounded-[1.35rem] border border-[#dfcdbc]/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(252,248,243,0.94))] p-1 shadow-[0_5px_18px_rgba(71,45,33,0.07),inset_0_1px_0_rgba(255,255,255,0.96)]"
           style={{ gridTemplateColumns: `repeat(${Math.max(mobileNavItems.length, 1)}, minmax(0, 1fr))` }}
         >
-          <span
-            className="pointer-events-none absolute inset-x-12 top-0 h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent"
-            aria-hidden="true"
-          />
-          {mobileNavItems.map((item) => {
+          {mobileNavItems.map((item, index) => {
             const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+            const nextItem = mobileNavItems[index + 1];
+            const nextIsActive = nextItem
+              ? location.pathname === nextItem.path || location.pathname.startsWith(`${nextItem.path}/`)
+              : false;
             const releaseDisabled = !isLaunchFeatureEnabled(item.path);
             const disabled = releaseDisabled || (needsClient && planningPaths.includes(item.path));
             const itemBadgeCount = badgeCounts[item.path] || 0;
@@ -715,34 +715,43 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   }
                   setSidebarOpen(false);
                 }}
-                className={`relative isolate flex min-h-14 min-w-0 touch-manipulation flex-col items-center justify-center gap-1 overflow-hidden rounded-[1rem] px-1 py-1.5 text-[10px] font-semibold tracking-[0.01em] transition-colors ${
+                className={`group relative isolate flex min-h-11 min-w-0 touch-manipulation items-center justify-center gap-1 overflow-hidden rounded-[1rem] px-1 py-2 text-[9px] font-semibold tracking-[-0.01em] transition-[color,transform] duration-200 active:scale-[0.97] motion-reduce:transition-none min-[390px]:gap-1.5 min-[390px]:text-[10px] ${
                   disabled
                     ? 'cursor-not-allowed text-muted-foreground/45'
                     : isActive
-                      ? 'text-foreground'
-                      : 'text-muted-foreground hover:text-foreground active:bg-white/55'
+                      ? 'text-primary-foreground'
+                      : 'text-[#8a7b73] hover:text-foreground'
                 }`}
               >
                 {isActive ? (
                   <motion.span
                     layoutId="zania-mobile-nav-active"
-                    className="absolute inset-0 -z-10 rounded-[inherit] border border-primary/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(245,231,218,0.82))] shadow-[0_8px_22px_rgba(112,67,44,0.10),inset_0_1px_0_rgba(255,255,255,0.9)]"
-                    transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 30 }}
+                    className="absolute inset-0 -z-10 rounded-[inherit] border border-[#b95f38]/45 bg-[linear-gradient(145deg,#d47a50,#c7673f)] shadow-[0_7px_18px_rgba(148,75,43,0.22),inset_0_1px_0_rgba(255,255,255,0.28)]"
+                    transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 360, damping: 32, mass: 0.8 }}
+                    aria-hidden="true"
+                  />
+                ) : index < mobileNavItems.length - 1 && !nextIsActive ? (
+                  <span
+                    className="pointer-events-none absolute right-0 top-1/2 h-5 w-px -translate-y-1/2 bg-[#dfd2c7]/65"
                     aria-hidden="true"
                   />
                 ) : null}
-                <span className={`relative z-10 ${isActive ? 'text-primary' : ''}`}>
-                  <item.icon className="h-[1.15rem] w-[1.15rem]" strokeWidth={isActive ? 2.15 : 1.75} />
+                <span className="relative z-10 shrink-0">
+                  <item.icon className="h-3.5 w-3.5 min-[390px]:h-4 min-[390px]:w-4" strokeWidth={isActive ? 2.15 : 1.75} />
                   {itemBadgeCount > 0 ? (
                     <span
-                      className="absolute -right-2.5 -top-2 z-20 flex h-4 min-w-4 items-center justify-center rounded-full border border-background/70 bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground shadow-sm"
+                      className={`absolute -right-2.5 -top-2 z-20 flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-[9px] font-bold leading-none shadow-sm ${
+                        isActive
+                          ? 'border-white/75 bg-[#fff8f1] text-[#a8482e]'
+                          : 'border-background/70 bg-destructive text-destructive-foreground'
+                      }`}
                       aria-label={`${itemBadgeCount} new ${mobileLabel.toLowerCase()} notification${itemBadgeCount === 1 ? '' : 's'}`}
                     >
                       {itemBadgeCount > 99 ? '99+' : itemBadgeCount}
                     </span>
                   ) : null}
                 </span>
-                <span className="relative z-10 w-full truncate text-center">{mobileLabel}</span>
+                <span className="relative z-10 min-w-0 truncate text-center">{mobileLabel}</span>
               </Link>
             );
           })}
