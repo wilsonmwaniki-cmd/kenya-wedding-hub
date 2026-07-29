@@ -11,7 +11,13 @@ const items: SegmentedNavItem[] = [
   { id: 'vendors', label: 'Vendors', href: '/vendors' },
 ];
 
-function SegmentedNavHarness({ showIcons = true }: { showIcons?: boolean }) {
+function SegmentedNavHarness({
+  showIcons = true,
+  viewportFill = false,
+}: {
+  showIcons?: boolean;
+  viewportFill?: boolean;
+}) {
   const [value, setValue] = useState('overview');
 
   return (
@@ -22,6 +28,7 @@ function SegmentedNavHarness({ showIcons = true }: { showIcons?: boolean }) {
         value={value}
         onValueChange={setValue}
         showIcons={showIcons}
+        viewportFill={viewportFill}
       />
     </MemoryRouter>
   );
@@ -67,5 +74,12 @@ describe('SegmentedNav', () => {
 
     expect(screen.queryByTestId('overview-icon')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Overview' })).toBeInTheDocument();
+  });
+
+  it('uses equal-width segments and keeps icons visible in viewport-fill mode', () => {
+    render(<SegmentedNavHarness viewportFill />);
+
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveClass('flex-1');
+    expect(screen.getByTestId('overview-icon')).toBeInTheDocument();
   });
 });

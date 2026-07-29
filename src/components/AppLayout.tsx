@@ -686,10 +686,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/55 bg-background/96 px-3 pt-2 pb-[max(env(safe-area-inset-bottom),0.6rem)] shadow-[0_-8px_24px_rgba(55,35,26,0.035),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-md lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/55 bg-background/96 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-8px_24px_rgba(55,35,26,0.035),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-md lg:hidden"
       >
         <SegmentedNav
           ariaLabel="Primary mobile navigation"
+          viewportFill
           value={
             mobileNavItems.find(
               (item) =>

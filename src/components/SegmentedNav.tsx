@@ -31,6 +31,7 @@ type SegmentedNavProps = {
   value: string;
   onValueChange?: (value: string) => void;
   showIcons?: boolean;
+  viewportFill?: boolean;
   ariaLabel?: string;
   className?: string;
 };
@@ -40,6 +41,7 @@ export function SegmentedNav({
   value,
   onValueChange,
   showIcons = true,
+  viewportFill = false,
   ariaLabel = 'Workspace sections',
   className,
 }: SegmentedNavProps) {
@@ -157,7 +159,10 @@ export function SegmentedNav({
     <div
       ref={scrollerRef}
       className={cn(
-        'flex max-w-full justify-start overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:justify-center',
+        'flex max-w-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+        viewportFill
+          ? 'w-full justify-stretch overflow-hidden'
+          : 'justify-start overflow-x-auto overscroll-x-contain sm:justify-center',
         className,
       )}
     >
@@ -165,7 +170,10 @@ export function SegmentedNav({
         ref={controlRef}
         role="tablist"
         aria-label={ariaLabel}
-        className="relative inline-flex h-14 min-w-max items-center gap-0 rounded-full border border-border/45 bg-muted/80 p-1 shadow-[0_1px_1px_rgba(30,28,25,0.018),0_4px_12px_rgba(30,28,25,0.025),inset_0_1px_0_rgba(255,255,255,0.46)]"
+        className={cn(
+          'relative inline-flex items-center gap-0 rounded-full border border-border/45 bg-muted/80 p-1 shadow-[0_1px_1px_rgba(30,28,25,0.018),0_4px_12px_rgba(30,28,25,0.025),inset_0_1px_0_rgba(255,255,255,0.46)]',
+          viewportFill ? 'h-[4.5rem] w-full min-w-0' : 'h-14 min-w-max',
+        )}
       >
         <span
           aria-hidden="true"
@@ -199,7 +207,10 @@ export function SegmentedNav({
                 onValueChange?.(item.id);
               }}
               className={cn(
-                'group relative z-10 inline-flex h-12 shrink-0 touch-manipulation select-none items-center justify-center gap-0 whitespace-nowrap rounded-full border-0 bg-transparent px-2 text-[11px] font-medium leading-none tracking-[-0.01em] text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-150 ease-out [-webkit-tap-highlight-color:transparent] after:pointer-events-none after:absolute after:inset-0.5 after:rounded-[inherit] focus-visible:outline-none focus-visible:after:shadow-[0_0_0_3px_hsl(var(--foreground)/0.16)] motion-reduce:transition-none min-[360px]:px-2.5 min-[360px]:text-xs min-[430px]:gap-1 min-[430px]:px-[7px] min-[430px]:text-[11.5px] sm:gap-[9px] sm:px-[22px] sm:text-sm',
+                'group relative z-10 inline-flex touch-manipulation select-none items-center justify-center whitespace-nowrap rounded-full border-0 bg-transparent font-medium leading-none tracking-[-0.01em] text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-150 ease-out [-webkit-tap-highlight-color:transparent] after:pointer-events-none after:absolute after:inset-0.5 after:rounded-[inherit] focus-visible:outline-none focus-visible:after:shadow-[0_0_0_3px_hsl(var(--foreground)/0.16)] motion-reduce:transition-none',
+                viewportFill
+                  ? 'h-16 min-w-0 flex-1 basis-0 flex-col gap-1 px-0.5 text-[10.5px]'
+                  : 'h-12 shrink-0 gap-0 px-2 text-[11px] min-[360px]:px-2.5 min-[360px]:text-xs min-[430px]:gap-1 min-[430px]:px-[7px] min-[430px]:text-[11.5px] sm:gap-[9px] sm:px-[22px] sm:text-sm',
                 active
                   ? 'text-foreground'
                   : 'hover:bg-background/45 hover:text-foreground/75 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]',
@@ -212,7 +223,10 @@ export function SegmentedNav({
                 <span
                   aria-hidden="true"
                   className={cn(
-                    'hidden shrink-0 text-muted-foreground/70 transition-colors duration-150 group-hover:text-muted-foreground motion-reduce:transition-none min-[430px]:inline-flex [&>svg]:h-[15px] [&>svg]:w-[15px] [&>svg]:stroke-[1.7] sm:[&>svg]:h-[17px] sm:[&>svg]:w-[17px]',
+                    'shrink-0 text-muted-foreground/70 transition-colors duration-150 group-hover:text-muted-foreground motion-reduce:transition-none [&>svg]:stroke-[1.7]',
+                    viewportFill
+                      ? 'inline-flex [&>svg]:h-[18px] [&>svg]:w-[18px]'
+                      : 'hidden min-[430px]:inline-flex [&>svg]:h-[15px] [&>svg]:w-[15px] sm:[&>svg]:h-[17px] sm:[&>svg]:w-[17px]',
                     active && 'text-foreground/85',
                   )}
                 >
@@ -220,7 +234,7 @@ export function SegmentedNav({
                 </span>
               ) : null}
 
-              <span>{item.label}</span>
+              <span className={cn(viewportFill && 'max-w-full truncate')}>{item.label}</span>
 
               {item.badge !== undefined && item.badge !== null ? (
                 <span
