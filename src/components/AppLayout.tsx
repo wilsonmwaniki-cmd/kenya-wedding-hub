@@ -685,18 +685,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-[#dfcdbc]/85 bg-[linear-gradient(180deg,rgba(255,253,250,0.96),rgba(247,239,230,0.99))] px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),0.55rem)] shadow-[0_-14px_38px_rgba(55,35,26,0.08),inset_0_1px_0_rgba(255,255,255,0.94)] backdrop-blur-2xl lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-[#eadfd3]/80 bg-[linear-gradient(180deg,rgba(255,253,250,0.95),rgba(247,239,230,0.99))] px-3 pt-2.5 pb-[max(env(safe-area-inset-bottom),0.65rem)] shadow-[0_-14px_38px_rgba(55,35,26,0.07),inset_0_1px_0_rgba(255,255,255,0.96)] backdrop-blur-2xl lg:hidden"
       >
         <div
-          className="relative mx-auto grid min-h-[3.45rem] max-w-xl overflow-hidden rounded-[1.35rem] border border-[#dfcdbc]/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(252,248,243,0.94))] p-1 shadow-[0_5px_18px_rgba(71,45,33,0.07),inset_0_1px_0_rgba(255,255,255,0.96)]"
+          className="relative mx-auto grid min-h-[3.6rem] max-w-xl overflow-hidden rounded-full bg-[rgba(255,253,250,0.78)] p-1.5 ring-1 ring-[#e3d4c6]/75 shadow-[0_10px_28px_rgba(73,45,32,0.09),inset_0_1px_0_rgba(255,255,255,0.98)]"
           style={{ gridTemplateColumns: `repeat(${Math.max(mobileNavItems.length, 1)}, minmax(0, 1fr))` }}
         >
           {mobileNavItems.map((item, index) => {
             const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
-            const nextItem = mobileNavItems[index + 1];
-            const nextIsActive = nextItem
-              ? location.pathname === nextItem.path || location.pathname.startsWith(`${nextItem.path}/`)
-              : false;
             const releaseDisabled = !isLaunchFeatureEnabled(item.path);
             const disabled = releaseDisabled || (needsClient && planningPaths.includes(item.path));
             const itemBadgeCount = badgeCounts[item.path] || 0;
@@ -715,7 +711,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   }
                   setSidebarOpen(false);
                 }}
-                className={`group relative isolate flex min-h-11 min-w-0 touch-manipulation items-center justify-center gap-1 overflow-hidden rounded-[1rem] px-1 py-2 text-[9px] font-semibold tracking-[-0.01em] transition-[color,transform] duration-200 active:scale-[0.97] motion-reduce:transition-none min-[390px]:gap-1.5 min-[390px]:text-[10px] ${
+                style={{ zIndex: isActive ? 0 : mobileNavItems.length - index }}
+                className={`group relative isolate flex min-h-11 min-w-0 touch-manipulation items-center justify-center gap-1 overflow-visible rounded-full px-1 py-2 text-[9px] font-semibold tracking-[-0.01em] transition-[color,transform] duration-200 active:scale-[0.97] motion-reduce:transition-none min-[390px]:gap-1.5 min-[390px]:text-[10px] ${
                   disabled
                     ? 'cursor-not-allowed text-muted-foreground/45'
                     : isActive
@@ -726,16 +723,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 {isActive ? (
                   <motion.span
                     layoutId="zania-mobile-nav-active"
-                    className="absolute inset-0 -z-10 rounded-[inherit] border border-[#b95f38]/45 bg-[linear-gradient(145deg,#d47a50,#c7673f)] shadow-[0_7px_18px_rgba(148,75,43,0.22),inset_0_1px_0_rgba(255,255,255,0.28)]"
+                    className={`absolute -inset-y-0.5 -z-10 rounded-full border border-[#b95f38]/35 bg-[linear-gradient(145deg,#d77b51,#c9633b)] shadow-[0_8px_20px_rgba(147,72,39,0.24),inset_0_1px_0_rgba(255,255,255,0.3)] ${
+                      index > 0 ? '-left-2 right-0' : 'inset-x-0'
+                    }`}
                     transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 360, damping: 32, mass: 0.8 }}
                     aria-hidden="true"
-                  />
-                ) : index < mobileNavItems.length - 1 && !nextIsActive ? (
+                  >
+                    {index > 0 ? (
+                      <span className="absolute -left-3 top-1/2 h-[calc(100%+0.65rem)] w-7 -translate-y-1/2 rounded-full bg-[#fffdfa] shadow-[7px_0_14px_-12px_rgba(76,48,35,0.35)]" />
+                    ) : null}
+                  </motion.span>
+                ) : (
                   <span
-                    className="pointer-events-none absolute right-0 top-1/2 h-5 w-px -translate-y-1/2 bg-[#dfd2c7]/65"
+                    className="pointer-events-none absolute -inset-y-0.5 -left-0.5 -right-2 -z-10 rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,252,248,0.92))] shadow-[7px_0_18px_-15px_rgba(73,45,32,0.42),inset_0_1px_0_rgba(255,255,255,1)]"
                     aria-hidden="true"
                   />
-                ) : null}
+                )}
                 <span className="relative z-10 shrink-0">
                   <item.icon className="h-3.5 w-3.5 min-[390px]:h-4 min-[390px]:w-4" strokeWidth={isActive ? 2.15 : 1.75} />
                   {itemBadgeCount > 0 ? (
