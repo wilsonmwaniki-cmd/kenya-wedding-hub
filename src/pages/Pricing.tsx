@@ -4,6 +4,15 @@ import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  TonalCard,
+  TonalCardBody,
+  TonalCardDescription,
+  TonalCardFooter,
+  TonalCardHeader,
+  TonalCardTitle,
+  TonalSection,
+} from '@/components/ui/tonal-card';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
@@ -449,27 +458,23 @@ export default function Pricing() {
 
       return (
         <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
-          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
-            <CardHeader className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="rounded-full px-3 py-1">{plan.title}</Badge>
-                {highlightedFeature ? (
-                  <Badge variant="outline" className="rounded-full px-3 py-1">
-                    For {highlightedFeature}
-                  </Badge>
-                ) : null}
+          <TonalCard tone="porcelain">
+            <TonalCardHeader className="space-y-6">
+              <div className="border-l-2 border-primary pl-4">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-primary">{plan.title}</p>
+                {highlightedFeature ? <p className="mt-2 text-sm font-medium text-current/60">For {highlightedFeature}</p> : null}
               </div>
               <div>
-                <CardTitle className="marketing-h2">Upgrade to {plan.title}</CardTitle>
-                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
+                <TonalCardTitle className="marketing-h2">Upgrade to {plan.title}</TonalCardTitle>
+                <TonalCardDescription className="mt-3 text-base leading-8">
                   {highlightedFeature
                     ? `${plan.title} unlocks ${highlightedFeature.toLowerCase()} and keeps the rest of your wedding planning in the same workspace.`
                     : plan.supportCopy}
-                </CardDescription>
+                </TonalCardDescription>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
+            </TonalCardHeader>
+            <TonalCardBody className="space-y-6">
+              <TonalSection className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <p className="marketing-h3">{priceLabel}</p>
                   <p className="mt-2 text-sm text-muted-foreground">Choose how you want to pay, then continue straight to checkout.</p>
@@ -488,9 +493,9 @@ export default function Pricing() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </TonalSection>
 
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-5">
+              <TonalSection>
                 <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Included</p>
                 <ul className="mt-3 space-y-2 text-sm leading-7 text-foreground/85">
                   {plan.includedFeatures.map((item) => (
@@ -500,24 +505,23 @@ export default function Pricing() {
                     </li>
                   ))}
                 </ul>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  onClick={() => void handleCouplePlanCheckout(plan.tier)}
-                  className="gap-2"
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
-                  {!isLoading && <ArrowRight className="h-4 w-4" />}
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </TonalSection>
+            </TonalCardBody>
+            <TonalCardFooter tone="ink">
+              <Button
+                onClick={() => void handleCouplePlanCheckout(plan.tier)}
+                className="gap-2 border-[#ead8b8] bg-[#ead8b8] text-[#2b211a] shadow-none hover:bg-[#f3e4ca]"
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
+                {!isLoading && <ArrowRight className="h-4 w-4" />}
+              </Button>
+              <Button asChild variant="ghost" className="text-[#f8f0e6]/72 hover:bg-white/[0.08] hover:text-[#f8f0e6]">
+                <Link to="/pricing?audience=couple">See all wedding pricing</Link>
+              </Button>
+            </TonalCardFooter>
+          </TonalCard>
         </section>
       );
     }
@@ -533,27 +537,23 @@ export default function Pricing() {
 
       return (
         <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
-          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
-            <CardHeader className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="rounded-full px-3 py-1">{plan.title}</Badge>
-                {highlightedFeature ? (
-                  <Badge variant="outline" className="rounded-full px-3 py-1">
-                    For {highlightedFeature}
-                  </Badge>
-                ) : null}
+          <TonalCard tone="porcelain">
+            <TonalCardHeader className="space-y-6">
+              <div className="border-l-2 border-primary pl-4">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-primary">{plan.title}</p>
+                {highlightedFeature ? <p className="mt-2 text-sm font-medium text-current/60">For {highlightedFeature}</p> : null}
               </div>
               <div>
-                <CardTitle className="marketing-h2">Upgrade to {plan.title}</CardTitle>
-                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
+                <TonalCardTitle className="marketing-h2">Upgrade to {plan.title}</TonalCardTitle>
+                <TonalCardDescription className="mt-3 text-base leading-8">
                   {highlightedFeature
                     ? `${plan.title} unlocks ${highlightedFeature.toLowerCase()} and the rest of the operational tools for your ${targetAudience} workspace.`
                     : plan.supportCopy}
-                </CardDescription>
+                </TonalCardDescription>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
+            </TonalCardHeader>
+            <TonalCardBody className="space-y-6">
+              <TonalSection className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <p className="marketing-h3">{priceLabel}</p>
                   <p className="mt-2 text-sm text-muted-foreground">One focused upgrade, then straight into checkout.</p>
@@ -572,9 +572,9 @@ export default function Pricing() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </TonalSection>
 
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-5">
+              <TonalSection>
                 <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Included</p>
                 <ul className="mt-3 space-y-2 text-sm leading-7 text-foreground/85">
                   {plan.includedFeatures.map((item) => (
@@ -584,24 +584,23 @@ export default function Pricing() {
                     </li>
                   ))}
                 </ul>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  onClick={() => void handleProfessionalPlanCheckout(targetAudience)}
-                  className="gap-2"
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
-                  {!isLoading && <ArrowRight className="h-4 w-4" />}
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to={`/pricing?audience=${targetAudience}`}>See all {targetAudience} pricing</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </TonalSection>
+            </TonalCardBody>
+            <TonalCardFooter tone="ink">
+              <Button
+                onClick={() => void handleProfessionalPlanCheckout(targetAudience)}
+                className="gap-2 border-[#ead8b8] bg-[#ead8b8] text-[#2b211a] shadow-none hover:bg-[#f3e4ca]"
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
+                {!isLoading && <ArrowRight className="h-4 w-4" />}
+              </Button>
+              <Button asChild variant="ghost" className="text-[#f8f0e6]/72 hover:bg-white/[0.08] hover:text-[#f8f0e6]">
+                <Link to={`/pricing?audience=${targetAudience}`}>See all {targetAudience} pricing</Link>
+              </Button>
+            </TonalCardFooter>
+          </TonalCard>
         </section>
       );
     }

@@ -19,6 +19,17 @@ import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import InfoTip from '@/components/InfoTip';
+import {
+  MetaRow,
+  StatusLine,
+  TonalCard,
+  TonalCardBody,
+  TonalCardDescription,
+  TonalCardFooter,
+  TonalCardHeader,
+  TonalCardTitle,
+  TonalSection,
+} from '@/components/ui/tonal-card';
 import { normalizeExternalUrl } from '@/lib/security';
 import {
   archiveWeddingWorkspace,
@@ -1262,27 +1273,31 @@ export default function ProfileSettings() {
       {isCouple && (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] xl:items-start">
           {profile && coupleExportDecision ? (
-            <Card className={`h-full shadow-card ${coupleExportDecision?.allowed ? 'semantic-surface-success' : 'semantic-surface-warning'}`}>
-              <CardHeader>
-                <CardTitle>Wedding Plan & Exports</CardTitle>
-                <CardDescription>
+            <TonalCard tone={coupleExportDecision.allowed ? 'sage' : 'oat'} className="h-full">
+              <TonalCardHeader>
+                <TonalCardTitle>Wedding Plan & Exports</TonalCardTitle>
+                <TonalCardDescription>
                   Your wedding plan controls exports, collaboration, and the active coordination tools inside your wedding workspace.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant={coupleExportDecision?.allowed ? 'info' : 'warning'}>
-                    {couplePlanTier ? couplePlanTier.charAt(0).toUpperCase() + couplePlanTier.slice(1) : 'Free'}
-                  </Badge>
-                  <Badge variant={coupleExportDecision?.allowed ? 'success' : 'warning'}>
-                    {coupleExportDecision?.allowed ? 'Exports enabled' : 'Exports locked'}
-                  </Badge>
+                </TonalCardDescription>
+              </TonalCardHeader>
+              <TonalCardBody className="space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <StatusLine
+                    label="Current plan"
+                    value={couplePlanTier ? couplePlanTier.charAt(0).toUpperCase() + couplePlanTier.slice(1) : 'Free'}
+                    tone="info"
+                  />
+                  <StatusLine
+                    label="Planning exports"
+                    value={coupleExportDecision.allowed ? 'Enabled' : 'Locked'}
+                    tone={coupleExportDecision.allowed ? 'success' : 'warning'}
+                  />
                 </div>
 
-                <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
-                  <p className="font-medium text-foreground">Current access status</p>
-                  <p className="mt-1">
-                    {coupleExportDecision?.allowed
+                <TonalSection className="text-sm leading-6 text-current/70">
+                  <p className="font-semibold text-current">Current access</p>
+                  <p className="mt-2">
+                    {coupleExportDecision.allowed
                       ? 'Your current wedding plan includes exports. Budget, task, and vendor progress exports are available across your workspace.'
                       : 'You are on Intimate. Upgrade to Collaborative when you want a planner or vendors to join your wedding workspace.'}
                   </p>
@@ -1292,28 +1307,31 @@ export default function ProfileSettings() {
                     </p>
                   )}
                   <p className="mt-1 text-xs">Admins can still manage legacy billing records from the admin portal while the wedding plan model rolls out.</p>
-                </div>
+                </TonalSection>
 
-                {!coupleExportDecision?.allowed ? (
+                {!coupleExportDecision.allowed ? (
                   <InlineUpgradePrompt decision={coupleExportDecision} />
-                ) : (
-                  <Button asChild variant="outline">
+                ) : null}
+              </TonalCardBody>
+              {coupleExportDecision.allowed ? (
+                <TonalCardFooter>
+                  <Button asChild variant="outline" className="sm:ml-auto">
                     <Link to={coupleExportDecision.pricingHref}>View plan details</Link>
                   </Button>
-                )}
-              </CardContent>
-            </Card>
+                </TonalCardFooter>
+              ) : null}
+            </TonalCard>
           ) : null}
 
-          <Card className="semantic-surface-info h-full shadow-card">
-            <CardHeader>
+          <TonalCard tone="sky" className="h-full">
+            <TonalCardHeader>
               <div className="flex items-center gap-2">
-                <CardTitle className="font-display">Wedding Ownership</CardTitle>
+                <TonalCardTitle>Wedding Ownership</TonalCardTitle>
                 <InfoTip content="Use this section to manage your partner invite, wedding code, and who has shared ownership of the wedding workspace." />
               </div>
-              <CardDescription>Partner invite, code, and shared ownership.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+              <TonalCardDescription>Partner invite, code, and shared ownership.</TonalCardDescription>
+            </TonalCardHeader>
+            <TonalCardBody className="space-y-5">
               {ownershipLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1328,36 +1346,39 @@ export default function ProfileSettings() {
                 </div>
               ) : ownedWedding ? (
                 <>
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-foreground">{ownedWedding.weddingName}</p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className="capitalize">
-                        {ownedWedding.ownerRole}
-                      </Badge>
-                      <Badge
-                        variant={
+                  <div>
+                    <p className="text-base font-semibold text-current">{ownedWedding.weddingName}</p>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      <StatusLine label="Your role" value={ownedWedding.ownerRole} className="capitalize" />
+                      <StatusLine
+                        label="Partner"
+                        value={
+                          ownedWedding.partnerStatus === 'active'
+                            ? 'Connected'
+                            : ownedWedding.partnerStatus === 'pending'
+                              ? 'Invite pending'
+                              : 'Not invited'
+                        }
+                        detail={
+                          ownedWedding.partnerInviteExpiresAt
+                            ? `Invite expires ${new Date(ownedWedding.partnerInviteExpiresAt).toLocaleDateString()}`
+                            : undefined
+                        }
+                        tone={
                           ownedWedding.partnerStatus === 'active'
                             ? 'success'
                             : ownedWedding.partnerStatus === 'pending'
                               ? 'warning'
-                              : 'outline'
+                              : 'neutral'
                         }
-                      >
-                        {ownedWedding.partnerStatus === 'active'
-                          ? 'Partner connected'
-                          : ownedWedding.partnerStatus === 'pending'
-                            ? 'Partner invite pending'
-                            : 'Partner not invited'}
-                      </Badge>
+                      />
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Wedding code: <span className="font-medium tracking-[0.16em] text-foreground">{ownedWedding.weddingCode}</span>
-                    </p>
-                    {ownedWedding.partnerInviteExpiresAt && (
-                      <p className="text-xs text-muted-foreground">
-                        Current partner invite expires on {new Date(ownedWedding.partnerInviteExpiresAt).toLocaleDateString()}.
-                      </p>
-                    )}
+                    <dl className="mt-4">
+                      <MetaRow
+                        label="Wedding code"
+                        value={<span className="tracking-[0.16em]">{ownedWedding.weddingCode}</span>}
+                      />
+                    </dl>
                   </div>
 
                   <div className="space-y-2">
@@ -1385,9 +1406,9 @@ export default function ProfileSettings() {
                     </p>
                   </div>
 
-                  <div className="space-y-2 rounded-xl border border-border/70 bg-background px-4 py-4">
-                    <p className="text-sm font-medium text-foreground">Wedding lifecycle</p>
-                    <p className="text-xs text-muted-foreground">
+                  <TonalSection className="space-y-3">
+                    <p className="text-sm font-semibold text-current">Wedding lifecycle</p>
+                    <p className="text-xs leading-5 text-current/65">
                       If this wedding was created by mistake, you can archive it or delete it. Deletion is soft-deleted and does not automatically reset free-plan eligibility.
                     </p>
                     <div className="space-y-2">
@@ -1409,7 +1430,7 @@ export default function ProfileSettings() {
                         Delete test wedding
                       </Button>
                     </div>
-                  </div>
+                  </TonalSection>
                 </>
               ) : pendingWeddingSetup?.intent === 'create_wedding' ? (
                 <>
@@ -1479,8 +1500,8 @@ export default function ProfileSettings() {
                   No wedding ownership details are available yet. If you expected a partner invite here, sign out and complete the create-wedding flow again.
                 </p>
               )}
-            </CardContent>
-          </Card>
+            </TonalCardBody>
+          </TonalCard>
         </div>
       )}
 

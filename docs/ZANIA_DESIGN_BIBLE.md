@@ -548,6 +548,54 @@ Cards should breathe.
 
 If a card looks busy, it is not finished.
 
+### Tonal Editorial Surfaces
+
+Zania surfaces should feel composed rather than assembled from generic components.
+
+Use:
+
+- warm porcelain, oat, clay, ink, muted blue, and sage tones
+- typography, whitespace, and hairline rules to create hierarchy
+- one dominant surface per hierarchy level
+- attached action bands when an action belongs to the entire surface
+- status lines, metadata rows, and small edge accents for structured information
+- restrained corner radii and almost imperceptible shadows
+
+Avoid:
+
+- stacking multiple rounded cards inside another rounded card
+- making every information group look independently clickable
+- repeating the same white card treatment across an entire screen
+- using capsules as decorative headings
+- floating action areas that could be structurally attached to their content
+
+Within a card, prefer a rule and spacing before introducing another container. Tonal contrast should group related information without making the interface feel boxed in.
+
+### Pill Policy
+
+Pills are controls, not decoration.
+
+Pills are appropriate for:
+
+- segmented navigation
+- billing cadence and other mutually exclusive switches
+- active filters
+- removable selection chips
+- compact controls whose shape communicates interaction
+
+Pills are not appropriate for:
+
+- plan names
+- roles or ownership
+- categories
+- dates
+- counts
+- document states
+- payment states
+- decorative headline fragments
+
+Present this information with overlines, status lines, metadata rows, semantic dots paired with text, or edge accents. A status must always remain understandable without relying on color alone.
+
 ## Photos and Imagery
 
 When using photos, never place text directly on an image without protection.
