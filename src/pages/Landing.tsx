@@ -98,10 +98,10 @@ export default function Landing() {
       ? 'Left to allocate'
       : 'Over budget';
   const utilizationClassName = utilizationStatus === 'complete'
-    ? 'border-success/30 bg-success/10 text-success'
+    ? 'text-success'
     : utilizationStatus === 'under'
-      ? 'border-border bg-muted/40 text-foreground'
-      : 'border-destructive/30 bg-destructive/10 text-destructive';
+      ? 'text-foreground'
+      : 'text-destructive';
 
   const totalAllocated = useMemo(
     () => previewPlan?.allocations.reduce((sum, allocation) => sum + allocation.amount, 0) ?? 0,
@@ -502,9 +502,11 @@ export default function Landing() {
           aria-labelledby="budget-plan-heading"
         >
           <Card className="border-border bg-card shadow-card">
-            <CardContent className="grid grid-cols-2 p-0 lg:grid-cols-4">
+            <CardContent className="grid p-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
               <div className="border-b border-border p-4 sm:p-5 lg:border-b-0 lg:border-r">
-                <Label htmlFor="plan-total-budget" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Your budget</Label>
+                <Label htmlFor="plan-total-budget" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">
+                  Intended wedding budget
+                </Label>
                 <div className="relative mt-2">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">KES</span>
                   <Input
@@ -523,18 +525,36 @@ export default function Landing() {
                   />
                 </div>
               </div>
-              <div className="border-b border-l border-border p-4 sm:p-5 lg:border-l-0 lg:border-r">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Allocated</p>
-                <p className="mt-3 text-base font-bold sm:text-xl">{formatCurrency(totalAllocated)}</p>
-                <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{utilizationPercentage.toFixed(1)}% of budget</p>
+
+              <div className="border-b border-border lg:border-b-0 lg:border-r">
+                <p className="border-b border-border px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground sm:px-5">
+                  Tracking intended wedding budget
+                </p>
+                <div className="grid grid-cols-2">
+                  <div className="border-r border-border p-4 sm:p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Allocated</p>
+                    <p className="mt-3 text-base font-bold sm:text-xl">{formatCurrency(totalAllocated)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{utilizationPercentage.toFixed(1)}% of budget</p>
+                  </div>
+                  <div className="p-4 sm:p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">
+                      {remainingAllocation >= 0 ? 'Remaining' : 'Over budget'}
+                    </p>
+                    <p className={`mt-3 text-base font-bold sm:text-xl ${remainingAllocation < 0 ? 'text-destructive' : ''}`}>
+                      {formatCurrency(Math.abs(remainingAllocation))}
+                    </p>
+                    <div className={`mt-2 inline-flex items-center gap-2 text-xs font-semibold ${utilizationClassName}`} aria-live="polite">
+                      <span aria-hidden="true" className="h-px w-4 shrink-0 bg-current opacity-55" />
+                      {utilizationLabel}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="p-4 sm:p-5 lg:border-r">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">{remainingAllocation >= 0 ? 'Remaining' : 'Over budget'}</p>
-                <p className={`mt-3 text-base font-bold sm:text-xl ${remainingAllocation < 0 ? 'text-destructive' : ''}`}>{formatCurrency(Math.abs(remainingAllocation))}</p>
-                <div className={`mt-2 inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${utilizationClassName}`} aria-live="polite">{utilizationLabel}</div>
-              </div>
-              <div className="border-l border-border p-4 sm:p-5 lg:border-l-0">
-                <Label htmlFor="plan-guest-count" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Guests</Label>
+
+              <div className="p-4 sm:p-5">
+                <Label htmlFor="plan-guest-count" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">
+                  Expected guests
+                </Label>
                 <Input
                   id="plan-guest-count"
                   aria-label="Adjust guest count"
