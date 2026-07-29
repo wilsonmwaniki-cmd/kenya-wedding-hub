@@ -34,6 +34,13 @@ import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePr
 import { usePlannerFreeWeddingStatus } from '@/hooks/usePlannerFreeWeddingStatus';
 import AttentionInbox from '@/components/AttentionInbox';
 import type { AttentionItem } from '@/lib/attention';
+import {
+  TonalCard,
+  TonalCardBody,
+  TonalCardDescription,
+  TonalCardHeader,
+  TonalCardTitle,
+} from '@/components/ui/tonal-card';
 
 interface PlannerTaskPulse {
   id: string;
@@ -597,7 +604,6 @@ export default function PlannerDashboard() {
         <AttentionInbox
           showEmpty
           maxItems={3}
-          className="rounded-2xl border border-border/80 bg-card p-4 shadow-card sm:p-5"
           supplementaryItems={plannerTaskAttentionItems}
           onSupplementaryAction={(item) => {
             const clientId = typeof item.metadata.planner_client_id === 'string'
@@ -609,35 +615,38 @@ export default function PlannerDashboard() {
         />
 
         {clients.length > 0 && (
-          <Card className="shadow-card">
-            <CardHeader className="pb-3">
-              <CardTitle className="font-display text-xl">Recent changes</CardTitle>
-              <p className="text-sm text-muted-foreground">Tasks added in the last seven days.</p>
-            </CardHeader>
-            <CardContent className="space-y-2">
+          <TonalCard tone="oat">
+            <TonalCardHeader>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-current/50">Client activity</p>
+              <TonalCardTitle className="text-xl">Recent changes</TonalCardTitle>
+              <TonalCardDescription>Tasks added in the last seven days.</TonalCardDescription>
+            </TonalCardHeader>
+            <TonalCardBody className="px-0 pb-0">
+              <div className="border-t border-current/10">
               {recentChanges.map((task) => (
                 <button
                   key={task.id}
                   type="button"
                   onClick={() => openClientRoute(task.client, `/tasks?task=${task.id}`)}
-                  className="flex min-h-12 w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-muted/45"
+                  className="flex min-h-14 w-full items-center gap-3 border-b border-current/10 px-5 py-3 text-left transition-colors last:border-b-0 hover:bg-white/30 sm:px-7"
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">{task.title}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block truncate text-sm font-medium text-current">{task.title}</span>
+                    <span className="mt-0.5 block truncate text-xs text-current/55">
                       Added for {task.client.client_name}{task.client.partner_name ? ` & ${task.client.partner_name}` : ''}
                     </span>
                   </span>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <ArrowRight className="h-4 w-4 shrink-0 text-current/45" />
                 </button>
               ))}
+              </div>
               {!taskPulseLoading && recentChanges.length === 0 && (
-                <p className="rounded-xl bg-muted/35 px-4 py-5 text-sm text-muted-foreground">
+                <p className="border-t border-current/10 px-5 py-5 text-sm text-current/60 sm:px-7">
                   No new tasks were added this week.
                 </p>
               )}
-            </CardContent>
-          </Card>
+            </TonalCardBody>
+          </TonalCard>
         )}
       </div>
 

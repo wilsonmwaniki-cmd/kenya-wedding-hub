@@ -974,12 +974,10 @@ export default function Dashboard() {
             onSupplementaryAction={(item) => {
               if (item.actionPath) navigate(item.actionPath);
             }}
-            className="rounded-xl border border-border bg-card p-4 shadow-none sm:p-5"
           />
           <RecentWorkspaceChangesCard
             maxItems={5}
             compact
-            className="rounded-xl border-border shadow-none"
           />
         </div>
 
@@ -1186,7 +1184,6 @@ export default function Dashboard() {
           onSupplementaryAction={(item) => {
             if (item.actionPath) navigate(item.actionPath);
           }}
-          className="rounded-2xl border border-border/80 bg-card p-4 shadow-card sm:p-5"
         />
         <RecentWorkspaceChangesCard maxItems={5} />
       </div>

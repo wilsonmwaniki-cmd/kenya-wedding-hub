@@ -1171,7 +1171,6 @@ export default function VendorDashboard() {
         <AttentionInbox
           showEmpty
           maxItems={3}
-          className="rounded-2xl border border-border/80 bg-card p-4 shadow-card sm:p-5"
         />
         <RecentWorkspaceChangesCard maxItems={5} />
       </div>
