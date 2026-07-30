@@ -742,11 +742,11 @@ export default function Landing() {
             <DialogDescription>How should Zania update the category amounts?</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
-            <Button type="button" className="h-auto justify-start px-4 py-3 text-left" onClick={() => applyBudgetGoalChange('scale_percentages')}>
-              <span><span className="block font-semibold">Keep the same budget split</span><span className="mt-1 block text-xs font-normal opacity-80">Recommended · category amounts scale with your new budget.</span></span>
+            <Button type="button" variant="outline" className="h-auto justify-start px-4 py-3 text-left" onClick={() => applyBudgetGoalChange('scale_percentages')}>
+              <span><span className="block font-semibold">Keep the same budget split</span><span className="mt-1 block text-xs font-normal text-muted-foreground">Category amounts scale with your new budget.</span></span>
             </Button>
-            <Button type="button" variant="outline" className="h-auto justify-start px-4 py-3 text-left" onClick={() => applyBudgetGoalChange('keep_amounts')}>
-              <span><span className="block font-semibold">Keep current category amounts</span><span className="mt-1 block text-xs font-normal text-muted-foreground">Only the percentages and remaining amount change.</span></span>
+            <Button type="button" className="h-auto justify-start px-4 py-3 text-left" onClick={() => applyBudgetGoalChange('keep_amounts')}>
+              <span><span className="block font-semibold">Keep current category amounts</span><span className="mt-1 block text-xs font-normal opacity-80">Recommended · leave the added budget available for your next choice.</span></span>
             </Button>
           </div>
         </DialogContent>
