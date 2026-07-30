@@ -192,6 +192,11 @@ function formatCurrency(value: number | null | undefined) {
   return `KES ${Number(value).toLocaleString()}`;
 }
 
+function formatIntegerDraft(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return digits ? Number(digits).toLocaleString('en-KE') : '';
+}
+
 function normalizeCategoryName(value: string) {
   return value.trim().toLowerCase();
 }
@@ -294,6 +299,16 @@ async function loadBudgetTasks(dataOrFilter: string): Promise<BudgetTaskOption[]
   return (data ?? []) as BudgetTaskOption[];
 }
 
+async function loadWorkspaceGuestCount(dataOrFilter: string) {
+  const { count, error } = await supabase
+    .from('guests')
+    .select('id', { count: 'exact', head: true })
+    .or(dataOrFilter);
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export default function Budget() {
   const { user, profile, updateProfile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating, loadClients } = usePlanner();
@@ -338,6 +353,8 @@ export default function Budget() {
   const [savingWorkflowId, setSavingWorkflowId] = useState<string | null>(null);
   const [budgetGoalDraft, setBudgetGoalDraft] = useState('');
   const [savingBudgetGoal, setSavingBudgetGoal] = useState(false);
+  const [expectedGuestCountDraft, setExpectedGuestCountDraft] = useState('');
+  const [savingExpectedGuestCount, setSavingExpectedGuestCount] = useState(false);
   const [benchmarksLoading, setBenchmarksLoading] = useState(false);
   const [categoryBenchmarks, setCategoryBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
   const [addModalBenchmark, setAddModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
@@ -379,6 +396,7 @@ export default function Budget() {
   const vendorsQueryKey = ['budget-vendors', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
   const paymentsQueryKey = ['budget-payments', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
   const tasksQueryKey = ['budget-tasks', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+  const guestCountQueryKey = ['budget-guest-count', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
 
   const categoriesQuery = useQuery({
     queryKey: categoriesQueryKey,
@@ -404,6 +422,13 @@ export default function Budget() {
   const tasksQuery = useQuery({
     queryKey: tasksQueryKey,
     queryFn: () => loadBudgetTasks(dataOrFilter!),
+    enabled: Boolean(dataOrFilter),
+    staleTime: 30_000,
+  });
+
+  const guestCountQuery = useQuery({
+    queryKey: guestCountQueryKey,
+    queryFn: () => loadWorkspaceGuestCount(dataOrFilter!),
     enabled: Boolean(dataOrFilter),
     staleTime: 30_000,
   });
@@ -1250,25 +1275,48 @@ export default function Budget() {
   const visibleCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
   const visibleAllocated = visibleCategories.reduce((sum, category) => sum + category.allocated, 0);
   const visibleSpent = visibleCategories.reduce((sum, category) => sum + category.spent, 0);
+  const weddingAllocated = weddingCategories.reduce((sum, category) => sum + category.allocated, 0);
   const storedWeddingBudgetGoal = Number(isPlanner ? selectedClient?.wedding_budget_goal : profile?.wedding_budget_goal);
-  const visibleBudgetGoal = activeBudgetScope === 'wedding' && storedWeddingBudgetGoal > 0
-    ? storedWeddingBudgetGoal
-    : visibleAllocated;
+  const weddingBudgetGoal = storedWeddingBudgetGoal > 0 ? storedWeddingBudgetGoal : weddingAllocated;
+  const visibleBudgetGoal = activeBudgetScope === 'wedding' ? weddingBudgetGoal : visibleAllocated;
   const visibleAllocationPercentage = visibleBudgetGoal > 0
     ? (visibleAllocated / visibleBudgetGoal) * 100
     : 0;
   const remainingAllocationBudget = visibleBudgetGoal - visibleAllocated;
+  const weddingAllocationPercentage = weddingBudgetGoal > 0
+    ? (weddingAllocated / weddingBudgetGoal) * 100
+    : 0;
+  const weddingRemainingBudget = weddingBudgetGoal - weddingAllocated;
+  const storedExpectedGuestCount = Number(
+    isPlanner ? selectedClient?.expected_guest_count : profile?.expected_guest_count,
+  );
+  const expectedGuestCount = storedExpectedGuestCount > 0
+    ? storedExpectedGuestCount
+    : Math.max(guestCountQuery.data ?? 0, 120);
+  const guestSensitiveAllocated = weddingCategories.reduce((sum, category) => {
+    const normalizedName = category.name.toLowerCase();
+    return normalizedName.includes('cater')
+      || normalizedName.includes('decor')
+      || normalizedName.includes('décor')
+      || normalizedName.includes('cake')
+      ? sum + category.allocated
+      : sum;
+  }, 0);
 
   useEffect(() => {
-    setBudgetGoalDraft(String(Math.round(visibleBudgetGoal)));
-  }, [activeBudgetScope, visibleBudgetGoal]);
+    setBudgetGoalDraft(Math.round(weddingBudgetGoal).toLocaleString('en-KE'));
+  }, [weddingBudgetGoal]);
+
+  useEffect(() => {
+    setExpectedGuestCountDraft(Math.round(expectedGuestCount).toLocaleString('en-KE'));
+  }, [expectedGuestCount]);
 
   const saveBudgetGoal = async () => {
-    if (!user || activeBudgetScope !== 'wedding' || savingBudgetGoal) return;
+    if (!user || savingBudgetGoal) return;
 
     const nextBudgetGoal = Number(budgetGoalDraft.replace(/,/g, ''));
     if (!Number.isFinite(nextBudgetGoal) || nextBudgetGoal <= 0) {
-      setBudgetGoalDraft(String(Math.round(visibleBudgetGoal)));
+      setBudgetGoalDraft(Math.round(weddingBudgetGoal).toLocaleString('en-KE'));
       toast({
         title: 'Enter a valid budget',
         description: 'Your wedding budget must be greater than zero.',
@@ -1278,8 +1326,8 @@ export default function Budget() {
     }
 
     const normalizedBudgetGoal = Math.round(nextBudgetGoal);
-    if (normalizedBudgetGoal === Math.round(visibleBudgetGoal)) {
-      setBudgetGoalDraft(String(normalizedBudgetGoal));
+    if (normalizedBudgetGoal === Math.round(weddingBudgetGoal)) {
+      setBudgetGoalDraft(normalizedBudgetGoal.toLocaleString('en-KE'));
       return;
     }
 
@@ -1297,13 +1345,13 @@ export default function Budget() {
         await updateProfile({ wedding_budget_goal: normalizedBudgetGoal });
       }
 
-      setBudgetGoalDraft(String(normalizedBudgetGoal));
+      setBudgetGoalDraft(normalizedBudgetGoal.toLocaleString('en-KE'));
       toast({
         title: 'Wedding budget updated',
         description: `Your spending limit is now ${formatCurrency(normalizedBudgetGoal)}.`,
       });
     } catch (error) {
-      setBudgetGoalDraft(String(Math.round(visibleBudgetGoal)));
+      setBudgetGoalDraft(Math.round(weddingBudgetGoal).toLocaleString('en-KE'));
       toast({
         title: 'Could not update the budget',
         description: error instanceof Error ? error.message : 'Please try again.',
@@ -1311,6 +1359,57 @@ export default function Budget() {
       });
     } finally {
       setSavingBudgetGoal(false);
+    }
+  };
+
+  const saveExpectedGuestCount = async () => {
+    if (!user || savingExpectedGuestCount) return;
+
+    const nextGuestCount = Number(expectedGuestCountDraft.replace(/,/g, ''));
+    if (!Number.isFinite(nextGuestCount) || nextGuestCount <= 0) {
+      setExpectedGuestCountDraft(Math.round(expectedGuestCount).toLocaleString('en-KE'));
+      toast({
+        title: 'Enter a valid guest count',
+        description: 'Expected guests must be at least one.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const normalizedGuestCount = Math.round(nextGuestCount);
+    if (normalizedGuestCount === Math.round(expectedGuestCount) && storedExpectedGuestCount > 0) {
+      setExpectedGuestCountDraft(normalizedGuestCount.toLocaleString('en-KE'));
+      return;
+    }
+
+    setSavingExpectedGuestCount(true);
+    try {
+      if (isPlanner && selectedClient) {
+        const { error } = await supabase
+          .from('planner_clients')
+          .update({ expected_guest_count: normalizedGuestCount })
+          .eq('id', selectedClient.id)
+          .eq('planner_user_id', user.id);
+        if (error) throw error;
+        await loadClients();
+      } else {
+        await updateProfile({ expected_guest_count: normalizedGuestCount });
+      }
+
+      setExpectedGuestCountDraft(normalizedGuestCount.toLocaleString('en-KE'));
+      toast({
+        title: 'Expected guests updated',
+        description: `Your planning target is now ${normalizedGuestCount.toLocaleString()} guests.`,
+      });
+    } catch (error) {
+      setExpectedGuestCountDraft(Math.round(expectedGuestCount).toLocaleString('en-KE'));
+      toast({
+        title: 'Could not update expected guests',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingExpectedGuestCount(false);
     }
   };
   const totalFinalVendorContract = finalVendorPayments.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
@@ -1895,63 +1994,105 @@ export default function Budget() {
         </div>
       </header>
 
-      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4">
-        <div className="border-b border-r border-border p-3 sm:border-b-0 sm:p-4">
-          {activeBudgetScope === 'wedding' ? (
-            <>
-              <Label htmlFor="workspace-total-budget" className="text-xs font-normal text-muted-foreground">
-                Intended Wedding Budget
-              </Label>
-              <div className="relative mt-2">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
-                <Input
-                  id="workspace-total-budget"
-                  aria-label="Adjust wedding budget"
-                  type="number"
-                  min="1"
-                  inputMode="numeric"
-                  value={budgetGoalDraft}
-                  onChange={(event) => setBudgetGoalDraft(event.target.value)}
-                  onBlur={() => void saveBudgetGoal()}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') event.currentTarget.blur();
-                  }}
-                  disabled={savingBudgetGoal}
-                  className="h-10 bg-background pl-12 text-sm font-semibold sm:h-11 sm:text-base"
-                />
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground" aria-live="polite">
-                {savingBudgetGoal ? 'Saving your budget...' : 'Your spending limit'}
+      <section
+        className="grid overflow-hidden rounded-[1.35rem] border border-border bg-card shadow-card lg:grid-cols-[1fr_2fr_1fr]"
+        aria-label="Wedding budget summary"
+      >
+        <div className="border-b border-border p-4 sm:p-5 lg:border-b-0 lg:border-r">
+          <Label
+            htmlFor="workspace-total-budget"
+            className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]"
+          >
+            Intended wedding budget
+          </Label>
+          <div className="relative mt-2">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
+            <Input
+              id="workspace-total-budget"
+              aria-label="Adjust wedding budget"
+              type="text"
+              inputMode="numeric"
+              value={budgetGoalDraft}
+              onChange={(event) => setBudgetGoalDraft(formatIntegerDraft(event.target.value))}
+              onBlur={() => void saveBudgetGoal()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
+              disabled={savingBudgetGoal}
+              className="h-10 bg-background pl-12 text-sm font-semibold sm:h-11 sm:text-base"
+            />
+          </div>
+          {savingBudgetGoal ? (
+            <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">Saving your budget...</p>
+          ) : null}
+        </div>
+
+        <div className="border-b border-border lg:border-b-0 lg:border-r">
+          <p className="border-b border-border px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground sm:px-5">
+            Tracking intended wedding budget
+          </p>
+          <div className="grid grid-cols-2">
+            <div className="border-r border-border p-4 sm:p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Allocated</p>
+              <p className="mt-3 text-base font-bold sm:text-xl">{formatCurrency(weddingAllocated)}</p>
+              <p className={`mt-1 text-xs sm:text-sm ${weddingAllocationPercentage > 100 ? 'font-semibold text-destructive' : 'text-muted-foreground'}`}>
+                {weddingAllocationPercentage.toFixed(1)}% of budget
               </p>
-            </>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground">Overall budget</p>
-              <p className="mt-1 truncate text-base font-semibold text-foreground sm:text-lg">{formatCurrency(visibleBudgetGoal)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Private plan total</p>
-            </>
-          )}
+            </div>
+            <div className="p-4 sm:p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">
+                {weddingRemainingBudget >= 0 ? 'Remaining' : 'Over budget'}
+              </p>
+              <p className={`mt-3 text-base font-bold sm:text-xl ${weddingRemainingBudget < 0 ? 'text-destructive' : ''}`}>
+                {formatCurrency(Math.abs(weddingRemainingBudget))}
+              </p>
+              <div
+                className={`mt-2 inline-flex items-center gap-2 text-xs font-semibold ${
+                  weddingRemainingBudget < 0
+                    ? 'text-destructive'
+                    : weddingRemainingBudget === 0
+                      ? 'text-success'
+                      : 'text-foreground'
+                }`}
+                aria-live="polite"
+              >
+                <span aria-hidden="true" className="h-px w-4 shrink-0 bg-current opacity-55" />
+                {weddingRemainingBudget < 0
+                  ? 'Reduce allocations'
+                  : weddingRemainingBudget === 0
+                    ? 'Budget fully allocated'
+                    : 'Left to allocate'}
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="border-b border-border p-3 sm:border-b-0 sm:border-r sm:p-4">
-          <p className="text-xs text-muted-foreground">Total Vendor Invoice</p>
-          <p className="mt-1 truncate text-base font-semibold text-foreground sm:text-lg">{formatCurrency(visibleAllocated)}</p>
-          <p className={`mt-1 text-xs ${visibleAllocationPercentage > 100 ? 'font-semibold text-destructive' : 'text-muted-foreground'}`}>
-            {visibleAllocationPercentage.toFixed(1)}% planned
+
+        <div className="p-4 sm:p-5">
+          <Label
+            htmlFor="workspace-expected-guests"
+            className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]"
+          >
+            Expected guests
+          </Label>
+          <Input
+            id="workspace-expected-guests"
+            aria-label="Adjust expected guests"
+            type="text"
+            inputMode="numeric"
+            value={expectedGuestCountDraft}
+            onChange={(event) => setExpectedGuestCountDraft(formatIntegerDraft(event.target.value))}
+            onBlur={() => void saveExpectedGuestCount()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
+            }}
+            disabled={savingExpectedGuestCount}
+            className="mt-2 h-10 bg-background text-sm font-semibold sm:h-11 sm:text-base"
+          />
+          <p className="mt-2 text-xs text-muted-foreground sm:text-sm">
+            {formatCurrency(expectedGuestCount > 0 ? guestSensitiveAllocated / expectedGuestCount : 0)} per guest
           </p>
         </div>
-        <div className="border-r border-border p-3 sm:p-4">
-          <p className="text-xs text-muted-foreground">Total Vendor Payments</p>
-          <p className="mt-1 truncate text-base font-semibold text-foreground sm:text-lg">{formatCurrency(visibleSpent)}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{visibleSpentPercentage}% of budget</p>
-        </div>
-        <div className="p-3 sm:p-4">
-          <p className="text-xs text-muted-foreground">Balance</p>
-          <p className={`mt-1 truncate text-base font-semibold sm:text-lg ${remainingAllocationBudget < 0 ? 'text-destructive' : 'text-foreground'}`}>
-            {formatCurrency(remainingAllocationBudget)}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">After planned costs</p>
-        </div>
-      </div>
+      </section>
 
       {activeBudgetScope === 'wedding' ? (
         <section className="overflow-hidden rounded-lg border border-border bg-card" aria-labelledby="vendor-payments-title">

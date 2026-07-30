@@ -10,6 +10,7 @@ export interface PlannerClient {
   wedding_date: string | null;
   wedding_location: string | null;
   wedding_budget_goal: number | null;
+  expected_guest_count: number | null;
   email: string | null;
   phone: string | null;
   notes: string | null;

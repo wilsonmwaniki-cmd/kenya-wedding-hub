@@ -362,6 +362,7 @@ export type Database = {
           wedding_date: string | null
           wedding_location: string | null
           wedding_budget_goal: number | null
+          expected_guest_count: number | null
         }
         Insert: {
           client_name: string
@@ -377,6 +378,7 @@ export type Database = {
           wedding_date?: string | null
           wedding_location?: string | null
           wedding_budget_goal?: number | null
+          expected_guest_count?: number | null
         }
         Update: {
           client_name?: string
@@ -392,6 +394,7 @@ export type Database = {
           wedding_date?: string | null
           wedding_location?: string | null
           wedding_budget_goal?: number | null
+          expected_guest_count?: number | null
         }
         Relationships: []
       }
@@ -550,6 +553,7 @@ export type Database = {
           wedding_date: string | null
           wedding_location: string | null
           wedding_budget_goal: number | null
+          expected_guest_count: number | null
           wedding_town: string | null
         }
         Insert: {
@@ -592,6 +596,7 @@ export type Database = {
           wedding_date?: string | null
           wedding_location?: string | null
           wedding_budget_goal?: number | null
+          expected_guest_count?: number | null
           wedding_town?: string | null
         }
         Update: {
@@ -634,6 +639,7 @@ export type Database = {
           wedding_date?: string | null
           wedding_location?: string | null
           wedding_budget_goal?: number | null
+          expected_guest_count?: number | null
           wedding_town?: string | null
         }
         Relationships: []

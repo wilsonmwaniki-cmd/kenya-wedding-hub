@@ -433,13 +433,19 @@ export async function seedWeddingPlanFromEstimator({
     if (clientId) {
       const { error } = await supabase
         .from('planner_clients')
-        .update({ wedding_budget_goal: draft.totalBudget })
+        .update({
+          wedding_budget_goal: draft.totalBudget,
+          expected_guest_count: draft.guestCount,
+        })
         .eq('id', clientId);
       if (error) throw error;
     } else {
       const { error } = await supabase
         .from('profiles')
-        .update({ wedding_budget_goal: draft.totalBudget })
+        .update({
+          wedding_budget_goal: draft.totalBudget,
+          expected_guest_count: draft.guestCount,
+        })
         .eq('user_id', userId);
       if (error) throw error;
     }

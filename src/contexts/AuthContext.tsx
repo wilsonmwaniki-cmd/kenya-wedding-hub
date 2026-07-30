@@ -59,6 +59,7 @@ interface Profile {
   wedding_county: string | null;
   wedding_town: string | null;
   wedding_budget_goal: number | null;
+  expected_guest_count: number | null;
   role: AppRole;
   company_name: string | null;
   company_email: string | null;
@@ -670,6 +671,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     wedding_location: null,
     wedding_county: null,
     wedding_town: null,
+    wedding_budget_goal: null,
+    expected_guest_count: null,
     role,
     company_name: null,
     company_email: authUser.email ?? null,
