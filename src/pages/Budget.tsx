@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
 import {
+  totalRecordedVendorPayments,
   updateVendorPaymentState,
   vendorPaymentStatuses,
   vendorPaymentStatusLabel,
@@ -157,7 +158,6 @@ interface VendorEditorDraft {
   selectionStatus: VendorSelectionStatus;
   contractStatus: string;
   depositAmount: string;
-  amountPaid: string;
   paymentStatus: VendorPaymentStatus;
   paymentDueDate: string;
   notes: string;
@@ -503,7 +503,6 @@ export default function Budget() {
       selectionStatus: (vendor?.selection_status ?? 'shortlisted') as VendorSelectionStatus,
       contractStatus: vendor?.contract_status ?? 'not_started',
       depositAmount: String(vendor?.deposit_amount ?? 0),
-      amountPaid: String(vendor?.amount_paid ?? 0),
       paymentStatus: (vendor?.payment_status ?? 'unpaid') as VendorPaymentStatus,
       paymentDueDate: vendor?.payment_due_date ?? '',
       notes: vendor?.notes ?? '',
@@ -516,13 +515,17 @@ export default function Budget() {
     const name = vendorEditorDraft.name.trim();
     const price = vendorEditorDraft.price.trim() === '' ? null : Number(vendorEditorDraft.price);
     const depositAmount = Number(vendorEditorDraft.depositAmount || 0);
-    const amountPaid = Number(vendorEditorDraft.amountPaid || 0);
+    const amountPaid = vendorEditorRecord
+      ? totalRecordedVendorPayments(
+          paymentRecords.filter((payment) => payment.vendor_id === vendorEditorRecord.id),
+        )
+      : 0;
     if (!name) {
       toast({ title: 'Add the vendor name', description: 'A business or contact name is required.', variant: 'destructive' });
       return;
     }
-    if ((price != null && (!Number.isFinite(price) || price < 0)) || !Number.isFinite(depositAmount) || depositAmount < 0 || !Number.isFinite(amountPaid) || amountPaid < 0) {
-      toast({ title: 'Check the amounts', description: 'Invoice, deposit, and payment amounts must be zero or higher.', variant: 'destructive' });
+    if ((price != null && (!Number.isFinite(price) || price < 0)) || !Number.isFinite(depositAmount) || depositAmount < 0) {
+      toast({ title: 'Check the amounts', description: 'Invoice and agreed deposit amounts must be zero or higher.', variant: 'destructive' });
       return;
     }
 
@@ -1413,9 +1416,17 @@ export default function Budget() {
     }
   };
   const totalFinalVendorContract = finalVendorPayments.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
-  const totalFinalVendorPaid = finalVendorPayments.reduce((sum, vendor) => sum + vendor.amount_paid, 0);
+  const finalVendorIds = new Set(finalVendorPayments.map((vendor) => vendor.id));
+  const totalFinalVendorPaid = totalRecordedVendorPayments(
+    paymentRecords.filter((payment) => payment.vendor_id && finalVendorIds.has(payment.vendor_id)),
+  );
   const totalFinalVendorOutstanding = finalVendorPayments.reduce(
-    (sum, vendor) => sum + Math.max((vendor.price ?? 0) - vendor.amount_paid, 0),
+    (sum, vendor) => {
+      const recordedTotal = totalRecordedVendorPayments(
+        paymentRecords.filter((payment) => payment.vendor_id === vendor.id),
+      );
+      return sum + Math.max((vendor.price ?? 0) - recordedTotal, 0);
+    },
     0,
   );
 
@@ -1574,7 +1585,12 @@ export default function Budget() {
       }
 
       if (plannerNeedsApproval && selectedClient?.linked_user_id) {
-        const nextPaid = selectedVendor ? Number(selectedVendor.amount_paid ?? 0) + amount : null;
+        const recordedVendorPayments = selectedVendor
+          ? paymentRecords.filter((payment) => payment.vendor_id === selectedVendor.id)
+          : [];
+        const nextPaid = selectedVendor
+          ? totalRecordedVendorPayments(recordedVendorPayments) + amount
+          : null;
         const nextStatus =
           selectedVendor && selectedVendor.price && nextPaid != null && nextPaid >= selectedVendor.price
             ? 'paid_full'
@@ -1644,7 +1660,10 @@ export default function Budget() {
       if (categoryError) throw categoryError;
 
       if (selectedVendor) {
-        const nextPaid = Number(selectedVendor.amount_paid ?? 0) + amount;
+        const recordedVendorPayments = paymentRecords.filter(
+          (payment) => payment.vendor_id === selectedVendor.id,
+        );
+        const nextPaid = totalRecordedVendorPayments(recordedVendorPayments) + amount;
         const contractAmount = selectedVendor.price ?? null;
         const nextStatus =
           contractAmount && nextPaid >= contractAmount
@@ -3217,11 +3236,18 @@ export default function Budget() {
                           </div>
                           <div>
                             <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</p>
-                            <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.amount_paid)}</p>
+                            <p className="mt-1 text-sm font-medium text-foreground">
+                              {formatCurrency(totalRecordedVendorPayments(paymentRecords.filter((payment) => payment.vendor_id === vendor.id)))}
+                            </p>
                           </div>
                           <div>
                             <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Outstanding</p>
-                            <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(Math.max((vendor.price ?? 0) - vendor.amount_paid, 0))}</p>
+                            <p className="mt-1 text-sm font-medium text-foreground">
+                              {formatCurrency(Math.max(
+                                (vendor.price ?? 0) - totalRecordedVendorPayments(paymentRecords.filter((payment) => payment.vendor_id === vendor.id)),
+                                0,
+                              ))}
+                            </p>
                           </div>
                         </div>
                         {vendor.payment_due_date && (
@@ -3321,12 +3347,22 @@ export default function Budget() {
                   <Input id="vendor-editor-price" type="number" min="0" value={vendorEditorDraft.price} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, price: event.target.value } : current)} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="vendor-editor-deposit">Deposit amount (KES)</Label>
+                  <Label htmlFor="vendor-editor-deposit">Agreed deposit amount (KES)</Label>
                   <Input id="vendor-editor-deposit" type="number" min="0" value={vendorEditorDraft.depositAmount} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, depositAmount: event.target.value } : current)} />
+                  <p className="text-xs text-muted-foreground">The amount required to secure the booking. Record it separately when it is paid.</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="vendor-editor-paid">Total paid (KES)</Label>
-                  <Input id="vendor-editor-paid" type="number" min="0" value={vendorEditorDraft.amountPaid} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, amountPaid: event.target.value } : current)} />
+                  <Label>Payments recorded</Label>
+                  <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5" aria-live="polite">
+                    <p className="font-medium text-foreground">
+                      {formatCurrency(
+                        vendorEditorRecord
+                          ? totalRecordedVendorPayments(paymentRecords.filter((payment) => payment.vendor_id === vendorEditorRecord.id))
+                          : 0,
+                      )}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">Calculated from recorded payment entries.</p>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Payment stage</Label>

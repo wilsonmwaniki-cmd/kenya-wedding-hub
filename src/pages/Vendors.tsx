@@ -38,6 +38,7 @@ import {
   type VendorSelectionStatus,
 } from '@/lib/vendorSelection';
 import {
+  totalRecordedVendorPayments,
   updateVendorPaymentState,
   vendorPaymentStatusLabel,
   vendorPaymentStatusTone,
@@ -132,7 +133,6 @@ interface DirectoryVendor {
 
 interface PaymentDraft {
   depositAmount: string;
-  amountPaid: string;
   paymentStatus: VendorPaymentStatus;
   paymentDueDate: string;
 }
@@ -859,7 +859,6 @@ export default function Vendors() {
           row.id,
           {
             depositAmount: String(row.deposit_amount ?? 0),
-            amountPaid: String(row.amount_paid ?? 0),
             paymentStatus: (row.payment_status || 'unpaid') as VendorPaymentStatus,
             paymentDueDate: row.payment_due_date ?? '',
           },
@@ -1395,7 +1394,7 @@ export default function Vendors() {
     const contractAmountDraft = priceDrafts[vendor.id]?.trim() ?? '';
     const contractAmount = contractAmountDraft === '' ? null : Number(contractAmountDraft);
     const depositAmount = draft.depositAmount.trim() === '' ? 0 : Number(draft.depositAmount);
-    const amountPaid = draft.amountPaid.trim() === '' ? 0 : Number(draft.amountPaid);
+    const amountPaid = totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []);
 
     if (contractAmountDraft !== '' && (!Number.isFinite(contractAmount) || (contractAmount ?? 0) <= 0)) {
       toast({
@@ -1406,10 +1405,10 @@ export default function Vendors() {
       return;
     }
 
-    if (!Number.isFinite(depositAmount) || !Number.isFinite(amountPaid) || depositAmount < 0 || amountPaid < 0) {
+    if (!Number.isFinite(depositAmount) || depositAmount < 0) {
       toast({
-        title: 'Invalid payment amounts',
-        description: 'Deposit and paid amounts must be zero or higher.',
+        title: 'Invalid deposit amount',
+        description: 'The agreed deposit must be zero or higher.',
         variant: 'destructive',
       });
       return;
@@ -1961,14 +1960,20 @@ export default function Vendors() {
 
   const finalVendorPaymentSummary = useMemo(() => {
     const totalContract = finalVendorEntries.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
-    const totalPaid = finalVendorEntries.reduce((sum, vendor) => sum + (vendor.amount_paid ?? 0), 0);
+    const totalPaid = finalVendorEntries.reduce(
+      (sum, vendor) => sum + totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []),
+      0,
+    );
     const totalOutstanding = finalVendorEntries.reduce(
-      (sum, vendor) => sum + Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0),
+      (sum, vendor) => sum + Math.max(
+        (vendor.price ?? 0) - totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []),
+        0,
+      ),
       0,
     );
 
     return { totalContract, totalPaid, totalOutstanding };
-  }, [finalVendorEntries]);
+  }, [finalVendorEntries, vendorPaymentsByVendorId]);
 
   const vendorTaskSummary = useMemo(() => {
     const vendorTaskGroups = Object.values(vendorTasksByVendorId);
@@ -2222,7 +2227,7 @@ export default function Vendors() {
     }
 
     const invoiceTotal = selectedVendor.price ?? 0;
-    const totalPaid = selectedVendor.amount_paid ?? 0;
+    const totalPaid = totalRecordedVendorPayments(vendorPaymentsByVendorId[selectedVendor.id] ?? []);
     const balance = Math.max(invoiceTotal - totalPaid, 0);
 
     return {
@@ -2230,7 +2235,7 @@ export default function Vendors() {
       totalPaid,
       balance,
     };
-  }, [selectedVendor]);
+  }, [selectedVendor, vendorPaymentsByVendorId]);
   const selectedVendorLearningProfile = useMemo(() => {
     if (!selectedVendor?.vendor_listing_id) return null;
     return vendorLearningProfiles[selectedVendor.vendor_listing_id] ?? null;
@@ -2701,7 +2706,8 @@ export default function Vendors() {
 
       if (plannerNeedsApproval && selectedClient?.linked_user_id) {
         const nextCategorySpent = Number(selectedCategory.spent ?? 0) + amount;
-        const nextPaid = Number(selectedVendor.amount_paid ?? 0) + amount;
+        const recordedTotal = totalRecordedVendorPayments(vendorPaymentsByVendorId[selectedVendor.id] ?? []);
+        const nextPaid = recordedTotal + amount;
         const nextStatus: VendorPaymentStatus =
           selectedVendor.price && nextPaid >= selectedVendor.price
             ? 'paid_full'
@@ -2767,7 +2773,8 @@ export default function Vendors() {
 
       if (updateCategoryError) throw updateCategoryError;
 
-      const nextPaid = Number(selectedVendor.amount_paid ?? 0) + amount;
+      const recordedTotal = totalRecordedVendorPayments(vendorPaymentsByVendorId[selectedVendor.id] ?? []);
+      const nextPaid = recordedTotal + amount;
       const nextStatus: VendorPaymentStatus =
         selectedVendor.price && nextPaid >= selectedVendor.price
           ? 'paid_full'
@@ -3036,6 +3043,7 @@ export default function Vendors() {
         vendors.map((vendor) => {
           const vendorTasks = vendorTasksByVendorId[vendor.id] ?? [];
           const vendorPayments = vendorPaymentsByVendorId[vendor.id] ?? [];
+          const recordedPaymentTotal = totalRecordedVendorPayments(vendorPayments);
           return {
             vendor_name: vendor.name,
             category: vendor.category,
@@ -3045,8 +3053,8 @@ export default function Vendors() {
             payment_status: vendor.payment_status,
             contract_status: vendor.contract_status,
             quoted_price_kes: vendor.price ?? '',
-            amount_paid_kes: vendor.amount_paid,
-            outstanding_kes: vendor.price != null ? Math.max(vendor.price - vendor.amount_paid, 0) : '',
+            amount_paid_kes: recordedPaymentTotal,
+            outstanding_kes: vendor.price != null ? Math.max(vendor.price - recordedPaymentTotal, 0) : '',
             payment_due_date: safeDateLabel(vendor.payment_due_date),
             open_tasks: vendorTasks.filter((task) => !task.completed).length,
             completed_tasks: vendorTasks.filter((task) => task.completed).length,
@@ -3061,9 +3069,10 @@ export default function Vendors() {
       const vendorTasks = vendorTasksByVendorId[vendor.id] ?? [];
       const openVendorTasks = vendorTasks.filter((task) => !task.completed).length;
       const vendorPayments = vendorPaymentsByVendorId[vendor.id] ?? [];
-      const outstandingBalance = Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0);
+      const recordedPaymentTotal = totalRecordedVendorPayments(vendorPayments);
+      const outstandingBalance = Math.max((vendor.price ?? 0) - recordedPaymentTotal, 0);
       const paymentProgress = vendor.price && vendor.price > 0
-        ? Math.min(((vendor.amount_paid ?? 0) / vendor.price) * 100, 100)
+        ? Math.min((recordedPaymentTotal / vendor.price) * 100, 100)
         : 0;
       const dueDateLabel = vendor.payment_due_date ? safeDateLabel(vendor.payment_due_date) : null;
       const isActive = selectedVendorId === vendor.id;
@@ -3106,7 +3115,7 @@ export default function Vendors() {
                   </Badge>
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {formatCurrency(vendor.amount_paid)} paid · {formatCurrency(outstandingBalance)} balance
+                  {formatCurrency(recordedPaymentTotal)} paid · {formatCurrency(outstandingBalance)} balance
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span>{vendor.category}</span>
@@ -3129,7 +3138,7 @@ export default function Vendors() {
             <div className="min-w-0 space-y-5 border-t border-border bg-background/60 px-4 pb-6 pt-5 sm:px-7">
               <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-background/70 text-center">
                 <div className="p-3"><p className="text-xs text-muted-foreground">Vendor invoice</p><p className="mt-1 font-semibold">{formatCurrency(vendor.price)}</p></div>
-                <div className="p-3"><p className="text-xs text-muted-foreground">Payments made</p><p className="mt-1 font-semibold">{formatCurrency(vendor.amount_paid)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Payments recorded</p><p className="mt-1 font-semibold">{formatCurrency(recordedPaymentTotal)}</p></div>
                 <div className="p-3"><p className="text-xs text-muted-foreground">Balance</p><p className="mt-1 font-semibold">{formatCurrency(outstandingBalance)}</p></div>
               </div>
 
@@ -3278,18 +3287,21 @@ export default function Vendors() {
                       <Input id={`vendor-price-${vendor.id}`} type="number" min="0" value={priceDrafts[vendor.id] ?? ''} onChange={(event) => setPriceDrafts((current) => ({ ...current, [vendor.id]: event.target.value }))} />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor={`vendor-deposit-${vendor.id}`}>Deposit</Label>
+                      <Label htmlFor={`vendor-deposit-${vendor.id}`}>Agreed deposit amount</Label>
                       <Input id={`vendor-deposit-${vendor.id}`} type="number" min="0" value={paymentDrafts[vendor.id]?.depositAmount ?? '0'} onChange={(event) => setPaymentDrafts((current) => ({
                         ...current,
-                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), depositAmount: event.target.value },
+                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), depositAmount: event.target.value },
                       }))} />
+                      <p className="text-xs text-muted-foreground">The amount required to secure the booking. Record it separately when it is actually paid.</p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor={`vendor-paid-${vendor.id}`}>Total payments made</Label>
-                      <Input id={`vendor-paid-${vendor.id}`} type="number" min="0" value={paymentDrafts[vendor.id]?.amountPaid ?? '0'} onChange={(event) => setPaymentDrafts((current) => ({
-                        ...current,
-                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), amountPaid: event.target.value },
-                      }))} />
+                      <Label>Payments recorded</Label>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                        <p className="font-semibold text-foreground">{formatCurrency(recordedPaymentTotal)}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Calculated from {vendorPayments.length} payment {vendorPayments.length === 1 ? 'record' : 'records'}.
+                        </p>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label>Payment stage</Label>
@@ -3297,7 +3309,7 @@ export default function Vendors() {
                         value={paymentDrafts[vendor.id]?.paymentStatus ?? 'unpaid'}
                         onValueChange={(value) => setPaymentDrafts((current) => ({
                           ...current,
-                          [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentStatus: value as VendorPaymentStatus },
+                          [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentStatus: value as VendorPaymentStatus },
                         }))}
                       >
                         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -3310,14 +3322,17 @@ export default function Vendors() {
                       <Label htmlFor={`vendor-due-${vendor.id}`}>Next payment date</Label>
                       <Input id={`vendor-due-${vendor.id}`} type="date" value={paymentDrafts[vendor.id]?.paymentDueDate ?? ''} onChange={(event) => setPaymentDrafts((current) => ({
                         ...current,
-                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentDueDate: event.target.value },
+                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentDueDate: event.target.value },
                       }))} />
                     </div>
                   </div>
-                  <div className="mt-4 flex justify-end">
+                  <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <Button type="button" variant="outline" onClick={() => navigate('/budget')}>
+                      Record a payment
+                    </Button>
                     <Button type="button" onClick={() => updateVendorPayment(vendor)} disabled={savingPaymentId === vendor.id}>
                       {savingPaymentId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Save payments
+                      Save payment plan
                     </Button>
                   </div>
                 </div>
@@ -3676,7 +3691,10 @@ export default function Vendors() {
                   });
                   const openTaskCount = openTasks.size;
                   const outstandingBalance = group.reduce(
-                    (total, vendor) => total + Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0),
+                    (total, vendor) => total + Math.max(
+                      (vendor.price ?? 0) - totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []),
+                      0,
+                    ),
                     0,
                   );
                   const isExpanded = expandedVendorCategories[category] ?? group.length > 0;
@@ -4700,22 +4718,25 @@ export default function Vendors() {
               }
               downloadCsv(
                 `zania-vendors-${new Date().toISOString().slice(0, 10)}.csv`,
-                vendors.map((vendor) => ({
-                  vendor_name: vendor.name,
-                  category: vendor.category,
-                  phone: vendor.phone ?? '',
-                  email: vendor.email ?? '',
-                  selection_status: vendor.selection_status,
-                  payment_status: vendor.payment_status,
-                  contract_status: vendor.contract_status,
-                  quoted_price_kes: vendor.price ?? '',
-                  amount_paid_kes: vendor.amount_paid,
-                  outstanding_kes: vendor.price != null ? Math.max(vendor.price - vendor.amount_paid, 0) : '',
-                  payment_due_date: safeDateLabel(vendor.payment_due_date),
-                  open_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => !task.completed).length,
-                  completed_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => task.completed).length,
-                  notes: notesDrafts[vendor.id] ?? vendor.notes ?? '',
-                })),
+                vendors.map((vendor) => {
+                  const recordedPaymentTotal = totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []);
+                  return {
+                    vendor_name: vendor.name,
+                    category: vendor.category,
+                    phone: vendor.phone ?? '',
+                    email: vendor.email ?? '',
+                    selection_status: vendor.selection_status,
+                    payment_status: vendor.payment_status,
+                    contract_status: vendor.contract_status,
+                    quoted_price_kes: vendor.price ?? '',
+                    amount_paid_kes: recordedPaymentTotal,
+                    outstanding_kes: vendor.price != null ? Math.max(vendor.price - recordedPaymentTotal, 0) : '',
+                    payment_due_date: safeDateLabel(vendor.payment_due_date),
+                    open_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => !task.completed).length,
+                    completed_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => task.completed).length,
+                    notes: notesDrafts[vendor.id] ?? vendor.notes ?? '',
+                  };
+                }),
               );
             }}
           >
@@ -4981,8 +5002,8 @@ export default function Vendors() {
                               ? `${activeReputation.average_overall_rating.toFixed(1)}/5`
                               : 'Insufficient reviews'}
                           </p>
-                          <p>Paid: {formatCurrency(vendor.amount_paid)}</p>
-                          <p>Outstanding: {formatCurrency(Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0))}</p>
+                          <p>Paid: {formatCurrency(totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []))}</p>
+                          <p>Outstanding: {formatCurrency(Math.max((vendor.price ?? 0) - totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []), 0))}</p>
                           <p>Owner: {workflowDrafts[vendor.id]?.committeeRoleInCharge === 'unassigned' ? 'Unassigned' : (workflowDrafts[vendor.id]?.committeeRoleInCharge ?? 'Unassigned')}</p>
                           <p>Contract: {contractStatusLabel(workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status)}</p>
                           <p>Open tasks: {openLinkedTasks.length}</p>
@@ -5016,7 +5037,7 @@ export default function Vendors() {
                   <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Amount paid</div>
                   {decisionWorkspaceVendors.map((vendor) => (
                     <div key={`${vendor.id}-paid`} className="px-4 py-3 text-sm text-foreground">
-                      {formatCurrency(vendor.amount_paid)}
+                      {formatCurrency(totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []))}
                     </div>
                   ))}
 
@@ -5160,6 +5181,8 @@ export default function Vendors() {
           const activeReputation = listingReputation?.benchmark_visible ? listingReputation : categoryReputation;
           const canReview = vendor.status === 'booked' || vendor.status === 'completed';
           const linkedTasks = vendorTasksByVendorId[vendor.id] ?? [];
+          const vendorPayments = vendorPaymentsByVendorId[vendor.id] ?? [];
+          const recordedPaymentTotal = totalRecordedVendorPayments(vendorPayments);
           const openLinkedTasks = linkedTasks.filter((task) => !task.completed);
           const milestones = buildVendorMilestones(vendor, linkedTasks);
           const nextMilestone = milestones.find((milestone) => milestone.status !== 'complete') ?? null;
@@ -5356,19 +5379,19 @@ export default function Vendors() {
                     </div>
                     <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</p>
-                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.amount_paid)}</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(recordedPaymentTotal)}</p>
                     </div>
                     <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Outstanding</p>
                       <p className="mt-1 text-sm font-medium text-foreground">
-                        {formatCurrency(Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0))}
+                        {formatCurrency(Math.max((vendor.price ?? 0) - recordedPaymentTotal, 0))}
                       </p>
                     </div>
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor={`deposit-${vendor.id}`}>Deposit amount</Label>
+                      <Label htmlFor={`deposit-${vendor.id}`}>Agreed deposit amount</Label>
                       <Input
                         id={`deposit-${vendor.id}`}
                         type="number"
@@ -5377,31 +5400,23 @@ export default function Vendors() {
                           setPaymentDrafts((prev) => ({
                             ...prev,
                             [vendor.id]: {
-                              ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                              ...(prev[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
                               depositAmount: e.target.value,
                             },
                           }))
                         }
                         placeholder="0"
                       />
+                      <p className="text-xs text-muted-foreground">Required to secure the booking; it only counts as paid after a payment is recorded.</p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor={`paid-${vendor.id}`}>Amount paid</Label>
-                      <Input
-                        id={`paid-${vendor.id}`}
-                        type="number"
-                        value={paymentDrafts[vendor.id]?.amountPaid ?? '0'}
-                        onChange={(e) =>
-                          setPaymentDrafts((prev) => ({
-                            ...prev,
-                            [vendor.id]: {
-                              ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
-                              amountPaid: e.target.value,
-                            },
-                          }))
-                        }
-                        placeholder="0"
-                      />
+                      <Label>Payments recorded</Label>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/40 px-3 py-2">
+                        <p className="text-sm font-medium text-foreground">{formatCurrency(recordedPaymentTotal)}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {vendorPayments.length} payment {vendorPayments.length === 1 ? 'record' : 'records'} in the ledger.
+                        </p>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label>Payment status</Label>
@@ -5411,7 +5426,7 @@ export default function Vendors() {
                           setPaymentDrafts((prev) => ({
                             ...prev,
                             [vendor.id]: {
-                              ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                              ...(prev[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
                               paymentStatus: value as VendorPaymentStatus,
                             },
                           }))
@@ -5442,7 +5457,7 @@ export default function Vendors() {
                             setPaymentDrafts((prev) => ({
                               ...prev,
                               [vendor.id]: {
-                                ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                                ...(prev[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
                                 paymentDueDate: e.target.value,
                               },
                             }))

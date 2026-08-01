@@ -10,6 +10,12 @@ export const vendorPaymentStatuses = [
 
 export type VendorPaymentStatus = typeof vendorPaymentStatuses[number];
 
+export function totalRecordedVendorPayments(
+  payments: Array<{ amount: number | string | null | undefined }>,
+) {
+  return payments.reduce((total, payment) => total + Number(payment.amount ?? 0), 0);
+}
+
 export function vendorPaymentStatusLabel(status: VendorPaymentStatus | string | null | undefined) {
   switch (status) {
     case 'deposit_due':
