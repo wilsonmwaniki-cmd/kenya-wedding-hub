@@ -3326,10 +3326,7 @@ export default function Vendors() {
                       }))} />
                     </div>
                   </div>
-                  <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                    <Button type="button" variant="outline" onClick={() => navigate('/budget')}>
-                      Record a payment
-                    </Button>
+                  <div className="mt-4 flex justify-end">
                     <Button type="button" onClick={() => updateVendorPayment(vendor)} disabled={savingPaymentId === vendor.id}>
                       {savingPaymentId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                       Save payment plan
