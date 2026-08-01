@@ -18,7 +18,7 @@ import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { createVendorTask } from '@/lib/vendorTasks';
 import { vendorPaymentStatusLabel } from '@/lib/vendorPayments';
 import { cn } from '@/lib/utils';
-import { getSuggestedTaskCategories, getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
+import { getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 import { getEntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
@@ -35,7 +35,7 @@ import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
 import { HierarchyGroup } from '@/components/HierarchyGroup';
 import { getConfirmedVendorForTask, getRelatedBudgetCategoryForTask } from '@/lib/budgetRelations';
-import { canonicalizeVendorCategory, vendorCategoriesMatch } from '@/lib/vendorCategories';
+import { canonicalizeVendorCategory, vendorCategoriesMatch, vendorCategoryCatalog } from '@/lib/vendorCategories';
 
 interface Task {
   id: string;
@@ -275,14 +275,14 @@ export default function Tasks() {
 
   const categoryOptions = useMemo(() => {
     const set = new Map<string, string>();
-    getSuggestedTaskCategories({
-      vendorCategories: vendorOptions.map((vendor) => vendor.category),
-      role: profile?.role,
-      plannerType: profile?.planner_type,
-    }).forEach((category) => set.set(normalizeCategory(category), category));
-    budgetCategories.forEach((category) => set.set(normalizeCategory(category.name), category.name));
+    vendorCategoryCatalog.forEach((category) => set.set(normalizeCategory(category.name), category.name));
+    budgetCategories.forEach((category) => {
+      const canonical = canonicalizeVendorCategory(category.name);
+      if (!set.has(normalizeCategory(canonical))) set.set(normalizeCategory(category.name), category.name);
+    });
     vendorOptions.forEach((vendor) => {
-      if (!set.has(normalizeCategory(vendor.category))) {
+      const canonical = canonicalizeVendorCategory(vendor.category);
+      if (!set.has(normalizeCategory(canonical))) {
         set.set(normalizeCategory(vendor.category), vendor.category);
       }
     });
@@ -290,7 +290,7 @@ export default function Tasks() {
     return [...set.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((left, right) => left.label.localeCompare(right.label));
-  }, [budgetCategories, vendorOptions, profile?.role, profile?.planner_type]);
+  }, [budgetCategories, vendorOptions]);
 
   const selectedCategoryName = useMemo(() => {
     if (sourceVendorId !== 'none') {
@@ -1402,7 +1402,7 @@ export default function Tasks() {
                     .filter((task) => !task.completed && task.due_date)
                     .sort(sortTasksByDateAndPriority)[0] ?? null;
                   const allComplete = completedCount === group.tasks.length;
-                  const groupOpen = expandedTaskGroups[group.label] ?? true;
+                  const groupOpen = expandedTaskGroups[group.label] ?? false;
                   const groupTone = allComplete
                     ? 'success'
                     : urgentCount > 0
@@ -1432,7 +1432,7 @@ export default function Tasks() {
                       onToggle={() => {
                         setExpandedTaskGroups((current) => ({
                           ...current,
-                          [group.label]: !(current[group.label] ?? true),
+                          [group.label]: !(current[group.label] ?? false),
                         }));
                       }}
                       meta={`${group.tasks.length} task${group.tasks.length === 1 ? '' : 's'}`}

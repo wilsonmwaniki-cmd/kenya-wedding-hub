@@ -5,6 +5,7 @@ import {
   getNextWeddingChecklistTask,
   getWeddingChecklistStep,
 } from '@/lib/weddingTaskTemplates';
+import { vendorCategoryNames } from '@/lib/vendorCategories';
 
 describe('wedding checklist guidance order', () => {
   it('preserves the spreadsheet row order inside the same timeline', () => {
@@ -70,5 +71,17 @@ describe('wedding checklist guidance order', () => {
     });
     expect(firstTask?.template_key).toBeTruthy();
     expect(finalWeekTask?.due_date).toBe('2026-06-24');
+  });
+
+  it('uses the shared vendor catalog for seeded task categories', () => {
+    const tasks = buildSeededTasksFromTemplates({
+      vendorCategories: [...vendorCategoryNames],
+      role: 'couple',
+    });
+    const allowedCategories = new Set([...vendorCategoryNames, "Couple's Tasks"]);
+
+    expect(tasks.every((task) => allowedCategories.has(task.category))).toBe(true);
+    expect(tasks.some((task) => task.category === "Bride's Hair Stylist")).toBe(true);
+    expect(tasks.some((task) => task.category === "Bride's Make-up Artist")).toBe(true);
   });
 });

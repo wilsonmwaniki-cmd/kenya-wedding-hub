@@ -24,9 +24,9 @@ describe('estimator plan handoff', () => {
     })).toBe(false);
   });
 
-  it('preserves the exact edited 21-category plan for budget seeding', () => {
+  it('preserves the exact edited 22-category plan for budget seeding', () => {
     const initialPlan = buildInteractiveBudgetPlan(1_500_000, 120);
-    const editedPlan = updateInteractiveBudgetAllocation(initialPlan, 'Catering', 600_000);
+    const editedPlan = updateInteractiveBudgetAllocation(initialPlan, 'Caterer', 600_000);
 
     const rows = buildEstimatorRowsFromDraft({
       guestCount: editedPlan.guestCount,
@@ -37,12 +37,12 @@ describe('estimator plan handoff', () => {
       allocations: editedPlan.allocations,
     });
 
-    expect(rows).toHaveLength(21);
-    expect(rows?.find((row) => row.category === 'Catering')?.suggested_amount).toBe(600_000);
+    expect(rows).toHaveLength(22);
+    expect(rows?.find((row) => row.category === 'Caterer')?.suggested_amount).toBe(600_000);
     expect(rows?.reduce((sum, row) => sum + row.suggested_amount, 0)).toBeGreaterThan(1_500_000);
     expect(rows?.every((row) => row.source === 'couple_plan')).toBe(true);
-    expect(editedPlan.allocations.find((row) => row.name === 'Catering')?.isManuallyEdited).toBe(true);
-    expect(editedPlan.allocations.find((row) => row.name === 'Catering')?.lastEditedField).toBe('amount');
+    expect(editedPlan.allocations.find((row) => row.name === 'Caterer')?.isManuallyEdited).toBe(true);
+    expect(editedPlan.allocations.find((row) => row.name === 'Caterer')?.lastEditedField).toBe('amount');
   });
 
   it('only seeds couples and committee planners', () => {

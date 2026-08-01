@@ -14,6 +14,7 @@ export const vendorCategoryCatalog: readonly VendorCategoryDefinition[] = [
   { name: 'Caterer', scope: 'wedding' },
   { name: 'Cake Artist & Baker', scope: 'wedding' },
   { name: 'Décor, Tents, Chairs, Tables', scope: 'wedding' },
+  { name: 'Flowers', scope: 'wedding' },
   { name: 'Rings', scope: 'personal' },
   { name: 'Bridal Gown, Accessories, Preparation', scope: 'personal' },
   { name: "Groom's Attire & Accessories, Preparation", scope: 'personal' },
@@ -36,7 +37,6 @@ export const weddingVendorCategoryNames = vendorCategoryCatalog
 
 const legacyCategoryScopes: Record<string, VendorCategoryScope> = {
   Accommodation: 'wedding',
-  Flowers: 'wedding',
   Other: 'wedding',
 };
 
@@ -51,6 +51,8 @@ function normalizeCategoryKey(value: string) {
 
 const categoryAliases: Record<string, string> = {
   venue: 'Wedding Venue',
+  'ceremony venue': 'Wedding Venue',
+  'reception venue': 'Wedding Venue',
   'wedding venue': 'Wedding Venue',
   catering: 'Caterer',
   caterer: 'Caterer',
@@ -58,6 +60,8 @@ const categoryAliases: Record<string, string> = {
   'cake artist baker': 'Cake Artist & Baker',
   decor: 'Décor, Tents, Chairs, Tables',
   'decor tents chairs tables': 'Décor, Tents, Chairs, Tables',
+  'setup rentals': 'Décor, Tents, Chairs, Tables',
+  flowers: 'Flowers',
   mc: 'Master of Ceremonies',
   'master of ceremonies': 'Master of Ceremonies',
   'music dj': 'DJ (or Band) and Sound',
@@ -90,6 +94,7 @@ const categoryAliases: Record<string, string> = {
   transport: 'Transport',
   'wedding planner': 'Wedding Planner / Planning Team',
   'wedding planner planning team': 'Wedding Planner / Planning Team',
+  'bridal party': 'Bridal Gown, Accessories, Preparation',
 };
 
 const catalogByKey = new Map(

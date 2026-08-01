@@ -3,7 +3,7 @@ import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/pub
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import type { PlannerType } from '@/lib/roles';
 import { buildSeededTasksFromTemplates } from '@/lib/weddingTaskTemplates';
-import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
+import { getVendorCategoryScope, vendorCategoryNames } from '@/lib/vendorCategories';
 
 export type EstimatorWeddingStyle = 'intimate' | 'classic' | 'luxury' | 'garden';
 export type EstimatorVenueTier = 'budget' | 'mid_tier' | 'luxury';
@@ -46,21 +46,6 @@ interface SeedWeddingPlanResult {
 
 const ESTIMATOR_PLAN_DRAFT_KEY = 'centerpiece-estimator-plan-draft';
 
-const alwaysVendorCategories = [
-  'Wedding Venue',
-  'Caterer',
-  'Photographer',
-  'Décor, Tents, Chairs, Tables',
-  'Transport',
-] as const;
-
-const expandedVendorCategories = [
-  'Cinematographer',
-  'DJ (or Band) and Sound',
-  'Master of Ceremonies',
-  'Cake Artist & Baker',
-] as const;
-
 function scopedQuery<T extends {
   is(column: string, value: null): T;
   eq(column: string, value: string): T;
@@ -69,47 +54,6 @@ function scopedQuery<T extends {
     return query.is('client_id', null);
   }
   return query.eq('client_id', clientId);
-}
-
-function normalizeVendorCategory(category: string): string | null {
-  const normalized = category.toLowerCase().trim();
-
-  if (normalized.includes('photo shoot')) return 'Photo Shoot Venue';
-  if (normalized.includes('venue')) return 'Wedding Venue';
-  if (normalized.includes('cater')) return 'Caterer';
-  if (normalized.includes('photo')) return 'Photographer';
-  if (normalized.includes('video') || normalized.includes('cinema')) return 'Cinematographer';
-  if (normalized.includes('flower') || normalized.includes('flor') || normalized.includes('decor')) {
-    return 'Décor, Tents, Chairs, Tables';
-  }
-  if (normalized.includes('music') || normalized.includes('dj') || normalized.includes('entertainment')) {
-    return 'DJ (or Band) and Sound';
-  }
-  if (normalized.includes('transport')) return 'Transport';
-  if (normalized === 'mc') return 'Master of Ceremonies';
-  if (normalized.includes('cake')) return 'Cake Artist & Baker';
-
-  return null;
-}
-
-function buildVendorCategories(draft: EstimatorPlanDraft, rows: PublicBudgetEstimateRow[]) {
-  const seeded = new Set<string>(alwaysVendorCategories);
-
-  if (draft.guestCount >= 80 || draft.weddingStyle !== 'intimate') {
-    expandedVendorCategories.forEach((category) => seeded.add(category));
-  }
-
-  if (draft.weddingStyle === 'luxury' || draft.weddingStyle === 'garden') {
-    seeded.add('Cinematographer');
-    seeded.add('Décor, Tents, Chairs, Tables');
-  }
-
-  rows.forEach((row) => {
-    const mapped = normalizeVendorCategory(row.category);
-    if (mapped) seeded.add(mapped);
-  });
-
-  return [...seeded].map(canonicalizeVendorCategory);
 }
 
 function buildVendorPlaceholder(category: string, county: string) {
@@ -276,7 +220,7 @@ export async function seedWeddingPlanFromEstimator({
         minSampleSize: 5,
       });
 
-  const vendorCategories = buildVendorCategories(draft, estimateRows);
+  const vendorCategories = [...vendorCategoryNames];
   const [existingBudgetRes, existingVendorRes, existingTaskRes, profileRes, clientRes, weddingRes] = await Promise.all([
     scopedQuery(
       supabase.from('budget_categories').select('name, budget_scope').eq('user_id', userId),
@@ -346,7 +290,10 @@ export async function seedWeddingPlanFromEstimator({
   });
 
   const budgetInserts = estimateRows
-    .filter((row) => !existingWeddingBudgetNames.has(row.category))
+    .filter((row) => (
+      getVendorCategoryScope(row.category) === 'wedding'
+      && !existingWeddingBudgetNames.has(row.category)
+    ))
     .map((row) => ({
       user_id: userId,
       client_id: clientId,
@@ -373,15 +320,25 @@ export async function seedWeddingPlanFromEstimator({
   const personalBudgetInserts = shouldSeedPersonalBudget
     ? personalBudgetTemplates
         .filter((template) => !existingPersonalBudgetNames.has(template.name))
-        .map((template) => ({
-          user_id: userId,
-          client_id: null,
-          name: template.name,
-          allocated: 0,
-          spent: 0,
-          budget_scope: 'personal',
-          visibility: template.visibility,
-        }))
+        .map((template) => {
+          const estimate = estimateRows.find((row) => row.category === template.name);
+          const allocation = draft.allocations?.find((item) => item.name === template.name);
+          return {
+            user_id: userId,
+            client_id: null,
+            name: template.name,
+            allocated: estimate?.suggested_amount ?? 0,
+            suggested_allocated: allocation?.suggestedAmount ?? estimate?.suggested_amount ?? 0,
+            suggested_percentage:
+              allocation?.suggestedPercentage
+              ?? (draft.totalBudget && estimate ? (estimate.suggested_amount / draft.totalBudget) * 100 : 0),
+            allocation_manually_edited: allocation?.isManuallyEdited ?? false,
+            allocation_last_edited_field: allocation?.lastEditedField ?? null,
+            spent: 0,
+            budget_scope: 'personal',
+            visibility: template.visibility,
+          };
+        })
     : [];
 
   const vendorInserts = vendorCategories

@@ -1,5 +1,4 @@
-import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
-import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
+import { canonicalizeVendorCategory, vendorCategoryCatalog } from '@/lib/vendorCategories';
 
 export interface InteractiveBudgetAllocation {
   name: string;
@@ -38,27 +37,28 @@ const CORE_PER_GUEST_CATEGORIES = new Set([
 ]);
 
 const allocationRules: AllocationRule[] = [
-  { name: 'Venue', weight: 0 },
-  { name: 'Ceremony Venue', weight: 4 },
-  { name: 'Reception Venue', weight: 9, guestSensitive: true },
-  { name: 'Officiant / Church Fees', weight: 2 },
-  { name: 'Marriage License / Legal Fees', weight: 1 },
-  { name: 'Catering', weight: 24, guestSensitive: true },
-  { name: 'Cake', weight: 3, guestSensitive: true },
-  { name: 'Décor', weight: 10, guestSensitive: true },
-  { name: 'Flowers', weight: 4, guestSensitive: true },
-  { name: 'Setup & Rentals', weight: 8, guestSensitive: true },
-  { name: 'Photography', weight: 6 },
-  { name: 'Videography', weight: 4 },
-  { name: 'MC', weight: 2 },
-  { name: 'Music / DJ / Band', weight: 4 },
-  { name: 'Stationery', weight: 2, guestSensitive: true },
+  { name: 'Wedding Licenses', weight: 1 },
+  { name: 'Church & Officiating Minister', weight: 3 },
+  { name: 'Marriage Preparation', weight: 1 },
+  { name: 'Wedding Venue', weight: 13, guestSensitive: true },
+  { name: 'Wedding Planner / Planning Team', weight: 4 },
+  { name: 'Caterer', weight: 23, guestSensitive: true },
+  { name: 'Cake Artist & Baker', weight: 3, guestSensitive: true },
+  { name: 'Décor, Tents, Chairs, Tables', weight: 13, guestSensitive: true },
+  { name: 'Flowers', weight: 3, guestSensitive: true },
+  { name: 'Rings', weight: 2 },
+  { name: 'Bridal Gown, Accessories, Preparation', weight: 4 },
+  { name: "Groom's Attire & Accessories, Preparation", weight: 3 },
+  { name: 'Master of Ceremonies', weight: 2 },
+  { name: 'DJ (or Band) and Sound', weight: 4 },
+  { name: 'Photographer', weight: 6 },
+  { name: 'Cinematographer', weight: 4 },
+  { name: 'Photo Shoot Venue', weight: 2 },
   { name: 'Transport', weight: 3 },
-  { name: 'Bridal Party', weight: 3 },
-  { name: 'Guest Experience', weight: 3, guestSensitive: true },
-  { name: 'Accommodation', weight: 2, guestSensitive: true },
-  { name: 'Security', weight: 1, guestSensitive: true },
-  { name: 'Miscellaneous', weight: 5 },
+  { name: 'Invitations', weight: 2, guestSensitive: true },
+  { name: "Bride's Make-up Artist", weight: 1 },
+  { name: "Bride's Hair Stylist", weight: 1 },
+  { name: 'Honeymoon', weight: 2 },
 ];
 
 function clamp(value: number, min: number, max: number) {
@@ -82,7 +82,7 @@ export function calculatePlannedAmount(percentage: number, totalBudget: number) 
 function distributeExactTotal(rawAmounts: number[], totalBudget: number) {
   const amounts = rawAmounts.map(normalizeMoney);
   const currentTotal = amounts.reduce((sum, amount) => sum + amount, 0);
-  const adjustmentIndex = allocationRules.findIndex((rule) => rule.name === 'Miscellaneous');
+  const adjustmentIndex = allocationRules.findIndex((rule) => rule.name === 'Wedding Planner / Planning Team');
   amounts[adjustmentIndex] = Math.max(0, amounts[adjustmentIndex] + (totalBudget - currentTotal));
 
   const correctedTotal = amounts.reduce((sum, amount) => sum + amount, 0);
@@ -294,7 +294,7 @@ export function getCoreGuestCost(plan: InteractiveBudgetPlan) {
 }
 
 export function validateInteractiveBudgetCategories() {
-  const templateNames = weddingBudgetTemplates.map((template) => template.name);
+  const templateNames = vendorCategoryCatalog.map((category) => category.name);
   return templateNames.length === allocationRules.length
     && templateNames.every((name, index) => name === allocationRules[index].name);
 }
