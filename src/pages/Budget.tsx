@@ -3343,13 +3343,14 @@ export default function Budget() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="vendor-editor-price">Invoiced / contract amount (KES)</Label>
+                  <Label htmlFor="vendor-editor-price">Total vendor cost (KES)</Label>
                   <Input id="vendor-editor-price" type="number" min="0" value={vendorEditorDraft.price} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, price: event.target.value } : current)} />
+                  <p className="text-xs text-muted-foreground">The full price agreed with this vendor. Zania uses it to calculate what remains unpaid.</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="vendor-editor-deposit">Agreed deposit amount (KES)</Label>
+                  <Label htmlFor="vendor-editor-deposit">Booking deposit required (KES) · Optional</Label>
                   <Input id="vendor-editor-deposit" type="number" min="0" value={vendorEditorDraft.depositAmount} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, depositAmount: event.target.value } : current)} />
-                  <p className="text-xs text-muted-foreground">The amount required to secure the booking. Record it separately when it is paid.</p>
+                  <p className="text-xs text-muted-foreground">The upfront amount the vendor asks for to reserve the date. It is not counted as paid until a payment is recorded.</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Payments recorded</Label>

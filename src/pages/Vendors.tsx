@@ -3279,20 +3279,21 @@ export default function Vendors() {
                 </div>
 
                 <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
-                  <p className="font-semibold text-foreground">Invoice and payments</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Track the deposit, instalments, and final payment.</p>
+                  <p className="font-semibold text-foreground">Cost and payment plan</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Set the full vendor cost and any booking terms. Actual payments are recorded separately.</p>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor={`vendor-price-${vendor.id}`}>Invoiced amount</Label>
+                      <Label htmlFor={`vendor-price-${vendor.id}`}>Total vendor cost</Label>
                       <Input id={`vendor-price-${vendor.id}`} type="number" min="0" value={priceDrafts[vendor.id] ?? ''} onChange={(event) => setPriceDrafts((current) => ({ ...current, [vendor.id]: event.target.value }))} />
+                      <p className="text-xs text-muted-foreground">The full agreed price, used to calculate the outstanding balance.</p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor={`vendor-deposit-${vendor.id}`}>Agreed deposit amount</Label>
+                      <Label htmlFor={`vendor-deposit-${vendor.id}`}>Booking deposit required · Optional</Label>
                       <Input id={`vendor-deposit-${vendor.id}`} type="number" min="0" value={paymentDrafts[vendor.id]?.depositAmount ?? '0'} onChange={(event) => setPaymentDrafts((current) => ({
                         ...current,
                         [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), depositAmount: event.target.value },
                       }))} />
-                      <p className="text-xs text-muted-foreground">The amount required to secure the booking. Record it separately when it is actually paid.</p>
+                      <p className="text-xs text-muted-foreground">The upfront amount requested to reserve the date. It does not count as paid until recorded.</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Payments recorded</Label>
@@ -5388,7 +5389,7 @@ export default function Vendors() {
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor={`deposit-${vendor.id}`}>Agreed deposit amount</Label>
+                      <Label htmlFor={`deposit-${vendor.id}`}>Booking deposit required · Optional</Label>
                       <Input
                         id={`deposit-${vendor.id}`}
                         type="number"
@@ -5404,7 +5405,7 @@ export default function Vendors() {
                         }
                         placeholder="0"
                       />
-                      <p className="text-xs text-muted-foreground">Required to secure the booking; it only counts as paid after a payment is recorded.</p>
+                      <p className="text-xs text-muted-foreground">The upfront amount requested to reserve the date; it only counts as paid after a payment is recorded.</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Payments recorded</Label>
