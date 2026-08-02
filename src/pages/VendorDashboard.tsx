@@ -20,7 +20,7 @@ import ContextualAssistantAction from '@/components/ContextualAssistantAction';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { listAcceptedWorkspaceVendorInvitesForUser } from '@/lib/workspaceVendorInvites';
-import { vendorPaymentStatusLabel, vendorPaymentStatuses, type VendorPaymentStatus } from '@/lib/vendorPayments';
+import { deriveVendorPaymentStatus, vendorPaymentStatusLabel, type VendorPaymentStatus } from '@/lib/vendorPayments';
 import {
   createVendorWorkspaceUpdate,
   listVendorWorkspaceUpdates,
@@ -939,12 +939,16 @@ export default function VendorDashboard() {
     };
 
     const nextContractAmount = draft.contractAmount.trim() === '' ? null : Number(draft.contractAmount);
-    const nextAmountPaid = draft.amountPaid.trim() === '' ? 0 : Number(draft.amountPaid);
+    const nextAmountPaid = paymentSummaryByBookingId[booking.id]?.totalPaid ?? booking.amount_paid ?? 0;
+    const nextPaymentStatus = deriveVendorPaymentStatus({
+      totalCost: nextContractAmount,
+      totalPaid: nextAmountPaid,
+    });
 
-    if ((draft.contractAmount.trim() !== '' && (!Number.isFinite(nextContractAmount) || nextContractAmount < 0)) || !Number.isFinite(nextAmountPaid) || nextAmountPaid < 0) {
+    if (draft.contractAmount.trim() !== '' && (!Number.isFinite(nextContractAmount) || nextContractAmount < 0)) {
       toast({
         title: 'Invalid payment values',
-        description: 'Use zero or greater for the quoted amount and amount paid.',
+        description: 'Use zero or greater for the quoted amount.',
         variant: 'destructive',
       });
       return;
@@ -955,7 +959,7 @@ export default function VendorDashboard() {
       target_vendor_id: booking.id,
       contract_amount_input: nextContractAmount,
       amount_paid_input: nextAmountPaid,
-      payment_status_input: draft.paymentStatus,
+      payment_status_input: nextPaymentStatus,
       payment_due_date_input: draft.paymentDueDate || null,
     });
 
@@ -978,8 +982,8 @@ export default function VendorDashboard() {
       },
     }));
     toast({
-      title: 'Payment state updated',
-      description: `${booking.name} now shows ${vendorPaymentStatusLabel(draft.paymentStatus).toLowerCase()}.`,
+      title: 'Payment terms updated',
+      description: `${booking.name} now shows ${vendorPaymentStatusLabel(nextPaymentStatus).toLowerCase()} from the recorded payments.`,
     });
     setSavingPaymentStateId(null);
   };
@@ -2192,7 +2196,7 @@ export default function VendorDashboard() {
                 <TabsContent value="payments" className="space-y-4">
                   <Card className="shadow-card">
                     <CardHeader className="pb-3">
-                      <CardTitle className="font-display text-xl">Update Payment State</CardTitle>
+                      <CardTitle className="font-display text-xl">Payment terms</CardTitle>
                     </CardHeader>
                     <CardContent className="grid gap-4 lg:grid-cols-2">
                       <div className="space-y-4">
@@ -2221,61 +2225,30 @@ export default function VendorDashboard() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor={`amount-paid-${selectedBooking.id}`}>Amount paid (KES)</Label>
-                            <Input
-                              id={`amount-paid-${selectedBooking.id}`}
-                              inputMode="decimal"
-                              value={paymentStateDrafts[selectedBooking.id]?.amountPaid ?? ''}
-                              onChange={(event) =>
-                                setPaymentStateDrafts((prev) => ({
-                                  ...prev,
-                                  [selectedBooking.id]: {
-                                    ...(prev[selectedBooking.id] ?? {
-                                      contractAmount: '',
-                                      amountPaid: '',
-                                      paymentStatus: 'unpaid' as VendorPaymentStatus,
-                                      paymentDueDate: '',
-                                    }),
-                                    amountPaid: event.target.value,
-                                  },
-                                }))
-                              }
-                              placeholder="0"
-                            />
+                            <Label>Payments recorded</Label>
+                            <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                              <p className="font-medium text-foreground">
+                                KES {(paymentSummaryByBookingId[selectedBooking.id]?.totalPaid ?? selectedBooking.amount_paid ?? 0).toLocaleString()}
+                              </p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                Calculated from {selectedPaymentDetails.length} payment {selectedPaymentDetails.length === 1 ? 'entry' : 'entries'}.
+                              </p>
+                            </div>
                           </div>
                         </div>
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <Label htmlFor={`payment-status-${selectedBooking.id}`}>Payment status</Label>
-                            <Select
-                              value={paymentStateDrafts[selectedBooking.id]?.paymentStatus ?? 'unpaid'}
-                              onValueChange={(value) =>
-                                setPaymentStateDrafts((prev) => ({
-                                  ...prev,
-                                  [selectedBooking.id]: {
-                                    ...(prev[selectedBooking.id] ?? {
-                                      contractAmount: '',
-                                      amountPaid: '',
-                                      paymentStatus: 'unpaid' as VendorPaymentStatus,
-                                      paymentDueDate: '',
-                                    }),
-                                    paymentStatus: value as VendorPaymentStatus,
-                                  },
-                                }))
-                              }
-                            >
-                              <SelectTrigger id={`payment-status-${selectedBooking.id}`}>
-                                <SelectValue placeholder="Select payment status" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {vendorPaymentStatuses.map((status) => (
-                                  <SelectItem key={status} value={status}>
-                                    {vendorPaymentStatusLabel(status)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <Label>Payment status</Label>
+                            <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                              <p className="font-medium text-foreground">
+                                {vendorPaymentStatusLabel(deriveVendorPaymentStatus({
+                                  totalCost: paymentStateDrafts[selectedBooking.id]?.contractAmount,
+                                  totalPaid: paymentSummaryByBookingId[selectedBooking.id]?.totalPaid ?? selectedBooking.amount_paid,
+                                }))}
+                              </p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">Updates automatically from the payment history.</p>
+                            </div>
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor={`payment-due-date-${selectedBooking.id}`}>Payment due date</Label>
@@ -2308,17 +2281,17 @@ export default function VendorDashboard() {
                           className="gap-2"
                         >
                           {savingPaymentStateId === selectedBooking.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-                          Save Payment State
+                          Save payment terms
                         </Button>
                       </div>
 
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
                         <p className="font-medium text-foreground">Why this matters</p>
                         <p className="mt-2">
-                          This updates the vendor relationship state directly, even when the couple created you privately first and there is no public listing workflow yet.
+                          Set the agreed total and the next due date here. Recorded payments remain the single source of truth.
                         </p>
                         <p className="mt-2">
-                          It does not create a new ledger entry. It keeps the shared workspace totals and payment status aligned from the vendor side.
+                          When the couple records a payment, Zania updates the total and status automatically and asks you to confirm the details before issuing a receipt.
                         </p>
                       </div>
                     </CardContent>

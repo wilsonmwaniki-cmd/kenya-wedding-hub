@@ -14,20 +14,26 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Trash2 } from 'lucide-react';
+import { ExternalLink, Loader2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
+import { committeeResponsibilityOptions, contractStatusLabel } from '@/lib/committeeRoles';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
 import {
+  deriveVendorPaymentStatus,
   totalRecordedVendorPayments,
   updateVendorPaymentState,
-  vendorPaymentStatuses,
   vendorPaymentStatusLabel,
   vendorPaymentStatusTone,
   type VendorPaymentStatus,
 } from '@/lib/vendorPayments';
+import {
+  coupleVendorContractMessage,
+  coupleVendorContractShareUrl,
+  coupleVendorContractStatusLabel,
+  getCoupleVendorContract,
+} from '@/lib/coupleVendorContracts';
 import {
   setVendorSelectionStatus,
   vendorSelectionLabel,
@@ -156,9 +162,7 @@ interface VendorEditorDraft {
   email: string;
   price: string;
   selectionStatus: VendorSelectionStatus;
-  contractStatus: string;
   depositAmount: string;
-  paymentStatus: VendorPaymentStatus;
   paymentDueDate: string;
   notes: string;
 }
@@ -419,6 +423,13 @@ export default function Budget() {
     staleTime: 30_000,
   });
 
+  const vendorEditorContractQuery = useQuery({
+    queryKey: ['couple-vendor-contract', vendorEditorRecord?.id ?? null],
+    queryFn: () => getCoupleVendorContract(vendorEditorRecord!.id),
+    enabled: Boolean(vendorEditorOpen && vendorEditorRecord?.id),
+    staleTime: 30_000,
+  });
+
   const tasksQuery = useQuery({
     queryKey: tasksQueryKey,
     queryFn: () => loadBudgetTasks(dataOrFilter!),
@@ -501,9 +512,7 @@ export default function Budget() {
       email: vendor?.email ?? '',
       price: vendor?.price == null ? '' : String(vendor.price),
       selectionStatus: (vendor?.selection_status ?? 'shortlisted') as VendorSelectionStatus,
-      contractStatus: vendor?.contract_status ?? 'not_started',
       depositAmount: String(vendor?.deposit_amount ?? 0),
-      paymentStatus: (vendor?.payment_status ?? 'unpaid') as VendorPaymentStatus,
       paymentDueDate: vendor?.payment_due_date ?? '',
       notes: vendor?.notes ?? '',
     });
@@ -520,6 +529,11 @@ export default function Budget() {
           paymentRecords.filter((payment) => payment.vendor_id === vendorEditorRecord.id),
         )
       : 0;
+    const paymentStatus = deriveVendorPaymentStatus({
+      totalCost: price,
+      depositRequired: depositAmount,
+      totalPaid: amountPaid,
+    });
     if (!name) {
       toast({ title: 'Add the vendor name', description: 'A business or contact name is required.', variant: 'destructive' });
       return;
@@ -535,10 +549,10 @@ export default function Budget() {
       phone: vendorEditorDraft.phone.trim() || null,
       email: vendorEditorDraft.email.trim() || null,
       price,
-      contract_status: vendorEditorDraft.contractStatus,
+      contract_status: vendorEditorRecord?.contract_status ?? 'not_started',
       deposit_amount: depositAmount,
       amount_paid: amountPaid,
-      payment_status: vendorEditorDraft.paymentStatus,
+      payment_status: paymentStatus,
       payment_due_date: vendorEditorDraft.paymentDueDate || null,
       notes: vendorEditorDraft.notes.trim() || null,
       selection_status: vendorEditorDraft.selectionStatus,
@@ -571,7 +585,7 @@ export default function Budget() {
           contractAmount: price,
           depositAmount,
           amountPaid,
-          paymentStatus: vendorEditorDraft.paymentStatus,
+          paymentStatus,
           paymentDueDate: vendorEditorDraft.paymentDueDate || null,
         });
         toast({ title: 'Vendor updated', description: `${name}'s details are now current.` });
@@ -1147,7 +1161,6 @@ export default function Budget() {
           currentPayload: category as unknown as Record<string, unknown>,
           proposedPayload: {
             committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
-            contract_status: draft.contractStatus,
           },
         });
         toast({
@@ -1164,7 +1177,6 @@ export default function Budget() {
       .from('budget_categories')
       .update({
         committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
-        contract_status: draft.contractStatus,
       })
       .eq('id', category.id);
 
@@ -1173,7 +1185,7 @@ export default function Budget() {
     } else {
       toast({
         title: 'Budget workflow updated',
-        description: `${category.name} now tracks ownership and contract state.`,
+        description: `${category.name} now has a clear owner.`,
       });
       await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
     }
@@ -1591,12 +1603,13 @@ export default function Budget() {
         const nextPaid = selectedVendor
           ? totalRecordedVendorPayments(recordedVendorPayments) + amount
           : null;
-        const nextStatus =
-          selectedVendor && selectedVendor.price && nextPaid != null && nextPaid >= selectedVendor.price
-            ? 'paid_full'
-            : selectedVendor && nextPaid != null && nextPaid > 0
-              ? 'part_paid'
-              : selectedVendor?.payment_status ?? null;
+        const nextStatus = selectedVendor && nextPaid != null
+          ? deriveVendorPaymentStatus({
+              totalCost: selectedVendor.price,
+              depositRequired: selectedVendor.deposit_amount,
+              totalPaid: nextPaid,
+            })
+          : null;
 
         await submitPlannerChangeRequest({
           clientId: selectedClient.id,
@@ -1665,12 +1678,11 @@ export default function Budget() {
         );
         const nextPaid = totalRecordedVendorPayments(recordedVendorPayments) + amount;
         const contractAmount = selectedVendor.price ?? null;
-        const nextStatus =
-          contractAmount && nextPaid >= contractAmount
-            ? 'paid_full'
-            : nextPaid > 0
-              ? 'part_paid'
-              : selectedVendor.payment_status;
+        const nextStatus = deriveVendorPaymentStatus({
+          totalCost: contractAmount,
+          depositRequired: selectedVendor.deposit_amount,
+          totalPaid: nextPaid,
+        });
 
         await supabase
           .from('vendors')
@@ -2903,7 +2915,7 @@ export default function Budget() {
                             <div className="space-y-1">
                               <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Ownership & contract</p>
                               <p className="text-sm text-muted-foreground">
-                                Choose who owns this budget line and whether the vendor contract still needs action.
+                                Choose who owns this budget line. Contract progress is managed from the vendor's actual document.
                               </p>
                             </div>
                             <Badge variant="outline" className="text-[10px]">
@@ -2944,30 +2956,12 @@ export default function Budget() {
                             </div>
                             <div className="space-y-2">
                               <Label>Contract status</Label>
-                              <Select
-                                value={workflowDrafts[selectedBudgetCategory.id]?.contractStatus ?? selectedBudgetCategory.contract_status}
-                                onValueChange={(value) =>
-                                  setWorkflowDrafts((prev) => ({
-                                    ...prev,
-                                    [selectedBudgetCategory.id]: {
-                                      ...(prev[selectedBudgetCategory.id] ?? {
-                                        committeeRoleInCharge: selectedBudgetCategory.committee_role_in_charge ?? 'unassigned',
-                                        contractStatus: selectedBudgetCategory.contract_status,
-                                      }),
-                                      contractStatus: value,
-                                    },
-                                  }))
-                                }
-                              >
-                                <SelectTrigger className="h-10 text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {contractStatusOptions.map((status) => (
-                                    <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                                <p className="text-sm font-medium text-foreground">
+                                  {contractStatusLabel(selectedBudgetCategory.contract_status)}
+                                </p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">Updates from the vendor document workflow.</p>
+                              </div>
                             </div>
                           </div>
 
@@ -3335,12 +3329,39 @@ export default function Budget() {
                 </div>
                 <div className="space-y-2">
                   <Label>Contract</Label>
-                  <Select value={vendorEditorDraft.contractStatus} onValueChange={(value) => setVendorEditorDraft((current) => current ? { ...current, contractStatus: value } : current)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {contractStatusOptions.map((status) => <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <div className="min-h-10 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+                    {vendorEditorContractQuery.isLoading ? (
+                      <p className="text-sm text-muted-foreground">Checking contract...</p>
+                    ) : vendorEditorContractQuery.data ? (
+                      <div className="space-y-1.5">
+                        <p className="font-medium text-foreground">
+                          {coupleVendorContractStatusLabel(vendorEditorContractQuery.data)}
+                        </p>
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          {coupleVendorContractMessage(vendorEditorContractQuery.data)}
+                        </p>
+                        {coupleVendorContractShareUrl(vendorEditorContractQuery.data, window.location.origin) ? (
+                          <Button asChild type="button" variant="link" className="h-auto p-0 text-xs">
+                            <a
+                              href={coupleVendorContractShareUrl(vendorEditorContractQuery.data, window.location.origin)!}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {vendorEditorContractQuery.data.status === 'completed' ? 'Open signed contract' : 'Review contract'}
+                              <ExternalLink className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                            </a>
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-medium text-foreground">No contract shared yet</p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          The vendor or planner prepares and sends the contract. You only need to review and sign it when it arrives.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="vendor-editor-price">Total vendor cost (KES)</Label>
@@ -3367,12 +3388,56 @@ export default function Budget() {
                 </div>
                 <div className="space-y-2">
                   <Label>Payment stage</Label>
-                  <Select value={vendorEditorDraft.paymentStatus} onValueChange={(value) => setVendorEditorDraft((current) => current ? { ...current, paymentStatus: value as VendorPaymentStatus } : current)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {vendorPaymentStatuses.map((status) => <SelectItem key={status} value={status}>{vendorPaymentStatusLabel(status)}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <div className="min-h-10 rounded-md border border-border bg-muted/30 px-3 py-2.5" aria-live="polite">
+                    <p className="font-medium text-foreground">
+                      {vendorPaymentStatusLabel(deriveVendorPaymentStatus({
+                        totalCost: vendorEditorDraft.price,
+                        depositRequired: vendorEditorDraft.depositAmount,
+                        totalPaid: vendorEditorRecord
+                          ? totalRecordedVendorPayments(paymentRecords.filter((payment) => payment.vendor_id === vendorEditorRecord.id))
+                          : 0,
+                      }))}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">Updates automatically when a payment is recorded.</p>
+                  </div>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label>Payment history</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {vendorEditorRecord
+                        ? paymentRecords.filter((payment) => payment.vendor_id === vendorEditorRecord.id).length
+                        : 0} recorded
+                    </span>
+                  </div>
+                  <div className="divide-y divide-border overflow-hidden rounded-md border border-border bg-background">
+                    {vendorEditorRecord && paymentRecords.some((payment) => payment.vendor_id === vendorEditorRecord.id) ? (
+                      paymentRecords
+                        .filter((payment) => payment.vendor_id === vendorEditorRecord.id)
+                        .sort((a, b) => b.payment_date.localeCompare(a.payment_date))
+                        .map((payment) => (
+                          <div key={payment.id} className="flex items-start justify-between gap-4 px-3 py-2.5">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</p>
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {payment.reference || 'No payment reference'}
+                              </p>
+                            </div>
+                            <time className="shrink-0 text-xs text-muted-foreground" dateTime={payment.payment_date}>
+                              {new Date(`${payment.payment_date}T00:00:00`).toLocaleDateString('en-KE', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </time>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="px-3 py-4 text-sm text-muted-foreground">
+                        No payments recorded yet. Use Record payment when money changes hands.
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="vendor-editor-due">Next payment due</Label>

@@ -10,6 +10,21 @@ export const vendorPaymentStatuses = [
 
 export type VendorPaymentStatus = typeof vendorPaymentStatuses[number];
 
+export function deriveVendorPaymentStatus(input: {
+  totalCost?: number | string | null;
+  depositRequired?: number | string | null;
+  totalPaid?: number | string | null;
+}): VendorPaymentStatus {
+  const totalCost = Math.max(Number(input.totalCost ?? 0), 0);
+  const depositRequired = Math.max(Number(input.depositRequired ?? 0), 0);
+  const totalPaid = Math.max(Number(input.totalPaid ?? 0), 0);
+
+  if (totalCost > 0 && totalPaid >= totalCost) return 'paid_full';
+  if (totalPaid <= 0) return depositRequired > 0 ? 'deposit_due' : 'unpaid';
+  if (depositRequired > 0 && totalPaid === depositRequired) return 'deposit_paid';
+  return 'part_paid';
+}
+
 export function totalRecordedVendorPayments(
   payments: Array<{ amount: number | string | null | undefined }>,
 ) {

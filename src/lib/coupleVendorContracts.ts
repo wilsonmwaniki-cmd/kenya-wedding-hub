@@ -60,7 +60,21 @@ export async function getCoupleVendorContract(vendorId: string): Promise<CoupleV
 }
 
 export function coupleVendorContractStatusLabel(contract: CoupleVendorContract) {
-  return professionalContractStatusLabel(contract.status);
+  switch (contract.status) {
+    case 'draft':
+      return 'Being prepared';
+    case 'sent':
+    case 'awaiting_signature':
+      return 'Ready for your signature';
+    case 'countersigned':
+      return 'Signed by you';
+    case 'completed':
+      return 'Complete';
+    case 'cancelled':
+      return 'Cancelled';
+    default:
+      return professionalContractStatusLabel(contract.status);
+  }
 }
 
 export function coupleVendorContractMessage(contract: CoupleVendorContract) {
@@ -77,8 +91,8 @@ export function coupleVendorContractMessage(contract: CoupleVendorContract) {
         : 'This contract is awaiting signature. Ask the vendor to refresh its private link.';
     case 'countersigned':
       return contract.shareToken
-        ? 'The vendor has signed this contract. Open it to review the remaining signature step.'
-        : 'The vendor has signed this contract, but its private link is not currently available.';
+        ? 'You have signed this contract. The vendor has been asked to countersign it.'
+        : 'You have signed this contract. The vendor has been asked to countersign it, but the private link is not currently available.';
     case 'completed':
       return contract.shareToken
         ? 'This contract is complete. You can open the signed copy here.'

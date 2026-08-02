@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, ChevronDown, ExternalLink, FileSignature } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
+import { committeeResponsibilityOptions, contractStatusLabel } from '@/lib/committeeRoles';
 import { getMyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
 import {
   createWorkspaceVendorInviteDraft,
@@ -38,11 +38,11 @@ import {
   type VendorSelectionStatus,
 } from '@/lib/vendorSelection';
 import {
+  deriveVendorPaymentStatus,
   totalRecordedVendorPayments,
   updateVendorPaymentState,
   vendorPaymentStatusLabel,
   vendorPaymentStatusTone,
-  vendorPaymentStatuses,
   type VendorPaymentStatus,
 } from '@/lib/vendorPayments';
 import {
@@ -1395,6 +1395,11 @@ export default function Vendors() {
     const contractAmount = contractAmountDraft === '' ? null : Number(contractAmountDraft);
     const depositAmount = draft.depositAmount.trim() === '' ? 0 : Number(draft.depositAmount);
     const amountPaid = totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []);
+    const paymentStatus = deriveVendorPaymentStatus({
+      totalCost: contractAmount,
+      depositRequired: depositAmount,
+      totalPaid: amountPaid,
+    });
 
     if (contractAmountDraft !== '' && (!Number.isFinite(contractAmount) || (contractAmount ?? 0) <= 0)) {
       toast({
@@ -1429,7 +1434,7 @@ export default function Vendors() {
             price: contractAmount,
             deposit_amount: depositAmount,
             amount_paid: amountPaid,
-            payment_status: draft.paymentStatus,
+            payment_status: paymentStatus,
             payment_due_date: draft.paymentDueDate || null,
           },
         });
@@ -1450,13 +1455,13 @@ export default function Vendors() {
         contractAmount,
         depositAmount,
         amountPaid,
-        paymentStatus: draft.paymentStatus,
+        paymentStatus,
         paymentDueDate: draft.paymentDueDate || null,
       });
 
       toast({
         title: 'Payment plan updated',
-        description: `${vendor.name} now shows ${vendorPaymentStatusLabel(draft.paymentStatus).toLowerCase()}.`,
+        description: `${vendor.name} now shows ${vendorPaymentStatusLabel(paymentStatus).toLowerCase()}.`,
       });
       await refreshVendorsWorkspace();
     } catch (error: any) {
@@ -1581,7 +1586,6 @@ export default function Vendors() {
           currentPayload: vendor as unknown as Record<string, unknown>,
           proposedPayload: {
             committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
-            contract_status: draft.contractStatus,
           },
         });
         toast({
@@ -1598,7 +1602,6 @@ export default function Vendors() {
       .from('vendors')
       .update({
         committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
-        contract_status: draft.contractStatus,
       })
       .eq('id', vendor.id);
 
@@ -2708,12 +2711,11 @@ export default function Vendors() {
         const nextCategorySpent = Number(selectedCategory.spent ?? 0) + amount;
         const recordedTotal = totalRecordedVendorPayments(vendorPaymentsByVendorId[selectedVendor.id] ?? []);
         const nextPaid = recordedTotal + amount;
-        const nextStatus: VendorPaymentStatus =
-          selectedVendor.price && nextPaid >= selectedVendor.price
-            ? 'paid_full'
-            : nextPaid > 0
-              ? 'part_paid'
-              : ((selectedVendor.payment_status as VendorPaymentStatus) || 'unpaid');
+        const nextStatus = deriveVendorPaymentStatus({
+          totalCost: selectedVendor.price,
+          depositRequired: selectedVendor.deposit_amount,
+          totalPaid: nextPaid,
+        });
 
         await submitPlannerChangeRequest({
           clientId: selectedClient.id,
@@ -2775,12 +2777,11 @@ export default function Vendors() {
 
       const recordedTotal = totalRecordedVendorPayments(vendorPaymentsByVendorId[selectedVendor.id] ?? []);
       const nextPaid = recordedTotal + amount;
-      const nextStatus: VendorPaymentStatus =
-        selectedVendor.price && nextPaid >= selectedVendor.price
-          ? 'paid_full'
-          : nextPaid > 0
-            ? 'part_paid'
-            : ((selectedVendor.payment_status as VendorPaymentStatus) || 'unpaid');
+      const nextStatus = deriveVendorPaymentStatus({
+        totalCost: selectedVendor.price,
+        depositRequired: selectedVendor.deposit_amount,
+        totalPaid: nextPaid,
+      });
 
       await updateVendorPaymentState({
         vendorId: selectedVendor.id,
@@ -3306,18 +3307,16 @@ export default function Vendors() {
                     </div>
                     <div className="space-y-2">
                       <Label>Payment stage</Label>
-                      <Select
-                        value={paymentDrafts[vendor.id]?.paymentStatus ?? 'unpaid'}
-                        onValueChange={(value) => setPaymentDrafts((current) => ({
-                          ...current,
-                          [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentStatus: value as VendorPaymentStatus },
-                        }))}
-                      >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {vendorPaymentStatuses.map((status) => <SelectItem key={status} value={status}>{vendorPaymentStatusLabel(status)}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                        <p className="font-semibold text-foreground">
+                          {vendorPaymentStatusLabel(deriveVendorPaymentStatus({
+                            totalCost: priceDrafts[vendor.id],
+                            depositRequired: paymentDrafts[vendor.id]?.depositAmount,
+                            totalPaid: recordedPaymentTotal,
+                          }))}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Calculated from recorded payments.</p>
+                      </div>
                     </div>
                     <div className="space-y-2 sm:col-span-2">
                       <Label htmlFor={`vendor-due-${vendor.id}`}>Next payment date</Label>
@@ -5285,7 +5284,7 @@ export default function Vendors() {
                     <div className="space-y-1">
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Owner & contract</p>
                       <p className="text-sm text-muted-foreground">
-                        Record which committee or planning role owns this vendor and whether a contract has been drawn.
+                        Record who owns this vendor. Contract progress comes from the signed document workflow.
                       </p>
                     </div>
                     <Badge variant="outline" className="text-xs">
@@ -5320,27 +5319,14 @@ export default function Vendors() {
                     </div>
                     <div className="space-y-2">
                       <Label>Contract status</Label>
-                      <Select
-                        value={workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status}
-                        onValueChange={(value) =>
-                          setWorkflowDrafts((prev) => ({
-                            ...prev,
-                            [vendor.id]: {
-                              ...(prev[vendor.id] ?? { committeeRoleInCharge: vendor.committee_role_in_charge ?? 'unassigned', contractStatus: vendor.contract_status }),
-                              contractStatus: value,
-                            },
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="h-10 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {contractStatusOptions.map((status) => (
-                            <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {contractStatusLabel(vendor.contract_status)}
+                        </p>
+                        <Link to="/planner-documents/contracts" className="mt-0.5 inline-block text-xs text-primary hover:underline">
+                          Open contract documents
+                        </Link>
+                      </div>
                     </div>
                   </div>
                   <div className="mt-4 flex justify-end">
@@ -5418,29 +5404,16 @@ export default function Vendors() {
                     </div>
                     <div className="space-y-2">
                       <Label>Payment status</Label>
-                      <Select
-                        value={paymentDrafts[vendor.id]?.paymentStatus ?? 'unpaid'}
-                        onValueChange={(value) =>
-                          setPaymentDrafts((prev) => ({
-                            ...prev,
-                            [vendor.id]: {
-                              ...(prev[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
-                              paymentStatus: value as VendorPaymentStatus,
-                            },
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="h-10 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {vendorPaymentStatuses.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {vendorPaymentStatusLabel(status)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/40 px-3 py-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {vendorPaymentStatusLabel(deriveVendorPaymentStatus({
+                            totalCost: vendor.price,
+                            depositRequired: paymentDrafts[vendor.id]?.depositAmount,
+                            totalPaid: recordedPaymentTotal,
+                          }))}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Calculated from the payment ledger.</p>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`due-${vendor.id}`}>Next payment due date</Label>
