@@ -3325,6 +3325,42 @@ export default function Vendors() {
                         [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentDueDate: event.target.value },
                       }))} />
                     </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label>Payment history</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {vendorPayments.length} recorded
+                        </span>
+                      </div>
+                      <div className="divide-y divide-border overflow-hidden rounded-md border border-border/70 bg-background/80">
+                        {vendorPayments.length > 0 ? (
+                          vendorPayments
+                            .slice()
+                            .sort((a, b) => b.payment_date.localeCompare(a.payment_date))
+                            .map((payment) => (
+                              <div key={payment.id} className="flex items-start justify-between gap-4 px-3 py-2.5">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-foreground">{formatCurrency(payment.amount)}</p>
+                                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                    {payment.reference || 'No payment reference'}
+                                  </p>
+                                </div>
+                                <time className="shrink-0 text-xs text-muted-foreground" dateTime={payment.payment_date}>
+                                  {new Date(`${payment.payment_date}T00:00:00`).toLocaleDateString('en-KE', {
+                                    day: 'numeric',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  })}
+                                </time>
+                              </div>
+                            ))
+                        ) : (
+                          <p className="px-3 py-4 text-sm text-muted-foreground">
+                            No payments recorded yet. Record a payment when money changes hands.
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <div className="mt-4 flex justify-end">
                     <Button type="button" onClick={() => updateVendorPayment(vendor)} disabled={savingPaymentId === vendor.id}>
