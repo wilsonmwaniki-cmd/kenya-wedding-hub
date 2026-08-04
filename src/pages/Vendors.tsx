@@ -3333,6 +3333,7 @@ export default function Vendors() {
                         dueDate={paymentDrafts[vendor.id]?.paymentDueDate}
                         vendorName={vendor.name}
                         saved={(paymentDrafts[vendor.id]?.paymentDueDate || null) === vendor.payment_due_date}
+                        inputId={`vendor-due-${vendor.id}`}
                       />
                     </div>
                     <div className="space-y-2 sm:col-span-2">

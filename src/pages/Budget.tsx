@@ -3447,6 +3447,7 @@ export default function Budget() {
                     dueDate={vendorEditorDraft.paymentDueDate}
                     vendorName={vendorEditorDraft.name}
                     saved={(vendorEditorDraft.paymentDueDate || null) === (vendorEditorRecord?.payment_due_date || null)}
+                    inputId="vendor-editor-due"
                   />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
