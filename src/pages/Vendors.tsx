@@ -3093,6 +3093,20 @@ export default function Vendors() {
       const vendorContractUrl = vendorContract
         ? coupleVendorContractShareUrl(vendorContract, window.location.origin)
         : null;
+      const selectionStatusTextClass = vendor.selection_status === 'final'
+        ? 'text-success'
+        : vendor.selection_status === 'declined'
+          ? 'text-destructive'
+          : vendor.selection_status === 'backup'
+            ? 'text-warning-foreground'
+            : 'text-primary';
+      const selectionStatusDotClass = vendor.selection_status === 'final'
+        ? 'bg-success'
+        : vendor.selection_status === 'declined'
+          ? 'bg-destructive'
+          : vendor.selection_status === 'backup'
+            ? 'bg-warning'
+            : 'bg-primary';
 
       return (
         <motion.div
@@ -3114,9 +3128,10 @@ export default function Vendors() {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="truncate text-lg font-semibold text-foreground">{vendor.name}</p>
-                  <Badge variant={vendorSelectionTone(vendor.selection_status)} className="text-[10px]">
+                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${selectionStatusTextClass}`}>
+                    <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${selectionStatusDotClass}`} />
                     {vendorSelectionLabel(vendor.selection_status)}
-                  </Badge>
+                  </span>
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {formatCurrency(recordedPaymentTotal)} paid · {formatCurrency(outstandingBalance)} balance
@@ -3389,7 +3404,10 @@ export default function Vendors() {
                       <p className="font-semibold text-foreground">Follow-ups</p>
                       <p className="mt-1 text-sm text-muted-foreground">Keep vendor tasks attached here.</p>
                     </div>
-                    <Badge variant="outline">{openVendorTasks} open</Badge>
+                    <span className={`inline-flex items-center gap-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${openVendorTasks > 0 ? 'text-warning-foreground' : 'text-success'}`}>
+                      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${openVendorTasks > 0 ? 'bg-warning' : 'bg-success'}`} />
+                      {openVendorTasks} open
+                    </span>
                   </div>
                   <div className="mt-4 space-y-2">
                     {vendorTasks.filter((task) => !task.completed).slice(0, 4).map((task) => (
