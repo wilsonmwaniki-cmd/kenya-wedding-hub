@@ -22,6 +22,7 @@ import {
 } from '@/lib/commercialDocuments';
 import { getKenyanDocumentTemplateStarters, type DocumentTemplateStarter } from '@/lib/documentTemplateStarters';
 import { getTemplateUseCount } from '@/lib/documentMomentum';
+import DocumentSummaryRail from '@/components/documents/DocumentSummaryRail';
 
 type TemplateDraft = {
   templateType: ProfessionalTemplateType;
@@ -154,30 +155,6 @@ export default function TemplatesWorkspace({ role }: Props) {
     contracts: templates.filter((item) => item.templateType === 'contract').length,
     quoteStarters: templates.filter((item) => item.templateType === 'quote').length,
   }), [templates]);
-
-  const workspaceFocus = useMemo(() => {
-    if (selectedTemplate) {
-      return {
-        title: `Refine ${selectedTemplate.name}`,
-        body: `Tighten the reusable title, terms, notes, and default lines so the next ${professionalTemplateTypeLabel(selectedTemplate.templateType).toLowerCase()} starts nearly finished.`,
-        actionLabel: 'Save current template',
-      };
-    }
-
-    if (stats.total === 0) {
-      return {
-        title: 'Create your first reusable starter',
-        body: 'Capture your most repeated document structure once, then reuse it whenever a new quote, invoice, receipt, or contract needs to move faster.',
-        actionLabel: 'Create first template',
-      };
-    }
-
-    return {
-      title: 'Choose a template to refine',
-      body: 'Select a starter from the library to adjust the default title, notes, terms, and line items without leaving this workspace.',
-      actionLabel: 'Review template library',
-    };
-  }, [selectedTemplate, stats.total]);
 
   const selectedTemplateUseCount = selectedTemplate ? getTemplateUseCount(selectedTemplate) : 0;
 
@@ -316,49 +293,22 @@ export default function TemplatesWorkspace({ role }: Props) {
 
   return (
     <section className="space-y-6">
-      <Card className="border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.08),rgba(255,255,255,0.98)_32%,rgba(255,247,242,0.9))] shadow-card">
-        <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.7fr)_340px]">
-          <div className="space-y-5">
-            <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Reusable starters</p>
-            <CardTitle className="font-display text-[2.1rem] leading-tight text-foreground">Templates</CardTitle>
-            <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              Save your standard quote, invoice, receipt, and contract building blocks so the next document starts faster.
-            </CardDescription>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Templates</p>
-                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.total}</p>
-              </div>
-              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Billing starters</p>
-                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.billing}</p>
-              </div>
-              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Contract starters</p>
-                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.contracts}</p>
-              </div>
-              <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Quote starters</p>
-                <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.quoteStarters}</p>
-              </div>
-            </div>
+      <header className="space-y-5 border-b border-border/70 pb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">Documents</p>
+            <h1 className="mt-2 font-display text-3xl font-semibold text-foreground sm:text-4xl">Templates</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Save a structure once, then reuse it for the next client.</p>
           </div>
-
-          <div className="rounded-[1.6rem] border border-border/70 bg-white/88 p-6 shadow-sm">
-            <div className="space-y-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Next Best Move</p>
-              <h2 className="text-2xl font-semibold text-foreground">{workspaceFocus.title}</h2>
-              <p className="text-sm leading-6 text-muted-foreground">{workspaceFocus.body}</p>
-            </div>
-            <Button onClick={() => setCreateOpen(true)} className="mt-6 w-full gap-2">
-              <CopyPlus className="h-4 w-4" />
-              {workspaceFocus.actionLabel === 'Save current template' ? 'New template' : workspaceFocus.actionLabel}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          <Button onClick={() => setCreateOpen(true)} className="gap-2 self-start sm:self-auto"><CopyPlus className="h-4 w-4" />New template</Button>
+        </div>
+        <DocumentSummaryRail items={[
+          { label: 'Templates', value: stats.total },
+          { label: 'Billing', value: stats.billing },
+          { label: 'Contracts', value: stats.contracts },
+          { label: 'Quotes', value: stats.quoteStarters },
+        ]} />
+      </header>
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <Card className="border-border/70 bg-white/95 shadow-card">

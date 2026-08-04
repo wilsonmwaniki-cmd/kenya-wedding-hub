@@ -705,17 +705,26 @@ export default function VendorSettings() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={listing.is_approved ? 'success' : 'warning'}>
-                {listing.is_approved ? 'Approved' : 'Approval pending'}
-              </Badge>
-              <Badge variant={subscriptionActive ? 'success' : 'warning'}>
-                Subscription: {subscriptionActive && listing.subscription_status === 'inactive' ? 'trial' : listing.subscription_status}
-              </Badge>
-              <Badge variant={listing.is_verified ? 'success' : verificationRequestOpen ? 'info' : 'warning'}>
-                {listing.is_verified ? 'Verified' : verificationRequestOpen ? 'Verification requested' : 'Unverified'}
-              </Badge>
-            </div>
+            <dl className="grid border-y border-border/70 sm:grid-cols-3">
+              <div className="py-3 sm:pr-4">
+                <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Listing</dt>
+                <dd className={`mt-1 font-medium ${listing.is_approved ? 'text-success' : 'text-warning'}`}>
+                  {listing.is_approved ? 'Approved' : 'Approval pending'}
+                </dd>
+              </div>
+              <div className="border-t border-border/70 py-3 sm:border-l sm:border-t-0 sm:px-4">
+                <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Subscription</dt>
+                <dd className={`mt-1 font-medium ${subscriptionActive ? 'text-success' : 'text-warning'}`}>
+                  {subscriptionActive && listing.subscription_status === 'inactive' ? 'Trial active' : listing.subscription_status.replace('_', ' ')}
+                </dd>
+              </div>
+              <div className="border-t border-border/70 py-3 sm:border-l sm:border-t-0 sm:pl-4">
+                <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Verification</dt>
+                <dd className={`mt-1 font-medium ${listing.is_verified ? 'text-success' : verificationRequestOpen ? 'text-info' : 'text-warning'}`}>
+                  {listing.is_verified ? 'Verified' : verificationRequestOpen ? 'Requested' : 'Not verified'}
+                </dd>
+              </div>
+            </dl>
 
             <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">Current access status</p>
@@ -954,14 +963,19 @@ export default function VendorSettings() {
                 <Button type="button" variant="outline" onClick={addService}>Add</Button>
               </div>
               {form.services.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {form.services.map((s) => (
-                    <Badge key={s} variant="secondary" className="gap-1">
-                      {s}
-                      <button type="button" onClick={() => removeService(s)}>
-                        <X className="h-3 w-3" />
+                <div className="mt-3 divide-y divide-border/70 border-y border-border/70">
+                  {form.services.map((service) => (
+                    <div key={service} className="flex min-h-11 items-center justify-between gap-3 py-2 text-sm">
+                      <span className="text-foreground">{service}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeService(service)}
+                        className="inline-flex min-h-9 items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        aria-label={`Remove ${service}`}
+                      >
+                        Remove <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
-                    </Badge>
+                    </div>
                   ))}
                 </div>
               )}
@@ -999,14 +1013,22 @@ export default function VendorSettings() {
               </div>
               <FormFieldError message={formErrors.service_areas} />
               {form.service_areas.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {form.service_areas.map((county) => (
-                    <Badge key={county} variant="secondary" className="gap-1">
-                      {county}
-                      <button type="button" onClick={() => removeServiceArea(county)}>
-                        <X className="h-3 w-3" />
+                <div className="grid divide-y divide-border/70 border-y border-border/70 sm:grid-cols-2 sm:divide-y-0">
+                  {form.service_areas.map((county, index) => (
+                    <div
+                      key={county}
+                      className={`flex min-h-11 items-center justify-between gap-3 py-2 text-sm ${index % 2 === 1 ? 'sm:border-l sm:border-border/70 sm:pl-4' : 'sm:pr-4'} ${index > 1 ? 'sm:border-t sm:border-border/70' : ''}`}
+                    >
+                      <span className="text-foreground">{county}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeServiceArea(county)}
+                        className="inline-flex min-h-9 items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        aria-label={`Remove ${county}`}
+                      >
+                        Remove <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
-                    </Badge>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1260,7 +1282,7 @@ export default function VendorSettings() {
                           <h3 className="mt-4 font-display text-lg font-semibold text-card-foreground">
                             {form.business_name || 'Your business name'}
                           </h3>
-                          <Badge variant="outline" className="mt-1 text-xs">{form.category}</Badge>
+                          <p className="mt-1 text-xs font-medium text-muted-foreground">{form.category}</p>
                           {previewLocation && (
                             <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                               <MapPin className="h-3 w-3" /> {previewLocation}
@@ -1275,14 +1297,10 @@ export default function VendorSettings() {
                             <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{form.description}</p>
                           )}
                           {form.services.length > 0 && (
-                            <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                              {form.services.slice(0, 3).map((service) => (
-                                <Badge key={service} variant="secondary" className="text-xs">{service}</Badge>
-                              ))}
-                              {form.services.length > 3 && (
-                                <Badge variant="secondary" className="text-xs">+{form.services.length - 3}</Badge>
-                              )}
-                            </div>
+                            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                              {form.services.slice(0, 3).join(' · ')}
+                              {form.services.length > 3 ? ` · +${form.services.length - 3} more` : ''}
+                            </p>
                           )}
                           {(listing?.is_verified || vendorPreviewMode) && (
                             <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-success">
@@ -1354,15 +1372,9 @@ export default function VendorSettings() {
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Service Areas</p>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {form.service_areas.length > 0 ? (
-                                  form.service_areas.map((county) => (
-                                    <Badge key={county} variant="secondary">{county}</Badge>
-                                  ))
-                                ) : (
-                                  <p className="text-sm text-muted-foreground">No service areas added yet.</p>
-                                )}
-                              </div>
+                              <p className="mt-3 text-sm leading-6 text-foreground">
+                                {form.service_areas.length > 0 ? form.service_areas.join(', ') : 'No service areas added yet.'}
+                              </p>
                               <p className="mt-3 text-sm text-muted-foreground">Travel scope: {travelScopeOptions.find((option) => option.value === form.travel_scope)?.label || form.travel_scope}</p>
                             </div>
 
@@ -1378,11 +1390,7 @@ export default function VendorSettings() {
                           {form.services.length > 0 && (
                             <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Services & tags</p>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {form.services.map((service) => (
-                                  <Badge key={service} variant="secondary">{service}</Badge>
-                                ))}
-                              </div>
+                              <p className="mt-3 text-sm leading-6 text-foreground">{form.services.join(', ')}</p>
                             </div>
                           )}
 

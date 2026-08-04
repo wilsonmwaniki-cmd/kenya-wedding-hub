@@ -36,9 +36,8 @@ import { useToast } from '@/hooks/use-toast';
 import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
 import DocumentActionOverview from '@/components/documents/DocumentActionOverview';
 import DocumentMomentumCard from '@/components/documents/DocumentMomentumCard';
-import DocumentMetricLink from '@/components/documents/DocumentMetricLink';
+import DocumentSummaryRail from '@/components/documents/DocumentSummaryRail';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
-import InfoTip from '@/components/InfoTip';
 import {
   buildCommercialDocumentShareEmailDraft,
   buildCommercialDocumentShareUrl,
@@ -1057,62 +1056,33 @@ export default function VendorDocuments() {
 
   return (
     <div className="space-y-6 pb-24 sm:pb-28">
-      <Card className="border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.08),rgba(255,255,255,0.98)_32%,rgba(255,247,242,0.9))] shadow-card">
-        <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.7fr)_360px]">
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Commercial documents</p>
-                <InfoTip content={pageDescription} />
-              </div>
-              <CardTitle className="font-display text-3xl text-foreground sm:text-4xl">{pageTitle}</CardTitle>
-              <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                Create, send, and track client paperwork in one place.
-              </CardDescription>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <DocumentMetricLink to="/vendor-documents" label="All documents" value={stats.total} hint="Open everything" />
-              <DocumentMetricLink to="/vendor-documents/quotes" label="Quotes" value={stats.quotes} hint="Open quotes" />
-              <DocumentMetricLink to="/vendor-documents/receipts" label="Money received" value={formatCurrency(stats.collected)} hint="Open receipts" tone="success" />
-              <DocumentMetricLink to="/vendor-documents/invoices" label="Money still due" value={formatCurrency(stats.outstanding)} hint="Open invoices" tone="warning" />
-            </div>
+      <header className="space-y-5 border-b border-border/70 pb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">Documents</p>
+            <h1 className="mt-2 font-display text-3xl font-semibold text-foreground sm:text-4xl">{pageTitle}</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{pageDescription}</p>
           </div>
-
-          <div className="rounded-[1.6rem] border border-border/70 bg-white/85 p-5 shadow-sm">
-            <div className="flex items-center gap-2">
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Next Best Move</p>
-              <InfoTip content={documentPrimaryAction.body} />
-            </div>
-            <h3 className="mt-3 text-2xl font-semibold text-foreground">{documentPrimaryAction.title}</h3>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">Best next move right now.</p>
-            <div className="mt-5 space-y-3">
-              <Button
-                onClick={() => {
-                  if (documentPrimaryAction.actionType === 'payment') {
-                    setPaymentOpen(true);
-                    return;
-                  }
-                  if (documentPrimaryAction.actionType === 'share') {
-                    void handleCopyShareLink();
-                    return;
-                  }
-                  setCreateOpen(true);
-                }}
-                className="w-full gap-2"
-                disabled={documentPrimaryAction.actionType === 'share' && !!selectedDetail && sharingDocumentId === selectedDetail.id}
-              >
-                <FilePlus2 className="h-4 w-4" />
-                {documentPrimaryAction.actionLabel}
-              </Button>
-              <div className="rounded-2xl border border-border/70 bg-muted/15 p-4 text-sm text-muted-foreground">
-                {documents.length === 0
-                  ? 'No live documents yet.'
-                  : `${documents.length} document${documents.length === 1 ? '' : 's'} visible in this section.`}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          <Button
+            onClick={() => {
+              if (documentPrimaryAction.actionType === 'payment') return setPaymentOpen(true);
+              if (documentPrimaryAction.actionType === 'share') return void handleCopyShareLink();
+              setCreateOpen(true);
+            }}
+            className="gap-2 self-start sm:self-auto"
+            disabled={documentPrimaryAction.actionType === 'share' && !!selectedDetail && sharingDocumentId === selectedDetail.id}
+          >
+            <FilePlus2 className="h-4 w-4" />
+            {documentPrimaryAction.actionLabel}
+          </Button>
+        </div>
+        <DocumentSummaryRail items={[
+          { label: 'All documents', value: stats.total },
+          { label: 'Quotes', value: stats.quotes },
+          { label: 'Money received', value: formatCurrency(stats.collected), tone: 'success' },
+          { label: 'Money still due', value: formatCurrency(stats.outstanding), tone: 'warning' },
+        ]} />
+      </header>
 
       {activeSection === 'overview' && (
         <DocumentActionOverview

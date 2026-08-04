@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import DocumentSummaryRail from '@/components/documents/DocumentSummaryRail';
 import {
   createProfessionalContract,
   deleteProfessionalContract,
@@ -487,39 +488,22 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
 
   return (
     <section className="space-y-6">
-      <Card className="border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.08),rgba(255,255,255,0.98)_32%,rgba(255,247,242,0.9))] shadow-card">
-        <CardHeader className="gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Agreements</p>
-            <CardTitle className="font-display text-[2.1rem] leading-tight text-foreground">Contracts</CardTitle>
-            <CardDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              Keep service terms, signature progress, and wedding-specific agreements in one calmer workspace.
-            </CardDescription>
+      <header className="space-y-5 border-b border-border/70 pb-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">Documents</p>
+            <h1 className="mt-2 font-display text-3xl font-semibold text-foreground sm:text-4xl">Contracts</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Keep terms and signatures together for each client.</p>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2 self-start">
-            <FilePlus2 className="h-4 w-4" />
-            New contract
-          </Button>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Contracts</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.total}</p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Awaiting action</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.awaiting}</p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Countersigned</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-foreground">{stats.countersigned}</p>
-          </div>
-          <div className="min-w-0 rounded-2xl border border-border/70 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Completed</p>
-            <p className="mt-2 break-words text-2xl font-semibold leading-tight text-emerald-700">{stats.completed}</p>
-          </div>
-        </CardContent>
-      </Card>
+          <Button onClick={() => setCreateOpen(true)} className="gap-2 self-start sm:self-auto"><FilePlus2 className="h-4 w-4" />New contract</Button>
+        </div>
+        <DocumentSummaryRail items={[
+          { label: 'Contracts', value: stats.total },
+          { label: 'Needs action', value: stats.awaiting },
+          { label: 'Countersigned', value: stats.countersigned },
+          { label: 'Completed', value: stats.completed, tone: 'success' },
+        ]} />
+      </header>
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <Card className="border-border/70 bg-white/95 shadow-card">

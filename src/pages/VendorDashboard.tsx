@@ -1217,75 +1217,29 @@ export default function VendorDashboard() {
         <InlineUpgradePrompt decision={workspaceDecision} />
       )}
 
-      <Card className="border-border/70 bg-muted/20">
-        <CardHeader>
-          <CardTitle className="text-base">Professional workspace</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-3">
-          {[
-            { key: 'portfolio', title: 'Advanced portfolio', description: 'Included with Professional for richer business presentation.', badge: 'Professional' },
-            { key: 'analytics', title: 'Business analytics', description: 'Included with Professional for clearer inquiry and booking insights.', badge: 'Professional' },
-            { key: 'team', title: 'Team workspace', description: 'Team roles and shared professional operations are in development.', badge: 'Coming soon' },
-          ].map((item) => (
-            <div key={item.key} className="rounded-xl border border-border bg-card p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-card-foreground">{item.title}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
-                </div>
-                <Badge variant="info">{item.badge}</Badge>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card className="semantic-surface-info shadow-card">
-        <CardContent className="flex flex-col gap-4 py-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="font-display text-xl text-foreground">Commercial documents</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Create quotes, track invoice balances, and issue receipts without leaving your vendor workspace.
-            </p>
-          </div>
-          <Button asChild className="gap-2 self-start lg:self-auto">
-            <Link to="/vendor-documents">
-              Open documents
-              <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-4">
-        <Card className="shadow-card">
-          <CardContent className="py-5">
+      <section aria-labelledby="vendor-overview-title" className="border-y border-border/70 bg-background/35">
+        <h2 id="vendor-overview-title" className="sr-only">Business at a glance</h2>
+        <div className="grid sm:grid-cols-4">
+          <div className="px-1 py-4 sm:px-5">
             <p className="text-2xl font-bold text-foreground">{bookedCount}</p>
             <p className="mt-1 text-sm text-muted-foreground">Confirmed bookings</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="py-5">
+          </div>
+          <div className="border-t border-border/70 px-1 py-4 sm:border-l sm:border-t-0 sm:px-5">
             <p className="text-2xl font-bold text-foreground">{contactedCount}</p>
             <p className="mt-1 text-sm text-muted-foreground">Inquiries</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="py-5">
+          </div>
+          <div className="border-t border-border/70 px-1 py-4 sm:border-l sm:border-t-0 sm:px-5">
             <p className="text-2xl font-bold text-foreground">{workspaceInvites.length}</p>
             <p className="mt-1 text-sm text-muted-foreground">Workspace invites</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="py-5">
+          </div>
+          <div className="border-t border-border/70 px-1 py-4 sm:border-l sm:border-t-0 sm:px-5">
             <p className="text-2xl font-bold text-foreground">
               KES {totalRevenue.toLocaleString()}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">Quoted revenue</p>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      </section>
 
       {!listing && workspaceInvites.length === 0 && (
         <Card className="shadow-card">
