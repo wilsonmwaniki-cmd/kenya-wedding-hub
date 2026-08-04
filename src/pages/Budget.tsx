@@ -67,6 +67,7 @@ import {
   getVendorCategoryScope,
   vendorCategoriesMatch,
 } from '@/lib/vendorCategories';
+import { recalibrateBudgetAllocations } from '@/lib/budgetRecalibration';
 
 interface BudgetCategory {
   id: string;
@@ -1343,13 +1344,48 @@ export default function Budget() {
     }
 
     const normalizedBudgetGoal = Math.round(nextBudgetGoal);
-    if (normalizedBudgetGoal === Math.round(weddingBudgetGoal)) {
+    if (
+      normalizedBudgetGoal === Math.round(weddingBudgetGoal)
+      && weddingAllocated <= normalizedBudgetGoal
+    ) {
       setBudgetGoalDraft(normalizedBudgetGoal.toLocaleString('en-KE'));
       return;
     }
 
     setSavingBudgetGoal(true);
+    const shouldRecalibrate = normalizedBudgetGoal < weddingAllocated && !plannerNeedsApproval;
+    const recalibration = shouldRecalibrate
+      ? recalibrateBudgetAllocations(weddingCategories, normalizedBudgetGoal)
+      : null;
+    const previousAllocations = weddingCategories.map((category) => ({
+      id: category.id,
+      allocated: category.allocated,
+      suggested_allocated: category.suggested_allocated,
+    }));
     try {
+      if (recalibration) {
+        const allocationUpdates = await Promise.all(recalibration.allocations.map(async (allocation) => {
+          const category = weddingCategories.find((item) => item.id === allocation.id);
+          if (!category) return null;
+          const suggestedAllocated = category.suggested_percentage == null
+            ? category.suggested_allocated
+            : Math.round((category.suggested_percentage / 100) * normalizedBudgetGoal);
+          if (
+            allocation.nextAllocated === category.allocated
+            && suggestedAllocated === category.suggested_allocated
+          ) return null;
+          return supabase
+            .from('budget_categories')
+            .update({
+              allocated: allocation.nextAllocated,
+              suggested_allocated: suggestedAllocated,
+            })
+            .eq('id', category.id);
+        }));
+        const failedAllocation = allocationUpdates.find((result) => result?.error);
+        if (failedAllocation?.error) throw failedAllocation.error;
+      }
+
       if (isPlanner && selectedClient) {
         const { error } = await supabase
           .from('planner_clients')
@@ -1362,12 +1398,27 @@ export default function Budget() {
         await updateProfile({ wedding_budget_goal: normalizedBudgetGoal });
       }
 
+      await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
       setBudgetGoalDraft(normalizedBudgetGoal.toLocaleString('en-KE'));
       toast({
-        title: 'Wedding budget updated',
-        description: `Your spending limit is now ${formatCurrency(normalizedBudgetGoal)}.`,
+        title: recalibration ? 'Budget and allocations updated' : 'Wedding budget updated',
+        description: recalibration
+          ? recalibration.fitsTarget
+            ? `Wedding category plans now fit within ${formatCurrency(normalizedBudgetGoal)}.`
+            : `${formatCurrency(recalibration.protectedSpend)} is already recorded as paid, so Zania kept those payments protected.`
+          : `Your spending limit is now ${formatCurrency(normalizedBudgetGoal)}. The extra amount is ready for you to allocate.`,
       });
     } catch (error) {
+      if (recalibration) {
+        await Promise.all(previousAllocations.map((category) => supabase
+          .from('budget_categories')
+          .update({
+            allocated: category.allocated,
+            suggested_allocated: category.suggested_allocated,
+          })
+          .eq('id', category.id)));
+        await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
+      }
       setBudgetGoalDraft(Math.round(weddingBudgetGoal).toLocaleString('en-KE'));
       toast({
         title: 'Could not update the budget',
