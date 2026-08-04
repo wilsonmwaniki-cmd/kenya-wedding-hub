@@ -1,14 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  commercialDocumentPaymentMethodLabel,
-  commercialDocumentStatusLabel,
   commercialDocumentTypeLabel,
   getCommercialDocument,
   listVendorListingOptions,
@@ -16,13 +12,18 @@ import {
   type VendorListingOption,
 } from '@/lib/commercialDocuments';
 
-function formatCurrency(amount: number) {
+function money(amount: number) {
   return `KES ${amount.toLocaleString()}`;
 }
 
-function safeDateLabel(value: string | null | undefined) {
+function dateLabel(value: string | null | undefined) {
   if (!value) return '—';
-  return new Date(value).toLocaleDateString();
+  return new Intl.DateTimeFormat('en-GB').format(new Date(`${value}T00:00:00`));
+}
+
+function metadataText(document: CommercialDocumentDetail, key: string) {
+  const value = document.metadata[key];
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 export default function CommercialDocumentPrint() {
@@ -35,275 +36,123 @@ export default function CommercialDocumentPrint() {
 
   useEffect(() => {
     let cancelled = false;
-
     const load = async () => {
       try {
         const detail = await getCommercialDocument(documentId);
         if (cancelled) return;
         setDocument(detail);
-
         if (detail?.vendorListingId) {
           const listings = await listVendorListingOptions();
-          if (cancelled) return;
-          setVendorListing(listings.find((listing) => listing.id === detail.vendorListingId) ?? null);
-        } else {
-          setVendorListing(null);
+          if (!cancelled) setVendorListing(listings.find((listing) => listing.id === detail.vendorListingId) ?? null);
         }
       } catch (error) {
-        console.error('Could not load printable commercial document:', error);
-        toast({
-          title: 'Could not open print view',
-          description: 'We could not load this document right now.',
-          variant: 'destructive',
-        });
+        console.error('Could not load commercial document preview:', error);
+        toast({ title: 'Could not open preview', description: 'We could not load this document right now.', variant: 'destructive' });
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
-
     load();
-    return () => {
-      cancelled = true;
-    };
-  }, [documentId]);
-
-  const paymentTotal = useMemo(
-    () => document?.payments.reduce((sum, payment) => sum + payment.amount, 0) ?? 0,
-    [document],
-  );
-  const backPath = document?.role === 'planner' ? '/planner-documents' : '/vendor-documents';
-  const issuedByLabel =
-    document?.role === 'planner'
-      ? profile?.company_name || profile?.full_name || 'Zania planner workspace'
-      : vendorListing?.label || profile?.company_name || profile?.full_name || 'Zania vendor workspace';
-  const issuerEmail =
-    document?.role === 'planner'
-      ? profile?.company_email || user?.email || null
-      : vendorListing?.email || profile?.company_email || user?.email || null;
-  const issuerWebsite =
-    document?.role === 'planner'
-      ? profile?.company_website || null
-      : vendorListing?.website || profile?.company_website || null;
-  const issuerLocation =
-    document?.role === 'planner'
-      ? [profile?.primary_town, profile?.primary_county].filter(Boolean).join(', ')
-      : [vendorListing?.primaryTown, vendorListing?.primaryCounty].filter(Boolean).join(', ');
-  const issuerPhone =
-    document?.role === 'planner'
-      ? profile?.company_phone || null
-      : vendorListing?.phone || profile?.company_phone || null;
+    return () => { cancelled = true; };
+  }, [documentId, toast]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-6">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 text-sm text-muted-foreground shadow-card">
-          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          Preparing printable document...
-        </div>
-      </div>
-    );
+    return <div className="flex min-h-screen items-center justify-center bg-background"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>;
   }
 
+  const backPath = document?.role === 'planner' ? '/planner-documents' : '/vendor-documents';
   if (!document) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-6">
-        <div className="rounded-3xl border border-border bg-card p-8 text-center shadow-card">
-          <p className="font-display text-2xl text-foreground">Document not found</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            This document could not be loaded or may no longer exist.
-          </p>
-          <Button asChild className="mt-4 gap-2">
-            <Link to={backPath}>
-              <ArrowLeft className="h-4 w-4" />
-              Back to documents
-            </Link>
-          </Button>
+        <div className="max-w-md border border-border bg-card p-8 text-center">
+          <h1 className="font-display text-2xl">Document not found</h1>
+          <Button asChild className="mt-5"><Link to={backPath}>Back to documents</Link></Button>
         </div>
       </div>
     );
   }
 
+  const issuerName = document.role === 'planner'
+    ? profile?.company_name || profile?.full_name || 'Zania planner workspace'
+    : vendorListing?.label || profile?.company_name || profile?.full_name || 'Zania vendor workspace';
+  const issuerEmail = document.role === 'planner' ? profile?.company_email || user?.email : vendorListing?.email || profile?.company_email || user?.email;
+  const issuerPhone = document.role === 'planner' ? profile?.company_phone : vendorListing?.phone || profile?.company_phone;
+  const issuerWebsite = document.role === 'planner' ? profile?.company_website : vendorListing?.website || profile?.company_website;
+  const issuerLocation = document.role === 'planner'
+    ? [profile?.primary_town, profile?.primary_county].filter(Boolean).join(', ')
+    : [vendorListing?.primaryTown, vendorListing?.primaryCounty].filter(Boolean).join(', ');
+  const paymentInstructions = metadataText(document, 'paymentInstructions');
+  const authorisedBy = metadataText(document, 'authorisedBy');
+
   return (
-    <div className="min-h-screen bg-background px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <Button asChild variant="ghost" className="gap-2">
-            <Link to={backPath}>
-              <ArrowLeft className="h-4 w-4" />
-              Back to documents
-            </Link>
-          </Button>
-          <Button className="gap-2" onClick={() => window.print()}>
-            <Printer className="h-4 w-4" />
-            Print document
-          </Button>
+    <main className="min-h-screen bg-[#eee9e1] px-4 py-6 text-foreground sm:px-8 print:bg-white print:p-0">
+      <div className="mx-auto max-w-[900px]">
+        <div className="mb-5 flex items-center justify-between print:hidden">
+          <Button asChild variant="ghost" className="gap-2"><Link to={backPath}><ArrowLeft className="h-4 w-4" />Back to documents</Link></Button>
+          <Button className="gap-2" onClick={() => window.print()}><Printer className="h-4 w-4" />Print or save PDF</Button>
         </div>
 
-        <Card className="overflow-hidden border-border shadow-card print:shadow-none">
-          <CardHeader className="border-b border-border bg-muted/10">
-            <div className="flex flex-wrap items-start justify-between gap-4">
+        <article className="min-h-[1120px] overflow-hidden bg-[#fffdf9] shadow-[0_24px_70px_rgba(48,38,31,0.18)] print:min-h-0 print:shadow-none">
+          <header className="bg-primary px-8 py-10 text-primary-foreground sm:px-12">
+            <div className="grid gap-9 sm:grid-cols-[1.15fr_0.85fr]">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">
-                  {commercialDocumentTypeLabel(document.documentType)}
-                </p>
-                <CardTitle className="mt-2 font-display text-3xl text-foreground">{document.title}</CardTitle>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {document.documentNumber} • {commercialDocumentStatusLabel(document.status)}
-                </p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-primary-foreground/70">{commercialDocumentTypeLabel(document.documentType)}</p>
+                <h1 className="mt-3 font-display text-4xl font-semibold">{issuerName}</h1>
+                <p className="mt-2 text-sm text-primary-foreground/75">{document.title}</p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary">{commercialDocumentTypeLabel(document.documentType)}</Badge>
-                <Badge variant={document.status === 'paid' || document.status === 'accepted' || document.status === 'issued' ? 'success' : 'warning'}>
-                  {commercialDocumentStatusLabel(document.status)}
-                </Badge>
+              <div className="text-sm leading-6 text-primary-foreground/82 sm:text-right">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary-foreground/70">Contact</p>
+                {issuerLocation && <p>{issuerLocation}</p>}
+                {issuerPhone && <p>{issuerPhone}</p>}
+                {issuerEmail && <p>{issuerEmail}</p>}
+                {issuerWebsite && <p>{issuerWebsite.replace(/^https?:\/\//, '')}</p>}
               </div>
             </div>
-          </CardHeader>
-
-          <CardContent className="space-y-8 p-6 sm:p-8">
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Issued by</p>
-                <p className="font-semibold text-foreground">{issuedByLabel}</p>
-                {issuerEmail && <p className="text-sm text-muted-foreground">{issuerEmail}</p>}
-                {issuerPhone && <p className="text-sm text-muted-foreground">{issuerPhone}</p>}
-                {issuerWebsite && <p className="text-sm text-muted-foreground">{issuerWebsite.replace(/^https?:\/\//, '')}</p>}
-                {issuerLocation && <p className="text-sm text-muted-foreground">{issuerLocation}</p>}
+            <div className="mt-10 grid gap-7 border-t border-primary-foreground/20 pt-7 sm:grid-cols-[1.15fr_0.85fr]">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-foreground/68">{document.documentType === 'quote' ? 'Quote for' : 'Invoice to'}</p>
+                <p className="mt-2 text-lg font-semibold">{document.recipientName}</p>
+                {document.weddingName && <p className="text-sm text-primary-foreground/78">{document.weddingName}</p>}
+                {document.recipientEmail && <p className="text-sm text-primary-foreground/78">{document.recipientEmail}</p>}
+                {document.recipientPhone && <p className="text-sm text-primary-foreground/78">{document.recipientPhone}</p>}
               </div>
-              <div className="space-y-2 md:text-right">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Recipient</p>
-                <p className="font-semibold text-foreground">{document.recipientName}</p>
-                {document.recipientEmail && <p className="text-sm text-muted-foreground">{document.recipientEmail}</p>}
-                {document.recipientPhone && <p className="text-sm text-muted-foreground">{document.recipientPhone}</p>}
-                {document.weddingName && <p className="text-sm text-muted-foreground">{document.weddingName}</p>}
+              <div className="grid grid-cols-2 gap-6 sm:text-right">
+                <div><p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/68">Issue date</p><p className="mt-2 font-semibold">{dateLabel(document.issueDate)}</p></div>
+                <div><p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/68">Due date</p><p className="mt-2 font-semibold">{dateLabel(document.dueDate)}</p></div>
               </div>
             </div>
+          </header>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Issue date</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{safeDateLabel(document.issueDate)}</p>
-              </div>
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Due date</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{safeDateLabel(document.dueDate)}</p>
-              </div>
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Total</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{formatCurrency(document.totalAmount)}</p>
-              </div>
-              <div className="rounded-2xl border border-border p-4">
-                <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Balance due</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{formatCurrency(document.balanceDue)}</p>
-              </div>
+          <div className="px-8 py-9 sm:px-12">
+            <p className="mb-6 text-sm text-muted-foreground">Document number <strong className="text-foreground">{document.documentNumber}</strong></p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[620px] text-left text-sm">
+                <thead><tr className="border-y border-border text-[11px] uppercase tracking-[0.14em] text-muted-foreground"><th className="w-14 py-4">No.</th><th className="py-4">Item description</th><th className="py-4 text-right">Price</th><th className="py-4 text-right">Qty.</th><th className="py-4 text-right">Total</th></tr></thead>
+                <tbody>{document.items.map((item, index) => <tr key={item.id} className="border-b border-border/60"><td className="py-4 text-muted-foreground">{index + 1}.</td><td className="py-4 font-medium">{item.description}</td><td className="py-4 text-right">{money(item.unitPrice)}</td><td className="py-4 text-right">{item.quantity}</td><td className="py-4 text-right font-semibold">{money(item.lineTotal)}</td></tr>)}</tbody>
+              </table>
             </div>
 
-            <section className="space-y-4">
+            <div className="mt-10 grid gap-10 md:grid-cols-[1fr_330px]">
+              <div className="space-y-7">
+                {paymentInstructions && <section><h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Payment method</h2><p className="mt-3 whitespace-pre-wrap text-sm leading-6">{paymentInstructions}</p></section>}
+                {document.notes && <section><h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Note</h2><p className="mt-3 whitespace-pre-wrap text-sm leading-6">{document.notes}</p></section>}
+                {document.terms && <section><h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Terms and conditions</h2><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{document.terms}</p></section>}
+              </div>
               <div>
-                <h2 className="font-display text-2xl text-foreground">Line items</h2>
-                <p className="text-sm text-muted-foreground">The service breakdown attached to this document.</p>
+                <div className="space-y-4 border-y border-border py-5 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><strong>{money(document.subtotal)}</strong></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span>{money(document.discountAmount)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{money(document.taxAmount)}</span></div>
+                </div>
+                <div className="mt-4 flex items-center justify-between bg-primary px-5 py-4 text-primary-foreground"><span>Total</span><strong className="text-xl">{money(document.totalAmount)}</strong></div>
+                {document.amountPaid > 0 && <div className="mt-4 space-y-2 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span>{money(document.amountPaid)}</span></div><div className="flex justify-between font-semibold"><span>Balance</span><span>{money(document.balanceDue)}</span></div></div>}
+                {authorisedBy && <div className="mt-14 border-t border-border pt-3 text-sm"><p className="font-medium">{authorisedBy}</p><p className="text-muted-foreground">Authorised signatory</p></div>}
               </div>
-
-              {document.items.length ? (
-                <div className="overflow-hidden rounded-2xl border border-border">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-muted/20 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-3">Description</th>
-                        <th className="px-4 py-3">Qty</th>
-                        <th className="px-4 py-3">Unit price</th>
-                        <th className="px-4 py-3 text-right">Line total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {document.items.map((item) => (
-                        <tr key={item.id} className="border-t border-border/60">
-                          <td className="px-4 py-3">{item.description}</td>
-                          <td className="px-4 py-3">{item.quantity}</td>
-                          <td className="px-4 py-3">{formatCurrency(item.unitPrice)}</td>
-                          <td className="px-4 py-3 text-right font-medium text-foreground">{formatCurrency(item.lineTotal)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-border p-5 text-sm text-muted-foreground">
-                  No line items were attached to this document yet.
-                </div>
-              )}
-            </section>
-
-            {(document.notes || document.terms) && (
-              <section className="grid gap-4 md:grid-cols-2">
-                {document.notes && (
-                  <div className="rounded-2xl border border-border p-4">
-                    <h3 className="font-display text-xl text-foreground">Notes</h3>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{document.notes}</p>
-                  </div>
-                )}
-                {document.terms && (
-                  <div className="rounded-2xl border border-border p-4">
-                    <h3 className="font-display text-xl text-foreground">Terms</h3>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{document.terms}</p>
-                  </div>
-                )}
-              </section>
-            )}
-
-            <section className="space-y-4">
-              <div>
-                <h2 className="font-display text-2xl text-foreground">Payment trail</h2>
-                <p className="text-sm text-muted-foreground">Recorded payments and receipt-ready references.</p>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-2xl border border-border p-4">
-                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Collected</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(paymentTotal)}</p>
-                </div>
-                <div className="rounded-2xl border border-border p-4">
-                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Amount paid</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(document.amountPaid)}</p>
-                </div>
-                <div className="rounded-2xl border border-border p-4">
-                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Remaining</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(document.balanceDue)}</p>
-                </div>
-              </div>
-
-              {document.payments.length ? (
-                <div className="overflow-hidden rounded-2xl border border-border">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-muted/20 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-3">Date</th>
-                        <th className="px-4 py-3">Method</th>
-                        <th className="px-4 py-3">Reference</th>
-                        <th className="px-4 py-3 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {document.payments.map((payment) => (
-                        <tr key={payment.id} className="border-t border-border/60">
-                          <td className="px-4 py-3">{safeDateLabel(payment.paymentDate)}</td>
-                          <td className="px-4 py-3">{commercialDocumentPaymentMethodLabel(payment.paymentMethod)}</td>
-                          <td className="px-4 py-3">{payment.reference || '—'}</td>
-                          <td className="px-4 py-3 text-right font-medium text-foreground">{formatCurrency(payment.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-border p-5 text-sm text-muted-foreground">
-                  No payments have been recorded against this document yet.
-                </div>
-              )}
-            </section>
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+          <footer className="mt-8 border-t border-primary/30 px-8 py-5 text-center text-xs text-muted-foreground sm:px-12">Thank you for your business.</footer>
+        </article>
       </div>
-    </div>
+    </main>
   );
 }

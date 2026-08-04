@@ -37,6 +37,9 @@ import DocumentActionOverview from '@/components/documents/DocumentActionOvervie
 import DocumentMomentumCard from '@/components/documents/DocumentMomentumCard';
 import DocumentWorkspaceHeader from '@/components/documents/DocumentWorkspaceHeader';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
+import CommercialDocumentEditor, {
+  type CommercialDocumentHeaderDraft,
+} from '@/components/documents/CommercialDocumentEditor';
 import {
   buildCommercialDocumentShareEmailDraft,
   buildCommercialDocumentShareUrl,
@@ -176,18 +179,7 @@ export default function PlannerDocuments() {
     reference: '',
     notes: '',
   });
-  const [headerDraft, setHeaderDraft] = useState<{
-    title: string;
-    status: CommercialDocumentStatus;
-    recipientName: string;
-    recipientEmail: string;
-    recipientPhone: string;
-    weddingName: string;
-    issueDate: string;
-    dueDate: string;
-    notes: string;
-    terms: string;
-  } | null>(null);
+  const [headerDraft, setHeaderDraft] = useState<CommercialDocumentHeaderDraft | null>(null);
   const [itemDrafts, setItemDrafts] = useState<SaveCommercialDocumentItemInput[]>([]);
 
   const activeSection: DocumentsSection = useMemo(() => {
@@ -311,6 +303,10 @@ export default function PlannerDocuments() {
             dueDate: detail.dueDate ?? '',
             notes: detail.notes ?? '',
             terms: detail.terms ?? '',
+            discountAmount: detail.discountAmount,
+            taxAmount: detail.taxAmount,
+            paymentInstructions: typeof detail.metadata.paymentInstructions === 'string' ? detail.metadata.paymentInstructions : '',
+            authorisedBy: typeof detail.metadata.authorisedBy === 'string' ? detail.metadata.authorisedBy : '',
           });
           setItemDrafts(
             detail.items.map((item) => ({
@@ -550,9 +546,29 @@ export default function PlannerDocuments() {
     setCreateOpen(true);
   };
 
-  const handleSaveHeader = async () => {
+  const handleSaveDocument = async () => {
     if (!selectedDetail || !headerDraft) return;
+    const sanitized = itemDrafts
+      .map((item, index) => ({
+        description: item.description?.trim() || '',
+        quantity: Number(item.quantity ?? 1),
+        unitPrice: Number(item.unitPrice ?? 0),
+        sortOrder: index,
+        metadata: item.metadata ?? {},
+      }))
+      .filter((item) => item.description.length > 0);
+
+    if (!sanitized.length) {
+      toast({
+        title: 'Add at least one item',
+        description: 'Add the service or deliverable before saving this document.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSavingHeader(true);
+    setSavingItems(true);
     try {
       await updateCommercialDocument(selectedDetail.id, {
         title: headerDraft.title.trim(),
@@ -565,12 +581,20 @@ export default function PlannerDocuments() {
         dueDate: selectedDetail.documentType === 'receipt' ? null : headerDraft.dueDate || null,
         notes: headerDraft.notes.trim() || null,
         terms: headerDraft.terms.trim() || null,
+        discountAmount: Number(headerDraft.discountAmount || 0),
+        taxAmount: Number(headerDraft.taxAmount || 0),
+        metadata: {
+          ...selectedDetail.metadata,
+          paymentInstructions: headerDraft.paymentInstructions.trim(),
+          authorisedBy: headerDraft.authorisedBy.trim(),
+        },
       });
+      await saveCommercialDocumentItems(selectedDetail.id, sanitized);
       await loadDocuments(selectedDetail.id);
       setSelectedDetail(await getCommercialDocument(selectedDetail.id));
       toast({
-        title: 'Document updated',
-        description: 'Header details and status are now saved.',
+        title: 'Document saved',
+        description: 'The editable document and its totals are up to date.',
       });
     } catch (error) {
       console.error('Could not save document header:', error);
@@ -581,6 +605,7 @@ export default function PlannerDocuments() {
       });
     } finally {
       setSavingHeader(false);
+      setSavingItems(false);
     }
   };
 
@@ -1230,6 +1255,17 @@ export default function PlannerDocuments() {
                     summary={detailMomentum}
                   />
                 )}
+                <CommercialDocumentEditor
+                  idPrefix="planner-document"
+                  document={selectedDetail}
+                  draft={headerDraft}
+                  setDraft={setHeaderDraft}
+                  items={itemDrafts}
+                  setItems={setItemDrafts}
+                  saving={savingHeader || savingItems}
+                  onSave={handleSaveDocument}
+                />
+                <div className="hidden" aria-hidden="true">
                 <section className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="planner-document-title">Title</Label>
@@ -1355,7 +1391,7 @@ export default function PlannerDocuments() {
                     <p><span className="font-medium text-foreground">Paid:</span> {formatCurrency(selectedDetail.amountPaid)}</p>
                     <p><span className="font-medium text-foreground">Balance:</span> {formatCurrency(selectedDetail.balanceDue)}</p>
                   </div>
-                  <Button className="gap-2" onClick={handleSaveHeader} disabled={savingHeader}>
+                  <Button className="gap-2" onClick={handleSaveDocument} disabled={savingHeader}>
                     {savingHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     Save document details
                   </Button>
@@ -1463,6 +1499,7 @@ export default function PlannerDocuments() {
                     </Button>
                   </div>
                 </section>
+                </div>
 
                 <section className="space-y-4 rounded-2xl border border-border p-4">
                   <div className="flex items-center justify-between gap-3">
