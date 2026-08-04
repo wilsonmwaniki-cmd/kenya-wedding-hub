@@ -4,12 +4,12 @@ import {
   ArrowRight,
   BadgeCheck,
   CircleDollarSign,
+  Eye,
   FileSpreadsheet,
   Link2,
   Loader2,
   Mail,
   NotebookPen,
-  Printer,
   Receipt,
   RotateCw,
   Save,
@@ -1216,8 +1216,8 @@ export default function VendorDocuments() {
                   )}
                   <Button asChild variant="outline" className="gap-2">
                     <Link to={`/documents/${selectedDetail.id}/print`} target="_blank" rel="noreferrer">
-                      <Printer className="h-4 w-4" />
-                      Print
+                      <Eye className="h-4 w-4" />
+                      Preview document
                     </Link>
                   </Button>
                   <Button
