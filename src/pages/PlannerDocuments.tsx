@@ -872,6 +872,7 @@ export default function PlannerDocuments() {
             : activeSection === 'templates'
               ? 'Templates'
               : 'Documents';
+  const documentResultLabel = documents.length === 1 ? pageTitle.replace(/s$/, '') : pageTitle;
 
   const pageDescription =
     activeSection === 'quotes'
@@ -1051,15 +1052,18 @@ export default function PlannerDocuments() {
                 </div>
               )}
             </div>
-            <div className="grid gap-3 sm:grid-cols-[1.3fr_0.7fr]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search by document number, recipient, or wedding"
+                aria-label="Search documents"
+                className="min-w-0 flex-1"
               />
-              <div className="flex min-h-12 items-center rounded-xl border border-border bg-muted/20 px-4 py-2 text-sm leading-5 text-muted-foreground">
-                Viewing <span className="mx-1 break-words font-medium text-foreground">{pageTitle}</span> · {documents.length} result{documents.length === 1 ? '' : 's'}
-              </div>
+              <p className="shrink-0 text-sm text-muted-foreground sm:min-w-28 sm:text-right" aria-live="polite">
+                <span className="font-medium tabular-nums text-foreground">{documents.length}</span>{' '}
+                {documentResultLabel.toLocaleLowerCase()}
+              </p>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
