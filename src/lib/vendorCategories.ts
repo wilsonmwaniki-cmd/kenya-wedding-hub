@@ -14,7 +14,6 @@ export const vendorCategoryCatalog: readonly VendorCategoryDefinition[] = [
   { name: 'Caterer', scope: 'wedding' },
   { name: 'Cake Artist & Baker', scope: 'wedding' },
   { name: 'Décor, Tents, Chairs, Tables', scope: 'wedding' },
-  { name: 'Flowers', scope: 'wedding' },
   { name: 'Rings', scope: 'personal' },
   { name: 'Bridal Gown, Accessories, Preparation', scope: 'personal' },
   { name: "Groom's Attire & Accessories, Preparation", scope: 'personal' },

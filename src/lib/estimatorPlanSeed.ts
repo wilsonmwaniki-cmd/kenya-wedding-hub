@@ -273,7 +273,8 @@ export async function seedWeddingPlanFromEstimator({
 
   const budgetInserts = estimateRows
     .filter((row) => (
-      getVendorCategoryScope(row.category) === 'wedding'
+      vendorCategoryNames.includes(row.category)
+      && getVendorCategoryScope(row.category) === 'wedding'
       && !existingWeddingBudgetNames.has(row.category)
     ))
     .map((row) => ({

@@ -18,7 +18,7 @@ describe('interactive budget plan', () => {
     const plan = buildInteractiveBudgetPlan(2_000_000, 150);
 
     expect(validateInteractiveBudgetCategories()).toBe(true);
-    expect(plan.allocations).toHaveLength(22);
+    expect(plan.allocations).toHaveLength(21);
     expect(plan.allocations.reduce((sum, item) => sum + item.amount, 0)).toBe(2_000_000);
   });
 
@@ -44,7 +44,6 @@ describe('interactive budget plan', () => {
       Caterer: 24,
       'Cake Artist & Baker': 3,
       'Décor, Tents, Chairs, Tables': 20,
-      Flowers: 0,
       Rings: 4,
       'Bridal Gown, Accessories, Preparation': 5,
       "Groom's Attire & Accessories, Preparation": 3,
@@ -146,7 +145,7 @@ describe('interactive budget plan', () => {
     const withoutCake = removeInteractiveBudgetCategory(original, 'Cake Artist & Baker');
     const adjusted = updateInteractiveBudgetSettings(withoutCake, 2_000_000, 180);
 
-    expect(withoutCake.allocations).toHaveLength(21);
+    expect(withoutCake.allocations).toHaveLength(20);
     expect(withoutCake.allocations.some((item) => item.name === 'Cake Artist & Baker')).toBe(false);
     expect(adjusted.totalBudget).toBe(2_000_000);
     expect(adjusted.guestCount).toBe(180);

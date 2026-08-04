@@ -44,8 +44,6 @@ const allocationRules: AllocationRule[] = [
   { name: 'Caterer', suggestedPercentage: 24, guestSensitive: true },
   { name: 'Cake Artist & Baker', suggestedPercentage: 3, guestSensitive: true },
   { name: 'Décor, Tents, Chairs, Tables', suggestedPercentage: 20, guestSensitive: true },
-  // Keep the canonical category available without inventing a percentage absent from the source sheet.
-  { name: 'Flowers', suggestedPercentage: 0, guestSensitive: true },
   { name: 'Rings', suggestedPercentage: 4 },
   { name: 'Bridal Gown, Accessories, Preparation', suggestedPercentage: 5 },
   { name: "Groom's Attire & Accessories, Preparation", suggestedPercentage: 3 },

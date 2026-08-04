@@ -10,7 +10,7 @@ import {
 
 describe('vendor category catalog', () => {
   it('contains the spreadsheet vendor categories without the task-only row', () => {
-    expect(vendorCategoryCatalog).toHaveLength(22);
+    expect(vendorCategoryCatalog).toHaveLength(21);
     expect(vendorCategoryCatalog.some((category) => category.name === "Couple's Tasks")).toBe(false);
   });
 
@@ -30,8 +30,12 @@ describe('vendor category catalog', () => {
     expect(canonicalizeVendorCategory('Videography')).toBe('Cinematographer');
   });
 
-  it('includes Flowers as a first-class category while retaining unknown legacy records', () => {
-    expect(getVendorCategoryOptions().some((category) => category.name === 'Flowers')).toBe(true);
+  it('keeps removed and unknown categories available only for existing legacy records', () => {
+    expect(getVendorCategoryOptions().some((category) => category.name === 'Flowers')).toBe(false);
+    expect(getVendorCategoryOptions('Flowers').at(-1)).toEqual({
+      name: 'Flowers',
+      scope: 'wedding',
+    });
     expect(getVendorCategoryOptions('Accommodation').at(-1)).toEqual({
       name: 'Accommodation',
       scope: 'wedding',
