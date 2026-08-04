@@ -36,12 +36,17 @@ function formatCurrency(value: number) {
   return `KES ${Math.round(value).toLocaleString()}`;
 }
 
+function formatIntegerInput(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return digits ? Number(digits).toLocaleString('en-KE') : '';
+}
+
 function allocationDomId(name: string) {
   return `estimator-allocation-${name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}`;
 }
 
 export default function Landing() {
-  const [budgetInput, setBudgetInput] = useState('1500000');
+  const [budgetInput, setBudgetInput] = useState('1,500,000');
   const [guestInput, setGuestInput] = useState('120');
   const [plan, setPlan] = useState<InteractiveBudgetPlan | null>(null);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -171,6 +176,8 @@ export default function Landing() {
     }
 
     const nextPlan = buildInteractiveBudgetPlan(totalBudget, guestCount);
+    setBudgetInput(totalBudget.toLocaleString('en-KE'));
+    setGuestInput(guestCount.toLocaleString('en-KE'));
     setPlan(nextPlan);
     persistPlanDraft(nextPlan);
     window.requestAnimationFrame(() => {
@@ -246,7 +253,7 @@ export default function Landing() {
     if (!plan) return;
     const totalBudget = Number(budgetInput.replace(/,/g, ''));
     if (!Number.isFinite(totalBudget) || totalBudget <= 0) {
-      setBudgetInput(String(plan.totalBudget));
+      setBudgetInput(plan.totalBudget.toLocaleString('en-KE'));
       toast({
         title: 'Enter a valid budget',
         description: 'Your wedding budget must be greater than zero.',
@@ -261,7 +268,7 @@ export default function Landing() {
     if (!plan || pendingTotalBudget == null) return;
     const nextPlan = updateInteractiveBudgetSettings(plan, pendingTotalBudget, plan.guestCount, strategy);
     setPlan(nextPlan);
-    setBudgetInput(String(nextPlan.totalBudget));
+    setBudgetInput(nextPlan.totalBudget.toLocaleString('en-KE'));
     persistPlanDraft(nextPlan);
     setPendingTotalBudget(null);
   };
@@ -270,12 +277,13 @@ export default function Landing() {
     if (!plan) return;
     const guestCount = Number(guestInput.replace(/,/g, ''));
     if (!Number.isFinite(guestCount) || guestCount <= 0) {
-      setGuestInput(String(plan.guestCount));
+      setGuestInput(plan.guestCount.toLocaleString('en-KE'));
       toast({ title: 'Enter a valid guest count', description: 'Use at least one guest.', variant: 'destructive' });
       return;
     }
 
     const nextPlan = updateInteractiveBudgetSettings(plan, plan.totalBudget, guestCount, 'keep_amounts');
+    setGuestInput(guestCount.toLocaleString('en-KE'));
     setPlan(nextPlan);
     persistPlanDraft(nextPlan);
   };
@@ -418,11 +426,10 @@ export default function Landing() {
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">KES</span>
                     <Input
                       id="wedding-budget"
-                      type="number"
-                      min="1"
+                      type="text"
                       inputMode="numeric"
                       value={budgetInput}
-                      onChange={(event) => setBudgetInput(event.target.value)}
+                      onChange={(event) => setBudgetInput(formatIntegerInput(event.target.value))}
                       className="h-11 bg-background pl-14 text-sm font-semibold sm:h-12 sm:text-base"
                     />
                   </div>
@@ -431,11 +438,10 @@ export default function Landing() {
                   <Label htmlFor="guest-count" className="text-sm font-semibold">Expected guests</Label>
                   <Input
                     id="guest-count"
-                    type="number"
-                    min="1"
+                    type="text"
                     inputMode="numeric"
                     value={guestInput}
-                    onChange={(event) => setGuestInput(event.target.value)}
+                    onChange={(event) => setGuestInput(formatIntegerInput(event.target.value))}
                     className="h-11 bg-background text-sm font-semibold sm:h-12 sm:text-base"
                   />
                 </div>
@@ -444,6 +450,18 @@ export default function Landing() {
               <Button onClick={handleBuildPlan} className="mt-5 h-11 w-full gap-2 text-sm font-semibold sm:mt-6 sm:h-12 sm:text-base">
                 Get Estimate
               </Button>
+
+              {!user ? (
+                <p className="mt-3 text-center text-xs text-muted-foreground sm:text-sm">
+                  Want to start without an estimate?{' '}
+                  <Link
+                    to="/auth?mode=signup&audience=couple&role=couple"
+                    className="font-semibold text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Skip estimate and create an account
+                  </Link>
+                </p>
+              ) : null}
 
               {!user ? (
                 <div
@@ -512,11 +530,10 @@ export default function Landing() {
                   <Input
                     id="plan-total-budget"
                     aria-label="Adjust wedding budget"
-                    type="number"
-                    min="1"
+                    type="text"
                     inputMode="numeric"
                     value={budgetInput}
-                    onChange={(event) => setBudgetInput(event.target.value)}
+                    onChange={(event) => setBudgetInput(formatIntegerInput(event.target.value))}
                     onBlur={handleBudgetGoalChange}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') event.currentTarget.blur();
@@ -558,11 +575,10 @@ export default function Landing() {
                 <Input
                   id="plan-guest-count"
                   aria-label="Adjust guest count"
-                  type="number"
-                  min="1"
+                  type="text"
                   inputMode="numeric"
                   value={guestInput}
-                  onChange={(event) => setGuestInput(event.target.value)}
+                  onChange={(event) => setGuestInput(formatIntegerInput(event.target.value))}
                   onBlur={handleGuestCountChange}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') event.currentTarget.blur();
@@ -731,7 +747,7 @@ export default function Landing() {
         open={pendingTotalBudget != null}
         onOpenChange={(open) => {
           if (!open && plan) {
-            setBudgetInput(String(plan.totalBudget));
+            setBudgetInput(plan.totalBudget.toLocaleString('en-KE'));
             setPendingTotalBudget(null);
           }
         }}
