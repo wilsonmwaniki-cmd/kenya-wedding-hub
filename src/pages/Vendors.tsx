@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, ChevronDown, ExternalLink, FileSignature } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, ChevronDown, ExternalLink, FileSignature } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel } from '@/lib/committeeRoles';
@@ -5464,24 +5464,20 @@ export default function Vendors() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`due-${vendor.id}`}>Next payment due date</Label>
-                      <div className="relative">
-                        <CalendarClock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          id={`due-${vendor.id}`}
-                          type="date"
-                          className="pl-9"
-                          value={paymentDrafts[vendor.id]?.paymentDueDate ?? ''}
-                          onChange={(e) =>
-                            setPaymentDrafts((prev) => ({
-                              ...prev,
-                              [vendor.id]: {
-                                ...(prev[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
-                                paymentDueDate: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </div>
+                      <Input
+                        id={`due-${vendor.id}`}
+                        type="date"
+                        value={paymentDrafts[vendor.id]?.paymentDueDate ?? ''}
+                        onChange={(e) =>
+                          setPaymentDrafts((prev) => ({
+                            ...prev,
+                            [vendor.id]: {
+                              ...(prev[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                              paymentDueDate: e.target.value,
+                            },
+                          }))
+                        }
+                      />
                     </div>
                   </div>
 

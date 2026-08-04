@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, CalendarDays, Copy, FilePlus2, Link2, Loader2, Mail, PenLine, RotateCw, Save, Send, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
+import { BadgeCheck, Copy, FilePlus2, Link2, Loader2, Mail, PenLine, RotateCw, Save, Send, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -634,10 +634,7 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                   </div>
                   <div className="space-y-2">
                     <Label>Event date</Label>
-                    <div className="relative">
-                      <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input type="date" className="pl-9" value={detailDraft.eventDate} onChange={(event) => setDetailDraft((current) => current ? { ...current, eventDate: event.target.value } : current)} />
-                    </div>
+                    <Input type="date" value={detailDraft.eventDate} onChange={(event) => setDetailDraft((current) => current ? { ...current, eventDate: event.target.value } : current)} />
                   </div>
                   <div className="space-y-2">
                     <Label>Recipient email</Label>

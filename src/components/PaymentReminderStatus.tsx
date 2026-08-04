@@ -19,15 +19,19 @@ function formatReminderDate(value: string) {
 
 export function PaymentReminderStatus({ dueDate, vendorName, saved = false, inputId }: PaymentReminderStatusProps) {
   const openDatePicker = () => {
-    const input = document.getElementById(inputId) as HTMLInputElement | null;
-    if (!input) return;
+    const control = document.getElementById(inputId);
+    if (!control) return;
 
-    input.focus({ preventScroll: true });
-    try {
-      input.showPicker?.();
-    } catch {
-      input.click();
+    control.focus({ preventScroll: true });
+    if (control instanceof HTMLInputElement && typeof control.showPicker === 'function') {
+      try {
+        control.showPicker();
+        return;
+      } catch {
+        // Fall through to the standard click path when the browser blocks showPicker.
+      }
     }
+    control.click();
   };
 
   if (!dueDate) {
