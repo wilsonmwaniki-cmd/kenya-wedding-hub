@@ -25,11 +25,10 @@ export type BudgetResizeStrategy = 'scale_percentages' | 'keep_amounts';
 
 type AllocationRule = {
   name: string;
-  weight: number;
+  suggestedPercentage: number;
   guestSensitive?: boolean;
 };
 
-const BASELINE_GUEST_COUNT = 120;
 const CORE_PER_GUEST_CATEGORIES = new Set([
   'Caterer',
   'Cake Artist & Baker',
@@ -37,33 +36,30 @@ const CORE_PER_GUEST_CATEGORIES = new Set([
 ]);
 
 const allocationRules: AllocationRule[] = [
-  { name: 'Wedding Licenses', weight: 1 },
-  { name: 'Church & Officiating Minister', weight: 3 },
-  { name: 'Marriage Preparation', weight: 1 },
-  { name: 'Wedding Venue', weight: 13, guestSensitive: true },
-  { name: 'Wedding Planner / Planning Team', weight: 4 },
-  { name: 'Caterer', weight: 23, guestSensitive: true },
-  { name: 'Cake Artist & Baker', weight: 3, guestSensitive: true },
-  { name: 'Décor, Tents, Chairs, Tables', weight: 13, guestSensitive: true },
-  { name: 'Flowers', weight: 3, guestSensitive: true },
-  { name: 'Rings', weight: 2 },
-  { name: 'Bridal Gown, Accessories, Preparation', weight: 4 },
-  { name: "Groom's Attire & Accessories, Preparation", weight: 3 },
-  { name: 'Master of Ceremonies', weight: 2 },
-  { name: 'DJ (or Band) and Sound', weight: 4 },
-  { name: 'Photographer', weight: 6 },
-  { name: 'Cinematographer', weight: 4 },
-  { name: 'Photo Shoot Venue', weight: 2 },
-  { name: 'Transport', weight: 3 },
-  { name: 'Invitations', weight: 2, guestSensitive: true },
-  { name: "Bride's Make-up Artist", weight: 1 },
-  { name: "Bride's Hair Stylist", weight: 1 },
-  { name: 'Honeymoon', weight: 2 },
+  { name: 'Wedding Licenses', suggestedPercentage: 1 },
+  { name: 'Church & Officiating Minister', suggestedPercentage: 1 },
+  { name: 'Marriage Preparation', suggestedPercentage: 2 },
+  { name: 'Wedding Venue', suggestedPercentage: 5, guestSensitive: true },
+  { name: 'Wedding Planner / Planning Team', suggestedPercentage: 3 },
+  { name: 'Caterer', suggestedPercentage: 24, guestSensitive: true },
+  { name: 'Cake Artist & Baker', suggestedPercentage: 3, guestSensitive: true },
+  { name: 'Décor, Tents, Chairs, Tables', suggestedPercentage: 20, guestSensitive: true },
+  // Keep the canonical category available without inventing a percentage absent from the source sheet.
+  { name: 'Flowers', suggestedPercentage: 0, guestSensitive: true },
+  { name: 'Rings', suggestedPercentage: 4 },
+  { name: 'Bridal Gown, Accessories, Preparation', suggestedPercentage: 5 },
+  { name: "Groom's Attire & Accessories, Preparation", suggestedPercentage: 3 },
+  { name: 'Master of Ceremonies', suggestedPercentage: 3 },
+  { name: 'DJ (or Band) and Sound', suggestedPercentage: 4 },
+  { name: 'Photographer', suggestedPercentage: 5 },
+  { name: 'Cinematographer', suggestedPercentage: 4 },
+  { name: 'Photo Shoot Venue', suggestedPercentage: 1 },
+  { name: 'Transport', suggestedPercentage: 2 },
+  { name: 'Invitations', suggestedPercentage: 2, guestSensitive: true },
+  { name: "Bride's Make-up Artist", suggestedPercentage: 1 },
+  { name: "Bride's Hair Stylist", suggestedPercentage: 1 },
+  { name: 'Honeymoon', suggestedPercentage: 6 },
 ];
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
 
 function normalizeMoney(value: number) {
   return Math.max(0, Math.round(Number.isFinite(value) ? value : 0));
@@ -100,11 +96,8 @@ function distributeExactTotal(rawAmounts: number[], totalBudget: number) {
 export function buildInteractiveBudgetPlan(totalBudgetInput: number, guestCountInput: number): InteractiveBudgetPlan {
   const totalBudget = normalizeMoney(totalBudgetInput);
   const guestCount = Math.max(1, Math.round(guestCountInput));
-  const guestFactor = clamp(guestCount / BASELINE_GUEST_COUNT, 0.75, 1.35);
-  const adjustedWeights = allocationRules.map((rule) => rule.weight * (rule.guestSensitive ? guestFactor : 1));
-  const totalWeight = adjustedWeights.reduce((sum, weight) => sum + weight, 0);
   const amounts = distributeExactTotal(
-    adjustedWeights.map((weight) => totalWeight > 0 ? (weight / totalWeight) * totalBudget : 0),
+    allocationRules.map((rule) => calculatePlannedAmount(rule.suggestedPercentage, totalBudget)),
     totalBudget,
   );
 
@@ -112,13 +105,12 @@ export function buildInteractiveBudgetPlan(totalBudgetInput: number, guestCountI
     totalBudget,
     guestCount,
     allocations: allocationRules.map((rule, index) => {
-      const suggestedPercentage = calculatePercentage(amounts[index], totalBudget);
       return {
         name: rule.name,
         amount: amounts[index],
-        percentage: suggestedPercentage,
+        percentage: calculatePercentage(amounts[index], totalBudget),
         suggestedAmount: amounts[index],
-        suggestedPercentage,
+        suggestedPercentage: rule.suggestedPercentage,
         guestSensitive: Boolean(rule.guestSensitive),
         isManuallyEdited: false,
         lastEditedField: null,

@@ -22,11 +22,44 @@ describe('interactive budget plan', () => {
     expect(plan.allocations.reduce((sum, item) => sum + item.amount, 0)).toBe(2_000_000);
   });
 
-  it('moves more of the same budget into guest-sensitive categories for a larger wedding', () => {
+  it('keeps the spreadsheet starting percentages stable when guest count changes', () => {
     const intimatePlan = buildInteractiveBudgetPlan(2_000_000, 60);
     const largePlan = buildInteractiveBudgetPlan(2_000_000, 240);
 
-    expect(getCoreGuestCost(largePlan)).toBeGreaterThan(getCoreGuestCost(intimatePlan));
+    expect(largePlan.allocations).toEqual(intimatePlan.allocations);
+  });
+
+  it('uses the approved spreadsheet percentages as the initial suggestion', () => {
+    const plan = buildInteractiveBudgetPlan(1_500_000, 120);
+    const percentages = Object.fromEntries(
+      plan.allocations.map((allocation) => [allocation.name, allocation.suggestedPercentage]),
+    );
+
+    expect(percentages).toEqual({
+      'Wedding Licenses': 1,
+      'Church & Officiating Minister': 1,
+      'Marriage Preparation': 2,
+      'Wedding Venue': 5,
+      'Wedding Planner / Planning Team': 3,
+      Caterer: 24,
+      'Cake Artist & Baker': 3,
+      'Décor, Tents, Chairs, Tables': 20,
+      Flowers: 0,
+      Rings: 4,
+      'Bridal Gown, Accessories, Preparation': 5,
+      "Groom's Attire & Accessories, Preparation": 3,
+      'Master of Ceremonies': 3,
+      'DJ (or Band) and Sound': 4,
+      Photographer: 5,
+      Cinematographer: 4,
+      'Photo Shoot Venue': 1,
+      Transport: 2,
+      Invitations: 2,
+      "Bride's Make-up Artist": 1,
+      "Bride's Hair Stylist": 1,
+      Honeymoon: 6,
+    });
+    expect(plan.allocations.reduce((sum, allocation) => sum + allocation.suggestedPercentage, 0)).toBe(100);
   });
 
   it('calculates core cost per guest from catering, décor, and cake only', () => {
