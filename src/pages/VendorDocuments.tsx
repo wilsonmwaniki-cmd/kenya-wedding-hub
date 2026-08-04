@@ -4,7 +4,6 @@ import {
   ArrowRight,
   BadgeCheck,
   CircleDollarSign,
-  FilePlus2,
   FileSpreadsheet,
   Link2,
   Loader2,
@@ -36,7 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
 import DocumentActionOverview from '@/components/documents/DocumentActionOverview';
 import DocumentMomentumCard from '@/components/documents/DocumentMomentumCard';
-import DocumentSummaryRail from '@/components/documents/DocumentSummaryRail';
+import DocumentWorkspaceHeader from '@/components/documents/DocumentWorkspaceHeader';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
 import {
   buildCommercialDocumentShareEmailDraft,
@@ -1057,33 +1056,23 @@ export default function VendorDocuments() {
 
   return (
     <div className="space-y-6 pb-24 sm:pb-28">
-      <header className="space-y-5 border-b border-border/70 pb-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">Documents</p>
-            <h1 className="mt-2 font-display text-3xl font-semibold text-foreground sm:text-4xl">{pageTitle}</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{pageDescription}</p>
-          </div>
-          <Button
-            onClick={() => {
-              if (documentPrimaryAction.actionType === 'payment') return setPaymentOpen(true);
-              if (documentPrimaryAction.actionType === 'share') return void handleCopyShareLink();
-              setCreateOpen(true);
-            }}
-            className="gap-2 self-start sm:self-auto"
-            disabled={documentPrimaryAction.actionType === 'share' && !!selectedDetail && sharingDocumentId === selectedDetail.id}
-          >
-            <FilePlus2 className="h-4 w-4" />
-            {documentPrimaryAction.actionLabel}
-          </Button>
-        </div>
-        <DocumentSummaryRail items={[
+      <DocumentWorkspaceHeader
+        title={pageTitle}
+        description={pageDescription}
+        actionLabel={documentPrimaryAction.actionLabel}
+        actionDisabled={documentPrimaryAction.actionType === 'share' && !!selectedDetail && sharingDocumentId === selectedDetail.id}
+        onAction={() => {
+          if (documentPrimaryAction.actionType === 'payment') return setPaymentOpen(true);
+          if (documentPrimaryAction.actionType === 'share') return void handleCopyShareLink();
+          setCreateOpen(true);
+        }}
+        summaryItems={[
           { label: 'All documents', value: stats.total },
           { label: 'Quotes', value: stats.quotes },
           { label: 'Money received', value: formatCurrency(stats.collected), tone: 'success' },
           { label: 'Money still due', value: formatCurrency(stats.outstanding), tone: 'warning' },
-        ]} />
-      </header>
+        ]}
+      />
 
       {activeSection === 'overview' && (
         <DocumentActionOverview
