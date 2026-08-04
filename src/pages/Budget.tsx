@@ -35,6 +35,7 @@ import {
   getCoupleVendorContract,
 } from '@/lib/coupleVendorContracts';
 import {
+  hasRecordedVendor,
   setVendorSelectionStatus,
   vendorSelectionLabel,
   vendorSelectionStatuses,
@@ -1530,7 +1531,8 @@ export default function Budget() {
   const availableVendorsForPayment = useMemo(() => {
     const selectedCategory = selectedPaymentCategoryOption?.name;
     return vendorOptions.filter((vendor) => (
-      getVendorCategoryScope(vendor.category) === paymentLog.budgetScope
+      hasRecordedVendor(vendor)
+      && getVendorCategoryScope(vendor.category) === paymentLog.budgetScope
       && (!selectedCategory || vendorCategoriesMatch(vendor.category, selectedCategory))
     ));
   }, [paymentLog.budgetScope, selectedPaymentCategoryOption, vendorOptions]);

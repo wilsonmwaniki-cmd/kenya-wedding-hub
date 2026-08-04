@@ -56,18 +56,6 @@ function scopedQuery<T extends {
   return query.eq('client_id', clientId);
 }
 
-function buildVendorPlaceholder(category: string, county: string) {
-  return {
-    name: `${category} shortlist`,
-    category,
-    phone: null,
-    email: null,
-    price: null,
-    status: 'contacted',
-    notes: `Seeded from the cost estimator. Use this card to track quotes, shortlists, and the final ${category.toLowerCase()} choice for your ${county} wedding.`,
-  };
-}
-
 export function saveEstimatorPlanDraft(draft: EstimatorPlanDraft) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(ESTIMATOR_PLAN_DRAFT_KEY, JSON.stringify(draft));
@@ -221,13 +209,9 @@ export async function seedWeddingPlanFromEstimator({
       });
 
   const vendorCategories = [...vendorCategoryNames];
-  const [existingBudgetRes, existingVendorRes, existingTaskRes, profileRes, clientRes, weddingRes] = await Promise.all([
+  const [existingBudgetRes, existingTaskRes, profileRes, clientRes, weddingRes] = await Promise.all([
     scopedQuery(
       supabase.from('budget_categories').select('name, budget_scope').eq('user_id', userId),
-      clientId,
-    ),
-    scopedQuery(
-      supabase.from('vendors').select('name, category').eq('user_id', userId),
       clientId,
     ),
     scopedQuery(
@@ -252,7 +236,6 @@ export async function seedWeddingPlanFromEstimator({
   ]);
 
   if (existingBudgetRes.error) throw existingBudgetRes.error;
-  if (existingVendorRes.error) throw existingVendorRes.error;
   if (existingTaskRes.error) throw existingTaskRes.error;
   if (profileRes.error) throw profileRes.error;
   if (clientRes.error) throw clientRes.error;
@@ -268,7 +251,6 @@ export async function seedWeddingPlanFromEstimator({
       .filter((item) => item.budget_scope === 'personal')
       .map((item) => item.name),
   );
-  const existingVendorKeys = new Set((existingVendorRes.data ?? []).map((item) => `${item.category}::${item.name}`));
   const existingTaskTitles = new Set((existingTaskRes.data ?? []).map((item) => item.title));
   const seededWeddingDate = clientRes.data?.wedding_date
     ?? weddingRes.data?.wedding_date
@@ -341,15 +323,6 @@ export async function seedWeddingPlanFromEstimator({
         })
     : [];
 
-  const vendorInserts = vendorCategories
-    .map((category) => buildVendorPlaceholder(category, draft.county))
-    .filter((row) => !existingVendorKeys.has(`${row.category}::${row.name}`))
-    .map((row) => ({
-      ...row,
-      user_id: userId,
-      client_id: clientId,
-    }));
-
   const taskInserts = starterTasks
     .filter((task) => !existingTaskTitles.has(task.title))
     .map((task) => ({
@@ -366,11 +339,6 @@ export async function seedWeddingPlanFromEstimator({
 
   if (personalBudgetInserts.length) {
     const { error } = await supabase.from('budget_categories').insert(personalBudgetInserts);
-    if (error) throw error;
-  }
-
-  if (vendorInserts.length) {
-    const { error } = await supabase.from('vendors').insert(vendorInserts);
     if (error) throw error;
   }
 
@@ -411,7 +379,7 @@ export async function seedWeddingPlanFromEstimator({
   return {
     budgetCategoriesCreated: budgetInserts.length,
     personalBudgetCategoriesCreated: personalBudgetInserts.length,
-    vendorTemplatesCreated: vendorInserts.length,
+    vendorTemplatesCreated: 0,
     tasksCreated: taskInserts.length,
   };
 }
