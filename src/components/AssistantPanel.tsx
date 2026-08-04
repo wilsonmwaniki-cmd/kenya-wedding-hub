@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useLocation } from 'react-router-dom';
-import { Loader2, Send, X } from 'lucide-react';
+import { ArrowRight, Loader2, Send, X } from 'lucide-react';
 import SafeMarkdown from '@/components/SafeMarkdown';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
@@ -529,20 +529,33 @@ export default function AssistantPanel({
                 </div>
 
                 {!(assistant.decision && !assistant.canUseAssistant) && !assistantBusy && !assistant.error ? (
-                  <div className="relative border-t border-border bg-card/50 px-3.5 py-2.5 sm:px-5 sm:py-3">
-                    <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
-                      {surface.prompts.map((prompt) => (
+                  <section className="relative border-t border-border bg-card/40 px-3.5 py-3 sm:px-5 sm:py-4" aria-labelledby="assistant-suggestions-title">
+                    <p
+                      id="assistant-suggestions-title"
+                      className="mb-2 text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+                    >
+                      Try asking
+                    </p>
+                    <div className="border-y border-border/75">
+                      {surface.prompts.map((prompt, index) => (
                         <button
                           key={prompt}
                           type="button"
                           onClick={() => void runAssistantPrompt(prompt, 'assistant_panel_suggestion')}
-                          className="min-w-[13rem] rounded-xl border border-border bg-background px-3 py-2 text-left text-[0.72rem] font-medium leading-5 text-foreground transition hover:border-primary/35 hover:bg-muted/50 sm:min-w-0 sm:flex-1"
+                          className="group grid w-full grid-cols-[1.5rem_minmax(0,1fr)_1.25rem] items-center gap-2 border-b border-border/75 py-2.5 text-left text-foreground transition-colors last:border-b-0 hover:bg-primary/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:py-3"
                         >
-                          {prompt}
+                          <span className="text-[0.62rem] font-semibold tabular-nums tracking-[0.12em] text-primary/70">
+                            {String(index + 1).padStart(2, '0')}
+                          </span>
+                          <span className="text-[0.78rem] font-medium leading-5 sm:text-[0.8rem]">{prompt}</span>
+                          <ArrowRight
+                            aria-hidden="true"
+                            className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-primary"
+                          />
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </section>
                 ) : null}
 
                 <footer className="relative border-t border-border bg-card px-3.5 pb-3 pt-2.5 sm:px-5 sm:pb-4 sm:pt-3">
