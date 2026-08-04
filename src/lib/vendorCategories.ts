@@ -3,30 +3,32 @@ export type VendorCategoryScope = 'wedding' | 'personal';
 export interface VendorCategoryDefinition {
   name: string;
   scope: VendorCategoryScope;
+  suggestedPercentage: number;
+  guestSensitive?: boolean;
 }
 
 export const vendorCategoryCatalog: readonly VendorCategoryDefinition[] = [
-  { name: 'Wedding Licenses', scope: 'wedding' },
-  { name: 'Church & Officiating Minister', scope: 'wedding' },
-  { name: 'Marriage Preparation', scope: 'personal' },
-  { name: 'Wedding Venue', scope: 'wedding' },
-  { name: 'Wedding Planner / Planning Team', scope: 'wedding' },
-  { name: 'Caterer', scope: 'wedding' },
-  { name: 'Cake Artist & Baker', scope: 'wedding' },
-  { name: 'Décor, Tents, Chairs, Tables', scope: 'wedding' },
-  { name: 'Rings', scope: 'personal' },
-  { name: 'Bridal Gown, Accessories, Preparation', scope: 'personal' },
-  { name: "Groom's Attire & Accessories, Preparation", scope: 'personal' },
-  { name: 'Master of Ceremonies', scope: 'wedding' },
-  { name: 'DJ (or Band) and Sound', scope: 'wedding' },
-  { name: 'Photographer', scope: 'wedding' },
-  { name: 'Cinematographer', scope: 'wedding' },
-  { name: 'Photo Shoot Venue', scope: 'wedding' },
-  { name: 'Transport', scope: 'wedding' },
-  { name: 'Invitations', scope: 'wedding' },
-  { name: "Bride's Make-up Artist", scope: 'personal' },
-  { name: "Bride's Hair Stylist", scope: 'personal' },
-  { name: 'Honeymoon', scope: 'personal' },
+  { name: 'Wedding Licenses', scope: 'wedding', suggestedPercentage: 1 },
+  { name: 'Church & Officiating Minister', scope: 'wedding', suggestedPercentage: 1 },
+  { name: 'Marriage Preparation', scope: 'personal', suggestedPercentage: 2 },
+  { name: 'Wedding Venue', scope: 'wedding', suggestedPercentage: 5, guestSensitive: true },
+  { name: 'Wedding Planner / Planning Team', scope: 'wedding', suggestedPercentage: 3 },
+  { name: 'Caterer', scope: 'wedding', suggestedPercentage: 24, guestSensitive: true },
+  { name: 'Cake Artist & Baker', scope: 'wedding', suggestedPercentage: 3, guestSensitive: true },
+  { name: 'Décor, Tents, Chairs, Tables', scope: 'wedding', suggestedPercentage: 20, guestSensitive: true },
+  { name: 'Rings', scope: 'personal', suggestedPercentage: 4 },
+  { name: 'Bridal Gown, Accessories, Preparation', scope: 'personal', suggestedPercentage: 5 },
+  { name: "Groom's Attire & Accessories, Preparation", scope: 'personal', suggestedPercentage: 3 },
+  { name: 'Master of Ceremonies', scope: 'wedding', suggestedPercentage: 3 },
+  { name: 'DJ (or Band) and Sound', scope: 'wedding', suggestedPercentage: 4 },
+  { name: 'Photographer', scope: 'wedding', suggestedPercentage: 5 },
+  { name: 'Cinematographer', scope: 'wedding', suggestedPercentage: 4 },
+  { name: 'Photo Shoot Venue', scope: 'wedding', suggestedPercentage: 1 },
+  { name: 'Transport', scope: 'wedding', suggestedPercentage: 2 },
+  { name: 'Invitations', scope: 'wedding', suggestedPercentage: 2, guestSensitive: true },
+  { name: "Bride's Make-up Artist", scope: 'personal', suggestedPercentage: 1 },
+  { name: "Bride's Hair Stylist", scope: 'personal', suggestedPercentage: 1 },
+  { name: 'Honeymoon', scope: 'personal', suggestedPercentage: 6 },
 ] as const;
 
 export const vendorCategoryNames = vendorCategoryCatalog.map((category) => category.name);
@@ -129,6 +131,6 @@ export function getVendorCategoryOptions(currentCategory?: string | null) {
 
   return [
     ...vendorCategoryCatalog,
-    { name: current, scope: getVendorCategoryScope(current) },
+    { name: current, scope: getVendorCategoryScope(current), suggestedPercentage: 0 },
   ];
 }

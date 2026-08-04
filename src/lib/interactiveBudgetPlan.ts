@@ -23,41 +23,13 @@ export type PersistedInteractiveBudgetAllocation = Pick<InteractiveBudgetAllocat
 export type BudgetUtilizationStatus = 'under' | 'complete' | 'over';
 export type BudgetResizeStrategy = 'scale_percentages' | 'keep_amounts';
 
-type AllocationRule = {
-  name: string;
-  suggestedPercentage: number;
-  guestSensitive?: boolean;
-};
-
 const CORE_PER_GUEST_CATEGORIES = new Set([
   'Caterer',
   'Cake Artist & Baker',
   'Décor, Tents, Chairs, Tables',
 ]);
 
-const allocationRules: AllocationRule[] = [
-  { name: 'Wedding Licenses', suggestedPercentage: 1 },
-  { name: 'Church & Officiating Minister', suggestedPercentage: 1 },
-  { name: 'Marriage Preparation', suggestedPercentage: 2 },
-  { name: 'Wedding Venue', suggestedPercentage: 5, guestSensitive: true },
-  { name: 'Wedding Planner / Planning Team', suggestedPercentage: 3 },
-  { name: 'Caterer', suggestedPercentage: 24, guestSensitive: true },
-  { name: 'Cake Artist & Baker', suggestedPercentage: 3, guestSensitive: true },
-  { name: 'Décor, Tents, Chairs, Tables', suggestedPercentage: 20, guestSensitive: true },
-  { name: 'Rings', suggestedPercentage: 4 },
-  { name: 'Bridal Gown, Accessories, Preparation', suggestedPercentage: 5 },
-  { name: "Groom's Attire & Accessories, Preparation", suggestedPercentage: 3 },
-  { name: 'Master of Ceremonies', suggestedPercentage: 3 },
-  { name: 'DJ (or Band) and Sound', suggestedPercentage: 4 },
-  { name: 'Photographer', suggestedPercentage: 5 },
-  { name: 'Cinematographer', suggestedPercentage: 4 },
-  { name: 'Photo Shoot Venue', suggestedPercentage: 1 },
-  { name: 'Transport', suggestedPercentage: 2 },
-  { name: 'Invitations', suggestedPercentage: 2, guestSensitive: true },
-  { name: "Bride's Make-up Artist", suggestedPercentage: 1 },
-  { name: "Bride's Hair Stylist", suggestedPercentage: 1 },
-  { name: 'Honeymoon', suggestedPercentage: 6 },
-];
+const allocationRules = vendorCategoryCatalog;
 
 function normalizeMoney(value: number) {
   return Math.max(0, Math.round(Number.isFinite(value) ? value : 0));
@@ -284,7 +256,10 @@ export function getCoreGuestCost(plan: InteractiveBudgetPlan) {
 }
 
 export function validateInteractiveBudgetCategories() {
-  const templateNames = vendorCategoryCatalog.map((category) => category.name);
-  return templateNames.length === allocationRules.length
-    && templateNames.every((name, index) => name === allocationRules[index].name);
+  const names = new Set(vendorCategoryCatalog.map((category) => category.name));
+  const percentageTotal = vendorCategoryCatalog.reduce(
+    (total, category) => total + category.suggestedPercentage,
+    0,
+  );
+  return names.size === vendorCategoryCatalog.length && percentageTotal === 100;
 }

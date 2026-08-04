@@ -7,11 +7,29 @@ import {
   vendorCategoriesMatch,
   vendorCategoryCatalog,
 } from '@/lib/vendorCategories';
+import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
+import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
+import { buildInteractiveBudgetPlan } from '@/lib/interactiveBudgetPlan';
 
 describe('vendor category catalog', () => {
   it('contains the spreadsheet vendor categories without the task-only row', () => {
     expect(vendorCategoryCatalog).toHaveLength(21);
     expect(vendorCategoryCatalog.some((category) => category.name === "Couple's Tasks")).toBe(false);
+  });
+
+  it('is the shared source for the estimator and both budget workspaces', () => {
+    const canonicalNames = vendorCategoryCatalog.map((category) => category.name);
+    const budgetTemplateNames = [
+      ...weddingBudgetTemplates.map((category) => category.name),
+      ...personalBudgetTemplates.map((category) => category.name),
+    ];
+    const estimatorNames = buildInteractiveBudgetPlan(1_500_000, 120)
+      .allocations
+      .map((category) => category.name);
+
+    expect(new Set(budgetTemplateNames)).toEqual(new Set(canonicalNames));
+    expect(estimatorNames).toEqual(canonicalNames);
+    expect(vendorCategoryCatalog.reduce((sum, category) => sum + category.suggestedPercentage, 0)).toBe(100);
   });
 
   it('retains each Wedding or Personal designation', () => {
@@ -35,10 +53,12 @@ describe('vendor category catalog', () => {
     expect(getVendorCategoryOptions('Flowers').at(-1)).toEqual({
       name: 'Flowers',
       scope: 'wedding',
+      suggestedPercentage: 0,
     });
     expect(getVendorCategoryOptions('Accommodation').at(-1)).toEqual({
       name: 'Accommodation',
       scope: 'wedding',
+      suggestedPercentage: 0,
     });
   });
 
