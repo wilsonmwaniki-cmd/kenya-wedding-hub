@@ -71,6 +71,7 @@ import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { buildConciergeContext } from '@/lib/conciergeContext';
 import { motion, useReducedMotion } from 'framer-motion';
 import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
+import { PaymentReminderStatus } from '@/components/PaymentReminderStatus';
 import {
   archiveVendorWorkspaceUpdate,
   listVendorWorkspaceUpdates,
@@ -1461,7 +1462,9 @@ export default function Vendors() {
 
       toast({
         title: 'Payment plan updated',
-        description: `${vendor.name} now shows ${vendorPaymentStatusLabel(paymentStatus).toLowerCase()}.`,
+        description: draft.paymentDueDate
+          ? `${vendor.name} now shows ${vendorPaymentStatusLabel(paymentStatus).toLowerCase()}, with a payment reminder scheduled.`
+          : `${vendor.name} now shows ${vendorPaymentStatusLabel(paymentStatus).toLowerCase()}.`,
       });
       await refreshVendorsWorkspace();
     } catch (error: any) {
@@ -3143,12 +3146,14 @@ export default function Vendors() {
                 <div className="p-3"><p className="text-xs text-muted-foreground">Balance</p><p className="mt-1 font-semibold">{formatCurrency(outstandingBalance)}</p></div>
               </div>
 
-              <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
-                <div>
-                  <p className="font-semibold text-foreground">Vendor details</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Update the information used throughout this wedding workspace.</p>
+              <div className="rounded-xl border border-border/80 bg-card/70 p-4">
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-foreground">Vendor details</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Contact and category used across the workspace.</p>
+                  </div>
                 </div>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <div className="space-y-2">
                     <Label htmlFor={`vendor-name-${vendor.id}`}>Vendor name</Label>
                     <Input
@@ -3205,7 +3210,7 @@ export default function Vendors() {
                     />
                   </div>
                 </div>
-                <div className="mt-4 flex justify-end">
+                <div className="mt-3 flex justify-end">
                   <Button type="button" variant="outline" onClick={() => updateVendorDetails(vendor)} disabled={savingVendorDetailsId === vendor.id}>
                     {savingVendorDetailsId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Save vendor details
@@ -3213,7 +3218,7 @@ export default function Vendors() {
                 </div>
               </div>
 
-              <div className="grid gap-5 lg:grid-cols-2">
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
                 <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
                   <p className="font-semibold text-foreground">Confirmation and contract</p>
                   <p className="mt-1 text-sm text-muted-foreground">Confirm your choice here. The vendor creates and manages the contract from their professional account.</p>
@@ -3324,6 +3329,11 @@ export default function Vendors() {
                         ...current,
                         [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentDueDate: event.target.value },
                       }))} />
+                      <PaymentReminderStatus
+                        dueDate={paymentDrafts[vendor.id]?.paymentDueDate}
+                        vendorName={vendor.name}
+                        saved={(paymentDrafts[vendor.id]?.paymentDueDate || null) === vendor.payment_due_date}
+                      />
                     </div>
                     <div className="space-y-2 sm:col-span-2">
                       <div className="flex items-center justify-between gap-3">
@@ -3365,7 +3375,7 @@ export default function Vendors() {
                   <div className="mt-4 flex justify-end">
                     <Button type="button" onClick={() => updateVendorPayment(vendor)} disabled={savingPaymentId === vendor.id}>
                       {savingPaymentId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Save payment plan
+                      Save plan &amp; reminder
                     </Button>
                   </div>
                 </div>

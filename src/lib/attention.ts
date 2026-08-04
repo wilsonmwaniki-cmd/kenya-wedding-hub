@@ -30,6 +30,21 @@ const priorityOrder: Record<AttentionPriority, number> = {
   info: 2,
 };
 
+export function priorityForDueDate(
+  priority: AttentionPriority,
+  dueAt: string | null,
+  now = new Date(),
+): AttentionPriority {
+  if (!dueAt) return priority;
+  const dueDate = new Date(dueAt);
+  if (Number.isNaN(dueDate.getTime())) return priority;
+
+  const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / 86_400_000);
+  if (daysUntilDue <= 0) return 'urgent';
+  if (daysUntilDue <= 14) return 'action';
+  return priority;
+}
+
 export function sortAttentionItems(items: AttentionItem[]) {
   return [...items].sort((left, right) => {
     const priorityDifference = priorityOrder[left.priority] - priorityOrder[right.priority];
@@ -50,6 +65,8 @@ function nullableString(value: unknown) {
 }
 
 function mapAttentionItem(row: Record<string, unknown>): AttentionItem {
+  const dueAt = nullableString(row.due_at);
+  const priority = String(row.priority) as AttentionPriority;
   return {
     id: String(row.id),
     createdAt: String(row.created_at),
@@ -59,13 +76,13 @@ function mapAttentionItem(row: Record<string, unknown>): AttentionItem {
     sourceType: String(row.source_type),
     sourceId: nullableString(row.source_id),
     kind: String(row.attention_kind) as AttentionKind,
-    priority: String(row.priority) as AttentionPriority,
+    priority: priorityForDueDate(priority, dueAt),
     status: String(row.status) as AttentionStatus,
     title: String(row.title),
     summary: nullableString(row.summary),
     actionLabel: nullableString(row.action_label),
     actionPath: nullableString(row.action_path),
-    dueAt: nullableString(row.due_at),
+    dueAt,
     metadata: row.metadata && typeof row.metadata === 'object'
       ? row.metadata as Record<string, unknown>
       : {},

@@ -54,6 +54,7 @@ import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { createVendorTask } from '@/lib/vendorTasks';
 import { getSuggestedTaskTemplates, type SuggestedTaskTemplateOption } from '@/lib/weddingTaskTemplates';
 import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
+import { PaymentReminderStatus } from '@/components/PaymentReminderStatus';
 import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 import {
   getRecordedVendorsForBudgetCategory,
@@ -3442,6 +3443,11 @@ export default function Budget() {
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="vendor-editor-due">Next payment due</Label>
                   <Input id="vendor-editor-due" type="date" value={vendorEditorDraft.paymentDueDate} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, paymentDueDate: event.target.value } : current)} />
+                  <PaymentReminderStatus
+                    dueDate={vendorEditorDraft.paymentDueDate}
+                    vendorName={vendorEditorDraft.name}
+                    saved={(vendorEditorDraft.paymentDueDate || null) === (vendorEditorRecord?.payment_due_date || null)}
+                  />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="vendor-editor-notes">Notes</Label>
