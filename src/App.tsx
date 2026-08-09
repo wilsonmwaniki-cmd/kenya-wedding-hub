@@ -35,6 +35,7 @@ const PlannerDocuments = lazy(() => import("./pages/PlannerDocuments"));
 const CommercialDocumentPrint = lazy(() => import("./pages/CommercialDocumentPrint"));
 const CommercialDocumentShare = lazy(() => import("./pages/CommercialDocumentShare"));
 const ProfessionalContractShare = lazy(() => import("./pages/ProfessionalContractShare"));
+const ProfessionalContractPreview = lazy(() => import("./pages/ProfessionalContractPreview"));
 const AiChat = lazy(() => import("./pages/AiChat"));
 const ProfileSettings = lazy(() => import("./pages/ProfileSettings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -155,6 +156,7 @@ const App = () => (
               <Route path="/wedding/:token" element={<PublicPage><WeddingPortfolio /></PublicPage>} />
               <Route path="/wedding-setup" element={<ProtectedStandalonePage allowedRoles={['couple']}><WeddingSetup /></ProtectedStandalonePage>} />
               <Route path="/documents/:documentId/print" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><ProfessionalFeatureGate feature="invoicing"><CommercialDocumentPrint /></ProfessionalFeatureGate></ProtectedStandalonePage>} />
+              <Route path="/contracts/:contractId/preview" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><ProfessionalFeatureGate feature="invoicing"><ProfessionalContractPreview /></ProfessionalFeatureGate></ProtectedStandalonePage>} />
               <Route path="/labs" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><LabsIndex /></ProtectedPage>} />
               <Route path="/labs/network" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><ProfessionalNetwork /></ProtectedPage>} />
               <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />

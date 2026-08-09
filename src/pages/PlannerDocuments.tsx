@@ -581,8 +581,8 @@ export default function PlannerDocuments() {
         dueDate: selectedDetail.documentType === 'receipt' ? null : headerDraft.dueDate || null,
         notes: headerDraft.notes.trim() || null,
         terms: headerDraft.terms.trim() || null,
-        discountAmount: Number(headerDraft.discountAmount || 0),
-        taxAmount: Number(headerDraft.taxAmount || 0),
+        discountAmount: selectedDetail.documentType === 'receipt' ? 0 : Number(headerDraft.discountAmount || 0),
+        taxAmount: selectedDetail.documentType === 'receipt' ? 0 : Number(headerDraft.taxAmount || 0),
         metadata: {
           ...selectedDetail.metadata,
           paymentInstructions: headerDraft.paymentInstructions.trim(),

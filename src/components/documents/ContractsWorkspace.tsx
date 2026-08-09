@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, Copy, FilePlus2, Link2, Loader2, Mail, PenLine, RotateCw, Save, Send, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
+import { BadgeCheck, BookmarkPlus, Copy, Eye, FilePlus2, Link2, Loader2, Mail, PenLine, RotateCw, Send, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,17 +9,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import DocumentSummaryRail from '@/components/documents/DocumentSummaryRail';
+import ContractDocumentEditor, { type ContractDocumentDraft } from '@/components/documents/ContractDocumentEditor';
 import {
+  createDocumentTemplate,
   createProfessionalContract,
   deleteProfessionalContract,
   buildProfessionalContractShareEmailDraft,
   buildProfessionalContractShareUrl,
   getProfessionalContractActivity,
+  listDocumentTemplates,
   listProfessionalContracts,
   markProfessionalContractSent,
   professionalContractStatusLabel,
   professionalContractEventLabel,
-  professionalContractStatusOptions,
   refreshProfessionalContractShareToken,
   revokeProfessionalContractShareToken,
   signOwnedProfessionalContract,
@@ -28,28 +30,12 @@ import {
   type ProfessionalContractActivity,
   type ProfessionalContractShareState,
   type PlannerClientOption,
+  type ProfessionalDocumentTemplateRecord,
   type ProfessionalContractRecord,
-  type ProfessionalContractStatus,
   type ProfessionalContractSignerRecord,
   type VendorBookingOption,
   type VendorListingOption,
 } from '@/lib/commercialDocuments';
-
-type ContractDraft = {
-  title: string;
-  status: ProfessionalContractStatus;
-  recipientName: string;
-  recipientEmail: string;
-  recipientPhone: string;
-  weddingName: string;
-  clientId: string;
-  vendorListingId: string;
-  vendorId: string;
-  eventDate: string;
-  summary: string;
-  terms: string;
-  notes: string;
-};
 
 type Props = {
   role: CommercialDocumentRole;
@@ -58,7 +44,7 @@ type Props = {
   vendorBookings?: VendorBookingOption[];
 };
 
-function blankDraft(): ContractDraft {
+function blankDraft(): ContractDocumentDraft {
   return {
     title: '',
     status: 'draft',
@@ -99,8 +85,11 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
-  const [createDraft, setCreateDraft] = useState<ContractDraft>(blankDraft());
-  const [detailDraft, setDetailDraft] = useState<ContractDraft | null>(null);
+  const [createDraft, setCreateDraft] = useState<ContractDocumentDraft>(blankDraft());
+  const [detailDraft, setDetailDraft] = useState<ContractDocumentDraft | null>(null);
+  const [templates, setTemplates] = useState<ProfessionalDocumentTemplateRecord[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -139,6 +128,14 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
     return () => {
       cancelled = true;
     };
+  }, [role]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listDocumentTemplates({ role, templateType: 'contract' })
+      .then((next) => { if (!cancelled) setTemplates(next); })
+      .catch((error) => console.error('Could not load contract templates:', error));
+    return () => { cancelled = true; };
   }, [role]);
 
   useEffect(() => {
@@ -296,6 +293,7 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
       });
       await loadContracts(created.id);
       setCreateDraft(blankDraft());
+      setSelectedTemplateId('');
       if (role === 'vendor' && vendorListings[0]?.id) {
         setCreateDraft((current) => ({ ...current, vendorListingId: vendorListings[0].id }));
       }
@@ -309,8 +307,8 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
     }
   };
 
-  const handleSave = async () => {
-    if (!selectedContract || !detailDraft) return;
+  const handleSave = async (silent = false) => {
+    if (!selectedContract || !detailDraft) return false;
     setSaving(true);
     try {
       await updateProfessionalContract(selectedContract.id, {
@@ -331,13 +329,64 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
         cancelledAt: detailDraft.status === 'cancelled' ? selectedContract.cancelledAt ?? new Date().toISOString() : null,
       });
       await loadContracts(selectedContract.id);
-      toast({ title: 'Contract saved', description: 'The agreement details are up to date.' });
+      if (!silent) toast({ title: 'Contract saved', description: 'The agreement details are up to date.' });
+      return true;
     } catch (error) {
       console.error('Could not save contract:', error);
       toast({ title: 'Could not save contract', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handlePreview = async () => {
+    if (!selectedContract) return;
+    const previewWindow = window.open('about:blank', '_blank');
+    const saved = await handleSave(true);
+    if (!saved) {
+      previewWindow?.close();
+      return;
+    }
+    if (previewWindow) previewWindow.location.href = `/contracts/${selectedContract.id}/preview`;
+    else window.location.href = `/contracts/${selectedContract.id}/preview`;
+  };
+
+  const handleSaveAsTemplate = async () => {
+    if (!detailDraft?.title.trim()) return;
+    setSavingTemplate(true);
+    try {
+      const created = await createDocumentTemplate({
+        role,
+        templateType: 'contract',
+        name: detailDraft.title.trim(),
+        description: detailDraft.summary.trim() || null,
+        defaultTitle: detailDraft.title.trim(),
+        defaultNotes: detailDraft.summary.trim() || null,
+        defaultTerms: detailDraft.terms.trim() || null,
+        defaultItems: [],
+        metadata: { source: 'contract_editor' },
+      });
+      setTemplates((current) => [created, ...current]);
+      toast({ title: 'Reusable contract saved', description: 'You can start a future contract from this wording.' });
+    } catch (error) {
+      console.error('Could not save contract template:', error);
+      toast({ title: 'Could not save reusable contract', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  const applyContractTemplate = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    const template = templates.find((item) => item.id === templateId);
+    if (!template) return;
+    setCreateDraft((current) => ({
+      ...current,
+      title: template.defaultTitle || current.title,
+      summary: template.defaultNotes || '',
+      terms: template.defaultTerms || '',
+    }));
   };
 
   const handleDelete = async () => {
@@ -357,9 +406,11 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
   };
 
   const handleCopyShareLink = async () => {
-    if (!selectedContract) return;
+    if (!selectedContract || !detailDraft) return;
     setSharing(true);
     try {
+      const saved = await handleSave(true);
+      if (!saved) return;
       const token = await markProfessionalContractSent(selectedContract.id);
       const url = buildProfessionalContractShareUrl(token, window.location.origin);
       await navigator.clipboard.writeText(url);
@@ -382,13 +433,22 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
   };
 
   const handleEmailShare = async () => {
-    if (!selectedContract) return;
+    if (!selectedContract || !detailDraft) return;
     setSharing(true);
     try {
+      const saved = await handleSave(true);
+      if (!saved) return;
       const token = await markProfessionalContractSent(selectedContract.id);
       const url = buildProfessionalContractShareUrl(token, window.location.origin);
       const draft = buildProfessionalContractShareEmailDraft({
-        contract: selectedContract,
+        contract: {
+          ...selectedContract,
+          title: detailDraft.title.trim(),
+          recipientName: detailDraft.recipientName.trim(),
+          recipientEmail: detailDraft.recipientEmail.trim() || null,
+          weddingName: detailDraft.weddingName.trim() || null,
+          eventDate: detailDraft.eventDate || null,
+        },
         shareUrl: url,
       });
       await loadContracts(selectedContract.id);
@@ -596,54 +656,22 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
               </div>
             ) : (
               <div className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-2">
+                <ContractDocumentEditor contract={selectedContract} draft={detailDraft} setDraft={setDetailDraft} saving={saving} onSave={() => handleSave()} />
+                <div className="grid gap-4 border border-border/70 bg-muted/10 p-5 md:grid-cols-[1fr_auto] md:items-end">
                   <div className="space-y-2">
-                    <Label>Contract title</Label>
-                    <Input value={detailDraft.title} onChange={(event) => setDetailDraft((current) => current ? { ...current, title: event.target.value } : current)} />
+                    <Label htmlFor="contract-private-note">Private workspace note</Label>
+                    <Textarea id="contract-private-note" rows={3} value={detailDraft.notes} onChange={(event) => setDetailDraft((current) => current ? { ...current, notes: event.target.value } : current)} placeholder="Reminders only your team should see." />
+                    <p className="text-xs text-muted-foreground">This note never appears in the preview or the client signing link.</p>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Status</Label>
-                    <Select value={detailDraft.status} onValueChange={(value) => setDetailDraft((current) => current ? { ...current, status: value as ProfessionalContractStatus } : current)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {professionalContractStatusOptions.map((status) => (
-                          <SelectItem key={status} value={status}>{professionalContractStatusLabel(status)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" className="gap-2" onClick={handlePreview} disabled={saving}>
+                      <Eye className="h-4 w-4" />Preview contract
+                    </Button>
+                    <Button type="button" variant="outline" className="gap-2" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
+                      {savingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookmarkPlus className="h-4 w-4" />}
+                      Save as reusable
+                    </Button>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Recipient name</Label>
-                    <Input value={detailDraft.recipientName} onChange={(event) => setDetailDraft((current) => current ? { ...current, recipientName: event.target.value } : current)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Event date</Label>
-                    <Input type="date" value={detailDraft.eventDate} onChange={(event) => setDetailDraft((current) => current ? { ...current, eventDate: event.target.value } : current)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Recipient email</Label>
-                    <Input value={detailDraft.recipientEmail} onChange={(event) => setDetailDraft((current) => current ? { ...current, recipientEmail: event.target.value } : current)} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Recipient phone</Label>
-                    <Input value={detailDraft.recipientPhone} onChange={(event) => setDetailDraft((current) => current ? { ...current, recipientPhone: event.target.value } : current)} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Wedding / project label</Label>
-                  <Input value={detailDraft.weddingName} onChange={(event) => setDetailDraft((current) => current ? { ...current, weddingName: event.target.value } : current)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Summary</Label>
-                  <Textarea rows={3} value={detailDraft.summary} onChange={(event) => setDetailDraft((current) => current ? { ...current, summary: event.target.value } : current)} placeholder="What does this agreement cover?" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Terms</Label>
-                  <Textarea rows={8} value={detailDraft.terms} onChange={(event) => setDetailDraft((current) => current ? { ...current, terms: event.target.value } : current)} placeholder="Outline deliverables, payment milestones, cancellations, and any important conditions here." />
-                </div>
-                <div className="space-y-2">
-                  <Label>Internal notes</Label>
-                  <Textarea rows={4} value={detailDraft.notes} onChange={(event) => setDetailDraft((current) => current ? { ...current, notes: event.target.value } : current)} placeholder="Internal reminders, meeting notes, or follow-up context." />
                 </div>
                 <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
                   <div className="rounded-2xl border border-border bg-muted/10 p-4">
@@ -663,7 +691,7 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                       </Button>
                       <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleEmailShare} disabled={sharing}>
                         <Mail className="h-4 w-4" />
-                        Email draft
+                        Send by email
                       </Button>
                       <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleRefreshShareLink} disabled={sharing}>
                         {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
@@ -792,14 +820,10 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                     )}
                   </div>
                 </div>
-                <div className="flex flex-wrap justify-between gap-3">
+                <div className="flex flex-wrap justify-start gap-3">
                   <Button type="button" variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={handleDelete} disabled={deleting}>
                     <Trash2 className="h-4 w-4" />
                     {deleting ? 'Deleting...' : 'Delete contract'}
-                  </Button>
-                  <Button type="button" className="gap-2" onClick={handleSave} disabled={saving}>
-                    <Save className="h-4 w-4" />
-                    {saving ? 'Saving...' : 'Save contract'}
                   </Button>
                 </div>
               </div>
@@ -812,9 +836,23 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
         <DialogContent className="flex max-h-[88vh] w-[min(92vw,56rem)] max-w-[56rem] flex-col overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-5">
             <DialogTitle>Create contract</DialogTitle>
+            <p className="text-sm text-muted-foreground">Add the basics now. You will edit the agreement itself on the next screen.</p>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto px-6 py-5">
             <div className="grid gap-4 md:grid-cols-2">
+              {templates.length > 0 && (
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Start from a reusable contract · Optional</Label>
+                  <Select value={selectedTemplateId || '__blank__'} onValueChange={(value) => value === '__blank__' ? setSelectedTemplateId('') : applyContractTemplate(value)}>
+                    <SelectTrigger><SelectValue placeholder="Start with a blank contract" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__blank__">Start with a blank contract</SelectItem>
+                      {templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">This fills the title, summary, and agreement wording. You can amend everything before sending.</p>
+                </div>
+              )}
               {role === 'planner' ? (
                 <div className="space-y-2 md:col-span-2">
                   <Label>Planner client</Label>
@@ -877,18 +915,6 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
               <div className="space-y-2 md:col-span-2">
                 <Label>Wedding / project label</Label>
                 <Input value={createDraft.weddingName} onChange={(event) => setCreateDraft((current) => ({ ...current, weddingName: event.target.value }))} />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Summary</Label>
-                <Textarea rows={3} value={createDraft.summary} onChange={(event) => setCreateDraft((current) => ({ ...current, summary: event.target.value }))} placeholder="A quick summary of what this agreement covers." />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Terms</Label>
-                <Textarea rows={6} value={createDraft.terms} onChange={(event) => setCreateDraft((current) => ({ ...current, terms: event.target.value }))} placeholder="Main agreement terms." />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Internal notes</Label>
-                <Textarea rows={3} value={createDraft.notes} onChange={(event) => setCreateDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Private reminders about this agreement." />
               </div>
             </div>
           </div>

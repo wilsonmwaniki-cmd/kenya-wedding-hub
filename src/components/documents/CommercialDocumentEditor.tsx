@@ -62,11 +62,14 @@ export default function CommercialDocumentEditor({
   saving,
   onSave,
 }: Props) {
+  const isReceipt = document.documentType === 'receipt';
   const subtotal = items.reduce(
     (sum, item) => sum + Number(item.quantity ?? 1) * Number(item.unitPrice ?? 0),
     0,
   );
-  const total = Math.max(0, subtotal - Number(draft.discountAmount || 0) + Number(draft.taxAmount || 0));
+  const total = isReceipt
+    ? subtotal
+    : Math.max(0, subtotal - Number(draft.discountAmount || 0) + Number(draft.taxAmount || 0));
   const updateDraft = (patch: Partial<CommercialDocumentHeaderDraft>) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
   };
@@ -101,7 +104,7 @@ export default function CommercialDocumentEditor({
       <div className="space-y-8 p-6 md:p-8">
         <div className="grid gap-6 border-b border-border/70 pb-8 md:grid-cols-[1.2fr_0.8fr]">
           <div>
-            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Bill to</p>
+            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{isReceipt ? 'Received from' : 'Bill to'}</p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor={`${idPrefix}-recipient`}>Client or couple</Label>
@@ -123,13 +126,15 @@ export default function CommercialDocumentEditor({
           </div>
           <div className="grid content-start gap-4 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor={`${idPrefix}-issue-date`}>Issue date</Label>
+              <Label htmlFor={`${idPrefix}-issue-date`}>{isReceipt ? 'Payment date' : 'Issue date'}</Label>
               <Input id={`${idPrefix}-issue-date`} type="date" value={draft.issueDate} onChange={(event) => updateDraft({ issueDate: event.target.value })} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor={`${idPrefix}-due-date`}>Due date</Label>
-              <Input id={`${idPrefix}-due-date`} type="date" value={draft.dueDate} disabled={document.documentType === 'receipt'} onChange={(event) => updateDraft({ dueDate: event.target.value })} />
-            </div>
+            {!isReceipt && (
+              <div className="space-y-2">
+                <Label htmlFor={`${idPrefix}-due-date`}>Due date</Label>
+                <Input id={`${idPrefix}-due-date`} type="date" value={draft.dueDate} onChange={(event) => updateDraft({ dueDate: event.target.value })} />
+              </div>
+            )}
             <div className="space-y-2 sm:col-span-2 md:col-span-1 lg:col-span-2">
               <Label htmlFor={`${idPrefix}-status`}>Document status</Label>
               <Select value={draft.status} onValueChange={(value) => updateDraft({ status: value as CommercialDocumentStatus })}>
@@ -147,8 +152,8 @@ export default function CommercialDocumentEditor({
         <div>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h3 className="font-display text-xl text-foreground">What are you charging for?</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Add one clear line for each service or deliverable.</p>
+              <h3 className="font-display text-xl text-foreground">{isReceipt ? 'What was this payment for?' : 'What are you charging for?'}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{isReceipt ? 'List the deposit, instalment, or service this payment covers.' : 'Add one clear line for each service or deliverable.'}</p>
             </div>
             <Button type="button" variant="outline" className="gap-2" onClick={() => setItems((current) => [...current, { description: '', quantity: 1, unitPrice: 0, sortOrder: current.length }])}>
               <Plus className="h-4 w-4" /> Add item
@@ -181,26 +186,26 @@ export default function CommercialDocumentEditor({
         <div className="grid gap-8 border-t border-border/70 pt-8 lg:grid-cols-[1fr_360px]">
           <div className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor={`${idPrefix}-payment`}>How should the client pay?</Label>
-              <Textarea id={`${idPrefix}-payment`} rows={3} placeholder="e.g. M-Pesa till or paybill, bank details, or payment instructions" value={draft.paymentInstructions} onChange={(event) => updateDraft({ paymentInstructions: event.target.value })} />
+              <Label htmlFor={`${idPrefix}-payment`}>{isReceipt ? 'Payment method or reference' : 'How should the client pay?'}</Label>
+              <Textarea id={`${idPrefix}-payment`} rows={3} placeholder={isReceipt ? 'e.g. M-Pesa transaction code, bank reference, cash, or card' : 'e.g. M-Pesa till or paybill, bank details, or payment instructions'} value={draft.paymentInstructions} onChange={(event) => updateDraft({ paymentInstructions: event.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`${idPrefix}-notes`}>Message to client · Optional</Label>
+              <Label htmlFor={`${idPrefix}-notes`}>{isReceipt ? 'Receipt note · Optional' : 'Message to client · Optional'}</Label>
               <Textarea id={`${idPrefix}-notes`} rows={2} value={draft.notes} onChange={(event) => updateDraft({ notes: event.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`${idPrefix}-terms`}>Terms and conditions · Optional</Label>
+              <Label htmlFor={`${idPrefix}-terms`}>{isReceipt ? 'Additional details · Optional' : 'Terms and conditions · Optional'}</Label>
               <Textarea id={`${idPrefix}-terms`} rows={4} value={draft.terms} onChange={(event) => updateDraft({ terms: event.target.value })} />
             </div>
           </div>
           <div className="space-y-4">
             <div className="space-y-3 border-b border-border/70 pb-5 text-sm">
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Subtotal</span><strong>{money(subtotal)}</strong></div>
-              <div className="grid grid-cols-[1fr_150px] items-center gap-4"><Label htmlFor={`${idPrefix}-discount`}>Discount</Label><Input id={`${idPrefix}-discount`} type="number" min="0" value={String(draft.discountAmount)} onChange={(event) => updateDraft({ discountAmount: Number(event.target.value || 0) })} /></div>
-              <div className="grid grid-cols-[1fr_150px] items-center gap-4"><Label htmlFor={`${idPrefix}-tax`}>Tax</Label><Input id={`${idPrefix}-tax`} type="number" min="0" value={String(draft.taxAmount)} onChange={(event) => updateDraft({ taxAmount: Number(event.target.value || 0) })} /></div>
+              {!isReceipt && <div className="grid grid-cols-[1fr_150px] items-center gap-4"><Label htmlFor={`${idPrefix}-discount`}>Discount</Label><Input id={`${idPrefix}-discount`} type="number" min="0" value={String(draft.discountAmount)} onChange={(event) => updateDraft({ discountAmount: Number(event.target.value || 0) })} /></div>}
+              {!isReceipt && <div className="grid grid-cols-[1fr_150px] items-center gap-4"><Label htmlFor={`${idPrefix}-tax`}>Tax</Label><Input id={`${idPrefix}-tax`} type="number" min="0" value={String(draft.taxAmount)} onChange={(event) => updateDraft({ taxAmount: Number(event.target.value || 0) })} /></div>}
             </div>
             <div className="flex items-center justify-between bg-primary px-5 py-4 text-primary-foreground">
-              <span className="font-medium">Total</span><strong className="text-xl">{money(total)}</strong>
+              <span className="font-medium">{isReceipt ? 'Amount received' : 'Total'}</span><strong className="text-xl">{money(total)}</strong>
             </div>
             <div className="space-y-2 pt-3">
               <Label htmlFor={`${idPrefix}-authorised`}>Authorised by · Optional</Label>
@@ -210,10 +215,10 @@ export default function CommercialDocumentEditor({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border/70 pt-6">
-          <p className="text-sm text-muted-foreground">Paid: {money(document.amountPaid)} · Balance after saving: {money(Math.max(0, total - document.amountPaid))}</p>
+          <p className="text-sm text-muted-foreground">{isReceipt ? 'This receipt confirms the payment shown above.' : `Paid: ${money(document.amountPaid)} · Balance after saving: ${money(Math.max(0, total - document.amountPaid))}`}</p>
           <Button onClick={onSave} disabled={saving} className="gap-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save document
+            {isReceipt ? 'Save receipt' : 'Save document'}
           </Button>
         </div>
       </div>

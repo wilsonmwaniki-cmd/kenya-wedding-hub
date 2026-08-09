@@ -83,6 +83,7 @@ export default function CommercialDocumentPrint() {
     : [vendorListing?.primaryTown, vendorListing?.primaryCounty].filter(Boolean).join(', ');
   const paymentInstructions = metadataText(document, 'paymentInstructions');
   const authorisedBy = metadataText(document, 'authorisedBy');
+  const isReceipt = document.documentType === 'receipt';
 
   return (
     <main className="min-h-screen bg-[#eee9e1] px-4 py-6 text-foreground sm:px-8 print:bg-white print:p-0">
@@ -110,15 +111,15 @@ export default function CommercialDocumentPrint() {
             </div>
             <div className="mt-10 grid gap-7 border-t border-primary-foreground/20 pt-7 sm:grid-cols-[1.15fr_0.85fr]">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-foreground/68">{document.documentType === 'quote' ? 'Quote for' : 'Invoice to'}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-foreground/68">{isReceipt ? 'Received from' : document.documentType === 'quote' ? 'Quote for' : 'Invoice to'}</p>
                 <p className="mt-2 text-lg font-semibold">{document.recipientName}</p>
                 {document.weddingName && <p className="text-sm text-primary-foreground/78">{document.weddingName}</p>}
                 {document.recipientEmail && <p className="text-sm text-primary-foreground/78">{document.recipientEmail}</p>}
                 {document.recipientPhone && <p className="text-sm text-primary-foreground/78">{document.recipientPhone}</p>}
               </div>
               <div className="grid grid-cols-2 gap-6 sm:text-right">
-                <div><p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/68">Issue date</p><p className="mt-2 font-semibold">{dateLabel(document.issueDate)}</p></div>
-                <div><p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/68">Due date</p><p className="mt-2 font-semibold">{dateLabel(document.dueDate)}</p></div>
+                <div><p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/68">{isReceipt ? 'Payment date' : 'Issue date'}</p><p className="mt-2 font-semibold">{dateLabel(document.issueDate)}</p></div>
+                {!isReceipt && <div><p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/68">Due date</p><p className="mt-2 font-semibold">{dateLabel(document.dueDate)}</p></div>}
               </div>
             </div>
           </header>
@@ -141,16 +142,16 @@ export default function CommercialDocumentPrint() {
               <div>
                 <div className="space-y-4 border-y border-border py-5 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><strong>{money(document.subtotal)}</strong></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span>{money(document.discountAmount)}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{money(document.taxAmount)}</span></div>
+                  {!isReceipt && <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span>{money(document.discountAmount)}</span></div>}
+                  {!isReceipt && <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span>{money(document.taxAmount)}</span></div>}
                 </div>
-                <div className="mt-4 flex items-center justify-between bg-primary px-5 py-4 text-primary-foreground"><span>Total</span><strong className="text-xl">{money(document.totalAmount)}</strong></div>
-                {document.amountPaid > 0 && <div className="mt-4 space-y-2 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span>{money(document.amountPaid)}</span></div><div className="flex justify-between font-semibold"><span>Balance</span><span>{money(document.balanceDue)}</span></div></div>}
+                <div className="mt-4 flex items-center justify-between bg-primary px-5 py-4 text-primary-foreground"><span>{isReceipt ? 'Amount received' : 'Total'}</span><strong className="text-xl">{money(document.totalAmount)}</strong></div>
+                {!isReceipt && document.amountPaid > 0 && <div className="mt-4 space-y-2 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span>{money(document.amountPaid)}</span></div><div className="flex justify-between font-semibold"><span>Balance</span><span>{money(document.balanceDue)}</span></div></div>}
                 {authorisedBy && <div className="mt-14 border-t border-border pt-3 text-sm"><p className="font-medium">{authorisedBy}</p><p className="text-muted-foreground">Authorised signatory</p></div>}
               </div>
             </div>
           </div>
-          <footer className="mt-8 border-t border-primary/30 px-8 py-5 text-center text-xs text-muted-foreground sm:px-12">Thank you for your business.</footer>
+          <footer className="mt-8 border-t border-primary/30 px-8 py-5 text-center text-xs text-muted-foreground sm:px-12">{isReceipt ? 'Payment received with thanks.' : 'Thank you for your business.'}</footer>
         </article>
       </div>
     </main>

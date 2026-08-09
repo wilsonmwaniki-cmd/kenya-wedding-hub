@@ -1220,6 +1220,17 @@ export async function listProfessionalContracts(filters: ProfessionalContractLis
   return ((data ?? []) as Record<string, unknown>[]).map(mapProfessionalContract);
 }
 
+export async function getProfessionalContract(contractId: string) {
+  const { data, error } = await (supabase as any)
+    .from('professional_contracts')
+    .select('*')
+    .eq('id', contractId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? mapProfessionalContract(data as Record<string, unknown>) : null;
+}
+
 export async function createProfessionalContract(input: CreateProfessionalContractInput) {
   const payload = {
     role: input.role,
