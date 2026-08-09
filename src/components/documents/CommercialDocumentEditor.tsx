@@ -70,6 +70,16 @@ export default function CommercialDocumentEditor({
   const total = isReceipt
     ? subtotal
     : Math.max(0, subtotal - Number(draft.discountAmount || 0) + Number(draft.taxAmount || 0));
+  const hasLineItems = items.some(
+    (item) => item.description.trim() && Number(item.quantity ?? 1) > 0 && Number(item.unitPrice ?? 0) > 0,
+  );
+  const missingRequiredFields = [
+    !draft.title.trim() && 'title',
+    !draft.recipientName.trim() && 'client name',
+    !draft.issueDate && (isReceipt ? 'payment date' : 'issue date'),
+    !isReceipt && !draft.dueDate && 'due date',
+    !hasLineItems && 'priced item',
+  ].filter(Boolean) as string[];
   const updateDraft = (patch: Partial<CommercialDocumentHeaderDraft>) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
   };
@@ -89,6 +99,9 @@ export default function CommercialDocumentEditor({
             className="mt-3 h-auto border-0 bg-transparent px-0 font-display text-3xl font-semibold text-primary-foreground shadow-none focus-visible:ring-primary-foreground/35"
             aria-label="Document title"
           />
+          {!draft.title.trim() && (
+            <p className="mt-2 text-xs text-primary-foreground/80">Add a clear title before sharing this document.</p>
+          )}
           <p className="mt-2 max-w-xl text-sm leading-6 text-primary-foreground/76">
             Edit the document directly. The preview will use this same information.
           </p>
@@ -107,8 +120,9 @@ export default function CommercialDocumentEditor({
             <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{isReceipt ? 'Received from' : 'Bill to'}</p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor={`${idPrefix}-recipient`}>Client or couple</Label>
+                <Label htmlFor={`${idPrefix}-recipient`}>Client or couple <span className="text-destructive">*</span></Label>
                 <Input id={`${idPrefix}-recipient`} value={draft.recipientName} onChange={(event) => updateDraft({ recipientName: event.target.value })} />
+                {!draft.recipientName.trim() && <p className="text-xs text-destructive">Add the person receiving this document.</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor={`${idPrefix}-email`}>Email</Label>
@@ -128,11 +142,13 @@ export default function CommercialDocumentEditor({
             <div className="space-y-2">
               <Label htmlFor={`${idPrefix}-issue-date`}>{isReceipt ? 'Payment date' : 'Issue date'}</Label>
               <Input id={`${idPrefix}-issue-date`} type="date" value={draft.issueDate} onChange={(event) => updateDraft({ issueDate: event.target.value })} />
+              {!draft.issueDate && <p className="text-xs text-destructive">Choose a date.</p>}
             </div>
             {!isReceipt && (
               <div className="space-y-2">
                 <Label htmlFor={`${idPrefix}-due-date`}>Due date</Label>
                 <Input id={`${idPrefix}-due-date`} type="date" value={draft.dueDate} onChange={(event) => updateDraft({ dueDate: event.target.value })} />
+                {!draft.dueDate && <p className="text-xs text-destructive">Choose when payment is due.</p>}
               </div>
             )}
             <div className="space-y-2 sm:col-span-2 md:col-span-1 lg:col-span-2">
@@ -181,6 +197,9 @@ export default function CommercialDocumentEditor({
               })}
             </div>
           </div>
+          {!hasLineItems && (
+            <p className="mt-3 text-sm text-destructive">Add at least one item with a description and price.</p>
+          )}
         </div>
 
         <div className="grid gap-8 border-t border-border/70 pt-8 lg:grid-cols-[1fr_360px]">
@@ -215,7 +234,14 @@ export default function CommercialDocumentEditor({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border/70 pt-6">
-          <p className="text-sm text-muted-foreground">{isReceipt ? 'This receipt confirms the payment shown above.' : `Paid: ${money(document.amountPaid)} · Balance after saving: ${money(Math.max(0, total - document.amountPaid))}`}</p>
+          <div>
+            <p className="text-sm text-muted-foreground">{isReceipt ? 'This receipt confirms the payment shown above.' : `Paid: ${money(document.amountPaid)} · Balance after saving: ${money(Math.max(0, total - document.amountPaid))}`}</p>
+            {missingRequiredFields.length > 0 && (
+              <p className="mt-1 text-xs text-destructive">
+                Still needed: {missingRequiredFields.join(', ')}.
+              </p>
+            )}
+          </div>
           <Button onClick={onSave} disabled={saving} className="gap-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {isReceipt ? 'Save receipt' : 'Save document'}

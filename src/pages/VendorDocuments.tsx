@@ -34,7 +34,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
 import DocumentActionOverview from '@/components/documents/DocumentActionOverview';
-import DocumentMomentumCard from '@/components/documents/DocumentMomentumCard';
 import DocumentWorkspaceHeader from '@/components/documents/DocumentWorkspaceHeader';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
 import CommercialDocumentEditor, {
@@ -76,7 +75,6 @@ import {
   type VendorBookingOption,
   type VendorListingOption,
 } from '@/lib/commercialDocuments';
-import { buildDocumentMomentumSummary } from '@/lib/documentMomentum';
 import {
   listIncomingDocumentRequests,
   markDocumentRequestViewed,
@@ -468,20 +466,6 @@ export default function VendorDocuments() {
       terms: selectedTemplate.defaultTerms || current.terms,
     }));
   }, [selectedTemplate?.id]);
-
-  const createMomentum = useMemo(
-    () =>
-      buildDocumentMomentumSummary({
-        documentType: createDraft.documentType,
-        title: createDraft.title,
-        recipientName: createDraft.recipientName,
-        issueDate: createDraft.issueDate,
-        dueDate: createDraft.dueDate,
-        notes: createDraft.notes,
-        terms: createDraft.terms,
-      }),
-    [createDraft],
-  );
 
   const handleCreate = async () => {
     if (!createDraft.recipientName.trim()) {
@@ -1028,28 +1012,6 @@ export default function VendorDocuments() {
   const selectedShareUrl = shareState
     ? buildCommercialDocumentShareUrl(shareState.shareToken, window.location.origin)
     : '';
-  const detailMomentum =
-    selectedDetail && headerDraft
-      ? buildDocumentMomentumSummary({
-          documentType: selectedDetail.documentType,
-          status: headerDraft.status,
-          title: headerDraft.title,
-          recipientName: headerDraft.recipientName,
-          issueDate: headerDraft.issueDate,
-          dueDate: headerDraft.dueDate,
-          notes: headerDraft.notes,
-          terms: headerDraft.terms,
-          items: itemDrafts.map((item) => ({
-            description: item.description,
-            quantity: Number(item.quantity ?? 1),
-            unitPrice: Number(item.unitPrice ?? 0),
-          })),
-          totalAmount: selectedDetail.totalAmount,
-          amountPaid: selectedDetail.amountPaid,
-          shareActive: selectedShareActive,
-        })
-      : null;
-
   if (activeSection === 'contracts') {
     return (
       <ContractsWorkspace
@@ -1170,24 +1132,23 @@ export default function VendorDocuments() {
         </Card>
 
         <Card className="min-w-0 border-border/70 shadow-card">
-          <CardHeader className="space-y-2 pb-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+          <CardHeader className="space-y-3 pb-3">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="min-w-0">
                 <CardTitle className="font-display text-xl">
                   {selectedDetail ? selectedDetail.documentNumber : 'Document details'}
                 </CardTitle>
                 <CardDescription>
                   {selectedDetail
-                    ? 'Update the header, line items, and payments from one workspace.'
+                    ? `${commercialDocumentTypeLabel(selectedDetail.documentType)} for ${selectedDetail.recipientName}`
                     : 'Pick a document on the left to edit it here.'}
                 </CardDescription>
               </div>
               {selectedDetail && (
-                <>
-                <div className="flex w-full flex-col gap-4 lg:w-auto lg:max-w-[520px] lg:items-end">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 xl:justify-end">
                   {selectedDetail.documentType === 'quote' && (
                     <Button
+                      size="sm"
                       variant="outline"
                       className="gap-2"
                       onClick={handleConvertQuote}
@@ -1198,79 +1159,76 @@ export default function VendorDocuments() {
                     </Button>
                   )}
                   {selectedDetail.documentType === 'invoice' && (
-                    <Button variant="outline" className="gap-2" onClick={() => setPaymentOpen(true)}>
+                    <Button size="sm" variant="outline" className="gap-2" onClick={() => setPaymentOpen(true)}>
                       <Wallet className="h-4 w-4" />
                       Record payment
                     </Button>
                   )}
-                  <Button asChild variant="outline" className="gap-2">
+                  <Button asChild size="sm" variant="outline" className="gap-2">
                     <Link to={`/documents/${selectedDetail.id}/print`} target="_blank" rel="noreferrer">
                       <Eye className="h-4 w-4" />
                       Preview document
                     </Link>
                   </Button>
                   <Button
+                    size="sm"
                     variant="outline"
                     className="gap-2"
                     onClick={handleCopyShareLink}
                     disabled={sharingDocumentId === selectedDetail.id || (!!shareState && !selectedShareActive)}
                   >
                     {sharingDocumentId === selectedDetail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-                    Copy link
+                    Share
                   </Button>
-                  <Button
-                    variant="outline"
-                    className="gap-2"
-                    onClick={handleEmailShare}
-                    disabled={sharingDocumentId === selectedDetail.id || (!!shareState && !selectedShareActive)}
-                  >
-                    <Mail className="h-4 w-4" />
-                    Email link
-                  </Button>
-                  <Button variant="ghost" className="gap-2 text-destructive hover:text-destructive" onClick={handleDeleteSelected}>
+                  <Button size="sm" variant="ghost" className="gap-2 text-destructive hover:text-destructive" onClick={handleDeleteSelected}>
                     <Trash2 className="h-4 w-4" />
                     Delete
                   </Button>
                 </div>
-                <div className="w-full rounded-2xl border border-border/70 bg-muted/10 p-4">
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <span className="flex items-center gap-2 text-xs font-medium text-foreground">
+              )}
+            </div>
+            {selectedDetail && shareState && (
+              <details className="border-t border-border/70 pt-3">
+                <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-2 font-medium text-foreground">
                       <span
                         aria-hidden="true"
                         className={`h-1.5 w-1.5 rounded-full ${selectedShareActive ? 'bg-success' : 'bg-muted-foreground/45'}`}
                       />
                       {selectedShareActive ? 'Share link active' : 'Share link inactive'}
                     </span>
-                    {shareState?.expiresAt && (
-                      <span className="text-xs text-muted-foreground">
+                    {shareState.expiresAt && (
+                      <span>
                         Expires {new Date(shareState.expiresAt).toLocaleDateString()}
                       </span>
                     )}
-                    {typeof shareState?.accessCount === 'number' && (
-                      <span className="text-xs text-muted-foreground">
+                    {typeof shareState.accessCount === 'number' && (
+                      <span>
                         {shareState.accessCount} public open{shareState.accessCount === 1 ? '' : 's'}
                       </span>
                     )}
-                  </div>
+                  <span className="ml-auto text-primary">Manage sharing</span>
+                </summary>
+                <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                   {selectedShareUrl ? (
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                      <Input readOnly value={selectedShareUrl} className="text-xs" />
-                      <Button size="icon" variant="outline" disabled={!selectedShareActive} onClick={handleCopyShareLink}>
-                        <Link2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    <Input readOnly value={selectedShareUrl} className="h-9 text-xs" />
                   ) : null}
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {shareState?.lastAccessedAt
-                      ? `Last opened ${new Date(shareState.lastAccessedAt).toLocaleString()}`
-                      : 'No public opens recorded yet.'}
-                  </p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <Button variant="outline" className="gap-2" onClick={handleRefreshShareLink} disabled={sharingDocumentId === selectedDetail.id}>
+                  <Button size="sm" variant="outline" className="gap-2" onClick={handleCopyShareLink} disabled={!selectedShareActive}>
+                    <Link2 className="h-4 w-4" />
+                    Copy link
+                  </Button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="gap-2" onClick={handleEmailShare} disabled={!selectedShareActive}>
+                      <Mail className="h-4 w-4" />
+                      Email link
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-2" onClick={handleRefreshShareLink} disabled={sharingDocumentId === selectedDetail.id}>
                       {sharingDocumentId === selectedDetail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
                       Refresh Link
                     </Button>
                     <Button
+                      size="sm"
                       variant="outline"
                       className="gap-2 text-destructive hover:text-destructive"
                       onClick={handleRevokeShareLink}
@@ -1279,12 +1237,14 @@ export default function VendorDocuments() {
                       <ShieldOff className="h-4 w-4" />
                       Revoke Link
                     </Button>
-                  </div>
                 </div>
-                </div>
-                </>
-              )}
-            </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {shareState.lastAccessedAt
+                    ? `Last opened ${new Date(shareState.lastAccessedAt).toLocaleString()}`
+                    : 'No public opens recorded yet.'}
+                </p>
+              </details>
+            )}
           </CardHeader>
           <CardContent>
             {!selectedDocumentId ? (
@@ -1300,13 +1260,6 @@ export default function VendorDocuments() {
               </div>
             ) : (
               <div className="space-y-6">
-                {detailMomentum && (
-                  <DocumentMomentumCard
-                    title="Document momentum"
-                    subtitle="This tracks how ready the document is to share, convert, or collect against."
-                    summary={detailMomentum}
-                  />
-                )}
                 <CommercialDocumentEditor
                   idPrefix="vendor-document"
                   document={selectedDetail}
@@ -1708,6 +1661,7 @@ export default function VendorDocuments() {
                 onChange={(event) => setCreateDraft((current) => ({ ...current, title: event.target.value }))}
                 placeholder="e.g. Photography quote for Mary & James"
               />
+              {!createDraft.title.trim() && <p className="text-xs text-destructive">Add a clear document title.</p>}
             </div>
             <div className="space-y-2">
               <Label>Recipient name</Label>
@@ -1716,6 +1670,7 @@ export default function VendorDocuments() {
                 onChange={(event) => setCreateDraft((current) => ({ ...current, recipientName: event.target.value }))}
                 placeholder="Couple, planner, or contact name"
               />
+              {!createDraft.recipientName.trim() && <p className="text-xs text-destructive">Add the person receiving this document.</p>}
             </div>
             <div className="space-y-2">
               <Label>Wedding / project name</Label>
@@ -1796,19 +1751,12 @@ export default function VendorDocuments() {
                 onChange={(event) => setCreateDraft((current) => ({ ...current, terms: event.target.value }))}
               />
             </div>
-            <div className="md:col-span-2">
-              <DocumentMomentumCard
-                title="Document momentum"
-                subtitle="Fill the key fields now so the document starts in a send-ready state."
-                summary={createMomentum}
-              />
-            </div>
           </div>
           <div className="flex justify-end gap-3">
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button className="gap-2" onClick={handleCreate} disabled={savingHeader}>
+            <Button className="gap-2" onClick={handleCreate} disabled={savingHeader || !createDraft.title.trim() || !createDraft.recipientName.trim()}>
               {savingHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Create document
             </Button>
