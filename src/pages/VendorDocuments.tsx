@@ -1007,38 +1007,23 @@ export default function VendorDocuments() {
           ? 'Receipts appear after you record real payments against invoices.'
           : 'Start with a quote for a couple, then turn it into an invoice once the work is confirmed.';
 
-  const documentPrimaryAction = selectedDetail
-    ? selectedDetail.documentType === 'invoice' && selectedDetail.balanceDue > 0
-      ? {
-          title: 'Record the next payment update',
-          body: `${selectedDetail.documentNumber} still has ${formatCurrency(selectedDetail.balanceDue)} outstanding. Record the next payment or share the invoice with the couple so the balance keeps moving.`,
-          actionLabel: 'Record payment',
-          actionType: 'payment' as const,
-        }
-      : {
-          title: `Keep ${selectedDetail.documentNumber} polished`,
-          body: `Update line items, send the share link, print a clean copy, or tighten the document status without leaving this workspace.`,
-          actionLabel: 'Copy share link',
-          actionType: 'share' as const,
-        }
-    : {
-        title: activeSection === 'quotes'
-          ? 'Start the next quote'
-          : activeSection === 'invoices'
-            ? 'Keep invoice follow-up moving'
-            : activeSection === 'receipts'
-              ? 'Keep the payment trail complete'
-              : 'Keep your document workspace ready',
-        body: activeSection === 'quotes'
-          ? 'Create a fresh quote for a couple, then convert it once the booking is confirmed.'
-          : activeSection === 'invoices'
-            ? 'Track what is due, what has been paid, and what still needs a nudge from the invoice workspace.'
-            : activeSection === 'receipts'
-              ? 'Receipts appear once real payments are recorded, keeping your client-facing money trail tidy.'
-              : 'Quotes, invoices, and receipts all stay together here so vendor paperwork feels operational, not scattered.',
-        actionLabel: 'New document',
-        actionType: 'create' as const,
-      };
+  const handleOpenCreateDocument = () => {
+    const documentType: CommercialDocumentType = activeType === 'all' ? 'quote' : activeType;
+    const template = documentTemplates.find((item) => item.templateType === documentType);
+
+    setActiveRequestId(null);
+    setCreateDraft((current) => ({
+      ...current,
+      documentType,
+      title: '',
+      templateId: template?.id ?? '',
+      issueDate: todayIso(),
+      dueDate: nextDueDateValue(documentType),
+      notes: '',
+      terms: '',
+    }));
+    setCreateOpen(true);
+  };
   const selectedShareActive = isTokenActive(shareState?.expiresAt, shareState?.revokedAt);
   const selectedShareUrl = shareState
     ? buildCommercialDocumentShareUrl(shareState.shareToken, window.location.origin)
@@ -1084,13 +1069,8 @@ export default function VendorDocuments() {
       <DocumentWorkspaceHeader
         title={pageTitle}
         description={pageDescription}
-        actionLabel={documentPrimaryAction.actionLabel}
-        actionDisabled={documentPrimaryAction.actionType === 'share' && !!selectedDetail && sharingDocumentId === selectedDetail.id}
-        onAction={() => {
-          if (documentPrimaryAction.actionType === 'payment') return setPaymentOpen(true);
-          if (documentPrimaryAction.actionType === 'share') return void handleCopyShareLink();
-          setCreateOpen(true);
-        }}
+        actionLabel="New document"
+        onAction={handleOpenCreateDocument}
         summaryItems={[
           { label: 'All documents', value: stats.total },
           { label: 'Quotes', value: stats.quotes },
@@ -1109,13 +1089,13 @@ export default function VendorDocuments() {
         />
       )}
 
-      <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-        <Card className="border-border/70 shadow-card">
-          <CardHeader className="space-y-4">
+      <section className="grid items-start gap-5 xl:grid-cols-[minmax(260px,0.34fr)_minmax(0,1.66fr)]">
+        <Card className="border-border/70 shadow-card xl:sticky xl:top-5">
+          <CardHeader className="space-y-3 pb-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle className="font-display text-xl">Document library</CardTitle>
-                <CardDescription>Filter your live documents.</CardDescription>
+                <CardTitle className="font-display text-lg">Document library</CardTitle>
+                <CardDescription>Choose a document to open.</CardDescription>
               </div>
               {refreshing && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1124,7 +1104,7 @@ export default function VendorDocuments() {
                 </div>
               )}
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="space-y-2">
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -1132,13 +1112,13 @@ export default function VendorDocuments() {
                 aria-label="Search documents"
                 className="min-w-0 flex-1"
               />
-              <p className="shrink-0 text-sm text-muted-foreground sm:min-w-28 sm:text-right" aria-live="polite">
+              <p className="text-xs text-muted-foreground" aria-live="polite">
                 <span className="font-medium tabular-nums text-foreground">{documents.length}</span>{' '}
                 {documentResultLabel.toLocaleLowerCase()}
               </p>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 px-3 pb-3">
             {documents.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-8 text-center">
                 <FileSpreadsheet className="mx-auto mb-3 h-5 w-5 text-primary" />
@@ -1146,14 +1126,7 @@ export default function VendorDocuments() {
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{emptyStateCopy}</p>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-2xl border border-border">
-                <div className="hidden grid-cols-[1.1fr_1.4fr_0.9fr_0.9fr_1fr] gap-4 border-b border-border bg-muted/20 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground md:grid">
-                  <span>Document</span>
-                  <span>Recipient</span>
-                  <span>Total</span>
-                  <span>Due</span>
-                  <span>Status</span>
-                </div>
+              <div className="overflow-hidden rounded-xl border border-border">
                 <div className="divide-y divide-border">
                   {documents.map((document) => {
                     const isActive = document.id === selectedDocumentId;
@@ -1162,29 +1135,20 @@ export default function VendorDocuments() {
                         key={document.id}
                         type="button"
                         onClick={() => setSelectedDocumentId(document.id)}
-                        className={`grid w-full gap-3 px-4 py-4 text-left transition md:grid-cols-[1.1fr_1.4fr_0.9fr_0.9fr_1fr] md:items-center ${
-                          isActive ? 'bg-primary/6' : 'bg-card hover:bg-muted/10'
+                        className={`w-full px-3 py-3 text-left transition ${
+                          isActive ? 'border-l-2 border-primary bg-primary/6' : 'border-l-2 border-transparent bg-card hover:bg-muted/10'
                         }`}
                       >
-                        <div className="min-w-0">
-                          <p className="font-semibold text-foreground">{document.documentNumber}</p>
-                          <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{document.title}</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-foreground">{document.title}</p>
+                            <p className="mt-1 truncate text-xs text-muted-foreground">{document.recipientName}</p>
+                          </div>
+                          <p className="shrink-0 text-sm font-semibold tabular-nums text-foreground">{formatCurrency(document.totalAmount)}</p>
                         </div>
-                        <div className="min-w-0">
-                          <p className="break-words text-sm font-medium leading-5 text-foreground">{document.recipientName}</p>
-                          <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{document.weddingName || 'No wedding label'}</p>
-                        </div>
-                        <div className="text-sm font-semibold text-foreground">{formatCurrency(document.totalAmount)}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {document.documentType !== 'receipt' && document.dueDate
-                            ? new Date(document.dueDate).toLocaleDateString()
-                            : 'No due date'}
-                        </div>
-                        <div className="border-l-2 border-border pl-3">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                            {commercialDocumentTypeLabel(document.documentType)}
-                          </p>
-                          <p className="mt-1 flex items-center gap-2 text-xs font-medium text-foreground">
+                        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                          <span className="truncate">{document.documentNumber}</span>
+                          <span className="flex shrink-0 items-center gap-1.5 font-medium text-foreground">
                             <span
                               aria-hidden="true"
                               className={`h-1.5 w-1.5 rounded-full ${
@@ -1194,7 +1158,7 @@ export default function VendorDocuments() {
                               }`}
                             />
                             {commercialDocumentStatusLabel(document.status)}
-                          </p>
+                          </span>
                         </div>
                       </button>
                     );
@@ -1205,8 +1169,8 @@ export default function VendorDocuments() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/70 shadow-card">
-          <CardHeader className="space-y-2">
+        <Card className="min-w-0 border-border/70 shadow-card">
+          <CardHeader className="space-y-2 pb-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <CardTitle className="font-display text-xl">
