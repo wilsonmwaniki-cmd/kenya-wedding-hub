@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHomeRouteForRole } from '@/lib/roles';
+import { isPlanningExperimentEnabled } from '@/lib/featureFlags';
 import { saveEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 import {
   buildInteractiveBudgetPlan,
@@ -334,10 +335,10 @@ export default function Landing() {
 
       if (seeded) {
         toast({
-          title: 'Wedding plan ready',
-          description: 'Your budget, vendor shortlist, and starter tasks are ready.',
+          title: 'Estimate added',
+          description: 'Confirm three priorities and Zania will build your first plan.',
         });
-        navigate('/budget');
+        navigate(isPlanningExperimentEnabled() ? '/plan' : getHomeRouteForRole(profile?.role, profile?.planner_type));
         return;
       }
 

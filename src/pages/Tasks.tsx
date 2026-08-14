@@ -36,6 +36,7 @@ import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
 import { HierarchyGroup } from '@/components/HierarchyGroup';
 import { getConfirmedVendorForTask, getRelatedBudgetCategoryForTask } from '@/lib/budgetRelations';
 import { canonicalizeVendorCategory, vendorCategoriesMatch, vendorCategoryCatalog } from '@/lib/vendorCategories';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
 
 interface Task {
   id: string;
@@ -51,6 +52,7 @@ interface Task {
   delegatable: boolean;
   recommended_role: string | null;
   priority_level: number | null;
+  wedding_id: string | null;
 }
 
 interface VendorOption {
@@ -471,6 +473,18 @@ export default function Tasks() {
       return;
     }
 
+    if (task.wedding_id) {
+      try {
+        await recalculatePlanningExperiment(task.wedding_id);
+      } catch (recalculationError) {
+        toast({
+          title: 'Task saved; plan refresh delayed',
+          description: recalculationError instanceof Error ? recalculationError.message : 'Open Wedding Home to refresh your next steps.',
+          variant: 'destructive',
+        });
+      }
+    }
+
     queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
       ...current,
       tasks: current.tasks.map((row) => row.id === id ? { ...row, completed: nextCompleted } : row),
@@ -490,6 +504,7 @@ export default function Tasks() {
                 toast({ title: 'Could not reopen task', description: undoError.message, variant: 'destructive' });
                 return;
               }
+              if (task.wedding_id) await recalculatePlanningExperiment(task.wedding_id);
               await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
               toast({ title: 'Task reopened', description: task.title, variant: 'info' });
             }}

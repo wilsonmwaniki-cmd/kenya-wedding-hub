@@ -100,6 +100,7 @@ import {
   getCoupleVendorContract,
 } from '@/lib/coupleVendorContracts';
 import { requestVendorQuote } from '@/lib/documentRequests';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
 
 interface Vendor {
   amount_paid: number;
@@ -120,6 +121,7 @@ interface Vendor {
   status: string | null;
   notes: string | null;
   vendor_listing_id: string | null;
+  wedding_id: string | null;
 }
 
 interface DirectoryVendor {
@@ -1257,6 +1259,9 @@ export default function Vendors() {
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
+      if (vendor.wedding_id && (status === 'booked' || vendor.status === 'booked')) {
+        await recalculatePlanningExperiment(vendor.wedding_id);
+      }
       await refreshVendorsWorkspace();
     }
     setSavingStatusId(null);

@@ -39,7 +39,7 @@ import BrandWordmark from '@/components/BrandWordmark';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import AppleAuthButton from '@/components/AppleAuthButton';
 import { normalizeHumanName, normalizeHumanNameInput } from '@/lib/names';
-import { isAppleAuthEnabled } from '@/lib/featureFlags';
+import { isAppleAuthEnabled, isPlanningExperimentEnabled } from '@/lib/featureFlags';
 import { isEstimatorCoupleSignupEntry } from '@/lib/authEntryFlows';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 import PublicSiteFooter from '@/components/PublicSiteFooter';
@@ -537,10 +537,15 @@ export default function Auth() {
           if (seeded && active) {
             setRedirecting(true);
             toast({
-              title: 'Wedding plan ready',
-              description: 'Your estimate was turned into a starter budget, vendor list, and tasks.',
+              title: 'Estimate added',
+              description: 'Confirm three priorities and Zania will build your first plan.',
             });
-            navigate('/budget', { replace: true });
+            navigate(
+              isPlanningExperimentEnabled()
+                ? '/plan'
+                : getHomeRouteForRole(profile.role, profile.planner_type),
+              { replace: true },
+            );
             return;
           }
         }
@@ -1727,34 +1732,32 @@ export default function Auth() {
                   )
                 ) : (
                   <>
-                    {!adminEntry ? (
-                      <div className="space-y-3">
-                        <GoogleAuthButton
-                          loading={oauthSubmittingProvider === 'google' && !submitting}
-                          disabled={submitting || oauthSubmitting}
-                          onClick={handleGoogleSignIn}
-                          text="Continue with Google"
-                        />
-                        {appleAuthEnabled ? (
+                    <div className="space-y-3">
+                      <GoogleAuthButton
+                        loading={oauthSubmittingProvider === 'google' && !submitting}
+                        disabled={submitting || oauthSubmitting}
+                        onClick={handleGoogleSignIn}
+                        text="Continue with Google"
+                      />
+                      {!adminEntry && appleAuthEnabled ? (
                           <AppleAuthButton
                             loading={oauthSubmittingProvider === 'apple' && !submitting}
                             disabled={submitting || oauthSubmitting}
                             onClick={handleAppleSignIn}
                             text="Continue with Apple"
                           />
-                        ) : null}
-                        <div className="relative py-1">
-                          <div className="absolute inset-0 flex items-center">
-                            <span className="w-full border-t border-border/60" />
-                          </div>
-                          <div className="relative flex justify-center">
-                            <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                              Or use email
-                            </span>
-                          </div>
+                      ) : null}
+                      <div className="relative py-1">
+                        <div className="absolute inset-0 flex items-center">
+                          <span className="w-full border-t border-border/60" />
+                        </div>
+                        <div className="relative flex justify-center">
+                          <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Or use email
+                          </span>
                         </div>
                       </div>
-                    ) : null}
+                    </div>
 
                     <FormSubmitError message={submitError} />
                     <div className="space-y-2">

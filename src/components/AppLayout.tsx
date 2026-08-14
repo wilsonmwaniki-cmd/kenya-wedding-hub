@@ -15,7 +15,7 @@ import { getHomeRouteForRole, isProfessionalSetupPending, type PlannerType } fro
 import { AssistantPanelProvider, useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import BrandWordmark from '@/components/BrandWordmark';
 import AccountReviewBanner from '@/components/AccountReviewBanner';
-import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isLaunchFeatureEnabled, isProfessionalNetworkEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
+import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isLaunchFeatureEnabled, isPlanningExperimentEnabled, isProfessionalNetworkEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
 import { professionalPlanEntitlementMap } from '@/lib/pricingPlans';
@@ -47,6 +47,7 @@ type NavItem = {
 
 const coupleNavItems: NavItem[] = [
   { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
+  { path: '/plan', label: 'Start plan', icon: NotebookPen },
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
@@ -215,7 +216,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       previewNavItems.push({ path: getLabsPath(), label: 'Labs', icon: FlaskConical });
     }
 
-    const releaseAwareCoupleNavItems = coupleNavItems.filter((item) => isLaunchFeatureEnabled(item.path));
+    const releaseAwareCoupleNavItems = coupleNavItems.filter((item) => (
+      item.path === '/plan' ? isPlanningExperimentEnabled() : isLaunchFeatureEnabled(item.path)
+    ));
     const coupleSettingsItem = releaseAwareCoupleNavItems.find((item) => item.path === '/settings');
     const resolvedCoupleNavItems = [
       ...releaseAwareCoupleNavItems.filter((item) => item.path !== '/settings'),
@@ -250,7 +253,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           ? ['/vendor-dashboard', '/vendor-documents', '/vendor-settings', '/settings']
           : isPlanner && !selectedClient
             ? ['/clients', '/planner-documents', '/settings']
-            : ['/dashboard', '/budget', '/tasks', '/vendors', '/settings'];
+            : ['/dashboard', '/plan', '/budget', '/tasks', '/settings'];
 
     return preferredPaths
       .map((path) => navItems.find((item) => item.path === path))
@@ -271,7 +274,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // For planners, disable planning pages if no client selected (except /clients and /settings)
   const needsClient = isPlanner && !plannerClientHydrating && !selectedClient;
-  const planningPaths = ['/dashboard', '/budget', '/tasks', '/guests', '/contributions', '/gift-registry', '/vendors', '/timeline', '/portfolio'];
+  const planningPaths = ['/dashboard', '/plan', '/budget', '/tasks', '/guests', '/contributions', '/gift-registry', '/vendors', '/timeline', '/portfolio'];
 
   const previewOptions: Array<{ value: RolePreview; label: string }> = [
     { value: 'admin', label: 'Admin' },
@@ -449,7 +452,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="space-y-2 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
             {navItems.map((item) => {
               const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
-              const releaseDisabled = !isLaunchFeatureEnabled(item.path);
+              const releaseDisabled = item.path === '/plan'
+                ? !isPlanningExperimentEnabled()
+                : !isLaunchFeatureEnabled(item.path);
               const disabled = releaseDisabled || (needsClient && planningPaths.includes(item.path));
               const hasChildren = Boolean(item.children?.length);
               const isExpanded = expandedNavItems[item.path] ?? isActive;
@@ -694,7 +699,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           }
           onValueChange={() => setSidebarOpen(false)}
           items={mobileNavItems.map((item) => {
-            const releaseDisabled = !isLaunchFeatureEnabled(item.path);
+            const releaseDisabled = item.path === '/plan'
+              ? !isPlanningExperimentEnabled()
+              : !isLaunchFeatureEnabled(item.path);
             const disabled = releaseDisabled || (needsClient && planningPaths.includes(item.path));
             const itemBadgeCount = badgeCounts[item.path] || 0;
             const mobileLabel = mobileNavLabels[item.path] ?? item.label;

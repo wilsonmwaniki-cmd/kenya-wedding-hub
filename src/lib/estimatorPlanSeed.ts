@@ -2,8 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import type { PlannerType } from '@/lib/roles';
-import { buildSeededTasksFromTemplates } from '@/lib/weddingTaskTemplates';
-import { getVendorCategoryScope, vendorCategoryNames } from '@/lib/vendorCategories';
+import { toSimplePlanningCategory } from '@/lib/planningExperiment';
 
 export type EstimatorWeddingStyle = 'intimate' | 'classic' | 'luxury' | 'garden';
 export type EstimatorVenueTier = 'budget' | 'mid_tier' | 'luxury';
@@ -192,6 +191,45 @@ export function buildEstimatorRowsFromDraft(draft: EstimatorPlanDraft): PublicBu
   }));
 }
 
+export type CompactEstimatorAllocation = {
+  name: string;
+  amount: number;
+  suggestedAmount: number;
+  suggestedPercentage: number;
+  isManuallyEdited: boolean;
+  lastEditedField: 'amount' | 'percentage' | null;
+};
+
+export function buildCompactEstimatorAllocations(
+  draft: EstimatorPlanDraft,
+  estimateRows: PublicBudgetEstimateRow[] = buildEstimatorRowsFromDraft(draft) ?? [],
+): CompactEstimatorAllocation[] {
+  const allocationByName = new Map((draft.allocations ?? []).map((allocation) => [allocation.name, allocation]));
+  const compact = new Map<string, CompactEstimatorAllocation>();
+
+  for (const row of estimateRows) {
+    const name = toSimplePlanningCategory(row.category);
+    const source = allocationByName.get(row.category);
+    const current = compact.get(name) ?? {
+      name,
+      amount: 0,
+      suggestedAmount: 0,
+      suggestedPercentage: 0,
+      isManuallyEdited: false,
+      lastEditedField: null,
+    };
+    current.amount += row.suggested_amount;
+    current.suggestedAmount += source?.suggestedAmount ?? row.suggested_amount;
+    current.suggestedPercentage += source?.suggestedPercentage
+      ?? (draft.totalBudget ? (row.suggested_amount / draft.totalBudget) * 100 : 0);
+    current.isManuallyEdited ||= source?.isManuallyEdited ?? false;
+    if (source?.lastEditedField) current.lastEditedField = source.lastEditedField;
+    compact.set(name, current);
+  }
+
+  return [...compact.values()];
+}
+
 export async function seedWeddingPlanFromEstimator({
   userId,
   clientId = null,
@@ -208,27 +246,22 @@ export async function seedWeddingPlanFromEstimator({
         minSampleSize: 5,
       });
 
-  const vendorCategories = [...vendorCategoryNames];
-  const [existingBudgetRes, existingTaskRes, profileRes, clientRes, weddingRes] = await Promise.all([
+  const [existingBudgetRes, profileRes, clientRes, weddingRes] = await Promise.all([
     scopedQuery(
       supabase.from('budget_categories').select('name, budget_scope').eq('user_id', userId),
       clientId,
     ),
-    scopedQuery(
-      supabase.from('tasks').select('title').eq('user_id', userId),
-      clientId,
-    ),
-    supabase.from('profiles').select('wedding_location, wedding_date, created_at').eq('user_id', userId).maybeSingle(),
+    supabase.from('profiles').select('wedding_location').eq('user_id', userId).maybeSingle(),
     clientId
-      ? supabase.from('planner_clients').select('wedding_date, created_at, wedding_id').eq('id', clientId).maybeSingle()
+      ? supabase.from('planner_clients').select('wedding_id').eq('id', clientId).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     clientId
       ? Promise.resolve({ data: null, error: null })
       : supabase
           .from('weddings')
-          .select('id, wedding_date, created_at')
+          .select('id')
           .eq('created_by_user_id', userId)
-          .eq('status', 'active')
+          .in('status', ['active', 'draft'])
           .is('deleted_at', null)
           .order('created_at', { ascending: true })
           .limit(1)
@@ -236,7 +269,6 @@ export async function seedWeddingPlanFromEstimator({
   ]);
 
   if (existingBudgetRes.error) throw existingBudgetRes.error;
-  if (existingTaskRes.error) throw existingTaskRes.error;
   if (profileRes.error) throw profileRes.error;
   if (clientRes.error) throw clientRes.error;
   if (weddingRes.error) throw weddingRes.error;
@@ -251,50 +283,20 @@ export async function seedWeddingPlanFromEstimator({
       .filter((item) => item.budget_scope === 'personal')
       .map((item) => item.name),
   );
-  const existingTaskTitles = new Set((existingTaskRes.data ?? []).map((item) => item.title));
-  const seededWeddingDate = clientRes.data?.wedding_date
-    ?? weddingRes.data?.wedding_date
-    ?? profileRes.data?.wedding_date
-    ?? null;
-  const scheduleAnchorDate = (
-    clientRes.data?.created_at
-    ?? weddingRes.data?.created_at
-    ?? profileRes.data?.created_at
-    ?? new Date().toISOString()
-  ).slice(0, 10);
   const weddingId = clientRes.data?.wedding_id ?? weddingRes.data?.id ?? null;
-  const starterTasks = buildSeededTasksFromTemplates({
-    vendorCategories,
-    role,
-    plannerType,
-    weddingDate: seededWeddingDate,
-    planningStartDate: scheduleAnchorDate,
-  });
 
-  const budgetInserts = estimateRows
-    .filter((row) => (
-      vendorCategoryNames.includes(row.category)
-      && getVendorCategoryScope(row.category) === 'wedding'
-      && !existingWeddingBudgetNames.has(row.category)
-    ))
+  const budgetInserts = buildCompactEstimatorAllocations(draft, estimateRows)
+    .filter((row) => weddingId || !existingWeddingBudgetNames.has(row.name))
     .map((row) => ({
       user_id: userId,
       client_id: clientId,
-      name: row.category,
-      allocated: row.suggested_amount,
-      suggested_allocated:
-        draft.allocations?.find((allocation) => allocation.name === row.category)?.suggestedAmount
-        ?? row.suggested_amount,
-      suggested_percentage:
-        draft.allocations?.find((allocation) => allocation.name === row.category)?.suggestedPercentage
-        ?? (draft.totalBudget ? (row.suggested_amount / draft.totalBudget) * 100 : 0),
-      allocation_manually_edited:
-        draft.allocations?.find((allocation) => allocation.name === row.category)?.isManuallyEdited
-        ?? false,
-      allocation_last_edited_field:
-        draft.allocations?.find((allocation) => allocation.name === row.category)?.lastEditedField
-        ?? null,
-      spent: 0,
+      wedding_id: weddingId,
+      name: row.name,
+      allocated: row.amount,
+      suggested_allocated: row.suggestedAmount,
+      suggested_percentage: row.suggestedPercentage,
+      allocation_manually_edited: row.isManuallyEdited,
+      allocation_last_edited_field: row.lastEditedField,
       budget_scope: 'wedding',
       visibility: 'public',
     }));
@@ -309,6 +311,7 @@ export async function seedWeddingPlanFromEstimator({
           return {
             user_id: userId,
             client_id: null,
+            wedding_id: weddingId,
             name: template.name,
             allocated: estimate?.suggested_amount ?? 0,
             suggested_allocated: allocation?.suggestedAmount ?? estimate?.suggested_amount ?? 0,
@@ -324,27 +327,19 @@ export async function seedWeddingPlanFromEstimator({
         })
     : [];
 
-  const taskInserts = starterTasks
-    .filter((task) => !existingTaskTitles.has(task.title))
-    .map((task) => ({
-      ...task,
-      user_id: userId,
-      client_id: clientId,
-      wedding_id: weddingId,
-    }));
-
   if (budgetInserts.length) {
-    const { error } = await supabase.from('budget_categories').insert(budgetInserts);
+    const query = supabase.from('budget_categories');
+    const { error } = weddingId
+      ? await query.upsert(budgetInserts, { onConflict: 'wedding_id,name' })
+      : await query.insert(budgetInserts);
     if (error) throw error;
   }
 
   if (personalBudgetInserts.length) {
-    const { error } = await supabase.from('budget_categories').insert(personalBudgetInserts);
-    if (error) throw error;
-  }
-
-  if (taskInserts.length) {
-    const { error } = await supabase.from('tasks').insert(taskInserts);
+    const query = supabase.from('budget_categories');
+    const { error } = weddingId
+      ? await query.upsert(personalBudgetInserts, { onConflict: 'wedding_id,name', ignoreDuplicates: true })
+      : await query.insert(personalBudgetInserts);
     if (error) throw error;
   }
 
@@ -375,13 +370,26 @@ export async function seedWeddingPlanFromEstimator({
         .eq('user_id', userId);
       if (error) throw error;
     }
+
+    if (role === 'couple' && weddingId) {
+      // Existing plans keep their choices and progress, while estimator-owned
+      // numeric inputs move forward with the newest saved estimate.
+      const { error } = await supabase
+        .from('wedding_planning_profiles')
+        .update({
+          estimated_budget: draft.totalBudget,
+          estimated_guest_count: draft.guestCount,
+        })
+        .eq('wedding_id', weddingId);
+      if (error) throw error;
+    }
   }
 
   return {
     budgetCategoriesCreated: budgetInserts.length,
     personalBudgetCategoriesCreated: personalBudgetInserts.length,
     vendorTemplatesCreated: 0,
-    tasksCreated: taskInserts.length,
+    tasksCreated: 0,
   };
 }
 

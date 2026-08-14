@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildEstimatorRowsFromDraft,
+  buildCompactEstimatorAllocations,
   canSeedEstimatorPlan,
   getEstimatorPlanDraftFromUserMetadata,
   parseEstimatorPlanDraft,
@@ -43,6 +44,26 @@ describe('estimator plan handoff', () => {
     expect(rows?.every((row) => row.source === 'couple_plan')).toBe(true);
     expect(editedPlan.allocations.find((row) => row.name === 'Caterer')?.isManuallyEdited).toBe(true);
     expect(editedPlan.allocations.find((row) => row.name === 'Caterer')?.lastEditedField).toBe('amount');
+  });
+
+  it('consolidates the estimator into the ten simple planning categories', () => {
+    const plan = buildInteractiveBudgetPlan(1_500_000, 120);
+    const compact = buildCompactEstimatorAllocations({
+      guestCount: plan.guestCount,
+      county: 'Nairobi',
+      weddingStyle: 'classic',
+      venueTier: 'mid_tier',
+      totalBudget: plan.totalBudget,
+      allocations: plan.allocations,
+    });
+
+    expect(compact).toHaveLength(10);
+    expect(compact.reduce((total, row) => total + row.amount, 0)).toBe(1_500_000);
+    expect(compact.find((row) => row.name === 'Catering')?.amount).toBe(
+      plan.allocations
+        .filter((row) => ['Caterer', 'Cake Artist & Baker'].includes(row.name))
+        .reduce((total, row) => total + row.amount, 0),
+    );
   });
 
   it('only seeds couples and committee planners', () => {

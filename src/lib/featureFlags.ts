@@ -10,6 +10,14 @@ export function isAppleAuthEnabled() {
   return import.meta.env.VITE_ENABLE_APPLE_AUTH === 'true';
 }
 
+export function resolvePlanningExperimentEnabled(configured?: string) {
+  return configured === 'true';
+}
+
+export function isPlanningExperimentEnabled() {
+  return resolvePlanningExperimentEnabled(import.meta.env.VITE_ENABLE_PLANNING_EXPERIMENT);
+}
+
 export type ReleaseChannel = 'production' | 'staging';
 
 const productionLaunchPaths = new Set([

@@ -2,7 +2,14 @@ import * as React from "react";
 import { CalendarDays, ChevronDown } from "lucide-react";
 
 import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 const inputClassName = "ease-zania flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background transition-[border-color,box-shadow,background-color] duration-200 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/15 focus-visible:ring-offset-0 aria-invalid:border-destructive aria-invalid:ring-4 aria-invalid:ring-destructive/10 data-[valid=true]:border-success/60 data-[valid=true]:bg-[hsl(var(--success-soft))] data-[valid=true]:ring-4 data-[valid=true]:ring-success/10 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none md:text-sm";
@@ -79,8 +86,8 @@ function ZaniaDateInput({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
         <button
           id={id}
           type="button"
@@ -96,16 +103,12 @@ function ZaniaDateInput({
           </span>
           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={8}
-        className="w-auto overflow-hidden rounded-2xl border-border/70 bg-popover p-0 shadow-[0_18px_50px_rgba(47,34,29,0.14)]"
-      >
-        <div className="border-b border-border/60 bg-primary/[0.035] px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Choose a date</p>
-          <p className="mt-1 text-sm text-muted-foreground">Displayed as day / month / year</p>
-        </div>
+      </DialogTrigger>
+      <DialogContent className="w-[calc(100%-2rem)] max-w-[22rem] gap-0 overflow-y-auto border-border/70 bg-popover p-0 shadow-[0_18px_50px_rgba(47,34,29,0.14)] sm:p-0">
+        <DialogHeader className="border-b border-border/60 bg-primary/[0.035] px-4 py-3 pr-12 text-left">
+          <DialogTitle className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Choose a date</DialogTitle>
+          <DialogDescription className="mt-1 text-sm normal-case tracking-normal">Displayed as day / month / year</DialogDescription>
+        </DialogHeader>
         <Calendar
           mode="single"
           selected={selected}
@@ -116,7 +119,7 @@ function ZaniaDateInput({
           fromDate={minimumDate}
           toDate={maximumDate}
           initialFocus
-          className="p-4"
+          className="mx-auto p-3 sm:p-4"
         />
         <div className="flex items-center justify-between border-t border-border/60 px-4 py-3 text-sm">
           <button type="button" className="text-muted-foreground transition-colors hover:text-foreground" onClick={() => updateValue(toIsoDate(new Date()))}>
@@ -128,7 +131,7 @@ function ZaniaDateInput({
             </button>
           ) : null}
         </div>
-      </PopoverContent>
+      </DialogContent>
       <input
         {...props}
         ref={setInputRef}
@@ -146,7 +149,7 @@ function ZaniaDateInput({
         tabIndex={-1}
         aria-hidden="true"
       />
-    </Popover>
+    </Dialog>
   );
 }
 

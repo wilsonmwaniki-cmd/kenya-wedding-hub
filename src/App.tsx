@@ -4,7 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Analytics } from "@vercel/analytics/react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PublicErrorBoundary, WorkspaceErrorBoundary } from "@/components/AppErrorBoundary";
@@ -12,6 +12,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import type { AppRole } from "@/lib/roles";
 import LaunchFeature from "@/components/LaunchFeature";
 import ProfessionalFeatureGate from "@/components/ProfessionalFeatureGate";
+import { isPlanningExperimentEnabled } from "@/lib/featureFlags";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -44,6 +45,7 @@ const PlannerDirectory = lazy(() => import("./pages/PlannerDirectory"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const WeddingSetup = lazy(() => import("./pages/WeddingSetup"));
+const PlanningExperiment = lazy(() => import("./pages/PlanningExperiment"));
 const AdminPortal = lazy(() => import("./pages/AdminPortal"));
 const TimelinePage = lazy(() => import("./pages/Timeline"));
 const TimelineShare = lazy(() => import("./pages/TimelineShare"));
@@ -155,6 +157,12 @@ const App = () => (
               <Route path="/rsvp/:token" element={<PublicPage><GuestRsvp /></PublicPage>} />
               <Route path="/wedding/:token" element={<PublicPage><WeddingPortfolio /></PublicPage>} />
               <Route path="/wedding-setup" element={<ProtectedStandalonePage allowedRoles={['couple']}><WeddingSetup /></ProtectedStandalonePage>} />
+              <Route
+                path="/plan"
+                element={isPlanningExperimentEnabled()
+                  ? <ProtectedPage allowedRoles={['couple']}><PlanningExperiment /></ProtectedPage>
+                  : <Navigate to="/dashboard" replace />}
+              />
               <Route path="/documents/:documentId/print" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><ProfessionalFeatureGate feature="invoicing"><CommercialDocumentPrint /></ProfessionalFeatureGate></ProtectedStandalonePage>} />
               <Route path="/contracts/:contractId/preview" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><ProfessionalFeatureGate feature="invoicing"><ProfessionalContractPreview /></ProfessionalFeatureGate></ProtectedStandalonePage>} />
               <Route path="/labs" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><LabsIndex /></ProtectedPage>} />

@@ -234,6 +234,24 @@ export default function AuthCallback() {
       }
 
       if (!desiredRole) {
+        if (authMode === 'signin' && requestedAudience === 'admin') {
+          const { data: existingRoles, error: rolesError } = await supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', user.id);
+
+          if (rolesError) throw rolesError;
+
+          const hasAdminRole = (existingRoles ?? []).some((entry) => entry.role === 'admin');
+          if (!hasAdminRole) {
+            await rejectUnexpectedOAuthSignIn(null, null);
+            throw new Error('OAuth sign-in rejected because this email does not hold the admin role.');
+          }
+
+          clearPendingOAuthSignupState();
+          return user;
+        }
+
         if (authMode === 'signin' && requestedAudience === 'professional') {
           const { data: existingRoles, error: rolesError } = await supabase
             .from('user_roles')
@@ -483,9 +501,12 @@ export default function AuthCallback() {
         }
 
         const resolvedFromSession = getAuthTargetFromMetadata(user?.user_metadata);
-      const resolvedTarget = matchesOAuthTarget(user?.user_metadata, callbackUrlTarget ?? pendingOAuthTarget ?? null)
+        const requestedOAuthTarget = callbackUrlTarget ?? pendingOAuthTarget ?? null;
+        const resolvedTarget = requestedOAuthTarget?.audience === 'admin'
+          ? { role: 'admin' as const, plannerType: null }
+          : matchesOAuthTarget(user?.user_metadata, requestedOAuthTarget)
           ? resolvedFromSession
-          : callbackUrlTarget ?? pendingOAuthTarget ?? resolvedFromSession;
+          : requestedOAuthTarget ?? resolvedFromSession;
         const { role, plannerType } = getSafeAuthRouteTarget(
           resolvedTarget
           ?? fallbackTarget,

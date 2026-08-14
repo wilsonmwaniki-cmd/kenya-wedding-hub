@@ -41,6 +41,7 @@ import {
   vendorSelectionStatuses,
   type VendorSelectionStatus,
 } from '@/lib/vendorSelection';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
 import { getEntitlementDecision } from '@/lib/entitlements';
@@ -82,6 +83,7 @@ interface BudgetCategory {
   suggested_percentage: number | null;
   allocation_manually_edited: boolean;
   allocation_last_edited_field: 'amount' | 'percentage' | null;
+  wedding_id: string | null;
 }
 
 type BudgetScope = 'wedding' | 'personal';
@@ -455,6 +457,9 @@ export default function Budget() {
   });
 
   const categories = categoriesQuery.data ?? [];
+  const activeWeddingId = isPlanner
+    ? selectedClient?.wedding_id ?? null
+    : categories.find((category) => category.budget_scope === 'wedding' && category.wedding_id)?.wedding_id ?? null;
   const vendorOptions = vendorOptionsQuery.data ?? [];
   const paymentRecords = paymentRecordsQuery.data ?? [];
   const budgetTasks = tasksQuery.data ?? [];
@@ -1395,6 +1400,9 @@ export default function Budget() {
         if (error) throw error;
         await loadClients();
       } else {
+        if (activeWeddingId) {
+          await recalculatePlanningExperiment(activeWeddingId, { estimatedBudget: normalizedBudgetGoal });
+        }
         await updateProfile({ wedding_budget_goal: normalizedBudgetGoal });
       }
 
@@ -1461,6 +1469,9 @@ export default function Budget() {
         if (error) throw error;
         await loadClients();
       } else {
+        if (activeWeddingId) {
+          await recalculatePlanningExperiment(activeWeddingId, { estimatedGuestCount: normalizedGuestCount });
+        }
         await updateProfile({ expected_guest_count: normalizedGuestCount });
       }
 
