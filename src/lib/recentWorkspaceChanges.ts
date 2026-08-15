@@ -21,9 +21,12 @@ function nullableString(value: unknown) {
 export function resolveRecentWorkspaceChangeActionPath(
   eventType: string,
   actionPath: string | null,
+  subjectId?: string | null,
 ) {
   if (eventType === 'planner_change_request.pending') {
-    return '/dashboard#planner-change-requests';
+    return subjectId
+      ? `/dashboard#planner-change-${subjectId}`
+      : '/dashboard#planner-change-requests';
   }
 
   return actionPath;
@@ -38,17 +41,18 @@ export async function listRecentWorkspaceChanges(limit = 5): Promise<RecentWorks
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
     const eventType = String(row.event_type);
+    const subjectId = nullableString(row.subject_id);
 
     return {
       id: String(row.id),
       occurredAt: String(row.occurred_at),
       eventType,
       subjectType: String(row.subject_type),
-      subjectId: nullableString(row.subject_id),
+      subjectId,
       title: String(row.title),
       summary: nullableString(row.summary),
       actionLabel: nullableString(row.action_label),
-      actionPath: resolveRecentWorkspaceChangeActionPath(eventType, nullableString(row.action_path)),
+      actionPath: resolveRecentWorkspaceChangeActionPath(eventType, nullableString(row.action_path), subjectId),
       metadata: row.metadata && typeof row.metadata === 'object'
         ? row.metadata as Record<string, unknown>
         : {},

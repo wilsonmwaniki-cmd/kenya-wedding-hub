@@ -1,42 +1,37 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Loader2, X } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   approvePlannerChangeRequest,
+  describePlannerChangeDetails,
   describePlannerChangeRequest,
   listPendingPlannerChangeRequests,
   rejectPlannerChangeRequest,
   type PlannerChangeRequestRow,
 } from '@/lib/plannerChangeRequests';
 
-function formatChangeDetails(request: PlannerChangeRequestRow) {
-  const payload = request.proposed_payload ?? {};
+function changeTypeLabel(request: PlannerChangeRequestRow) {
+  const item = request.target_table
+    .replace('wedding_', '')
+    .replaceAll('_', ' ')
+    .replace(/s$/, '');
+  return `${item} change`;
+}
 
-  if (request.target_table === 'guests') {
-    const contact = [payload.email, payload.phone].filter(Boolean).join(' • ');
-    return [contact, payload.group_name, payload.category].filter(Boolean).join(' • ');
-  }
+function requestTitle(request: PlannerChangeRequestRow) {
+  return request.target_label || describePlannerChangeRequest(request);
+}
 
-  if (request.target_table === 'wedding_contributions') {
-    const parts = [
-      payload.contributor_group,
-      payload.purpose,
-      payload.pledged_amount ? `Pledged KES ${Number(payload.pledged_amount).toLocaleString()}` : null,
-      payload.paid_amount ? `Paid KES ${Number(payload.paid_amount).toLocaleString()}` : null,
-    ];
-    return parts.filter(Boolean).join(' • ');
-  }
-
-  const parts = [
-    payload.goal_amount ? `Goal KES ${Number(payload.goal_amount).toLocaleString()}` : null,
-    payload.starts_on,
-    payload.ends_on,
-  ];
-  return parts.filter(Boolean).join(' • ');
+function requestDate(value: string) {
+  return new Date(value).toLocaleDateString('en-KE', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 interface PlannerChangeRequestsCardProps {
@@ -48,9 +43,11 @@ export default function PlannerChangeRequestsCard({
 }: PlannerChangeRequestsCardProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const location = useLocation();
   const [requests, setRequests] = useState<PlannerChangeRequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const pendingCount = requests.length;
 
@@ -75,13 +72,25 @@ export default function PlannerChangeRequestsCard({
     void load();
   }, [user?.id]);
 
-  const requestsByType = useMemo(() => {
-    return {
-      guests: requests.filter((request) => request.target_table === 'guests').length,
-      contributions: requests.filter((request) => request.target_table === 'wedding_contributions').length,
-      rounds: requests.filter((request) => request.target_table === 'contribution_rounds').length,
+  useEffect(() => {
+    if (loading || !location.hash.startsWith('#planner-change-')) return;
+
+    const targetId = location.hash.slice(1);
+    const target = document.getElementById(targetId);
+    if (!target) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+      setHighlightedId(targetId.replace('planner-change-', ''));
+    });
+    const timeout = window.setTimeout(() => setHighlightedId(null), 2600);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
     };
-  }, [requests]);
+  }, [loading, location.hash, location.key, requests.length]);
 
   const handleApprove = async (request: PlannerChangeRequestRow) => {
     if (!user) return;
@@ -132,76 +141,56 @@ export default function PlannerChangeRequestsCard({
     <Card
       id="planner-change-requests"
       tabIndex={-1}
-      className="semantic-surface-info scroll-mt-24 shadow-card outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="scroll-mt-24 border-border bg-card shadow-card outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.22em] text-info">Planner moderation</p>
-            <CardTitle className="workspace-h2 mt-2">Approve planner changes</CardTitle>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Planner edits to sensitive couple-owned areas stay pending until you approve or decline them.
-            </p>
-          </div>
-          <Badge variant={pendingCount > 0 ? 'warning' : 'outline'} className="rounded-full px-3 py-1">
-            {pendingCount} pending
-          </Badge>
-        </div>
+      <CardHeader className="border-b border-border pb-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+          {pendingCount} {pendingCount === 1 ? 'change needs' : 'changes need'} your answer
+        </p>
+        <CardTitle className="workspace-h2 mt-1.5">Review planner changes</CardTitle>
+        <p className="text-sm text-muted-foreground">Choose Approve or Decline for each change.</p>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-border/70 bg-background/85 p-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Guest changes</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{requestsByType.guests}</p>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-background/85 p-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Contributions</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{requestsByType.contributions}</p>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-background/85 p-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Rounds</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{requestsByType.rounds}</p>
-          </div>
-        </div>
-
+      <CardContent className="p-0">
         {loading ? (
-          <div className="flex items-center gap-2 rounded-2xl border border-dashed border-border/70 bg-background/70 p-5 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 p-5 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading planner requests...
+            Loading changes...
           </div>
         ) : requests.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/70 bg-background/70 p-5 text-sm text-muted-foreground">
-            No planner changes are waiting on you right now.
-          </div>
+          <p className="p-5 text-sm text-muted-foreground">Nothing needs your answer right now.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="divide-y divide-border">
             {requests.slice(0, 8).map((request) => {
               const busy = actingId === request.id;
-              const detail = formatChangeDetails(request);
+              const highlighted = highlightedId === request.id;
 
               return (
-                <div key={request.id} className="rounded-2xl border border-border/70 bg-background/85 p-4">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className="rounded-full capitalize">
-                          {request.target_table.replace('_', ' ')}
-                        </Badge>
-                        <Badge variant="info" className="rounded-full capitalize">
-                          {request.change_type}
-                        </Badge>
-                      </div>
-                      <p className="text-sm font-semibold text-foreground">{describePlannerChangeRequest(request)}</p>
-                      {detail ? <p className="text-sm text-muted-foreground">{detail}</p> : null}
-                      <p className="text-xs text-muted-foreground">
-                        Requested {new Date(request.created_at).toLocaleString()}
+                <div
+                  key={request.id}
+                  id={`planner-change-${request.id}`}
+                  tabIndex={-1}
+                  className={`scroll-mt-24 p-5 outline-none transition-[background-color,box-shadow] duration-500 ${
+                    highlighted ? 'bg-primary/10 ring-2 ring-inset ring-primary/35' : 'bg-card'
+                  }`}
+                >
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                        {changeTypeLabel(request)}
                       </p>
+                      <h3 className="mt-1.5 text-base font-semibold leading-6 text-foreground">
+                        {requestTitle(request)}
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {describePlannerChangeDetails(request)}
+                      </p>
+                      <p className="mt-2 text-xs text-muted-foreground">Requested {requestDate(request.created_at)}</p>
                     </div>
-                    <div className="relative z-10 flex flex-col gap-2 sm:flex-row">
+                    <div className="relative z-10 grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
                       <Button
                         type="button"
                         size="sm"
-                        className="min-h-11 gap-2 touch-manipulation"
+                        className="min-h-11 gap-2 rounded-lg touch-manipulation"
                         onClick={() => void handleApprove(request)}
                         disabled={busy}
                       >
@@ -212,7 +201,7 @@ export default function PlannerChangeRequestsCard({
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="min-h-11 gap-2 touch-manipulation text-destructive hover:text-destructive"
+                        className="min-h-11 gap-2 rounded-lg touch-manipulation text-destructive hover:text-destructive"
                         onClick={() => void handleReject(request)}
                         disabled={busy}
                       >
@@ -226,13 +215,6 @@ export default function PlannerChangeRequestsCard({
             })}
           </div>
         )}
-
-        <div className="rounded-xl border border-[hsl(var(--info-soft-border))] bg-background/80 p-4 text-sm text-muted-foreground">
-          <p>
-            Couple ownership, invite sending, and public-share controls stay with the couple side. Planners can still prepare edits,
-            but those changes wait here for approval before they affect the live wedding workspace.
-          </p>
-        </div>
       </CardContent>
     </Card>
   );
