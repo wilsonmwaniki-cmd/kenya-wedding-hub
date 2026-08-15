@@ -2465,18 +2465,28 @@ export default function Vendors() {
     setSelectedVendorId(requestedVendorId);
     if (requestedTab === 'payments') setSelectedVendorTab('payments');
 
-    const scrollTimer = window.setTimeout(() => {
+    let scrollTimer: number | undefined;
+    let attempts = 0;
+    const focusRequestedSection = () => {
       const target = document.getElementById(focusedSectionId);
-      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      target?.focus({ preventScroll: true });
+      if (!target && attempts < 12) {
+        attempts += 1;
+        scrollTimer = window.setTimeout(focusRequestedSection, 80);
+        return;
+      }
+      if (!target) return;
+
       setHighlightedVendorSection(focusedSectionId);
-    }, 180);
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    };
+    scrollTimer = window.setTimeout(focusRequestedSection, 120);
     const clearTimer = window.setTimeout(() => {
       setHighlightedVendorSection((current) => current === focusedSectionId ? null : current);
-    }, 2_800);
+    }, 3_200);
 
     return () => {
-      window.clearTimeout(scrollTimer);
+      if (scrollTimer) window.clearTimeout(scrollTimer);
       window.clearTimeout(clearTimer);
     };
   }, [searchParams, vendors]);
@@ -3324,7 +3334,15 @@ export default function Vendors() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                <div
+                  id={`vendor-payment-plan-${vendor.id}`}
+                  tabIndex={-1}
+                  className={`scroll-mt-24 rounded-xl border border-border/80 bg-card/70 p-4 outline-none transition-[background-color,box-shadow] duration-300 sm:p-5 ${
+                    highlightedVendorSection === `vendor-payment-plan-${vendor.id}`
+                      ? 'bg-primary/[0.07] shadow-[0_0_0_3px_hsl(var(--primary)/0.28)]'
+                      : ''
+                  }`}
+                >
                   <p className="font-semibold text-foreground">Cost and payment plan</p>
                   <p className="mt-1 text-sm text-muted-foreground">Set the full vendor cost and any booking terms. Actual payments are recorded separately.</p>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
