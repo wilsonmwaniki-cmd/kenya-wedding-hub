@@ -39,7 +39,13 @@ function formatChangeDetails(request: PlannerChangeRequestRow) {
   return parts.filter(Boolean).join(' • ');
 }
 
-export default function PlannerChangeRequestsCard() {
+interface PlannerChangeRequestsCardProps {
+  hideWhenEmpty?: boolean;
+}
+
+export default function PlannerChangeRequestsCard({
+  hideWhenEmpty = false,
+}: PlannerChangeRequestsCardProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [requests, setRequests] = useState<PlannerChangeRequestRow[]>([]);
@@ -120,6 +126,7 @@ export default function PlannerChangeRequestsCard() {
   };
 
   if (!user) return null;
+  if (hideWhenEmpty && !loading && requests.length === 0) return null;
 
   return (
     <Card

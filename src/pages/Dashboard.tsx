@@ -288,7 +288,7 @@ export default function Dashboard() {
   const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner, plannerClientHydrating } = usePlanner();
 
   useEffect(() => {
-    if (location.hash !== '#planner-change-requests' || !linkedPlanner || isPlanner) return;
+    if (location.hash !== '#planner-change-requests' || isPlanner) return;
 
     const frame = window.requestAnimationFrame(() => {
       const reviewSection = document.getElementById('planner-change-requests');
@@ -297,7 +297,7 @@ export default function Dashboard() {
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [isPlanner, linkedPlanner, location.hash]);
+  }, [isPlanner, location.hash]);
   const navigate = useNavigate();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
@@ -993,6 +993,8 @@ export default function Dashboard() {
             compact
           />
         </div>
+
+        {!isPlanner && <PlannerChangeRequestsCard hideWhenEmpty />}
 
         {supportingActions.length > 0 ? (
           <section aria-labelledby="coming-up-title">
