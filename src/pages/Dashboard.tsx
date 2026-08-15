@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight, MapPin, Receipt, BriefcaseBusiness, AlertTriangle, ShieldCheck, EyeOff, HandCoins } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useNavigate, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
 import AttentionInbox from '@/components/AttentionInbox';
 import RecentWorkspaceChangesCard from '@/components/RecentWorkspaceChangesCard';
@@ -283,8 +283,21 @@ function getDashboardAssistantFeature(role?: string | null, plannerType?: string
 }
 
 export default function Dashboard() {
+  const location = useLocation();
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner, plannerClientHydrating } = usePlanner();
+
+  useEffect(() => {
+    if (location.hash !== '#planner-change-requests' || !linkedPlanner || isPlanner) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const reviewSection = document.getElementById('planner-change-requests');
+      reviewSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      reviewSection?.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isPlanner, linkedPlanner, location.hash]);
   const navigate = useNavigate();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();

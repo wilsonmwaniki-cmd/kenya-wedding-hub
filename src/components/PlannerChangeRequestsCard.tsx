@@ -122,7 +122,11 @@ export default function PlannerChangeRequestsCard() {
   if (!user) return null;
 
   return (
-    <Card className="semantic-surface-info shadow-card">
+    <Card
+      id="planner-change-requests"
+      tabIndex={-1}
+      className="semantic-surface-info scroll-mt-24 shadow-card outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
