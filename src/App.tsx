@@ -12,7 +12,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import type { AppRole } from "@/lib/roles";
 import LaunchFeature from "@/components/LaunchFeature";
 import ProfessionalFeatureGate from "@/components/ProfessionalFeatureGate";
-import { isPlanningExperimentEnabled } from "@/lib/featureFlags";
+import { isLeadMarketplaceEnabled, isPlanningExperimentEnabled } from "@/lib/featureFlags";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -57,6 +57,7 @@ const LabsIndex = lazy(() => import("./pages/LabsIndex"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const ProfessionalNetwork = lazy(() => import("./pages/ProfessionalNetwork"));
+const LeadConversation = lazy(() => import("./pages/LeadConversation"));
 const AppAnalytics = lazy(() => import("@/components/AppAnalytics"));
 const AppLayout = lazy(() => import("@/components/AppLayout"));
 const WorkspaceProviders = lazy(() => import("@/components/WorkspaceProviders"));
@@ -177,6 +178,12 @@ const App = () => (
               <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
               <Route path="/space-plan" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/space-plan"><SpaceTablePlan /></LaunchFeature></ProtectedPage>} />
               <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
+              <Route
+                path="/matches/:matchId"
+                element={isLeadMarketplaceEnabled()
+                  ? <ProtectedPage allowedRoles={['couple', 'vendor', 'planner']}><LeadConversation /></ProtectedPage>
+                  : <Navigate to="/dashboard" replace />}
+              />
               <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><ProfessionalFeatureGate audience="vendor" feature="invoicing"><VendorDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
               <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><ProfessionalFeatureGate audience="vendor" feature="invoicing"><VendorDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
               <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><ProfessionalFeatureGate audience="planner" feature="invoicing"><PlannerDocuments /></ProfessionalFeatureGate></ProtectedPage>} />

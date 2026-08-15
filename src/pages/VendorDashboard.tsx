@@ -36,6 +36,7 @@ import {
 import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 import AttentionInbox from '@/components/AttentionInbox';
 import RecentWorkspaceChangesCard from '@/components/RecentWorkspaceChangesCard';
+import ProfessionalLeadInbox from '@/components/leads/ProfessionalLeadInbox';
 
 interface Booking {
   id: string;
@@ -1170,6 +1171,8 @@ export default function VendorDashboard() {
           context={`This vendor has ${bookedCount} confirmed bookings, ${contactedCount} inquiries, ${workspaceInvites.length} workspace invites, and KES ${totalRevenue.toLocaleString()} in quoted revenue.`}
         />
       </div>
+
+      <ProfessionalLeadInbox />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <AttentionInbox

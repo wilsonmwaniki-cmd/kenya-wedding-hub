@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_ALLOW_ALL_FEATURES?: string;
   readonly VITE_ENABLE_APPLE_AUTH?: string;
+  readonly VITE_ENABLE_LEAD_MARKETPLACE?: string;
+  readonly VITE_ENABLE_PLANNING_EXPERIMENT?: string;
   readonly VITE_ENABLE_PROFESSIONAL_NETWORK?: string;
   readonly VITE_ENABLE_SPACE_TABLE_PLAN?: string;
   readonly VITE_POSTHOG_HOST?: string;

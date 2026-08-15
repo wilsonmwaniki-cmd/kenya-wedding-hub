@@ -41,6 +41,7 @@ import {
   TonalCardHeader,
   TonalCardTitle,
 } from '@/components/ui/tonal-card';
+import ProfessionalLeadInbox from '@/components/leads/ProfessionalLeadInbox';
 
 interface PlannerTaskPulse {
   id: string;
@@ -428,6 +429,8 @@ export default function PlannerDashboard() {
           </CardContent>
         </Card>
       )}
+
+      <ProfessionalLeadInbox />
 
       {/* Pending Link Requests */}
       {(plannerPreviewMode || plannerCanCollaborate(profile)) && incomingLinkRequests.length > 0 && (

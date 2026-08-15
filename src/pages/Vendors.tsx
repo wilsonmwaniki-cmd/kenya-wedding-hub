@@ -101,6 +101,7 @@ import {
 } from '@/lib/coupleVendorContracts';
 import { requestVendorQuote } from '@/lib/documentRequests';
 import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
+import CoupleLeadMarketplace from '@/components/leads/CoupleLeadMarketplace';
 
 interface Vendor {
   amount_paid: number;
@@ -4859,6 +4860,8 @@ export default function Vendors() {
           {addVendorDialog}
         </div>
       </div>
+
+      {!isPlanner && <CoupleLeadMarketplace weddingId={activeWeddingId} />}
 
       <Card className="shadow-card">
         <CardContent className="py-5">

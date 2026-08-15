@@ -18,6 +18,14 @@ export function isPlanningExperimentEnabled() {
   return resolvePlanningExperimentEnabled(import.meta.env.VITE_ENABLE_PLANNING_EXPERIMENT);
 }
 
+export function resolveLeadMarketplaceEnabled(configured?: string) {
+  return configured === 'true';
+}
+
+export function isLeadMarketplaceEnabled() {
+  return resolveLeadMarketplaceEnabled(import.meta.env.VITE_ENABLE_LEAD_MARKETPLACE);
+}
+
 export type ReleaseChannel = 'production' | 'staging';
 
 const productionLaunchPaths = new Set([
