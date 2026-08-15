@@ -29,6 +29,10 @@ export function resolveRecentWorkspaceChangeActionPath(
       : '/dashboard#planner-change-requests';
   }
 
+  if (eventType === 'vendor.payment_due_scheduled' && subjectId) {
+    return `/vendors?vendor=${subjectId}&tab=payments&focus=payment-plan#vendor-payment-plan-${subjectId}`;
+  }
+
   return actionPath;
 }
 

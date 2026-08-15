@@ -17,10 +17,19 @@ describe('recent workspace change destinations', () => {
     )).toBe('/dashboard#planner-change-requests');
   });
 
-  it('preserves destinations for other workspace activity', () => {
+  it('preserves an exact returned-document destination', () => {
     expect(resolveRecentWorkspaceChangeActionPath(
-      'commercial_document.responded',
-      '/documents',
-    )).toBe('/documents');
+      'document_request.responded',
+      '/documents/share/returned-quote-token',
+      'request-id',
+    )).toBe('/documents/share/returned-quote-token');
+  });
+
+  it('opens the exact vendor payment plan', () => {
+    expect(resolveRecentWorkspaceChangeActionPath(
+      'vendor.payment_due_scheduled',
+      '/vendors',
+      'vendor-id',
+    )).toBe('/vendors?vendor=vendor-id&tab=payments&focus=payment-plan#vendor-payment-plan-vendor-id');
   });
 });

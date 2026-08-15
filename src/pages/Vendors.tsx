@@ -499,6 +499,7 @@ export default function Vendors() {
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [selectedVendorTab, setSelectedVendorTab] = useState<'details' | 'tasks' | 'payments'>('details');
+  const [highlightedVendorSection, setHighlightedVendorSection] = useState<string | null>(null);
   const [recordVendorPaymentOpen, setRecordVendorPaymentOpen] = useState(false);
   const [recordingVendorPayment, setRecordingVendorPayment] = useState(false);
   const [vendorPaymentFormErrors, setVendorPaymentFormErrors] = useState<{ payeeName?: string; amount?: string }>({});
@@ -2455,10 +2456,29 @@ export default function Vendors() {
   useEffect(() => {
     const requestedVendorId = searchParams.get('vendor');
     if (!requestedVendorId || !vendors.some((vendor) => vendor.id === requestedVendorId)) return;
+    const requestedTab = searchParams.get('tab');
+    const requestedFocus = searchParams.get('focus');
+    const focusedSectionId = requestedFocus === 'payment-plan'
+      ? `vendor-payment-plan-${requestedVendorId}`
+      : `vendor-${requestedVendorId}`;
+
     setSelectedVendorId(requestedVendorId);
-    window.requestAnimationFrame(() => {
-      document.getElementById(`vendor-${requestedVendorId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
+    if (requestedTab === 'payments') setSelectedVendorTab('payments');
+
+    const scrollTimer = window.setTimeout(() => {
+      const target = document.getElementById(focusedSectionId);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target?.focus({ preventScroll: true });
+      setHighlightedVendorSection(focusedSectionId);
+    }, 180);
+    const clearTimer = window.setTimeout(() => {
+      setHighlightedVendorSection((current) => current === focusedSectionId ? null : current);
+    }, 2_800);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
   }, [searchParams, vendors]);
 
   useEffect(() => {
@@ -4627,7 +4647,15 @@ export default function Vendors() {
                   </Card>
                 </section>
 
-                <section className="space-y-4">
+                <section
+                  id={`vendor-payment-plan-${selectedVendor.id}`}
+                  tabIndex={-1}
+                  className={`space-y-4 rounded-xl transition-[background-color,box-shadow] duration-300 outline-none ${
+                    highlightedVendorSection === `vendor-payment-plan-${selectedVendor.id}`
+                      ? 'bg-primary/[0.07] shadow-[0_0_0_3px_hsl(var(--primary)/0.28)]'
+                      : ''
+                  }`}
+                >
                   <h2 className="text-2xl font-medium text-foreground">Payment Status</h2>
                   <Card className="shadow-card">
                     <CardContent className="flex flex-col gap-4 py-6 lg:flex-row lg:items-center lg:justify-between">
