@@ -15,7 +15,6 @@ import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, 
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel } from '@/lib/committeeRoles';
-import { getMyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
 import {
   createWorkspaceVendorInviteDraft,
   listWorkspaceVendorInvitesForVendor,
@@ -442,7 +441,11 @@ async function loadVendorsWorkspace(dataOrFilter: string): Promise<VendorsWorksp
 export default function Vendors() {
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
-  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
+  const {
+    weddingId: entitlementWeddingId,
+    entitlements: weddingEntitlements,
+    couplePlanTier,
+  } = useWeddingEntitlements();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
@@ -519,7 +522,6 @@ export default function Vendors() {
     assignedTo: '',
   });
   const [vendorTaskTemplateKey, setVendorTaskTemplateKey] = useState('none');
-  const [managedWeddingId, setManagedWeddingId] = useState<string | null>(null);
   const [workspaceVendorInvites, setWorkspaceVendorInvites] = useState<Record<string, WorkspaceVendorInvite[]>>({});
   const [workspaceInviteLoadingVendorId, setWorkspaceInviteLoadingVendorId] = useState<string | null>(null);
   const [workspaceInviteSubmittingVendorId, setWorkspaceInviteSubmittingVendorId] = useState<string | null>(null);
@@ -561,29 +563,9 @@ export default function Vendors() {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
   }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
 
-  useEffect(() => {
-    if (!user || profile?.role !== 'couple') {
-      setManagedWeddingId(null);
-      return;
-    }
-
-    let active = true;
-    void getMyWeddingOwnershipSummary()
-      .then((summary) => {
-        if (!active) return;
-        setManagedWeddingId(summary?.weddingId ?? null);
-      })
-      .catch((error) => {
-        console.error('Could not load couple wedding workspace for vendors:', error);
-        if (active) setManagedWeddingId(null);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [profile?.role, user]);
-
-  const activeWeddingId = isPlanner ? selectedClient?.wedding_id ?? null : managedWeddingId;
+  const activeWeddingId = isPlanner
+    ? selectedClient?.wedding_id ?? entitlementWeddingId
+    : entitlementWeddingId;
 
   const vendorsQueryKey = ['vendors', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null] as const;
   const vendorsQuery = useQuery({
