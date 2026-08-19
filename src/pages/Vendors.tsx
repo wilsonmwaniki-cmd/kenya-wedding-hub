@@ -3656,6 +3656,8 @@ export default function Vendors() {
               {addVendorDialog}
             </header>
 
+            {!isPlanner && <CoupleLeadMarketplace weddingId={activeWeddingId} />}
+
             <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
               {vendorPrimaryAction.actionType === 'task_link' && vendorPrimaryAction.taskId ? (
                 <Link
