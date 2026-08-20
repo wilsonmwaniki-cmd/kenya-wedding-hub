@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
@@ -54,6 +54,7 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [showRequests, setShowRequests] = useState(false);
 
   const load = useCallback(async () => {
     if (!weddingId || !isLeadMarketplaceEnabled()) return;
@@ -161,16 +162,32 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
   if (loading && !requests.length) return <div className="border border-border bg-card p-5 text-sm text-muted-foreground">Loading matching help…</div>;
 
   return (
-    <section className="border border-border bg-card p-5 shadow-sm" aria-labelledby="matching-help-title">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Provider matching</p>
-      <h2 id="matching-help-title" className="mt-2 font-display text-xl font-semibold text-foreground">Find help within your budget</h2>
+    <section className="border border-border bg-card p-4 shadow-sm" aria-labelledby="matching-help-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Provider matching</p>
+          <h2 id="matching-help-title" className="mt-1 font-display text-lg font-semibold text-foreground">Find help within your budget</h2>
+        </div>
+        {activeRequests.length > 0 && (
+          <button
+            type="button"
+            className="flex min-h-10 items-center gap-1 text-sm font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            aria-expanded={showRequests}
+            aria-controls="provider-matching-searches"
+            onClick={() => setShowRequests((current) => !current)}
+          >
+            {showRequests ? 'Hide' : 'View'} {activeRequests.length} search{activeRequests.length === 1 ? '' : 'es'}
+            {showRequests ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        )}
+      </div>
 
-      {activeRequests.length > 0 && (
-        <div className="mt-4 divide-y divide-border border-y border-border">
+      {activeRequests.length > 0 && showRequests && (
+        <div id="provider-matching-searches" className="mt-3 divide-y divide-border border-y border-border">
           {activeRequests.map((request) => {
             const requestMatches = matches.filter((match) => match.lead_request_id === request.id && ['accepted', 'selected'].includes(match.status));
             return (
-              <div key={request.id} className="py-4">
+              <div key={request.id} className="py-3">
                 <p className="font-medium text-foreground">{request.category_key}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {request.status === 'no_match'
@@ -191,15 +208,17 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
       )}
 
       {suggestion && (
-        <div className="mt-4">
+        <div className="mt-3 border-t border-border pt-3 sm:flex sm:items-end sm:justify-between sm:gap-4">
+          <div>
           <p className="text-base font-medium text-foreground">{categoryQuestion(suggestion.category)}</p>
-          <p className="mt-1 text-sm text-muted-foreground">Your name and contact details stay hidden until you choose to share them.</p>
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Button onClick={requestMatches} disabled={creating}>
+            <p className="mt-1 text-sm text-muted-foreground">Your details stay private until you choose to share them.</p>
+          </div>
+          <div className="mt-3 flex shrink-0 gap-2 sm:mt-0">
+            <Button size="sm" onClick={requestMatches} disabled={creating}>
               {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Find matches
             </Button>
-            <Button variant="outline" onClick={dismissSuggestion} disabled={creating}>Not now</Button>
+            <Button size="sm" variant="outline" onClick={dismissSuggestion} disabled={creating}>Not now</Button>
           </div>
         </div>
       )}

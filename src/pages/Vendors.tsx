@@ -3656,49 +3656,40 @@ export default function Vendors() {
               {addVendorDialog}
             </header>
 
-            {!isPlanner && <CoupleLeadMarketplace weddingId={activeWeddingId} />}
+            <div className={`grid gap-3 ${!isPlanner ? 'xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)] xl:items-start' : ''}`}>
+              {!isPlanner && <CoupleLeadMarketplace weddingId={activeWeddingId} />}
 
-            <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
+              <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
               {vendorPrimaryAction.actionType === 'task_link' && vendorPrimaryAction.taskId ? (
                 <Link
                   to={`/tasks?task=${encodeURIComponent(vendorPrimaryAction.taskId)}`}
                   className="group block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                 >
-                  <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <CardContent className="flex min-h-20 items-center justify-between gap-3 p-4">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next vendor task</p>
-                      <h2 className="mt-2 text-lg font-semibold text-foreground group-hover:text-primary">{vendorPrimaryAction.title}</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">{vendorPrimaryAction.body}</p>
+                      <h2 className="mt-1 text-base font-semibold text-foreground group-hover:text-primary">{vendorPrimaryAction.title}</h2>
                     </div>
-                    <span className="shrink-0 text-sm font-semibold text-primary">Open in Tasks</span>
+                    <span className="shrink-0 text-sm font-semibold text-primary">Open task</span>
                   </CardContent>
                 </Link>
               ) : (
-                <CardContent className="p-5">
+                <CardContent className="p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next vendor action</p>
-                  <h2 className="mt-2 text-lg font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">{vendorPrimaryAction.body}</p>
+                  <h2 className="mt-1 text-base font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
                 </CardContent>
               )}
-            </Card>
-
-            <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
-              <div className="border-r border-border p-3 sm:p-4">
-                <p className="text-xs text-muted-foreground">Total vendors to confirm</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{vendorConfirmationSummary.total}</p>
-              </div>
-              <div className="border-r border-border p-3 sm:p-4">
-                <p className="text-xs text-muted-foreground">Total vendors confirmed</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{vendorConfirmationSummary.confirmed}</p>
-              </div>
-              <div className="p-3 sm:p-4">
-                <p className="text-xs text-muted-foreground">Total Pending Vendors</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{vendorConfirmationSummary.pending}</p>
-              </div>
+              </Card>
             </div>
 
             <Card className="rounded-lg border-border shadow-none">
-              <CardContent className="grid gap-2 p-2.5 sm:p-3 md:grid-cols-[minmax(16rem,1fr)_auto_auto] md:items-center">
+              <CardContent className="p-2.5 sm:p-3">
+                <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 px-1 text-xs text-muted-foreground" aria-label="Vendor progress">
+                  <span><strong className="font-semibold text-foreground">{vendorConfirmationSummary.total}</strong> categories</span>
+                  <span><strong className="font-semibold text-foreground">{vendorConfirmationSummary.confirmed}</strong> confirmed</span>
+                  <span><strong className="font-semibold text-foreground">{vendorConfirmationSummary.pending}</strong> pending</span>
+                </div>
+                <div className="grid gap-2 md:grid-cols-[minmax(16rem,1fr)_auto_auto] md:items-center">
                 <div className="min-w-0">
                   <Input
                     value={vendorWorkspaceQuery}
@@ -3736,6 +3727,7 @@ export default function Vendors() {
                 >
                   Export Vendors
                 </Button>
+                </div>
               </CardContent>
             </Card>
 
