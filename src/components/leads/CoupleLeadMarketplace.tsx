@@ -25,7 +25,7 @@ interface BudgetCandidate {
 
 interface BudgetRow { name: string; allocated: number | string | null }
 interface VendorRow { category: string; selection_status: string | null; status: string | null }
-interface PromptRow { category_key: string; state: string }
+interface PromptRow { category_key: string; state: string; next_prompt_at: string | null }
 
 // lead_prompt_states is staging-only until this experiment is approved.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,7 +63,7 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
         listWeddingLeadRequests(weddingId),
         table('budget_categories').select('name, allocated').eq('wedding_id', weddingId).eq('budget_scope', 'wedding'),
         table('vendors').select('category, selection_status, status').eq('wedding_id', weddingId),
-        table('lead_prompt_states').select('category_key, state').eq('wedding_id', weddingId),
+        table('lead_prompt_states').select('category_key, state, next_prompt_at').eq('wedding_id', weddingId),
       ]);
       const nextMatches = await listLeadMatches(nextRequests.map((request) => request.id));
       const booked = new Set(
@@ -82,7 +82,13 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
       setRequests(nextRequests);
       setMatches(nextMatches);
       setCandidates([...unique.entries()].map(([category, allocated]) => ({ category, allocated })).sort((a, b) => b.allocated - a.allocated));
-      setDismissed(((promptResult.data ?? []) as PromptRow[]).filter((row) => row.state === 'dismissed').map((row) => row.category_key));
+      const now = Date.now();
+      setDismissed(((promptResult.data ?? []) as PromptRow[])
+        .filter((row) => (
+          row.state === 'dismissed'
+          || (row.state === 'snoozed' && row.next_prompt_at != null && new Date(row.next_prompt_at).getTime() > now)
+        ))
+        .map((row) => row.category_key));
     } catch (error: unknown) {
       toast({ title: 'Could not load matching help', description: errorMessage(error), variant: 'destructive' });
     } finally {
@@ -112,13 +118,43 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
 
   const dismissSuggestion = async () => {
     if (!weddingId || !suggestion) return;
-    const { error } = await table('lead_prompt_states').upsert({
-      wedding_id: weddingId,
-      provider_type: suggestion.category === 'Wedding Planner / Planning Team' ? 'planner' : 'vendor',
-      category_key: suggestion.category,
-      state: 'dismissed',
-    });
-    if (!error) setDismissed((current) => [...current, suggestion.category]);
+    const providerType = suggestion.category === 'Wedding Planner / Planning Team' ? 'planner' : 'vendor';
+    const nextPromptAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    setCreating(true);
+    try {
+      const filters = table('lead_prompt_states')
+        .select('category_key')
+        .eq('wedding_id', weddingId)
+        .eq('provider_type', providerType)
+        .eq('category_key', suggestion.category);
+      const { data: existing, error: lookupError } = await filters.maybeSingle();
+      if (lookupError) throw lookupError;
+
+      const result = existing
+        ? await table('lead_prompt_states')
+            .update({ state: 'snoozed', next_prompt_at: nextPromptAt })
+            .eq('wedding_id', weddingId)
+            .eq('provider_type', providerType)
+            .eq('category_key', suggestion.category)
+        : await table('lead_prompt_states').insert({
+            wedding_id: weddingId,
+            provider_type: providerType,
+            category_key: suggestion.category,
+            state: 'snoozed',
+            next_prompt_at: nextPromptAt,
+          });
+      if (result.error) throw result.error;
+
+      setDismissed((current) => current.includes(suggestion.category) ? current : [...current, suggestion.category]);
+      toast({
+        title: 'Okay, not now',
+        description: `We will not ask about ${suggestion.category.toLowerCase()} again for 30 days.`,
+      });
+    } catch (error: unknown) {
+      toast({ title: 'Could not save your choice', description: errorMessage(error), variant: 'destructive' });
+    } finally {
+      setCreating(false);
+    }
   };
 
   if (!isLeadMarketplaceEnabled() || !weddingId) return null;
@@ -163,7 +199,7 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
               {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Find matches
             </Button>
-            <Button variant="outline" onClick={dismissSuggestion}>Not now</Button>
+            <Button variant="outline" onClick={dismissSuggestion} disabled={creating}>Not now</Button>
           </div>
         </div>
       )}
