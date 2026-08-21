@@ -48,13 +48,14 @@ function categoryQuestion(category: string) {
 
 export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketplaceProps) {
   const { toast } = useToast();
+  const focusedRequestId = new URLSearchParams(window.location.search).get('leadRequest');
   const [requests, setRequests] = useState<LeadRequest[]>([]);
   const [matches, setMatches] = useState<LeadMatch[]>([]);
   const [candidates, setCandidates] = useState<BudgetCandidate[]>([]);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [showRequests, setShowRequests] = useState(false);
+  const [showRequests, setShowRequests] = useState(Boolean(focusedRequestId));
 
   const load = useCallback(async () => {
     if (!weddingId || !isLeadMarketplaceEnabled()) return;
@@ -98,6 +99,12 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
   }, [toast, weddingId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!focusedRequestId || !requests.some((request) => request.id === focusedRequestId)) return;
+    const element = document.getElementById(`lead-request-${focusedRequestId}`);
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [focusedRequestId, requests]);
 
   const liveCategories = useMemo(() => new Set(requests.filter((request) => ['open', 'matched', 'no_match'].includes(request.status)).map((request) => request.category_key)), [requests]);
   const suggestion = candidates.find((candidate) => !liveCategories.has(candidate.category) && !dismissed.includes(candidate.category));
@@ -162,7 +169,7 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
   if (loading && !requests.length) return <div className="border border-border bg-card p-5 text-sm text-muted-foreground">Loading matching help…</div>;
 
   return (
-    <section className="border border-border bg-card p-4 shadow-sm" aria-labelledby="matching-help-title">
+    <section id="provider-matching" className="scroll-mt-24 border border-border bg-card p-4 shadow-sm" aria-labelledby="matching-help-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Provider matching</p>
@@ -186,15 +193,22 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
         <div id="provider-matching-searches" className="mt-3 divide-y divide-border border-y border-border">
           {activeRequests.map((request) => {
             const requestMatches = matches.filter((match) => match.lead_request_id === request.id && ['accepted', 'selected'].includes(match.status));
+            const pendingMatchCount = matches.filter((match) => match.lead_request_id === request.id && match.status === 'invited').length;
             return (
-              <div key={request.id} className="py-3">
+              <div
+                key={request.id}
+                id={`lead-request-${request.id}`}
+                className={`scroll-mt-28 py-3 ${focusedRequestId === request.id ? 'border-l-4 border-primary bg-primary/5 pl-3' : ''}`}
+              >
                 <p className="font-medium text-foreground">{request.category_key}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {request.status === 'no_match'
                     ? 'No suitable subscribed provider is available yet. We will not share your details.'
                     : requestMatches.length
                       ? `${requestMatches.length} provider${requestMatches.length === 1 ? ' is' : 's are'} ready to talk.`
-                      : 'Up to five suitable providers have been invited.'}
+                      : pendingMatchCount > 0
+                        ? `${pendingMatchCount} suitable provider${pendingMatchCount === 1 ? ' has' : 's have'} been invited to reply.`
+                        : 'Up to five suitable providers have been invited.'}
                 </p>
                 {requestMatches.map((match) => (
                   <Link key={match.id} to={`/matches/${match.id}`} className="mt-3 flex min-h-11 items-center justify-between border-t border-border pt-3 text-sm font-medium text-primary">
