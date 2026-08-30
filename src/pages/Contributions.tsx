@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -732,49 +732,32 @@ export default function Contributions() {
     <div className="space-y-6">
       <Card className="overflow-hidden border-border/70 shadow-card print:hidden">
         <CardContent className="grid gap-5 bg-[radial-gradient(circle_at_top_left,rgba(222,92,43,0.14),transparent_42%),linear-gradient(180deg,rgba(255,249,246,0.96),rgba(255,255,255,0.98))] p-6 lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="space-y-5">
+          <div className="space-y-6">
             <div>
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-info">Committee Contributions</p>
-            <h1 className="workspace-h1 mt-2">See what support still needs follow-up</h1>
-            <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
-              Track pledges, paid support, in-kind help, and the remaining funding gap without turning the page into a committee spreadsheet.
-            </p>
+              <h1 className="workspace-h1">Contributions</h1>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
+                Track pledges, payments and other support.
+              </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Track promises</p>
-                <p className="mt-2 text-sm text-foreground">Log who pledged, how much, and which round or meeting it came from.</p>
-              </div>
-              <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Record support</p>
-                <p className="mt-2 text-sm text-foreground">Capture paid cash and in-kind help like chairs, food, transport, or cake support.</p>
-              </div>
-              <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">See the gap</p>
-                <p className="mt-2 text-sm text-foreground">Compare real support against the wedding budget so the committee knows what is still uncovered.</p>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-3">
               <Button onClick={openCreateContribution} className="gap-2">
                 <Plus className="h-4 w-4" />
                 {plannerNeedsApproval ? 'Request contribution' : 'Add contribution'}
               </Button>
-              <Button variant="outline" onClick={() => setRoundDialogOpen(true)} className="gap-2">
+              <details className="w-full rounded-2xl border border-border/70 bg-background/70 p-3 sm:w-auto">
+                <summary className="cursor-pointer list-none text-sm font-medium text-muted-foreground">More</summary>
+                <div className="mt-3 flex min-w-52 flex-col gap-2">
+              <Button variant="outline" onClick={() => setRoundDialogOpen(true)} className="justify-start gap-2">
                 <CalendarDays className="h-4 w-4" />
                 {plannerNeedsApproval ? 'Request round' : 'Add round'}
               </Button>
-              <details className="w-full rounded-2xl border border-border/70 bg-background/70 p-3 sm:w-auto">
-                <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Export and sharing tools
-                </summary>
-                <div className="mt-3 flex flex-wrap gap-3">
               <Button variant="outline" onClick={exportContributions} disabled={filteredRows.length === 0} className="gap-2">
                 <Download className="h-4 w-4" />
-                Export summary
+                Export
               </Button>
               <Button variant="outline" onClick={printMeetingSummary} className="gap-2">
                 <Printer className="h-4 w-4" />
-                Print meeting summary
+                Print summary
               </Button>
               {!plannerNeedsApproval && (
                 <Button variant="outline" onClick={() => void copyShareSummaryLink()} disabled={creatingShareLink} className="gap-2">
@@ -787,42 +770,15 @@ export default function Contributions() {
             </div>
           </div>
           <div className="space-y-4 rounded-2xl border border-border/70 bg-background/90 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                  {selectedRoundId === 'all' ? 'Overall progress' : currentRound?.title ?? 'Selected round'}
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-foreground">{formatCurrency(summary.totalSupport)}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Raised against a target of {formatCurrency(fundingTarget)}
-                </p>
-              </div>
-              <Badge variant="outline" className="rounded-full px-3 py-1">
-                {summary.pendingCount} pledge{summary.pendingCount === 1 ? '' : 's'} pending
-              </Badge>
+            <div className="grid grid-cols-2 gap-4">
+              <div><p className="text-xs text-muted-foreground">Raised</p><p className="mt-1 text-xl font-semibold text-foreground">{formatCurrency(summary.totalSupport)}</p></div>
+              <div><p className="text-xs text-muted-foreground">Target</p><p className="mt-1 text-xl font-semibold text-foreground">{formatCurrency(fundingTarget)}</p></div>
+              <div><p className="text-xs text-muted-foreground">Remaining</p><p className="mt-1 text-lg font-semibold text-foreground">{formatCurrency(fundingGap)}</p></div>
+              <div><p className="text-xs text-muted-foreground">Pending</p><p className="mt-1 text-lg font-semibold text-foreground">{summary.pendingCount}</p></div>
             </div>
             <div className="mt-4">
               <Progress value={coveragePercentage} className="h-2" />
-              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                <span>{Math.round(coveragePercentage)}% covered</span>
-                <span>{formatCurrency(fundingGap)} gap remaining</span>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Active rounds</p>
-                <p className="mt-2 text-xl font-semibold text-foreground">{activeRounds}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {rounds.length ? `${rounds.length} total round${rounds.length === 1 ? '' : 's'} tracked` : 'No fundraising rounds yet'}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Current view</p>
-                <p className="mt-2 text-sm font-semibold text-foreground">{selectedRoundLabel}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {filteredRows.length} contribution{filteredRows.length === 1 ? '' : 's'} shown in this view
-                </p>
-              </div>
+              <p className="mt-2 text-xs text-muted-foreground">{Math.round(coveragePercentage)}% of target</p>
             </div>
           </div>
         </CardContent>
@@ -830,20 +786,13 @@ export default function Contributions() {
 
       <Card className="shadow-card print:hidden">
         <CardHeader>
-          <CardTitle className="workspace-h2">Contribution tracker</CardTitle>
-          <CardDescription>
-            Log pledges, fulfilled payments, and in-kind support so the couple and committee always know the real funding position.
-          </CardDescription>
+          <CardTitle className="workspace-h2">Contributions</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/10 p-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-sm font-semibold text-foreground">{selectedRoundLabel}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {filteredRows.length
-                  ? `Showing ${filteredRows.length} contribution record${filteredRows.length === 1 ? '' : 's'} for this view.`
-                  : 'No contribution records match this view yet.'}
-              </p>
+              {filteredRows.length ? <p className="mt-1 text-sm text-muted-foreground">{filteredRows.length} shown</p> : null}
             </div>
             <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
               <Badge variant="outline" className="rounded-full">Outstanding {formatCurrency(summary.outstandingPledges)}</Badge>
@@ -856,10 +805,8 @@ export default function Contributions() {
             </div>
           ) : filteredRows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/70 p-6">
-              <p className="text-sm font-medium text-foreground">No contributions recorded yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Start by adding a pledge, a payment already received, or in-kind support like chairs, goats, transport, or catering items.
-              </p>
+              <p className="text-sm font-medium text-foreground">No contributions yet.</p>
+              <Button size="sm" className="mt-4" onClick={openCreateContribution}>Add contribution</Button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -953,11 +900,7 @@ export default function Contributions() {
         <summary className="cursor-pointer list-none">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Rounds and campaigns</p>
-              <h3 className="workspace-h3 mt-2">Separate family meetings, committee drives, and special collections</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Open this only when you need to split the funding tracker into distinct rounds.
-              </p>
+              <h3 className="workspace-h3">Fundraising rounds</h3>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <CalendarDays className="h-4 w-4" />
@@ -1036,11 +979,7 @@ export default function Contributions() {
         <summary className="cursor-pointer list-none">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Contribution reports</p>
-              <h3 className="workspace-h3 mt-2">Meeting prep and deeper funding signals</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Open this when you need the detailed funding breakdown, pending pledge follow-up, or public summary link controls.
-              </p>
+              <h3 className="workspace-h3">Reports and sharing</h3>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Share2 className="h-4 w-4" />
@@ -1307,6 +1246,7 @@ export default function Contributions() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display">{plannerNeedsApproval ? 'Request fundraising round' : 'Add fundraising round'}</DialogTitle>
+            <DialogDescription>Group contributions from one meeting or campaign.</DialogDescription>
           </DialogHeader>
           <form onSubmit={saveRound} className="space-y-4">
             <FormSubmitError message={roundSubmitError} />
@@ -1323,17 +1263,19 @@ export default function Contributions() {
               />
               <FormFieldError message={roundFormErrors.title} />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Goal amount (KES)</Label>
-                <Input
-                  type="number"
-                  value={roundForm.goalAmount}
-                  onChange={(event) => setRoundForm((current) => ({ ...current, goalAmount: event.target.value }))}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-2">
+            <div className="space-y-2">
+              <Label>Goal amount (KES)</Label>
+              <Input
+                type="number"
+                value={roundForm.goalAmount}
+                onChange={(event) => setRoundForm((current) => ({ ...current, goalAmount: event.target.value }))}
+                placeholder="0"
+              />
+            </div>
+            <details className="rounded-2xl border border-border/70 p-4">
+              <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+              <div className="mt-4 space-y-4">
+                <div className="space-y-2">
                 <Label>Status</Label>
                 <Select
                   value={roundForm.isActive ? 'active' : 'closed'}
@@ -1347,34 +1289,35 @@ export default function Contributions() {
                     <SelectItem value="closed">Closed</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
                 <Label>Starts on</Label>
                 <Input
                   type="date"
                   value={roundForm.startsOn}
                   onChange={(event) => setRoundForm((current) => ({ ...current, startsOn: event.target.value }))}
                 />
-              </div>
-              <div className="space-y-2">
+                  </div>
+                  <div className="space-y-2">
                 <Label>Ends on</Label>
                 <Input
                   type="date"
                   value={roundForm.endsOn}
                   onChange={(event) => setRoundForm((current) => ({ ...current, endsOn: event.target.value }))}
                 />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={roundForm.notes}
+                    onChange={(event) => setRoundForm((current) => ({ ...current, notes: event.target.value }))}
+                    placeholder="Add a note"
+                  />
+                </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea
-                value={roundForm.notes}
-                onChange={(event) => setRoundForm((current) => ({ ...current, notes: event.target.value }))}
-                placeholder="Anything the committee should remember about this round."
-              />
-            </div>
+            </details>
             <Button type="submit" disabled={savingRound} className="w-full">
               {savingRound ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {plannerNeedsApproval ? 'Send round for approval' : 'Save round'}
@@ -1391,6 +1334,7 @@ export default function Contributions() {
                 ? plannerNeedsApproval ? 'Request contribution update' : 'Edit contribution'
                 : plannerNeedsApproval ? 'Request contribution' : 'Add contribution'}
             </DialogTitle>
+            <DialogDescription>Record a pledge, payment or in-kind gift.</DialogDescription>
           </DialogHeader>
           <form onSubmit={saveContribution} className="space-y-4">
             <FormSubmitError message={contributionSubmitError} />
@@ -1407,55 +1351,6 @@ export default function Contributions() {
                   placeholder="e.g. Auntie Mary"
                 />
                 <FormFieldError message={contributionFormErrors.contributorName} />
-              </div>
-              <div className="space-y-2">
-                <Label>Phone number</Label>
-                <Input
-                  value={contributionForm.contributorPhone}
-                  onChange={(event) => {
-                    setContributionForm((current) => ({ ...current, contributorPhone: event.target.value }));
-                    setContributionFormErrors((current) => ({ ...current, contributorPhone: undefined }));
-                    setContributionSubmitError(null);
-                  }}
-                  placeholder="+2547..."
-                />
-                <FormFieldError message={contributionFormErrors.contributorPhone} />
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2">
-                <Label>Group</Label>
-                <Select
-                  value={contributionForm.contributorGroup || 'none'}
-                  onValueChange={(value) => setContributionForm((current) => ({ ...current, contributorGroup: value === 'none' ? '' : value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No group</SelectItem>
-                    {CONTRIBUTOR_GROUP_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>{option}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Round</Label>
-                <Select
-                  value={contributionForm.roundId}
-                  onValueChange={(value) => setContributionForm((current) => ({ ...current, roundId: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Assign round" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No round</SelectItem>
-                    {rounds.map((round) => (
-                      <SelectItem key={round.id} value={round.id}>{round.title}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
               <div className="space-y-2">
                 <Label>Type</Label>
@@ -1503,36 +1398,43 @@ export default function Contributions() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Payment method</Label>
-                <Select
-                  value={contributionForm.paymentMethod}
-                  onValueChange={(value) => setContributionForm((current) => ({ ...current, paymentMethod: value as ContributionFormState['paymentMethod'] }))}
-                  disabled={contributionForm.contributionType === 'in_kind'}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {contributionPaymentMethodOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {contributionPaymentMethodLabel(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {contributionForm.contributionType === 'in_kind' ? (
+                <div className="space-y-2">
+                  <Label>Value (KES)</Label>
+                  <Input
+                    type="number"
+                    value={contributionForm.inKindValue}
+                    onChange={(event) => setContributionForm((current) => ({ ...current, inKindValue: event.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Pledged amount (KES)</Label>
+                  <Input
+                    type="number"
+                    value={contributionForm.pledgedAmount}
+                    onChange={(event) => setContributionForm((current) => ({ ...current, pledgedAmount: event.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+              )}
             </div>
-            <div className="grid gap-4 sm:grid-cols-3">
+            {contributionForm.contributionType === 'in_kind' ? (
               <div className="space-y-2">
-                <Label>Pledged amount (KES)</Label>
+                <Label>Item or service</Label>
                 <Input
-                  type="number"
-                  value={contributionForm.pledgedAmount}
-                  onChange={(event) => setContributionForm((current) => ({ ...current, pledgedAmount: event.target.value }))}
-                  placeholder="0"
+                  value={contributionForm.inKindItem}
+                  onChange={(event) => {
+                    setContributionForm((current) => ({ ...current, inKindItem: event.target.value }));
+                    setContributionFormErrors((current) => ({ ...current, inKindItem: undefined }));
+                    setContributionSubmitError(null);
+                  }}
+                  placeholder="e.g. Chairs or transport"
                 />
+                <FormFieldError message={contributionFormErrors.inKindItem} />
               </div>
+            ) : (
               <div className="space-y-2">
                 <Label>Paid amount (KES)</Label>
                 <Input
@@ -1542,55 +1444,72 @@ export default function Contributions() {
                   placeholder="0"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>In-kind value (KES)</Label>
-                <Input
-                  type="number"
-                  value={contributionForm.inKindValue}
-                  onChange={(event) => setContributionForm((current) => ({ ...current, inKindValue: event.target.value }))}
-                  placeholder="0"
-                />
+            )}
+            <details className="rounded-2xl border border-border/70 p-4">
+              <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Phone number</Label>
+                    <Input
+                      value={contributionForm.contributorPhone}
+                      onChange={(event) => {
+                        setContributionForm((current) => ({ ...current, contributorPhone: event.target.value }));
+                        setContributionFormErrors((current) => ({ ...current, contributorPhone: undefined }));
+                        setContributionSubmitError(null);
+                      }}
+                      placeholder="+2547..."
+                    />
+                    <FormFieldError message={contributionFormErrors.contributorPhone} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Group</Label>
+                    <Select value={contributionForm.contributorGroup || 'none'} onValueChange={(value) => setContributionForm((current) => ({ ...current, contributorGroup: value === 'none' ? '' : value }))}>
+                      <SelectTrigger><SelectValue placeholder="Choose group" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No group</SelectItem>
+                        {CONTRIBUTOR_GROUP_OPTIONS.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Round</Label>
+                    <Select value={contributionForm.roundId} onValueChange={(value) => setContributionForm((current) => ({ ...current, roundId: value }))}>
+                      <SelectTrigger><SelectValue placeholder="Assign round" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No round</SelectItem>
+                        {rounds.map((round) => <SelectItem key={round.id} value={round.id}>{round.title}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {contributionForm.contributionType === 'cash' ? (
+                    <div className="space-y-2">
+                      <Label>Payment method</Label>
+                      <Select value={contributionForm.paymentMethod} onValueChange={(value) => setContributionForm((current) => ({ ...current, paymentMethod: value as ContributionFormState['paymentMethod'] }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {contributionPaymentMethodOptions.filter((option) => option !== 'in_kind').map((option) => <SelectItem key={option} value={option}>{contributionPaymentMethodLabel(option)}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  <Label>Purpose</Label>
+                  <Input value={contributionForm.purpose} onChange={(event) => setContributionForm((current) => ({ ...current, purpose: event.target.value }))} placeholder="e.g. Catering" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Date received</Label>
+                  <Input type="date" value={contributionForm.paidOn} onChange={(event) => setContributionForm((current) => ({ ...current, paidOn: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea value={contributionForm.notes} onChange={(event) => setContributionForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Add a note" />
+                </div>
               </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>In-kind item</Label>
-                <Input
-                  value={contributionForm.inKindItem}
-                  onChange={(event) => {
-                    setContributionForm((current) => ({ ...current, inKindItem: event.target.value }));
-                    setContributionFormErrors((current) => ({ ...current, inKindItem: undefined }));
-                    setContributionSubmitError(null);
-                  }}
-                  placeholder="e.g. Goat, chairs, cake sponsorship"
-                />
-                <FormFieldError message={contributionFormErrors.inKindItem} />
-              </div>
-              <div className="space-y-2">
-                <Label>Purpose</Label>
-                <Input
-                  value={contributionForm.purpose}
-                  onChange={(event) => setContributionForm((current) => ({ ...current, purpose: event.target.value }))}
-                  placeholder="e.g. Catering, transport, general fund"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Date received</Label>
-              <Input
-                type="date"
-                value={contributionForm.paidOn}
-                onChange={(event) => setContributionForm((current) => ({ ...current, paidOn: event.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea
-                value={contributionForm.notes}
-                onChange={(event) => setContributionForm((current) => ({ ...current, notes: event.target.value }))}
-                placeholder="Add context from the committee meeting or contributor promise."
-              />
-            </div>
+            </details>
             <Button type="submit" disabled={savingContribution} className="w-full">
               {savingContribution ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {editingContributionId

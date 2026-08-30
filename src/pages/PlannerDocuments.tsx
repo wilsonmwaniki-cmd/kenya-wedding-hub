@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   BadgeCheck,
@@ -32,8 +32,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
+import { useAuth } from '@/contexts/AuthContext';
 import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
 import DocumentActionOverview from '@/components/documents/DocumentActionOverview';
+import DocumentCollaborationUpgrade from '@/components/documents/DocumentCollaborationUpgrade';
 import DocumentWorkspaceHeader from '@/components/documents/DocumentWorkspaceHeader';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
 import CommercialDocumentEditor, {
@@ -79,6 +82,7 @@ import {
   respondToDocumentRequest,
   type DocumentRequestRecord,
 } from '@/lib/documentRequests';
+import { buildPricingHref } from '@/lib/pricingPlans';
 
 type CreateDocumentDraft = {
   documentType: CommercialDocumentType;
@@ -136,6 +140,10 @@ function isTokenActive(expiresAt?: string | null, revokedAt?: string | null) {
 export default function PlannerDocuments() {
   const { toast } = useToast();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { isSuperAdmin, rolePreview } = useAuth();
+  const { entitlements, loading: entitlementsLoading } = useProfessionalEntitlements('planner');
+  const canConnectDocuments = Boolean(entitlements.document_collaboration || entitlements.invoicing) || (isSuperAdmin && rolePreview === 'planner');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [documents, setDocuments] = useState<CommercialDocumentRecord[]>([]);
@@ -211,12 +219,13 @@ export default function PlannerDocuments() {
   };
 
   useEffect(() => {
+    if (entitlementsLoading) return;
     let cancelled = false;
 
     const load = async () => {
       try {
         const [clients, templates, requests] = await Promise.all([
-          listPlannerClientOptions(),
+          canConnectDocuments ? listPlannerClientOptions() : Promise.resolve([]),
           listDocumentTemplates({ role: 'planner' }),
           listIncomingDocumentRequests('planner'),
         ]);
@@ -249,7 +258,7 @@ export default function PlannerDocuments() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canConnectDocuments, entitlementsLoading]);
 
   useEffect(() => {
     if (loading) return;
@@ -416,7 +425,7 @@ export default function PlannerDocuments() {
         recipientEmail: createDraft.recipientEmail.trim() || null,
         recipientPhone: createDraft.recipientPhone.trim() || null,
         weddingName: createDraft.weddingName.trim() || null,
-        clientId: createDraft.clientId || null,
+        clientId: canConnectDocuments ? createDraft.clientId || null : null,
         issueDate: createDraft.issueDate || null,
         dueDate: createDraft.documentType === 'receipt' ? null : createDraft.dueDate || null,
         notes: createDraft.notes.trim() || null,
@@ -429,7 +438,7 @@ export default function PlannerDocuments() {
               sourceTemplateName: selectedTemplate.name,
             }
             : {}),
-          ...(activeRequestId ? { documentRequestId: activeRequestId } : {}),
+          ...(canConnectDocuments && activeRequestId ? { documentRequestId: activeRequestId } : {}),
         },
       });
 
@@ -455,7 +464,7 @@ export default function PlannerDocuments() {
         });
       }
 
-      if (activeRequestId) {
+      if (canConnectDocuments && activeRequestId) {
         const answeredRequest = await respondToDocumentRequest(activeRequestId, { documentId: created.id });
         setDocumentRequests((current) =>
           current.map((request) => (request.id === answeredRequest.id ? answeredRequest : request)),
@@ -498,6 +507,15 @@ export default function PlannerDocuments() {
   };
 
   const handleOpenDocumentRequest = async (request: DocumentRequestRecord) => {
+    if (!canConnectDocuments) {
+      toast({
+        title: 'Professional connects documents to clients',
+        description: 'Your standalone document manager is free. Upgrade to answer this request inside the couple’s Zania workspace.',
+      });
+      navigate(buildPricingHref('planner', 'planner.connected_documents'));
+      return;
+    }
+
     if (request.responseDocumentId) {
       setSelectedDocumentId(request.responseDocumentId);
       return;
@@ -883,16 +901,16 @@ export default function PlannerDocuments() {
 
   const pageDescription =
     activeSection === 'quotes'
-      ? 'Draft proposals for couples without the rest of the billing workflow crowding the page.'
+      ? 'Create and send quotes.'
       : activeSection === 'invoices'
-        ? 'Stay focused on what is due, what is paid, and what still needs follow-up.'
-        : activeSection === 'receipts'
-          ? 'Keep issued receipts in one clean trail for every real payment you record.'
+        ? 'Track what is due and paid.'
+      : activeSection === 'receipts'
+          ? 'Keep proof of every payment.'
           : activeSection === 'contracts'
-            ? 'Keep agreements separate from billing so service terms live in their own calmer workspace.'
+            ? 'Create and send agreements.'
             : activeSection === 'templates'
-              ? 'Keep reusable document starting points in one place so new paperwork is faster to create.'
-              : 'Use the left menu to move between your overview, quotes, invoices, receipts, contracts, and templates.';
+              ? 'Reuse your standard documents.'
+              : '';
 
   const showDocumentWorkspace =
     activeSection === 'overview' ||
@@ -902,12 +920,18 @@ export default function PlannerDocuments() {
 
   const emptyStateCopy =
     activeSection === 'quotes'
-      ? 'Create your first quote for a couple, then turn it into an invoice once the work is confirmed.'
+      ? 'Create a quote when a couple asks for pricing.'
       : activeSection === 'invoices'
-        ? 'Once a quote is approved, your invoices will gather here for due-date and payment follow-up.'
+        ? 'Approved quotes can become invoices.'
         : activeSection === 'receipts'
-          ? 'Receipts appear after you record real payments against invoices.'
-          : 'Start with a quote for a couple, then turn it into an invoice once the work is confirmed.';
+          ? 'Receipts appear after you record a payment.'
+          : 'Create a quote to begin.';
+
+  const createActionLabel = activeSection === 'invoices'
+    ? 'New invoice'
+    : activeSection === 'receipts'
+      ? 'New receipt'
+      : 'New quote';
 
   const handleOpenCreateDocument = () => {
     const documentType: CommercialDocumentType = activeType === 'all' ? 'quote' : activeType;
@@ -931,7 +955,7 @@ export default function PlannerDocuments() {
     ? buildCommercialDocumentShareUrl(shareState.shareToken, window.location.origin)
     : '';
   if (activeSection === 'contracts') {
-    return <ContractsWorkspace role="planner" plannerClients={plannerClients} />;
+    return <ContractsWorkspace role="planner" plannerClients={plannerClients} canConnectDocuments={canConnectDocuments} />;
   }
 
   if (activeSection === 'templates') {
@@ -943,7 +967,7 @@ export default function PlannerDocuments() {
       <DocumentWorkspaceHeader
         title={pageTitle}
         description={pageDescription}
-        actionLabel="New document"
+        actionLabel={createActionLabel}
         onAction={handleOpenCreateDocument}
         summaryItems={[
           { label: 'All documents', value: stats.total },
@@ -952,6 +976,8 @@ export default function PlannerDocuments() {
           { label: 'Money still due', value: formatCurrency(stats.outstanding), tone: 'warning' },
         ]}
       />
+
+      {!canConnectDocuments && <DocumentCollaborationUpgrade audience="planner" />}
 
       {activeSection === 'overview' && (
         <DocumentActionOverview
@@ -963,13 +989,12 @@ export default function PlannerDocuments() {
         />
       )}
 
-      <section className="grid items-start gap-5 xl:grid-cols-[minmax(260px,0.34fr)_minmax(0,1.66fr)]">
+      <section className={documents.length === 0 ? 'block' : 'grid items-start gap-5 xl:grid-cols-[minmax(260px,0.34fr)_minmax(0,1.66fr)]'}>
         <Card className="border-border/70 shadow-card xl:sticky xl:top-5">
           <CardHeader className="space-y-3 pb-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle className="font-display text-lg">Document library</CardTitle>
-                <CardDescription>Choose a document to open.</CardDescription>
+                <CardTitle className="font-display text-lg">{pageTitle}</CardTitle>
               </div>
               {refreshing && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -996,7 +1021,7 @@ export default function PlannerDocuments() {
             {documents.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-8 text-center">
                 <FileSpreadsheet className="mx-auto mb-3 h-5 w-5 text-primary" />
-                <p className="font-medium text-foreground">No documents yet</p>
+                <p className="font-medium text-foreground">No {pageTitle.toLocaleLowerCase()} yet.</p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{emptyStateCopy}</p>
               </div>
             ) : (
@@ -1043,7 +1068,7 @@ export default function PlannerDocuments() {
           </CardContent>
         </Card>
 
-        <Card className="min-w-0 border-border/70 shadow-card">
+        <Card className={documents.length === 0 ? 'hidden' : 'min-w-0 border-border/70 shadow-card'}>
           <CardHeader className="space-y-3 pb-3">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0">
@@ -1076,26 +1101,22 @@ export default function PlannerDocuments() {
                       Record payment
                     </Button>
                   )}
-                  <Button asChild size="sm" variant="outline" className="gap-2">
-                    <Link to={`/documents/${selectedDetail.id}/print`} target="_blank" rel="noreferrer">
-                      <Eye className="h-4 w-4" />
-                      Preview document
-                    </Link>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={handleCopyShareLink}
-                    disabled={sharingDocumentId === selectedDetail.id || (!!shareState && !selectedShareActive)}
-                  >
-                    {sharingDocumentId === selectedDetail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-                    Share
-                  </Button>
-                  <Button size="sm" variant="ghost" className="gap-2 text-destructive hover:text-destructive" onClick={handleDeleteSelected}>
-                    <Trash2 className="h-4 w-4" />
-                    Delete
-                  </Button>
+                  <details className="group relative">
+                    <summary className="flex h-9 cursor-pointer list-none items-center rounded-md border border-input bg-background px-3 text-sm font-medium marker:content-none">More</summary>
+                    <div className="absolute right-0 z-40 mt-2 grid min-w-52 gap-1 rounded-2xl border border-border bg-background p-2 shadow-lg">
+                      <Button asChild size="sm" variant="ghost" className="justify-start gap-2">
+                        <Link to={`/documents/${selectedDetail.id}/print`} target="_blank" rel="noreferrer">
+                          <Eye className="h-4 w-4" />Preview
+                        </Link>
+                      </Button>
+                      <Button size="sm" variant="ghost" className="justify-start gap-2" onClick={handleCopyShareLink} disabled={sharingDocumentId === selectedDetail.id || (!!shareState && !selectedShareActive)}>
+                        {sharingDocumentId === selectedDetail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}Share
+                      </Button>
+                      <Button size="sm" variant="ghost" className="justify-start gap-2 text-destructive hover:text-destructive" onClick={handleDeleteSelected}>
+                        <Trash2 className="h-4 w-4" />Delete
+                      </Button>
+                    </div>
+                  </details>
                 </div>
               )}
             </div>
@@ -1422,7 +1443,6 @@ export default function PlannerDocuments() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h3 className="font-display text-lg text-foreground">Payments and receipts</h3>
-                      <p className="text-sm text-muted-foreground">Use this trail to keep deposits, balances, and acknowledgements clean.</p>
                     </div>
                     {selectedDetail.documentType === 'invoice' && (
                       <Button onClick={() => setPaymentOpen(true)} className="gap-2">
@@ -1488,7 +1508,7 @@ export default function PlannerDocuments() {
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{activeRequestId ? 'Review quote request' : 'Create a commercial document'}</DialogTitle>
+            <DialogTitle>{activeRequestId ? 'Review quote request' : `New ${commercialDocumentTypeLabel(createDraft.documentType).toLocaleLowerCase()}`}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2 md:grid-cols-2">
             <div className="space-y-2">
@@ -1516,74 +1536,52 @@ export default function PlannerDocuments() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Document type</Label>
-              <Select
-                value={createDraft.documentType}
-                onValueChange={(value) =>
-                  setCreateDraft((current) => ({
-                    ...current,
-                    documentType: value as CommercialDocumentType,
-                    templateId:
-                      current.templateId &&
-                      documentTemplates.find((template) => template.id === current.templateId)?.templateType === value
-                        ? current.templateId
-                        : '',
-                    dueDate: nextDueDateValue(value as CommercialDocumentType),
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="quote">Quote</SelectItem>
-                  <SelectItem value="invoice">Invoice</SelectItem>
-                  <SelectItem value="receipt">Receipt</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Linked client</Label>
-              <Select
-                value={createDraft.clientId || 'none'}
-                onValueChange={(value) =>
-                  setCreateDraft((current) => ({
-                    ...current,
-                    clientId: value === 'none' ? '' : value,
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No client link</SelectItem>
-                  {plannerClients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Connect to a Zania client</Label>
+              {canConnectDocuments ? (
+                <Select
+                  value={createDraft.clientId || 'none'}
+                  onValueChange={(value) =>
+                    setCreateDraft((current) => ({
+                      ...current,
+                      clientId: value === 'none' ? '' : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Keep standalone</SelectItem>
+                    {plannerClients.map((client) => (
+                      <SelectItem key={client.id} value={client.id}>
+                        {client.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <DocumentCollaborationUpgrade audience="planner" compact />
+              )}
             </div>
             <div className="space-y-2 md:col-span-2">
-              <Label>Title</Label>
+              <Label>Title *</Label>
               <Input
                 value={createDraft.title}
                 onChange={(event) => setCreateDraft((current) => ({ ...current, title: event.target.value }))}
                 placeholder="e.g. Planning proposal for Mary & James"
               />
-              {!createDraft.title.trim() && <p className="text-xs text-destructive">Add a clear document title.</p>}
             </div>
             <div className="space-y-2">
-              <Label>Recipient name</Label>
+              <Label>Recipient name *</Label>
               <Input
                 value={createDraft.recipientName}
                 onChange={(event) => setCreateDraft((current) => ({ ...current, recipientName: event.target.value }))}
                 placeholder="Couple or main contact name"
               />
-              {!createDraft.recipientName.trim() && <p className="text-xs text-destructive">Add the person receiving this document.</p>}
             </div>
+            <details className="rounded-2xl border border-border/70 md:col-span-2">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">More details</summary>
+              <div className="grid gap-4 border-t border-border/70 p-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Wedding / project name</Label>
               <Input
@@ -1608,9 +1606,6 @@ export default function PlannerDocuments() {
                 onChange={(event) => setCreateDraft((current) => ({ ...current, recipientPhone: event.target.value }))}
                 placeholder="+254..."
               />
-            </div>
-            <div className="rounded-2xl border border-border bg-muted/10 p-4 text-sm text-muted-foreground">
-              Link documents to a planner client so your proposals, invoices, and receipts stay attached to the right wedding workspace.
             </div>
             <div className="space-y-2">
               <Label>Issue date</Label>
@@ -1645,6 +1640,8 @@ export default function PlannerDocuments() {
                 onChange={(event) => setCreateDraft((current) => ({ ...current, terms: event.target.value }))}
               />
             </div>
+              </div>
+            </details>
           </div>
           <div className="flex justify-end gap-3">
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>
@@ -1652,7 +1649,7 @@ export default function PlannerDocuments() {
             </Button>
             <Button className="gap-2" onClick={handleCreate} disabled={savingHeader || !createDraft.title.trim() || !createDraft.recipientName.trim()}>
               {savingHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Create document
+              Create {commercialDocumentTypeLabel(createDraft.documentType).toLocaleLowerCase()}
             </Button>
           </div>
         </DialogContent>

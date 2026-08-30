@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, ArrowRight, UserCircle, ArrowLeft, MapPin } from 'lucide-react';
+import { Search, ArrowRight, UserCircle, ArrowLeft, MapPin, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatBudgetBand, getBudgetFit, getLocationMatch, getTownsForCounty, kenyaCounties } from '@/lib/kenyaLocations';
 import BrandWordmark from '@/components/BrandWordmark';
@@ -51,14 +51,35 @@ export default function PlannerDirectory() {
   const [locationTown, setLocationTown] = useState('all');
   const [weddingBudgetTotal, setWeddingBudgetTotal] = useState<number | null>(null);
   const [networkSignalsByPlannerId, setNetworkSignalsByPlannerId] = useState<Record<string, PlannerNetworkSignalSummary>>({});
+  const [plannerRatings, setPlannerRatings] = useState<Record<string, { average: number; count: number }>>({});
   const professionalNetworkEnabled = isProfessionalNetworkEnabled();
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
-        .from('public_planner_profiles')
-        .select('id, user_id, full_name, company_name, avatar_url, bio, specialties, company_email, company_phone, company_website, primary_county, primary_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes, founding_planner_contributor');
-      setPlanners((data as PlannerItem[]) || []);
+      const [profilesResult, reviewsResult] = await Promise.all([
+        supabase
+          .from('public_planner_profiles')
+          .select('id, user_id, full_name, company_name, avatar_url, bio, specialties, company_email, company_phone, company_website, primary_county, primary_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes, founding_planner_contributor'),
+        supabase
+          .from('professional_reviews')
+          .select('planner_profile_id, rating')
+          .eq('professional_type', 'planner')
+          .eq('status', 'published'),
+      ]);
+      setPlanners((profilesResult.data as PlannerItem[]) || []);
+      const grouped = ((reviewsResult.data as Array<{ planner_profile_id: string; rating: number }> | null) ?? [])
+        .reduce((summary, review) => {
+          if (!review.planner_profile_id) return summary;
+          const current = summary[review.planner_profile_id] ?? { total: 0, count: 0 };
+          current.total += review.rating;
+          current.count += 1;
+          summary[review.planner_profile_id] = current;
+          return summary;
+        }, {} as Record<string, { total: number; count: number }>);
+      setPlannerRatings(Object.fromEntries(Object.entries(grouped).map(([plannerId, value]) => [
+        plannerId,
+        { average: value.total / value.count, count: value.count },
+      ])));
       setLoading(false);
     };
     load();
@@ -299,6 +320,13 @@ export default function PlannerDirectory() {
                       {p.company_name && p.full_name && (
                         <p className="text-sm text-muted-foreground">{p.full_name}</p>
                       )}
+                      {plannerRatings[p.id] ? (
+                        <div className="mt-2 flex items-center gap-1.5" aria-label={`${plannerRatings[p.id].average.toFixed(1)} out of 5 stars from ${plannerRatings[p.id].count} reviews`}>
+                          <Star className="h-4 w-4 fill-accent text-accent" />
+                          <span className="text-sm font-semibold text-foreground">{plannerRatings[p.id].average.toFixed(1)}</span>
+                          <span className="text-xs text-muted-foreground">({plannerRatings[p.id].count})</span>
+                        </div>
+                      ) : null}
                       {p.bio && (
                         <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{p.bio}</p>
                       )}

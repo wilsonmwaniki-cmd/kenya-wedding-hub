@@ -19,6 +19,7 @@ import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl, normalizePhoneHref } from '@/lib/security';
 import { requestPlannerQuote } from '@/lib/documentRequests';
+import ProfessionalReviewsCard from '@/components/ProfessionalReviewsCard';
 
 interface PlannerData {
   id: string;
@@ -321,6 +322,8 @@ export default function PlannerProfile() {
             </CardContent>
           </Card>
         )}
+
+        <ProfessionalReviewsCard professionalType="planner" professionalId={planner.id} />
 
         {/* Contact Card */}
         {(planner.company_email || planner.company_phone || planner.company_website) && (

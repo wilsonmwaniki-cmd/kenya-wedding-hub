@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
 
 export const vendorSelectionStatuses = ['shortlisted', 'final', 'backup', 'declined'] as const;
 
@@ -71,11 +72,19 @@ export function vendorSelectionTone(status: VendorSelectionStatus | string | nul
 }
 
 export async function setVendorSelectionStatus(vendorId: string, selectionStatus: VendorSelectionStatus) {
+  const { data: vendor } = await supabase
+    .from('vendors')
+    .select('wedding_id, selection_status')
+    .eq('id', vendorId)
+    .maybeSingle();
   const { data, error } = await supabase.rpc('set_vendor_selection_status', {
     vendor_id_input: vendorId,
     selection_status_input: selectionStatus,
   });
 
   if (error) throw error;
+  if (vendor?.wedding_id && (selectionStatus === 'final' || vendor.selection_status === 'final')) {
+    await recalculatePlanningExperiment(vendor.wedding_id);
+  }
   return data as VendorSelectionStatus;
 }

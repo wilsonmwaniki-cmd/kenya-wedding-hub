@@ -8,14 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, ChevronDown, ExternalLink, FileSignature } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { committeeResponsibilityOptions, contractStatusLabel } from '@/lib/committeeRoles';
-import { getMyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
 import {
   createWorkspaceVendorInviteDraft,
   listWorkspaceVendorInvitesForVendor,
@@ -100,6 +99,8 @@ import {
   getCoupleVendorContract,
 } from '@/lib/coupleVendorContracts';
 import { requestVendorQuote } from '@/lib/documentRequests';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
+import CoupleLeadMarketplace from '@/components/leads/CoupleLeadMarketplace';
 
 interface Vendor {
   amount_paid: number;
@@ -120,6 +121,7 @@ interface Vendor {
   status: string | null;
   notes: string | null;
   vendor_listing_id: string | null;
+  wedding_id: string | null;
 }
 
 interface DirectoryVendor {
@@ -189,6 +191,8 @@ interface VendorsWorkspaceData {
   vendorTasks: VendorTaskItem[];
   vendorPayments: VendorPaymentRecord[];
 }
+
+const emptyVendors: Vendor[] = [];
 
 type VendorMilestoneStatus = 'not_started' | 'in_progress' | 'complete';
 
@@ -439,7 +443,11 @@ async function loadVendorsWorkspace(dataOrFilter: string): Promise<VendorsWorksp
 export default function Vendors() {
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
-  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
+  const {
+    weddingId: entitlementWeddingId,
+    entitlements: weddingEntitlements,
+    couplePlanTier,
+  } = useWeddingEntitlements();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
@@ -493,10 +501,12 @@ export default function Vendors() {
   const [creatingVendorTaskBundleId, setCreatingVendorTaskBundleId] = useState<string | null>(null);
   const [vendorListView, setVendorListView] = useState<'by_category' | 'by_name'>('by_category');
   const [vendorWorkspaceQuery, setVendorWorkspaceQuery] = useState('');
+  const [showEmptyVendorCategories, setShowEmptyVendorCategories] = useState(false);
   const [expandedVendorCategories, setExpandedVendorCategories] = useState<Record<string, boolean>>({});
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [selectedVendorTab, setSelectedVendorTab] = useState<'details' | 'tasks' | 'payments'>('details');
+  const [highlightedVendorSection, setHighlightedVendorSection] = useState<string | null>(null);
   const [recordVendorPaymentOpen, setRecordVendorPaymentOpen] = useState(false);
   const [recordingVendorPayment, setRecordingVendorPayment] = useState(false);
   const [vendorPaymentFormErrors, setVendorPaymentFormErrors] = useState<{ payeeName?: string; amount?: string }>({});
@@ -515,7 +525,6 @@ export default function Vendors() {
     assignedTo: '',
   });
   const [vendorTaskTemplateKey, setVendorTaskTemplateKey] = useState('none');
-  const [managedWeddingId, setManagedWeddingId] = useState<string | null>(null);
   const [workspaceVendorInvites, setWorkspaceVendorInvites] = useState<Record<string, WorkspaceVendorInvite[]>>({});
   const [workspaceInviteLoadingVendorId, setWorkspaceInviteLoadingVendorId] = useState<string | null>(null);
   const [workspaceInviteSubmittingVendorId, setWorkspaceInviteSubmittingVendorId] = useState<string | null>(null);
@@ -557,29 +566,9 @@ export default function Vendors() {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
   }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
 
-  useEffect(() => {
-    if (!user || profile?.role !== 'couple') {
-      setManagedWeddingId(null);
-      return;
-    }
-
-    let active = true;
-    void getMyWeddingOwnershipSummary()
-      .then((summary) => {
-        if (!active) return;
-        setManagedWeddingId(summary?.weddingId ?? null);
-      })
-      .catch((error) => {
-        console.error('Could not load couple wedding workspace for vendors:', error);
-        if (active) setManagedWeddingId(null);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [profile?.role, user]);
-
-  const activeWeddingId = isPlanner ? selectedClient?.wedding_id ?? null : managedWeddingId;
+  const activeWeddingId = isPlanner
+    ? selectedClient?.wedding_id ?? entitlementWeddingId
+    : entitlementWeddingId;
 
   const vendorsQueryKey = ['vendors', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null] as const;
   const vendorsQuery = useQuery({
@@ -602,7 +591,7 @@ export default function Vendors() {
     }
   }, [toast, vendorsQuery.error]);
 
-  const vendors = vendorsQuery.data?.vendors ?? [];
+  const vendors = vendorsQuery.data?.vendors ?? emptyVendors;
   const vendorTasksByVendorId = useMemo(
     () => Object.fromEntries(
       vendors.map((vendor) => [
@@ -1257,6 +1246,9 @@ export default function Vendors() {
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
+      if (vendor.wedding_id && (status === 'booked' || vendor.status === 'booked')) {
+        await recalculatePlanningExperiment(vendor.wedding_id);
+      }
       await refreshVendorsWorkspace();
     }
     setSavingStatusId(null);
@@ -2112,6 +2104,17 @@ export default function Vendors() {
     }, initialGroups);
   }, [vendorWorkspaceQuery, vendorWorkspaceVendors, vendorsQuery.data?.categories]);
 
+  const visibleVendorCategoryEntries = useMemo(() => {
+    const entries = Object.entries(vendorsGroupedByCategory);
+    if (vendorWorkspaceQuery.trim() || showEmptyVendorCategories) return entries;
+    return entries.filter(([, group]) => group.length > 0);
+  }, [showEmptyVendorCategories, vendorWorkspaceQuery, vendorsGroupedByCategory]);
+
+  const hiddenEmptyVendorCategoryCount = useMemo(
+    () => Object.values(vendorsGroupedByCategory).filter((group) => group.length === 0).length,
+    [vendorsGroupedByCategory],
+  );
+
   const filteredVendorsByName = useMemo(
     () => [...vendorWorkspaceVendors].sort((left, right) => left.name.localeCompare(right.name)),
     [vendorWorkspaceVendors],
@@ -2424,8 +2427,8 @@ export default function Vendors() {
       return {
         title: nextVendorFollowUpTask?.title ?? 'Review pending vendor tasks',
         body: nextVendorFollowUpTask
-          ? `Open this task in Tasks. ${vendorTaskSummary.openTasks} vendor task${vendorTaskSummary.openTasks === 1 ? '' : 's'} remain pending.`
-          : `${vendorTaskSummary.openTasks} vendor task${vendorTaskSummary.openTasks === 1 ? '' : 's'} remain pending.`,
+          ? `${vendorTaskSummary.openTasks} vendor task${vendorTaskSummary.openTasks === 1 ? '' : 's'} remaining.`
+          : `${vendorTaskSummary.openTasks} vendor task${vendorTaskSummary.openTasks === 1 ? '' : 's'} remaining.`,
         actionLabel: nextVendorFollowUpTask ? 'Open task' : null,
         actionType: nextVendorFollowUpTask ? 'task_link' as const : 'none' as const,
         taskId: nextVendorFollowUpTask?.id ?? null,
@@ -2450,10 +2453,39 @@ export default function Vendors() {
   useEffect(() => {
     const requestedVendorId = searchParams.get('vendor');
     if (!requestedVendorId || !vendors.some((vendor) => vendor.id === requestedVendorId)) return;
+    const requestedTab = searchParams.get('tab');
+    const requestedFocus = searchParams.get('focus');
+    const focusedSectionId = requestedFocus === 'payment-plan'
+      ? `vendor-payment-plan-${requestedVendorId}`
+      : `vendor-${requestedVendorId}`;
+
     setSelectedVendorId(requestedVendorId);
-    window.requestAnimationFrame(() => {
-      document.getElementById(`vendor-${requestedVendorId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
+    if (requestedTab === 'payments') setSelectedVendorTab('payments');
+
+    let scrollTimer: number | undefined;
+    let attempts = 0;
+    const focusRequestedSection = () => {
+      const target = document.getElementById(focusedSectionId);
+      if (!target && attempts < 12) {
+        attempts += 1;
+        scrollTimer = window.setTimeout(focusRequestedSection, 80);
+        return;
+      }
+      if (!target) return;
+
+      setHighlightedVendorSection(focusedSectionId);
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    };
+    scrollTimer = window.setTimeout(focusRequestedSection, 120);
+    const clearTimer = window.setTimeout(() => {
+      setHighlightedVendorSection((current) => current === focusedSectionId ? null : current);
+    }, 3_200);
+
+    return () => {
+      if (scrollTimer) window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
   }, [searchParams, vendors]);
 
   useEffect(() => {
@@ -2829,21 +2861,21 @@ export default function Vendors() {
     >
       <Button type="button" onClick={() => setOpen(true)}>Add vendor</Button>
       <DialogContent className="overflow-y-auto sm:max-w-lg">
-        <DialogHeader><DialogTitle className="font-display">Add a vendor</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle className="font-display">Add vendor</DialogTitle>
+          <DialogDescription>Enter their details or find an existing Zania vendor.</DialogDescription>
+        </DialogHeader>
         <div className="grid grid-cols-2 gap-2 border-b border-border pb-3">
           <Button variant={mode === 'custom' ? 'default' : 'outline'} size="sm" onClick={() => setMode('custom')} className="min-w-0 px-2 sm:px-3">
-            Add vendor
+            Enter details
           </Button>
           <Button variant={mode === 'directory' ? 'default' : 'outline'} size="sm" onClick={() => setMode('directory')} className="min-w-0 px-2 sm:px-3">
-            Find on Zania
+            Search Zania
           </Button>
         </div>
         {mode === 'directory' ? (
           <div className="space-y-3">
-            <div className="rounded-lg border border-border/70 bg-muted/40 p-3 text-sm text-muted-foreground">
-              Search Zania when you want to attach an existing public vendor listing to this workspace. If your vendor is not here yet, switch back to <span className="font-medium text-foreground">Add Vendor Record</span>.
-            </div>
-            <Input placeholder="Search Zania vendors…" value={dirSearch} onChange={(e) => setDirSearch(e.target.value)} autoFocus />
+            <Input placeholder="Search vendors" value={dirSearch} onChange={(e) => setDirSearch(e.target.value)} autoFocus />
             {dirLoading && <p className="text-sm text-muted-foreground">Loading directory…</p>}
             {dirResults.length > 0 ? (
               <div className="max-h-60 overflow-y-auto space-y-2">
@@ -2871,8 +2903,8 @@ export default function Vendors() {
               </div>
             ) : dirSearch.trim().length >= 2 && !dirLoading ? (
               <div className="text-center py-6 space-y-2">
-                <p className="text-sm text-muted-foreground">No vendors found in directory.</p>
-                <Button variant="outline" size="sm" onClick={() => setMode('custom')}>Add Private Vendor Record Instead</Button>
+                <p className="text-sm font-medium text-foreground">No vendors found</p>
+                <Button variant="outline" size="sm" onClick={() => setMode('custom')}>Enter details</Button>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-4">Type at least 2 characters to search.</p>
@@ -2881,17 +2913,8 @@ export default function Vendors() {
         ) : (
           <form onSubmit={addVendor} className="space-y-4">
             <FormSubmitError message={vendorSubmitError} />
-            <div className="hidden rounded-lg border border-border/70 bg-muted/40 p-3 sm:block">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                {modalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Market signal for {form.category}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {modalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(modalBenchmark)}
-              </p>
-            </div>
             <div className="space-y-2">
-              <Label>Vendor Name</Label>
+              <Label>Vendor name</Label>
               <Input value={form.name} onChange={e => {
                 setForm(f => ({ ...f, name: e.target.value }));
                 setVendorFormErrors((current) => ({ ...current, name: undefined }));
@@ -2928,30 +2951,38 @@ export default function Vendors() {
               />
               <FormFieldError message={vendorFormErrors.email} />
             </div>
-            <div className="space-y-2">
-              <Label>Phone (optional)</Label>
-              <Input value={form.phone} onChange={e => {
-                setForm(f => ({ ...f, phone: e.target.value }));
-                setVendorFormErrors((current) => ({ ...current, phone: undefined }));
-                setVendorSubmitError(null);
-              }} placeholder="+254..." />
-              <FormFieldError message={vendorFormErrors.phone} />
-            </div>
-            <div className="space-y-2">
-              <Label>Quoted Price (KES, optional)</Label>
-              <Input type="number" value={form.price} onChange={e => {
-                setForm(f => ({ ...f, price: e.target.value }));
-                setVendorFormErrors((current) => ({ ...current, price: undefined }));
-                setVendorSubmitError(null);
-              }} placeholder="0" />
-              <FormFieldError message={vendorFormErrors.price} />
-              <p className="text-xs text-muted-foreground">
-                Saving a quote here automatically creates an anonymized price observation.
-              </p>
-            </div>
+            <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+              <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+              <div className="mt-4 space-y-4 border-t border-border/70 pt-4">
+                <div className="space-y-2">
+                  <Label>Phone</Label>
+                  <Input value={form.phone} onChange={e => {
+                    setForm(f => ({ ...f, phone: e.target.value }));
+                    setVendorFormErrors((current) => ({ ...current, phone: undefined }));
+                    setVendorSubmitError(null);
+                  }} placeholder="+254..." />
+                  <FormFieldError message={vendorFormErrors.phone} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Quoted price (KES)</Label>
+                  <Input type="number" value={form.price} onChange={e => {
+                    setForm(f => ({ ...f, price: e.target.value }));
+                    setVendorFormErrors((current) => ({ ...current, price: undefined }));
+                    setVendorSubmitError(null);
+                  }} placeholder="0" />
+                  <FormFieldError message={vendorFormErrors.price} />
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background p-3">
+                  <p className="text-sm font-medium text-foreground">Typical price</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {modalBenchmarkLoading ? 'Loading…' : benchmarkSummary(modalBenchmark)}
+                  </p>
+                </div>
+              </div>
+            </details>
             <Button type="submit" className="w-full" disabled={addingVendor}>
               {addingVendor ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {addingVendor ? 'Saving...' : 'Save Vendor Record'}
+              {addingVendor ? 'Saving…' : 'Add vendor'}
             </Button>
           </form>
         )}
@@ -2975,10 +3006,8 @@ export default function Vendors() {
           <DialogTitle className="font-display">
             {contactEditorVendor?.email || contactEditorVendor?.phone ? 'Edit vendor contact' : 'Add vendor contact'}
           </DialogTitle>
+          <DialogDescription>These details stay private to this wedding.</DialogDescription>
         </DialogHeader>
-        <p className="text-sm leading-6 text-muted-foreground">
-          Add an email address or phone number for {contactEditorVendor?.name ?? 'this vendor'}. These details stay in your private wedding workspace and make claim links and follow-ups easier.
-        </p>
         <form onSubmit={saveVendorContact} className="space-y-4">
           <FormSubmitError message={contactEditorSubmitError} />
           <div className="space-y-2">
@@ -3028,7 +3057,7 @@ export default function Vendors() {
               {savingVendorContact
                 ? 'Saving...'
                 : createClaimAfterContactSave
-                  ? 'Save & create claim link'
+                  ? 'Save and create link'
                   : 'Save contact'}
             </Button>
           </div>
@@ -3145,7 +3174,7 @@ export default function Vendors() {
               <div className="shrink-0 text-left sm:text-right">
                 <p className="text-lg font-semibold text-foreground">{formatCurrency(vendor.price)}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{vendorPaymentStatusLabel(vendor.payment_status)}</p>
-                <p className="mt-1 text-sm font-medium text-primary">{isActive ? 'Hide details' : 'View and edit'}</p>
+                <p className="mt-1 text-sm font-medium text-primary">{isActive ? 'Hide details' : 'View details'}</p>
               </div>
             </div>
             <div className="mt-4 h-1 overflow-hidden rounded-full bg-accent/60">
@@ -3156,18 +3185,13 @@ export default function Vendors() {
           <AnimatedCardDetails open={isActive}>
             <div className="min-w-0 space-y-5 border-t border-border bg-background/60 px-4 pb-6 pt-5 sm:px-7">
               <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-background/70 text-center">
-                <div className="p-3"><p className="text-xs text-muted-foreground">Vendor invoice</p><p className="mt-1 font-semibold">{formatCurrency(vendor.price)}</p></div>
-                <div className="p-3"><p className="text-xs text-muted-foreground">Payments recorded</p><p className="mt-1 font-semibold">{formatCurrency(recordedPaymentTotal)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Invoice</p><p className="mt-1 font-semibold">{formatCurrency(vendor.price)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Paid</p><p className="mt-1 font-semibold">{formatCurrency(recordedPaymentTotal)}</p></div>
                 <div className="p-3"><p className="text-xs text-muted-foreground">Balance</p><p className="mt-1 font-semibold">{formatCurrency(outstandingBalance)}</p></div>
               </div>
 
-              <div className="rounded-xl border border-border/80 bg-card/70 p-4">
-                <div className="flex flex-wrap items-end justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-foreground">Vendor details</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">Contact and category used across the workspace.</p>
-                  </div>
-                </div>
+              <details className="rounded-xl border border-border/80 bg-card/70 p-4">
+                <summary className="cursor-pointer list-none font-semibold text-foreground">Contact details</summary>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <div className="space-y-2">
                     <Label htmlFor={`vendor-name-${vendor.id}`}>Vendor name</Label>
@@ -3231,12 +3255,12 @@ export default function Vendors() {
                     Save vendor details
                   </Button>
                 </div>
-              </div>
+              </details>
 
               <div className="grid gap-5 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
                 <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
                   <p className="font-semibold text-foreground">Confirmation and contract</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Confirm your choice here. The vendor creates and manages the contract from their professional account.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Choose this vendor and review any shared contract.</p>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Vendor decision</Label>
@@ -3299,9 +3323,17 @@ export default function Vendors() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                <div
+                  id={`vendor-payment-plan-${vendor.id}`}
+                  tabIndex={-1}
+                  className={`scroll-mt-24 rounded-xl border border-border/80 bg-card/70 p-4 outline-none transition-[background-color,box-shadow] duration-300 sm:p-5 ${
+                    highlightedVendorSection === `vendor-payment-plan-${vendor.id}`
+                      ? 'bg-primary/[0.07] shadow-[0_0_0_3px_hsl(var(--primary)/0.28)]'
+                      : ''
+                  }`}
+                >
                   <p className="font-semibold text-foreground">Cost and payment plan</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Set the full vendor cost and any booking terms. Actual payments are recorded separately.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Set the agreed cost and next payment date.</p>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor={`vendor-price-${vendor.id}`}>Total vendor cost</Label>
@@ -3309,12 +3341,12 @@ export default function Vendors() {
                       <p className="text-xs text-muted-foreground">The full agreed price, used to calculate the outstanding balance.</p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor={`vendor-deposit-${vendor.id}`}>Booking deposit required · Optional</Label>
+                      <Label htmlFor={`vendor-deposit-${vendor.id}`}>Booking deposit</Label>
                       <Input id={`vendor-deposit-${vendor.id}`} type="number" min="0" value={paymentDrafts[vendor.id]?.depositAmount ?? '0'} onChange={(event) => setPaymentDrafts((current) => ({
                         ...current,
                         [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), depositAmount: event.target.value },
                       }))} />
-                      <p className="text-xs text-muted-foreground">The upfront amount requested to reserve the date. It does not count as paid until recorded.</p>
+                      <p className="text-xs text-muted-foreground">This is not counted as paid until you record it.</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Payments recorded</Label>
@@ -3391,12 +3423,15 @@ export default function Vendors() {
                   <div className="mt-4 flex justify-end">
                     <Button type="button" onClick={() => updateVendorPayment(vendor)} disabled={savingPaymentId === vendor.id}>
                       {savingPaymentId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Save plan &amp; reminder
+                      Save payment plan
                     </Button>
                   </div>
                 </div>
               </div>
 
+              <details className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                <summary className="cursor-pointer list-none font-semibold text-foreground">More vendor details</summary>
+                <div className="mt-4 space-y-5 border-t border-border/70 pt-4">
               <div className="grid min-w-0 gap-5 lg:grid-cols-2">
                 <div className="rounded-xl border border-primary/20 bg-primary/[0.035] p-4 sm:p-5">
                   <div className="flex items-start justify-between gap-3">
@@ -3463,6 +3498,8 @@ export default function Vendors() {
                   </div>
                 </div>
               ) : null}
+                </div>
+              </details>
               <div className="grid gap-2 sm:flex sm:flex-wrap">
                 {vendor.vendor_listing_id ? (
                   <Button
@@ -3506,6 +3543,7 @@ export default function Vendors() {
               <DialogTitle className="font-display">
                 Add task for {vendorTaskDialogVendor?.name}
               </DialogTitle>
+              <DialogDescription>Choose a task or enter your own.</DialogDescription>
             </DialogHeader>
             {vendorTaskDialogVendor && (
               <form
@@ -3517,28 +3555,7 @@ export default function Vendors() {
               >
                 <FormSubmitError message={vendorTaskSubmitError} />
                 <div className="space-y-2">
-                  <Label>Vendor category</Label>
-                  <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm font-medium text-foreground">
-                    {vendorTaskDialogVendor.category}
-                  </div>
-                  {resolvedVendorTaskDefaults && (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline" className="rounded-full text-[11px]">
-                        {resolvedVendorTaskDefaults.visibility === 'private' ? 'Private' : 'Public'}
-                      </Badge>
-                      <Badge variant="outline" className="rounded-full text-[11px]">
-                        P{resolvedVendorTaskDefaults.priorityLevel}
-                      </Badge>
-                      {resolvedVendorTaskDefaults.delegatable && resolvedVendorTaskDefaults.recommendedRole && (
-                        <Badge variant="outline" className="rounded-full text-[11px]">
-                          Delegate to {resolvedVendorTaskDefaults.recommendedRole}
-                        </Badge>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label>Suggested task</Label>
+                  <Label>Task</Label>
                   <Select
                     value={vendorTaskTemplateKey}
                     onValueChange={(value) => {
@@ -3586,34 +3603,45 @@ export default function Vendors() {
                   />
                   <FormFieldError message={vendorTaskFormErrors.title} />
                 </div>
-                <div className="space-y-2">
-                  <Label>Assign to (optional)</Label>
-                  <Input
-                    value={vendorTaskForm.assignedTo}
-                    onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, assignedTo: event.target.value }))}
-                    placeholder="Couple, committee lead, planner, MC..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Due date (optional)</Label>
-                  <Input
-                    type="date"
-                    value={vendorTaskForm.dueDate}
-                    onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, dueDate: event.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description (optional)</Label>
-                  <Textarea
-                    rows={3}
-                    value={vendorTaskForm.description}
-                    onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, description: event.target.value }))}
-                    placeholder="Add quote follow-up, payment notes, arrival details, or files to send..."
-                  />
-                </div>
+                <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                  <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+                  <div className="mt-4 space-y-4 border-t border-border/70 pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      {vendorTaskDialogVendor.category}
+                      {resolvedVendorTaskDefaults
+                        ? ` · ${resolvedVendorTaskDefaults.visibility === 'private' ? 'Private' : 'Shared'} · Priority ${resolvedVendorTaskDefaults.priorityLevel}`
+                        : ''}
+                    </p>
+                    <div className="space-y-2">
+                      <Label>Assigned to</Label>
+                      <Input
+                        value={vendorTaskForm.assignedTo}
+                        onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, assignedTo: event.target.value }))}
+                        placeholder="Couple, committee lead, planner, MC"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Due date</Label>
+                      <Input
+                        type="date"
+                        value={vendorTaskForm.dueDate}
+                        onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, dueDate: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Notes</Label>
+                      <Textarea
+                        rows={3}
+                        value={vendorTaskForm.description}
+                        onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, description: event.target.value }))}
+                        placeholder="Add useful details"
+                      />
+                    </div>
+                  </div>
+                </details>
                 <Button type="submit" className="w-full gap-2" disabled={vendorTaskSubmitting}>
                   {vendorTaskSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
-                  Save vendor task
+                  Add task
                 </Button>
               </form>
             )}
@@ -3623,59 +3651,50 @@ export default function Vendors() {
           <>
             <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Vendors</p>
-                <h1 className="mt-2 font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Who will help make it happen?</h1>
-                <p className="mt-2 text-sm text-muted-foreground">Save options, compare them, then choose who to book.</p>
+                <h1 className="font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Vendors</h1>
+                <p className="mt-2 text-sm text-muted-foreground">Compare options and choose who to book.</p>
               </div>
               {addVendorDialog}
             </header>
 
-            <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
+            <div className={`grid gap-3 ${!isPlanner ? 'xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)] xl:items-start' : ''}`}>
+              {!isPlanner && <CoupleLeadMarketplace weddingId={activeWeddingId} />}
+
+              <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
               {vendorPrimaryAction.actionType === 'task_link' && vendorPrimaryAction.taskId ? (
                 <Link
                   to={`/tasks?task=${encodeURIComponent(vendorPrimaryAction.taskId)}`}
                   className="group block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                 >
-                  <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <CardContent className="flex min-h-20 items-center justify-between gap-3 p-4">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next vendor task</p>
-                      <h2 className="mt-2 text-lg font-semibold text-foreground group-hover:text-primary">{vendorPrimaryAction.title}</h2>
-                      <p className="mt-1 text-sm text-muted-foreground">{vendorPrimaryAction.body}</p>
+                      <h2 className="mt-1 text-base font-semibold text-foreground group-hover:text-primary">{vendorPrimaryAction.title}</h2>
                     </div>
-                    <span className="shrink-0 text-sm font-semibold text-primary">Open in Tasks</span>
+                    <span className="shrink-0 text-sm font-semibold text-primary">Open task</span>
                   </CardContent>
                 </Link>
               ) : (
-                <CardContent className="p-5">
+                <CardContent className="p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next vendor action</p>
-                  <h2 className="mt-2 text-lg font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">{vendorPrimaryAction.body}</p>
+                  <h2 className="mt-1 text-base font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
                 </CardContent>
               )}
             </Card>
 
-            <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
-              <div className="border-r border-border p-3 sm:p-4">
-                <p className="text-xs text-muted-foreground">Total vendors to confirm</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{vendorConfirmationSummary.total}</p>
-              </div>
-              <div className="border-r border-border p-3 sm:p-4">
-                <p className="text-xs text-muted-foreground">Total vendors confirmed</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{vendorConfirmationSummary.confirmed}</p>
-              </div>
-              <div className="p-3 sm:p-4">
-                <p className="text-xs text-muted-foreground">Total Pending Vendors</p>
-                <p className="mt-1 text-xl font-semibold text-foreground">{vendorConfirmationSummary.pending}</p>
-              </div>
-            </div>
-
             <Card className="rounded-lg border-border shadow-none">
-              <CardContent className="grid gap-2 p-2.5 sm:p-3 md:grid-cols-[minmax(16rem,1fr)_auto_auto] md:items-center">
+              <CardContent className="p-2.5 sm:p-3">
+                <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 px-1 text-xs text-muted-foreground" aria-label="Vendor progress">
+                  <span><strong className="font-semibold text-foreground">{vendorConfirmationSummary.total}</strong> categories</span>
+                  <span><strong className="font-semibold text-foreground">{vendorConfirmationSummary.confirmed}</strong> confirmed</span>
+                  <span><strong className="font-semibold text-foreground">{vendorConfirmationSummary.pending}</strong> pending</span>
+                </div>
+                <div className="grid gap-2 md:grid-cols-[minmax(16rem,1fr)_auto_auto] md:items-center">
                 <div className="min-w-0">
                   <Input
                     value={vendorWorkspaceQuery}
                     onChange={(event) => setVendorWorkspaceQuery(event.target.value)}
-                    placeholder="Search vendors by name, category, contact, or status"
+                    placeholder="Search vendors"
                   />
                 </div>
 
@@ -3706,22 +3725,23 @@ export default function Vendors() {
                     exportVendorData();
                   }}
                 >
-                  Export Vendors
+                  Export vendors
                 </Button>
+                </div>
               </CardContent>
             </Card>
 
-            {vendorWorkspaceVendors.length === 0 && (vendorListView === 'by_name' || Boolean(vendorWorkspaceQuery.trim())) ? (
+            {vendorWorkspaceVendors.length === 0 && (vendors.length === 0 || vendorListView === 'by_name' || Boolean(vendorWorkspaceQuery.trim())) ? (
               <Card className="semantic-surface-info border-dashed shadow-card">
                 <CardContent className="flex flex-col items-start gap-4 p-6 sm:p-8">
                   <div className="space-y-2">
                     <h2 className="text-2xl font-semibold text-foreground">
-                      {vendors.length === 0 ? 'No vendors added yet' : 'No vendors match this search'}
+                      {vendors.length === 0 ? 'No vendors yet' : 'No vendors found'}
                     </h2>
                     <p className="text-sm leading-6 text-muted-foreground">
                       {vendors.length === 0
-                        ? 'Start building your shortlist so Zania can help you track decisions, payments, and vendor follow-ups.'
-                        : 'Try a different name, category, or status search to bring the right vendor back into view.'}
+                        ? 'Add someone you are considering or have already booked.'
+                        : 'Try another search.'}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
@@ -3729,7 +3749,9 @@ export default function Vendors() {
                       <Button type="button" variant="outline" onClick={() => setVendorWorkspaceQuery('')}>
                         Clear search
                       </Button>
-                    ) : null}
+                    ) : (
+                      <Button type="button" onClick={() => setOpen(true)}>Add vendor</Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -3739,7 +3761,7 @@ export default function Vendors() {
               </div>
             ) : (
               <div className="space-y-6">
-                {Object.entries(vendorsGroupedByCategory).map(([category, group]) => {
+                {visibleVendorCategoryEntries.map(([category, group]) => {
                   const chosenVendor = group.find(isChosenVendor) ?? null;
                   const featuredVendor = chosenVendor
                     ?? group.find((vendor) => vendor.selection_status !== 'declined')
@@ -3810,16 +3832,13 @@ export default function Vendors() {
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0 space-y-2">
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                                Vendor category
-                              </p>
                               <span className={`inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${statusTextClass}`}>
                                 <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
                                 {statusLabel}
                               </span>
                             </div>
                             <h2 className="break-words text-2xl font-semibold text-foreground sm:text-3xl">{category}</h2>
-                            <p className="text-xs font-medium text-muted-foreground">{categoryScope} workspace</p>
+                            {categoryScope === 'Personal' ? <p className="text-xs font-medium text-muted-foreground">Private</p> : null}
                             {featuredVendor ? (
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                                 <span className="font-medium text-foreground">{featuredVendor.name}</span>
@@ -3880,13 +3899,7 @@ export default function Vendors() {
                                 className="flex w-full items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-card/80 px-5 py-5 text-left shadow-[0_10px_28px_-28px_hsl(var(--foreground)/0.5)] transition-colors hover:border-primary/30 hover:bg-primary/[0.025] sm:px-7"
                               >
                                 <div>
-                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                    Vendor
-                                  </p>
                                   <p className="mt-1 font-medium text-foreground">Add your {category.toLowerCase()} vendor</p>
-                                  <p className="mt-1 text-sm text-muted-foreground">
-                                    Save their contact, quote, payments, and next tasks here.
-                                  </p>
                                 </div>
                                 <span className="shrink-0 text-sm font-medium text-primary">Add vendor</span>
                               </button>
@@ -3897,6 +3910,19 @@ export default function Vendors() {
                     </section>
                   );
                 })}
+                {!vendorWorkspaceQuery.trim() && hiddenEmptyVendorCategoryCount > 0 ? (
+                  <div className="flex justify-center">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setShowEmptyVendorCategories((current) => !current)}
+                    >
+                      {showEmptyVendorCategories
+                        ? 'Hide empty categories'
+                        : `Show empty categories (${hiddenEmptyVendorCategoryCount})`}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             )}
 
@@ -3964,6 +3990,7 @@ export default function Vendors() {
                 )}
               </div>
             </details>
+            </div>
           </>
         ) : (
           <>
@@ -4622,7 +4649,15 @@ export default function Vendors() {
                   </Card>
                 </section>
 
-                <section className="space-y-4">
+                <section
+                  id={`vendor-payment-plan-${selectedVendor.id}`}
+                  tabIndex={-1}
+                  className={`space-y-4 rounded-xl transition-[background-color,box-shadow] duration-300 outline-none ${
+                    highlightedVendorSection === `vendor-payment-plan-${selectedVendor.id}`
+                      ? 'bg-primary/[0.07] shadow-[0_0_0_3px_hsl(var(--primary)/0.28)]'
+                      : ''
+                  }`}
+                >
                   <h2 className="text-2xl font-medium text-foreground">Payment Status</h2>
                   <Card className="shadow-card">
                     <CardContent className="flex flex-col gap-4 py-6 lg:flex-row lg:items-center lg:justify-between">
@@ -4808,6 +4843,8 @@ export default function Vendors() {
           {addVendorDialog}
         </div>
       </div>
+
+      {!isPlanner && <CoupleLeadMarketplace weddingId={activeWeddingId} />}
 
       <Card className="shadow-card">
         <CardContent className="py-5">

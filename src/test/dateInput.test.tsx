@@ -9,6 +9,16 @@ describe('Zania date input', () => {
     expect(screen.getByRole('button', { name: 'Selected date 31/08/2026' })).toHaveTextContent('31/08/2026');
   });
 
+  it('opens in a viewport-safe dialog instead of a position-flipping popover', () => {
+    render(<Input type="date" value="2026-08-31" onChange={() => undefined} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Selected date 31/08/2026' }));
+
+    expect(screen.getByRole('dialog')).toHaveClass('max-h-[calc(100dvh-1.5rem)]');
+    expect(screen.getByRole('dialog')).toHaveClass('max-w-[22rem]');
+    expect(screen.getByRole('heading', { name: 'Choose a date' })).toBeVisible();
+  });
+
   it('keeps emitting ISO dates to existing form handlers', () => {
     let emittedValue = '';
     const onChange = vi.fn((event: React.ChangeEvent<HTMLInputElement>) => {

@@ -10,7 +10,6 @@ import {
   PenLine,
   Phone,
   Printer,
-  ShieldCheck,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -29,6 +28,7 @@ import {
   type SharedProfessionalContract,
 } from '@/lib/commercialDocuments';
 import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl } from '@/lib/security';
+import { PublicLinkLoading, PublicLinkUnavailable } from '@/components/PublicLinkState';
 
 function safeDateLabel(value: string | null | undefined) {
   if (!value) return '—';
@@ -66,6 +66,7 @@ export default function ProfessionalContractShare() {
   const [signedName, setSignedName] = useState('');
   const [signerEmail, setSignerEmail] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +106,15 @@ export default function ProfessionalContractShare() {
 
   const handleSign = async () => {
     if (!document) return;
+    if (!signedName.trim()) {
+      setFormError('Enter your full name.');
+      return;
+    }
+    if (!agreedToTerms) {
+      setFormError('Confirm that you agree to the contract.');
+      return;
+    }
+    setFormError(null);
     setSubmitting(true);
     try {
       const next = await signSharedProfessionalContract({
@@ -119,13 +129,14 @@ export default function ProfessionalContractShare() {
       setDocument(next);
       toast({
         title: 'Contract signed',
-        description: 'Your typed signature has been recorded successfully.',
+        description: 'Your signature has been saved.',
       });
     } catch (error) {
       console.error('Could not sign contract:', error);
+      setFormError(error instanceof Error ? error.message : 'Try again.');
       toast({
         title: 'Could not sign contract',
-        description: error instanceof Error ? error.message : 'Please try again.',
+        description: 'Check the form and try again.',
         variant: 'destructive',
       });
     } finally {
@@ -134,27 +145,11 @@ export default function ProfessionalContractShare() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-6">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 text-sm text-muted-foreground shadow-card">
-          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          Opening shared contract...
-        </div>
-      </div>
-    );
+    return <PublicLinkLoading loadingLabel="Opening contract…" />;
   }
 
   if (!document) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-6">
-        <div className="rounded-3xl border border-border bg-card p-8 text-center shadow-card">
-          <p className="font-display text-2xl text-foreground">Contract not found</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            This signing link may have expired or been removed.
-          </p>
-        </div>
-      </div>
-    );
+    return <PublicLinkUnavailable title="Contract unavailable" />;
   }
 
   return (
@@ -174,7 +169,7 @@ export default function ProfessionalContractShare() {
         </div>
 
         <Card className="overflow-hidden border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.12),rgba(255,255,255,0.98)_38%,rgba(255,243,237,0.9))] shadow-card print:shadow-none">
-          <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.45fr)_320px]">
+          <CardContent className="p-6 sm:p-8">
             <div className="space-y-5">
               <div className="space-y-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">
@@ -240,79 +235,12 @@ export default function ProfessionalContractShare() {
               )}
             </div>
 
-            <div className="rounded-[1.5rem] border border-border/70 bg-white/88 p-6 shadow-sm">
-              <div className="space-y-3">
-                <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Signature status</p>
-                <h2 className="text-2xl font-semibold text-foreground">
-                  {canSign ? 'Review and sign this agreement' : 'Signature already recorded'}
-                </h2>
-                <p className="text-sm leading-6 text-muted-foreground">
-                  {canSign
-                    ? 'You can sign this contract here without creating a Zania account. Type your full name exactly as you want it to appear.'
-                    : 'This public signing link has already captured the client-side signature for this contract.'}
-                </p>
-              </div>
-
-              {canSign ? (
-                <div className="mt-6 space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signed-name">Type your full name</Label>
-                    <Input
-                      id="signed-name"
-                      value={signedName}
-                      onChange={(event) => setSignedName(event.target.value)}
-                      placeholder={document.recipientName}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signer-email">Email</Label>
-                    <Input
-                      id="signer-email"
-                      value={signerEmail}
-                      onChange={(event) => setSignerEmail(event.target.value)}
-                      placeholder="you@example.com"
-                    />
-                  </div>
-                  <label className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
-                    <Checkbox checked={agreedToTerms} onCheckedChange={(checked) => setAgreedToTerms(checked === true)} />
-                    <span>
-                      I have reviewed this contract and I agree that typing my name here acts as my signature for this agreement.
-                    </span>
-                  </label>
-                  <Button className="w-full gap-2" onClick={handleSign} disabled={submitting}>
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
-                    {submitting ? 'Signing contract...' : 'Sign contract'}
-                  </Button>
-                </div>
-              ) : (
-                <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-900">
-                  <div className="flex items-center gap-2 font-medium">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Signature captured
-                  </div>
-                  <p className="mt-2">
-                    {clientSigner?.signedName || document.recipientName} signed on {safeDateLabel(clientSigner?.signedAt)}.
-                  </p>
-                </div>
-              )}
-
-              <div className="mt-6 rounded-2xl border border-border/70 bg-muted/10 p-4">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-primary" />
-                  <p className="text-sm font-medium text-foreground">Link access</p>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  This signing link {document.shareExpiresAt ? `expires ${safeDateLabel(document.shareExpiresAt)}.` : 'does not have a fixed expiry yet.'}
-                </p>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
         <Card className="shadow-card">
           <CardHeader>
             <CardTitle className="font-display text-2xl">Contract terms</CardTitle>
-            <CardDescription>Review the full agreement before signing.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="rounded-2xl border border-border bg-white/90 p-5">
@@ -323,11 +251,76 @@ export default function ProfessionalContractShare() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <Card id="sign-contract" className="border-primary/20 shadow-card">
+          <CardHeader>
+            <CardTitle className="font-display text-2xl">{canSign ? 'Sign contract' : 'Contract signed'}</CardTitle>
+            {canSign && <CardDescription>Type your name after reading the terms above.</CardDescription>}
+          </CardHeader>
+          <CardContent>
+            {canSign ? (
+              <div className="mx-auto max-w-xl space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signed-name">Full name *</Label>
+                  <Input
+                    id="signed-name"
+                    value={signedName}
+                    onChange={(event) => {
+                      setSignedName(event.target.value);
+                      if (formError) setFormError(null);
+                    }}
+                    placeholder={document.recipientName}
+                    aria-invalid={Boolean(formError && !signedName.trim())}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signer-email">Email (optional)</Label>
+                  <Input
+                    id="signer-email"
+                    type="email"
+                    value={signerEmail}
+                    onChange={(event) => setSignerEmail(event.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <label className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={agreedToTerms}
+                    onCheckedChange={(checked) => {
+                      setAgreedToTerms(checked === true);
+                      if (formError) setFormError(null);
+                    }}
+                  />
+                  <span>I have read and agree to this contract. My typed name is my signature.</span>
+                </label>
+                {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
+                <Button className="w-full gap-2" onClick={handleSign} disabled={submitting}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
+                  {submitting ? 'Signing…' : 'Sign contract'}
+                </Button>
+                {document.shareExpiresAt && (
+                  <p className="text-center text-xs text-muted-foreground">Link expires {safeDateLabel(document.shareExpiresAt)}.</p>
+                )}
+              </div>
+            ) : (
+              <div role="status" className="mx-auto max-w-xl rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-900">
+                <div className="flex items-center gap-2 font-medium">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Signature saved
+                </div>
+                <p className="mt-2">
+                  {clientSigner?.signedName || document.recipientName} signed on {safeDateLabel(clientSigner?.signedAt)}.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <details className="rounded-3xl border border-border/70 bg-card shadow-card">
+          <summary className="cursor-pointer list-none px-6 py-4 text-sm font-semibold text-foreground marker:content-none">View signatures and history</summary>
+        <div className="grid gap-6 border-t border-border/70 p-4 xl:grid-cols-[1.05fr_0.95fr] sm:p-6">
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="font-display text-2xl">Signatures</CardTitle>
-              <CardDescription>Each side appears here as the agreement progresses.</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
               {[issuerSigner, clientSigner].map((signer, index) => (
@@ -359,7 +352,6 @@ export default function ProfessionalContractShare() {
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="font-display text-2xl">Timeline</CardTitle>
-              <CardDescription>Track the signing journey from draft to completion.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -387,13 +379,14 @@ export default function ProfessionalContractShare() {
                   ))
                 ) : (
                   <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-6 text-sm text-muted-foreground">
-                    Timeline activity will appear here as this contract moves forward.
+                    No activity yet.
                   </div>
                 )}
               </div>
             </CardContent>
           </Card>
         </div>
+        </details>
       </div>
     </div>
   );

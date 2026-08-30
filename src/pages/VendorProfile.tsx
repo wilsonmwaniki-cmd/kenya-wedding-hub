@@ -16,6 +16,7 @@ import { getProfessionalNetworkPath, isProfessionalNetworkEnabled } from '@/lib/
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl, normalizePhoneHref } from '@/lib/security';
 import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
+import ProfessionalReviewsCard from '@/components/ProfessionalReviewsCard';
 
 interface VendorProfileData {
   id: string;
@@ -276,6 +277,8 @@ export default function VendorProfile() {
             </CardContent>
           </Card>
         </div>
+
+        <ProfessionalReviewsCard professionalType="vendor" professionalId={vendor.id} />
 
         {(vendor.email || vendor.phone || vendor.website) && (
           <Card className="shadow-card">

@@ -6,7 +6,6 @@ import {
   Loader2,
   Mail,
   MapPin,
-  MessageSquareText,
   Send,
   ShieldCheck,
   Store,
@@ -145,6 +144,9 @@ export default function ProfessionalNetwork() {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<NetworkMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'exchange' | 'inbox'>('overview');
+  const [relationshipFormOpen, setRelationshipFormOpen] = useState(false);
+  const [messageFormOpen, setMessageFormOpen] = useState(false);
 
   const [relationshipTargetId, setRelationshipTargetId] = useState('');
   const [relationshipKind, setRelationshipKind] = useState<ProfessionalRelationshipKind>('worked_with');
@@ -323,11 +325,6 @@ export default function ProfessionalNetwork() {
     [vendorPeers],
   );
 
-  const receivedPublicSignals = useMemo(
-    () => receivedRelationships.filter((relationship) => relationship.is_public).length,
-    [receivedRelationships],
-  );
-
   const messageEligibleTargets = useMemo(() => {
     if (role === 'planner') {
       return vendorPeers.filter((vendor) => Boolean(vendor.user_id));
@@ -448,9 +445,10 @@ export default function ProfessionalNetwork() {
     setRelationshipKind('worked_with');
     setRelationshipNote('');
     setRelationshipVisibility('public');
+    setRelationshipFormOpen(false);
     toast({
-      title: 'Professional signal saved',
-      description: 'Your network credibility now reflects that relationship.',
+      title: 'Recommendation saved',
+      description: 'Your recommendation is now saved.',
     });
   };
 
@@ -783,6 +781,7 @@ export default function ProfessionalNetwork() {
     setThreadContext('introduction');
     setThreadMessage('');
     setThreadSubmitting(false);
+    setMessageFormOpen(false);
     toast({
       title: 'Conversation started',
       description: 'Your professional message thread is now open.',
@@ -867,77 +866,44 @@ export default function ProfessionalNetwork() {
     );
   }
 
+  const nextProfileStep = onboarding.steps.find((step) => !step.complete);
+
   return (
     <div className="space-y-6">
-      <Card className="border-border/70 bg-card/85 shadow-card">
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/80">Professional network</p>
-              <CardTitle className="mt-2 font-display text-3xl text-foreground">
-                {role === 'planner' ? 'Build your wedding-industry network' : 'Build your vendor credibility network'}
-              </CardTitle>
-              <CardDescription className="mt-2 max-w-2xl text-base">
-                Zania works best when trust is visible. Build real collaboration signals, keep vendor-planner conversations in one place, and help new professionals become bookable faster.
-              </CardDescription>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Card className="min-w-[10rem] border-border/60 bg-background/70">
-                <CardContent className="p-4">
-                  <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Readiness</p>
-                  <p className="mt-2 text-3xl font-semibold text-foreground">{onboarding.score}%</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{onboarding.completeCount} of {onboarding.totalCount} trust foundations complete</p>
-                </CardContent>
-              </Card>
-              <Card className="min-w-[10rem] border-border/60 bg-background/70">
-                <CardContent className="p-4">
-                  <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Public signals</p>
-                  <p className="mt-2 text-3xl font-semibold text-foreground">{receivedPublicSignals}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Visible endorsements and collaboration markers</p>
-                </CardContent>
-              </Card>
-              <Card className="min-w-[10rem] border-border/60 bg-background/70">
-                <CardContent className="p-4">
-                  <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Threads</p>
-                  <p className="mt-2 text-3xl font-semibold text-foreground">{threads.length}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Structured professional conversations</p>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
+      <header>
+        <h1 className="font-display text-3xl font-semibold text-foreground">Network</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Work with trusted wedding professionals.</p>
+      </header>
 
-      <Tabs defaultValue="overview" className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          const nextTab = value as 'overview' | 'exchange' | 'inbox';
+          setActiveTab(nextTab);
+          if (nextTab === 'inbox' && threads.length === 0) setMessageFormOpen(true);
+        }}
+        className="space-y-6"
+      >
         <TabsList className="grid w-full max-w-xl grid-cols-3">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="exchange">Exchange</TabsTrigger>
-          <TabsTrigger value="inbox">Inbox</TabsTrigger>
+          <TabsTrigger value="overview">Recommendations</TabsTrigger>
+          <TabsTrigger value="exchange">Questions</TabsTrigger>
+          <TabsTrigger value="inbox">Messages</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <Card className="shadow-card">
               <CardHeader>
-                <CardTitle className="font-display text-2xl">Profile readiness</CardTitle>
-                <CardDescription>{onboarding.headline}</CardDescription>
+                <CardTitle className="font-display text-2xl">Profile</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {onboarding.steps.map((step) => (
-                  <div key={step.key} className="flex items-start gap-3 rounded-2xl border border-border/60 bg-background/60 p-4">
-                    {step.complete ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-success" aria-hidden="true" /> : null}
-                    <div>
-                      <p className="font-medium text-foreground">{step.label}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{step.helper}</p>
-                    </div>
-                    <Badge variant={step.complete ? 'success' : 'outline'} className="ml-auto">
-                      {step.complete ? 'Done' : 'Next'}
-                    </Badge>
-                  </div>
-                ))}
+                <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
+                  <p className="font-medium text-foreground">{nextProfileStep?.label ?? 'Profile ready'}</p>
+                  {nextProfileStep ? <p className="mt-1 text-sm text-muted-foreground">{nextProfileStep.helper}</p> : null}
+                </div>
                 <div className="flex flex-wrap gap-3">
                   <Link to={role === 'planner' ? '/settings' : '/vendor-settings'}>
-                    <Button>{role === 'planner' ? 'Refine planner profile' : 'Refine vendor listing'}</Button>
+                    <Button>{role === 'planner' ? 'Edit profile' : 'Edit listing'}</Button>
                   </Link>
                   {role === 'vendor' && (
                     <Link to="/vendors-directory">
@@ -950,16 +916,32 @@ export default function ProfessionalNetwork() {
                     </Link>
                   )}
                 </div>
+                <details className="rounded-2xl border border-border/60">
+                  <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">View checklist</summary>
+                  <div className="space-y-3 border-t border-border/60 p-4">
+                    {onboarding.steps.map((step) => (
+                      <div key={step.key} className="flex items-center gap-3 text-sm">
+                        {step.complete ? <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" /> : <span className="h-4 w-4 rounded-full border border-border" aria-hidden="true" />}
+                        <span className="text-foreground">{step.label}</span>
+                        <Badge variant={step.complete ? 'success' : 'outline'} className="ml-auto">{step.complete ? 'Done' : 'To do'}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </details>
               </CardContent>
             </Card>
 
             <div className="space-y-6">
+              <details
+                id="add-recommendation"
+                open={relationshipFormOpen}
+                onToggle={(event) => setRelationshipFormOpen(event.currentTarget.open)}
+                className="rounded-2xl border border-border/70 bg-card"
+              >
+                <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">Add recommendation</summary>
               <Card className="shadow-card">
                 <CardHeader>
-                  <CardTitle className="font-display text-2xl">Add a professional signal</CardTitle>
-                  <CardDescription>
-                    Use structured signals instead of generic follows. This keeps Zania closer to referrals and real wedding work.
-                  </CardDescription>
+                  <CardTitle className="font-display text-2xl">Add recommendation</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <form className="space-y-4" onSubmit={handleCreateRelationship}>
@@ -986,7 +968,7 @@ export default function ProfessionalNetwork() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Signal type</Label>
+                      <Label>Recommendation type</Label>
                       <Select value={relationshipKind} onValueChange={(value) => setRelationshipKind(value as ProfessionalRelationshipKind)}>
                         <SelectTrigger>
                           <SelectValue />
@@ -1001,7 +983,7 @@ export default function ProfessionalNetwork() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Why this signal fits</Label>
+                      <Label>Why you recommend them</Label>
                       <Textarea
                         value={relationshipNote}
                         onChange={(event) => setRelationshipNote(event.target.value)}
@@ -1020,7 +1002,7 @@ export default function ProfessionalNetwork() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="public">Public signal</SelectItem>
+                          <SelectItem value="public">Public recommendation</SelectItem>
                           <SelectItem value="private">Private note</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1029,18 +1011,18 @@ export default function ProfessionalNetwork() {
                     <FormSubmitError message={relationshipSubmitError} />
                     <Button type="submit" disabled={relationshipSubmitting} className="w-full gap-2">
                       {relationshipSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                      Save professional signal
+                      Save recommendation
                     </Button>
                   </form>
                 </CardContent>
               </Card>
+              </details>
 
+              <details className="rounded-2xl border border-border/70 bg-card">
+                <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">Request recommendation</summary>
               <Card className="shadow-card">
                 <CardHeader>
-                  <CardTitle className="font-display text-2xl">Ask for a recommendation</CardTitle>
-                  <CardDescription>
-                    Let the other professional choose whether to publish the signal. This makes trust feel earned instead of self-asserted.
-                  </CardDescription>
+                  <CardTitle className="font-display text-2xl">Request recommendation</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <form className="space-y-4" onSubmit={handleCreateRecommendationRequest}>
@@ -1067,7 +1049,7 @@ export default function ProfessionalNetwork() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Requested signal</Label>
+                      <Label>Recommendation type</Label>
                       <Select value={recommendationKind} onValueChange={(value) => setRecommendationKind(value as ProfessionalRelationshipKind)}>
                         <SelectTrigger>
                           <SelectValue />
@@ -1097,23 +1079,23 @@ export default function ProfessionalNetwork() {
                     <FormSubmitError message={recommendationSubmitError} />
                     <Button type="submit" disabled={recommendationSubmitting} className="w-full gap-2">
                       {recommendationSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
-                      Send recommendation request
+                      Send request
                     </Button>
                   </form>
                 </CardContent>
               </Card>
+              </details>
             </div>
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="shadow-card">
               <CardHeader>
-                <CardTitle className="font-display text-2xl">Signals you have shared</CardTitle>
-                <CardDescription>These are the professionals you’ve publicly or privately backed.</CardDescription>
+                <CardTitle className="font-display text-2xl">Recommendations you gave</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {authoredRelationships.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No relationship signals yet. Start by recognising one professional you trust.</p>
+                  <p className="text-sm text-muted-foreground">No recommendations yet.</p>
                 ) : (
                   authoredRelationships.map((relationship) => (
                     <div key={relationship.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
@@ -1133,12 +1115,11 @@ export default function ProfessionalNetwork() {
 
             <Card className="shadow-card">
               <CardHeader>
-                <CardTitle className="font-display text-2xl">Signals attached to you</CardTitle>
-                <CardDescription>These are the public credibility markers other professionals have put on your profile.</CardDescription>
+                <CardTitle className="font-display text-2xl">Recommendations about you</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {receivedRelationships.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No public signals yet. Strengthen your profile and start more professional conversations.</p>
+                  <p className="text-sm text-muted-foreground">No recommendations yet.</p>
                 ) : (
                   receivedRelationships.map((relationship) => (
                     <div key={relationship.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
@@ -1166,7 +1147,7 @@ export default function ProfessionalNetwork() {
                           disabled={acknowledgingRelationshipId === relationship.id}
                         >
                           {acknowledgingRelationshipId === relationship.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          Confirm this signal
+                          Confirm recommendation
                         </Button>
                       )}
                     </div>
@@ -1179,12 +1160,11 @@ export default function ProfessionalNetwork() {
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="shadow-card">
               <CardHeader>
-                <CardTitle className="font-display text-2xl">Requests waiting on you</CardTitle>
-                <CardDescription>Approve only the trust signals that genuinely reflect how you have worked together.</CardDescription>
+                <CardTitle className="font-display text-2xl">Requests</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {receivedRecommendationRequests.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No recommendation requests are waiting on you right now.</p>
+                  <p className="text-sm text-muted-foreground">No requests.</p>
                 ) : (
                   receivedRecommendationRequests.map((request) => (
                     <div key={request.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
@@ -1240,12 +1220,11 @@ export default function ProfessionalNetwork() {
 
             <Card className="shadow-card">
               <CardHeader>
-                <CardTitle className="font-display text-2xl">Requests you have sent</CardTitle>
-                <CardDescription>Track who is still reviewing your request and which trust signals have already been granted.</CardDescription>
+                <CardTitle className="font-display text-2xl">Sent requests</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {sentRecommendationRequests.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">You have not sent any recommendation requests yet.</p>
+                  <p className="text-sm text-muted-foreground">No sent requests.</p>
                 ) : (
                   sentRecommendationRequests.map((request) => (
                     <div key={request.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
@@ -1271,10 +1250,7 @@ export default function ProfessionalNetwork() {
 
           <Card className="shadow-card">
             <CardHeader>
-              <CardTitle className="font-display text-2xl">Suggested next relationships</CardTitle>
-              <CardDescription>
-                Use your current profile, county, and verification signals to decide who to connect with next.
-              </CardDescription>
+              <CardTitle className="font-display text-2xl">Suggested professionals</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {suggestedProfessionals.length === 0 ? (
@@ -1316,9 +1292,11 @@ export default function ProfessionalNetwork() {
                               ? (peer as VendorPeer).id
                               : (peer as PlannerPeer).user_id,
                           );
+                          setRelationshipFormOpen(true);
+                          requestAnimationFrame(() => document.getElementById('add-recommendation')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
                         }}
                       >
-                        Add signal
+                        Recommend
                       </Button>
                       <Button
                         size="sm"
@@ -1328,6 +1306,9 @@ export default function ProfessionalNetwork() {
                               ? (peer as VendorPeer).id
                               : (peer as PlannerPeer).user_id,
                           );
+                          setActiveTab('inbox');
+                          setMessageFormOpen(true);
+                          requestAnimationFrame(() => document.getElementById('new-network-message')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
                         }}
                       >
                         Message
@@ -1360,11 +1341,17 @@ export default function ProfessionalNetwork() {
         </TabsContent>
 
         <TabsContent value="inbox" className="space-y-6">
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-            <Card className="shadow-card">
+          <div className="grid gap-6">
+            <details
+              id="new-network-message"
+              open={messageFormOpen}
+              onToggle={(event) => setMessageFormOpen(event.currentTarget.open)}
+              className="order-2 rounded-2xl border border-border/60 bg-background/70"
+            >
+              <summary className="cursor-pointer list-none px-5 py-4 font-medium text-foreground">New message</summary>
+            <Card className="rounded-t-none border-x-0 border-b-0 shadow-none">
               <CardHeader>
-                <CardTitle className="font-display text-2xl">Start a conversation</CardTitle>
-                <CardDescription>Keep planner-vendor messages tied to professional work, not open-ended DMs.</CardDescription>
+                <CardTitle className="font-display text-2xl">New message</CardTitle>
               </CardHeader>
               <CardContent>
                 <form className="space-y-4" onSubmit={handleCreateThread}>
@@ -1431,21 +1418,21 @@ export default function ProfessionalNetwork() {
                   <FormSubmitError message={threadSubmitError} />
                   <Button type="submit" disabled={threadSubmitting} className="w-full gap-2">
                     {threadSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                    Open professional thread
+                    Start conversation
                   </Button>
                 </form>
               </CardContent>
             </Card>
+            </details>
 
-            <Card className="shadow-card">
+            <Card className="order-1 shadow-card">
               <CardHeader>
-                <CardTitle className="font-display text-2xl">Inbox</CardTitle>
-                <CardDescription>Structured conversations keep quotes, bookings, and referrals calmer.</CardDescription>
+                <CardTitle className="font-display text-2xl">Conversations</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+              <CardContent className={threads.length === 0 ? 'block' : 'grid gap-4 lg:grid-cols-[0.8fr_1.2fr]'}>
                 <div className="space-y-3">
                   {threads.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No professional threads yet. Open one from the form on the left.</p>
+                    <p className="text-sm text-muted-foreground">No conversations yet.</p>
                   ) : (
                     threads.map((thread) => {
                       const counterparty = role === 'planner'
@@ -1473,10 +1460,10 @@ export default function ProfessionalNetwork() {
                   )}
                 </div>
 
-                <div className="rounded-3xl border border-border/60 bg-background/70 p-4">
+                {threads.length > 0 ? <div className="rounded-3xl border border-border/60 bg-background/70 p-4">
                   {!currentThread ? (
                     <div className="flex min-h-[18rem] items-center justify-center text-center text-sm text-muted-foreground">
-                      Pick a conversation or open a new one to keep professional messaging inside Zania.
+                      Choose a conversation.
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -1528,48 +1515,12 @@ export default function ProfessionalNetwork() {
                       </form>
                     </div>
                   )}
-                </div>
+                </div> : null}
               </CardContent>
             </Card>
           </div>
         </TabsContent>
       </Tabs>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-border/70 bg-card/85 shadow-card">
-          <CardContent className="flex items-start gap-3 p-5">
-            <Users className="mt-0.5 h-5 w-5 text-primary" />
-            <div>
-              <p className="font-medium text-foreground">Structured trust over noisy follows</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Relationship types like preferred vendor and trusted collaborator give Zania a wedding-specific network graph.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/70 bg-card/85 shadow-card">
-          <CardContent className="flex items-start gap-3 p-5">
-            {role === 'planner' ? <Briefcase className="mt-0.5 h-5 w-5 text-primary" /> : <Store className="mt-0.5 h-5 w-5 text-primary" />}
-            <div>
-              <p className="font-medium text-foreground">Newcomer-friendly by design</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Profile readiness makes it easier for newer planners and vendors to become credible before they have years of network history.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/70 bg-card/85 shadow-card">
-          <CardContent className="flex items-start gap-3 p-5">
-            <MessageSquareText className="mt-0.5 h-5 w-5 text-primary" />
-            <div>
-              <p className="font-medium text-foreground">Messaging stays tied to real work</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Threads are built for wedding work, intros, and booking coordination instead of turning into a generic social inbox.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }

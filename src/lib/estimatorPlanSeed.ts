@@ -3,7 +3,12 @@ import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/pub
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import type { PlannerType } from '@/lib/roles';
 import { buildSeededTasksFromTemplates } from '@/lib/weddingTaskTemplates';
-import { getVendorCategoryScope, vendorCategoryNames } from '@/lib/vendorCategories';
+import {
+  canonicalizeVendorCategory,
+  getVendorCategoryScope,
+  vendorCategoryCatalog,
+  vendorCategoryNames,
+} from '@/lib/vendorCategories';
 
 export type EstimatorWeddingStyle = 'intimate' | 'classic' | 'luxury' | 'garden';
 export type EstimatorVenueTier = 'budget' | 'mid_tier' | 'luxury';
@@ -181,15 +186,24 @@ export function canSeedEstimatorPlan(role: string | null | undefined, plannerTyp
 export function buildEstimatorRowsFromDraft(draft: EstimatorPlanDraft): PublicBudgetEstimateRow[] | null {
   if (!draft.allocations?.length) return null;
 
-  return draft.allocations.map((allocation) => ({
-    category: allocation.name,
-    source: 'couple_plan',
-    sample_size: 0,
-    benchmark_visible: false,
-    suggested_amount: allocation.amount,
-    low_amount: allocation.amount,
-    high_amount: allocation.amount,
-  }));
+  const allocationByCategory = new Map(
+    draft.allocations.map((allocation) => [canonicalizeVendorCategory(allocation.name), allocation]),
+  );
+
+  return vendorCategoryCatalog.map((category) => {
+    const allocation = allocationByCategory.get(category.name);
+    const amount = allocation?.amount
+      ?? Math.round(((draft.totalBudget ?? 0) * category.suggestedPercentage) / 100);
+    return {
+      category: category.name,
+      source: 'couple_plan',
+      sample_size: 0,
+      benchmark_visible: false,
+      suggested_amount: amount,
+      low_amount: amount,
+      high_amount: amount,
+    };
+  });
 }
 
 export async function seedWeddingPlanFromEstimator({
@@ -244,12 +258,12 @@ export async function seedWeddingPlanFromEstimator({
   const existingWeddingBudgetNames = new Set(
     (existingBudgetRes.data ?? [])
       .filter((item) => (item.budget_scope ?? 'wedding') === 'wedding')
-      .map((item) => item.name),
+      .map((item) => canonicalizeVendorCategory(item.name)),
   );
   const existingPersonalBudgetNames = new Set(
     (existingBudgetRes.data ?? [])
       .filter((item) => item.budget_scope === 'personal')
-      .map((item) => item.name),
+      .map((item) => canonicalizeVendorCategory(item.name)),
   );
   const existingTaskTitles = new Set((existingTaskRes.data ?? []).map((item) => item.title));
   const seededWeddingDate = clientRes.data?.wedding_date
@@ -280,6 +294,7 @@ export async function seedWeddingPlanFromEstimator({
     .map((row) => ({
       user_id: userId,
       client_id: clientId,
+      wedding_id: weddingId,
       name: row.category,
       allocated: row.suggested_amount,
       suggested_allocated:
@@ -309,6 +324,7 @@ export async function seedWeddingPlanFromEstimator({
           return {
             user_id: userId,
             client_id: null,
+            wedding_id: weddingId,
             name: template.name,
             allocated: estimate?.suggested_amount ?? 0,
             suggested_allocated: allocation?.suggestedAmount ?? estimate?.suggested_amount ?? 0,

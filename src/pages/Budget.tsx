@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ExternalLink, Loader2, Trash2 } from 'lucide-react';
@@ -41,6 +41,7 @@ import {
   vendorSelectionStatuses,
   type VendorSelectionStatus,
 } from '@/lib/vendorSelection';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
 import { getEntitlementDecision } from '@/lib/entitlements';
@@ -54,7 +55,6 @@ import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { createVendorTask } from '@/lib/vendorTasks';
 import { getSuggestedTaskTemplates, type SuggestedTaskTemplateOption } from '@/lib/weddingTaskTemplates';
-import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 import { PaymentReminderStatus } from '@/components/PaymentReminderStatus';
 import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 import {
@@ -65,6 +65,8 @@ import {
 import {
   canonicalizeVendorCategory,
   getVendorCategoryScope,
+  isVendorCategory,
+  vendorCategoryCatalog,
   vendorCategoriesMatch,
 } from '@/lib/vendorCategories';
 import { recalibrateBudgetAllocations } from '@/lib/budgetRecalibration';
@@ -82,6 +84,7 @@ interface BudgetCategory {
   suggested_percentage: number | null;
   allocation_manually_edited: boolean;
   allocation_last_edited_field: 'amount' | 'percentage' | null;
+  wedding_id: string | null;
 }
 
 type BudgetScope = 'wedding' | 'personal';
@@ -229,6 +232,7 @@ async function loadBudgetCategories(dataOrFilter: string): Promise<BudgetCategor
 
   return ((data ?? []) as any[]).map((item) => ({
     ...item,
+    name: canonicalizeVendorCategory(item.name),
     allocated: Number(item.allocated),
     spent: Number(item.spent),
     budget_scope: (item.budget_scope ?? 'wedding') as BudgetScope,
@@ -242,7 +246,7 @@ async function loadBudgetCategories(dataOrFilter: string): Promise<BudgetCategor
       item.allocation_last_edited_field === 'amount' || item.allocation_last_edited_field === 'percentage'
         ? item.allocation_last_edited_field
         : null,
-  })) as BudgetCategory[];
+  })).filter((item) => isVendorCategory(item.name)) as BudgetCategory[];
 }
 
 async function loadBudgetVendorOptions(dataOrFilter: string): Promise<BudgetVendorOption[]> {
@@ -455,6 +459,9 @@ export default function Budget() {
   });
 
   const categories = categoriesQuery.data ?? [];
+  const activeWeddingId = isPlanner
+    ? selectedClient?.wedding_id ?? null
+    : categories.find((category) => category.budget_scope === 'wedding' && category.wedding_id)?.wedding_id ?? null;
   const vendorOptions = vendorOptionsQuery.data ?? [];
   const paymentRecords = paymentRecordsQuery.data ?? [];
   const budgetTasks = tasksQuery.data ?? [];
@@ -985,7 +992,11 @@ export default function Budget() {
     if (!user) return;
     const nextErrors: { name?: string; allocated?: string } = {};
     const allocatedAmount = allocated.trim() === '' ? Number.NaN : parseFloat(allocated);
-    if (!name.trim()) nextErrors.name = 'Choose a suggested category or type your own before saving.';
+    const canonicalName = canonicalizeVendorCategory(name);
+    if (!canonicalName || !isVendorCategory(canonicalName)) nextErrors.name = 'Choose one of the planning categories.';
+    if (categories.some((category) => vendorCategoriesMatch(category.name, canonicalName))) {
+      nextErrors.name = 'This category is already in the plan.';
+    }
     if (!Number.isFinite(allocatedAmount) || allocatedAmount < 0) nextErrors.allocated = 'Enter a valid allocated amount in KES.';
     setCategoryFormErrors(nextErrors);
     setCategorySubmitError(null);
@@ -995,10 +1006,10 @@ export default function Budget() {
 
     const insert: Record<string, unknown> = {
       user_id: user.id,
-      name,
+      name: canonicalName,
       allocated: allocatedAmount,
       suggested_allocated: allocatedAmount,
-      suggested_percentage: newCategoryScope === 'wedding' && visibleBudgetGoal > 0
+      suggested_percentage: visibleBudgetGoal > 0
         ? (allocatedAmount / visibleBudgetGoal) * 100
         : null,
       allocation_manually_edited: false,
@@ -1290,13 +1301,13 @@ export default function Budget() {
   const totalSpent = categories.reduce((sum, category) => sum + category.spent, 0);
   const weddingCategories = categories.filter((category) => category.budget_scope === 'wedding');
   const personalCategories = categories.filter((category) => category.budget_scope === 'personal');
-  const visibleCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
+  const visibleCategories = showPersonalBudget ? categories : weddingCategories;
   const visibleAllocated = visibleCategories.reduce((sum, category) => sum + category.allocated, 0);
   const visibleSpent = visibleCategories.reduce((sum, category) => sum + category.spent, 0);
-  const weddingAllocated = weddingCategories.reduce((sum, category) => sum + category.allocated, 0);
+  const weddingAllocated = totalAllocated;
   const storedWeddingBudgetGoal = Number(isPlanner ? selectedClient?.wedding_budget_goal : profile?.wedding_budget_goal);
-  const weddingBudgetGoal = storedWeddingBudgetGoal > 0 ? storedWeddingBudgetGoal : weddingAllocated;
-  const visibleBudgetGoal = activeBudgetScope === 'wedding' ? weddingBudgetGoal : visibleAllocated;
+  const weddingBudgetGoal = storedWeddingBudgetGoal > 0 ? storedWeddingBudgetGoal : totalAllocated;
+  const visibleBudgetGoal = weddingBudgetGoal;
   const visibleAllocationPercentage = visibleBudgetGoal > 0
     ? (visibleAllocated / visibleBudgetGoal) * 100
     : 0;
@@ -1353,11 +1364,11 @@ export default function Budget() {
     }
 
     setSavingBudgetGoal(true);
-    const shouldRecalibrate = normalizedBudgetGoal < weddingAllocated && !plannerNeedsApproval;
+    const shouldRecalibrate = normalizedBudgetGoal !== Math.round(weddingAllocated) && !plannerNeedsApproval;
     const recalibration = shouldRecalibrate
-      ? recalibrateBudgetAllocations(weddingCategories, normalizedBudgetGoal)
+      ? recalibrateBudgetAllocations(categories, normalizedBudgetGoal)
       : null;
-    const previousAllocations = weddingCategories.map((category) => ({
+    const previousAllocations = categories.map((category) => ({
       id: category.id,
       allocated: category.allocated,
       suggested_allocated: category.suggested_allocated,
@@ -1365,7 +1376,7 @@ export default function Budget() {
     try {
       if (recalibration) {
         const allocationUpdates = await Promise.all(recalibration.allocations.map(async (allocation) => {
-          const category = weddingCategories.find((item) => item.id === allocation.id);
+          const category = categories.find((item) => item.id === allocation.id);
           if (!category) return null;
           const suggestedAllocated = category.suggested_percentage == null
             ? category.suggested_allocated
@@ -1395,6 +1406,9 @@ export default function Budget() {
         if (error) throw error;
         await loadClients();
       } else {
+        if (activeWeddingId) {
+          await recalculatePlanningExperiment(activeWeddingId, { estimatedBudget: normalizedBudgetGoal });
+        }
         await updateProfile({ wedding_budget_goal: normalizedBudgetGoal });
       }
 
@@ -1461,6 +1475,9 @@ export default function Budget() {
         if (error) throw error;
         await loadClients();
       } else {
+        if (activeWeddingId) {
+          await recalculatePlanningExperiment(activeWeddingId, { estimatedGuestCount: normalizedGuestCount });
+        }
         await updateProfile({ expected_guest_count: normalizedGuestCount });
       }
 
@@ -1502,7 +1519,6 @@ export default function Budget() {
     }));
   }, [weddingCategories, categoryBenchmarks]);
 
-  const currentScopeCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
   const paymentScopeCategories = paymentLog.budgetScope === 'personal' ? personalCategories : weddingCategories;
   const paymentCategoryOptions = useMemo<PaymentCategoryOption[]>(() => {
     const existingByName = new Map(
@@ -1532,7 +1548,9 @@ export default function Budget() {
   const selectedPaymentCategoryOption = paymentCategoryOptions.find(
     (option) => option.value === paymentLog.categorySelection,
   );
-  const currentScopePayments = paymentRecords.filter((payment) => payment.budget_scope === activeBudgetScope);
+  const currentScopePayments = showPersonalBudget
+    ? paymentRecords
+    : paymentRecords.filter((payment) => payment.budget_scope === 'wedding');
   const currentScopePaymentTotal = currentScopePayments.reduce((sum, payment) => sum + payment.amount, 0);
   const invoiceTotal = activeBudgetScope === 'wedding' ? totalFinalVendorContract : visibleAllocated;
   const totalBalance = Math.max(invoiceTotal - currentScopePaymentTotal, 0);
@@ -1953,7 +1971,7 @@ export default function Budget() {
     }
   }, [filteredVisibleCategories, selectedCategoryId]);
 
-  const budgetScopeLabel = activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget';
+  const budgetScopeLabel = 'budget';
 
   const contextualBudgetMessage = (() => {
     if (activeBudgetScope === 'wedding' && visibleAllocationPercentage > 100.01) {
@@ -2055,9 +2073,8 @@ export default function Budget() {
     <div className="space-y-6">
       <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Budget</p>
-          <h1 className="mt-2 font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Where is the money going?</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Plan each cost and record what you pay.</p>
+          <h1 className="font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Budget</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Plan costs and record payments.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -2073,9 +2090,11 @@ export default function Budget() {
               exportBudgetData();
             }}
           >
-            Export Budget
+            Export budget
           </Button>
-          <Button type="button" onClick={() => setOpen(true)}>Add Category</Button>
+          {categories.length < vendorCategoryCatalog.length ? (
+            <Button type="button" onClick={() => setOpen(true)}>Add category</Button>
+          ) : null}
         </div>
       </header>
 
@@ -2099,23 +2118,28 @@ export default function Budget() {
               inputMode="numeric"
               value={budgetGoalDraft}
               onChange={(event) => setBudgetGoalDraft(formatIntegerDraft(event.target.value))}
-              onBlur={() => void saveBudgetGoal()}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') event.currentTarget.blur();
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void saveBudgetGoal();
+                }
               }}
               disabled={savingBudgetGoal}
               className="h-10 bg-background pl-12 text-sm font-semibold sm:h-11 sm:text-base"
             />
           </div>
-          {savingBudgetGoal ? (
-            <p className="mt-2 text-xs text-muted-foreground" aria-live="polite">Saving your budget...</p>
-          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            className="mt-3 w-full"
+            disabled={savingBudgetGoal || !budgetGoalDraft}
+            onClick={() => void saveBudgetGoal()}
+          >
+            {savingBudgetGoal ? 'Saving…' : 'Save and rebalance'}
+          </Button>
         </div>
 
         <div className="border-b border-border lg:border-b-0 lg:border-r">
-          <p className="border-b border-border px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground sm:px-5">
-            Tracking intended wedding budget
-          </p>
           <div className="grid grid-cols-2">
             <div className="border-r border-border p-4 sm:p-5">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Allocated</p>
@@ -2182,15 +2206,15 @@ export default function Budget() {
       {activeBudgetScope === 'wedding' ? (
         <section className="overflow-hidden rounded-lg border border-border bg-card" aria-labelledby="vendor-payments-title">
           <div className="border-b border-border px-4 py-3 sm:px-5">
-            <h2 id="vendor-payments-title" className="text-sm font-semibold text-foreground">Vendor Payments</h2>
+            <h2 id="vendor-payments-title" className="text-sm font-semibold text-foreground">Vendor payments</h2>
           </div>
           <div className="grid grid-cols-3">
             <div className="border-r border-border p-3 sm:p-4">
-              <p className="text-xs text-muted-foreground">Total Invoices</p>
+              <p className="text-xs text-muted-foreground">Invoices</p>
               <p className="mt-1 break-words text-sm font-semibold text-foreground sm:text-lg">{formatCurrency(totalFinalVendorContract)}</p>
             </div>
             <div className="border-r border-border p-3 sm:p-4">
-              <p className="text-xs text-muted-foreground">Total Payments</p>
+              <p className="text-xs text-muted-foreground">Paid</p>
               <p className="mt-1 break-words text-sm font-semibold text-success sm:text-lg">{formatCurrency(totalFinalVendorPaid)}</p>
             </div>
             <div className="p-3 sm:p-4">
@@ -2205,26 +2229,12 @@ export default function Budget() {
         className="rounded-lg border border-border bg-card p-2.5 sm:p-3"
         aria-label="Budget view and actions"
       >
-        <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
-          <div className="order-1">
-            <SlidingSegmentedControl
-              label="Budget type"
-              layoutId="budget-scope-selection"
-              value={activeBudgetScope}
-              options={showPersonalBudget
-                ? [{ value: 'wedding', label: 'Wedding' }, { value: 'personal', label: 'Personal' }]
-                : [{ value: 'wedding', label: 'Wedding' }]}
-              onChange={setActiveBudgetScope}
-              reducedMotion={Boolean(prefersReducedMotion)}
-              minWidthClassName="w-full sm:min-w-[13rem]"
-            />
-          </div>
-
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <motion.div
             initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
-            className={`${contextualBudgetMessage.className} order-2 min-w-0 rounded-md border px-3 py-2`}
+            className={`${contextualBudgetMessage.className} min-w-0 rounded-md border px-3 py-2`}
             aria-live="polite"
           >
             <div className="flex min-w-0 flex-col gap-0.5 lg:flex-row lg:items-baseline lg:gap-2">
@@ -2236,19 +2246,20 @@ export default function Budget() {
           <div className="contents">
             <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" className="order-3 w-full sm:w-auto" variant="outline">
+                <Button size="sm" className="w-full sm:w-auto" variant="outline">
                   Record payment
                 </Button>
               </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
               <DialogHeader>
-                <DialogTitle className="font-display">Record Payment Made</DialogTitle>
+                <DialogTitle className="font-display">Record payment</DialogTitle>
+                <DialogDescription>Add a payment to update your budget.</DialogDescription>
               </DialogHeader>
               <form onSubmit={recordPaymentMade} className="space-y-4">
                 <FormSubmitError message={paymentSubmitError} />
                 {showPersonalBudget && (
                   <div className="space-y-2">
-                    <Label>Budget Type</Label>
+                    <Label>Budget type</Label>
                     <div className="flex flex-wrap items-center rounded-full border border-border bg-background p-1">
                       <Button
                         type="button"
@@ -2396,11 +2407,12 @@ export default function Budget() {
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle className="font-display">Add Budget Category</DialogTitle>
+                <DialogTitle className="font-display">Add category</DialogTitle>
+                <DialogDescription>Choose a cost and set its budget.</DialogDescription>
               </DialogHeader>
               <form onSubmit={addCategory} className="space-y-4">
                 <FormSubmitError message={categorySubmitError} />
-                {newCategoryScope === 'wedding' ? (
+                {newCategoryScope === 'wedding' && selectedTemplateName ? (
                   <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                       {addModalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -2410,17 +2422,17 @@ export default function Budget() {
                       {addModalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(addModalBenchmark)}
                     </p>
                   </div>
-                ) : (
+                ) : newCategoryScope === 'personal' ? (
                   <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
                     <div className="text-sm font-medium text-foreground">Private couple spending</div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Personal budget lines are hidden from shared planner views and stay tied to the couple or committee workspace.
                     </p>
                   </div>
-                )}
+                ) : null}
                 {showPersonalBudget && (
                   <div className="space-y-2">
-                    <Label>Budget Type</Label>
+                    <Label>Budget type</Label>
                     <div className="flex items-center rounded-full border border-border bg-background p-1">
                       <Button
                         type="button"
@@ -2442,21 +2454,16 @@ export default function Budget() {
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label>Suggested Category</Label>
+                  <Label>Category</Label>
                   <Select
-                    value={selectedTemplateName || 'custom'}
+                    value={selectedTemplateName}
                     onValueChange={(value) => {
-                      if (value === 'custom') {
-                        setSelectedTemplateName('');
-                        setName('');
-                        return;
-                      }
                       setSelectedTemplateName(value);
                       setName(value);
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={`Choose a ${newCategoryScope} budget category`} />
+                      <SelectValue placeholder="Choose category" />
                     </SelectTrigger>
                     <SelectContent>
                       {suggestedTemplates.map((template) => (
@@ -2464,32 +2471,12 @@ export default function Budget() {
                           {template.name}
                         </SelectItem>
                       ))}
-                      <SelectItem value="custom">Custom category</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Suggestions come from the planner spreadsheet templates we mapped into the app.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>{selectedTemplateName ? 'Selected Category' : 'Category Name'}</Label>
-                  <Input
-                    value={name}
-                    onChange={e => {
-                      setName(e.target.value);
-                      setCategoryFormErrors((current) => ({ ...current, name: undefined }));
-                      setCategorySubmitError(null);
-                      if (selectedTemplateName && e.target.value !== selectedTemplateName) {
-                        setSelectedTemplateName('');
-                      }
-                    }}
-                    placeholder={newCategoryScope === 'personal' ? 'e.g. Honeymoon, Wedding Bands' : 'e.g. Venue, Catering'}
-                    required
-                  />
                   <FormFieldError message={categoryFormErrors.name} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Allocated Amount (KES)</Label>
+                  <Label>Amount (KES)</Label>
                   <Input type="number" value={allocated} onChange={e => {
                     setAllocated(e.target.value);
                     setCategoryFormErrors((current) => ({ ...current, allocated: undefined }));
@@ -2499,7 +2486,7 @@ export default function Budget() {
                 </div>
                 <Button type="submit" className="w-full" disabled={addingCategory}>
                   {addingCategory ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {addingCategory ? 'Saving...' : 'Add Category'}
+                  {addingCategory ? 'Saving…' : 'Add category'}
                 </Button>
               </form>
             </DialogContent>
@@ -2527,11 +2514,7 @@ export default function Budget() {
                   <Input
                     value={categorySearch}
                     onChange={(e) => setCategorySearch(e.target.value)}
-                    placeholder={
-                      activeBudgetScope === 'personal'
-                        ? 'Search honeymoon, rings, dowry...'
-                        : 'Search venue, catering, decor...'
-                    }
+                    placeholder="Search budget items"
                   />
                 </div>
               </div>
@@ -2846,14 +2829,21 @@ export default function Budget() {
                   })
                 ) : (
                   <div className="p-6 text-center">
-                    <p className="text-sm font-medium text-foreground">No budget items match this search</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {visibleCategories.length === 0 ? 'No budget items yet' : 'No matches'}
+                    </p>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {visibleCategories.length === 0
                         ? activeBudgetScope === 'personal'
-                          ? 'Add the first private budget line to track costs the couple wants to keep separate.'
-                          : 'Add the first wedding budget line to start planning costs properly.'
-                        : 'Try a different category name, role, or status search.'}
+                          ? 'Add a private cost to track it separately.'
+                          : 'Add a category to start your budget.'
+                        : 'Try a different search.'}
                     </p>
+                    {visibleCategories.length === 0 ? (
+                      <Button type="button" className="mt-4" onClick={() => setOpen(true)}>
+                        Add category
+                      </Button>
+                    ) : null}
                   </div>
                 )}
               </div>

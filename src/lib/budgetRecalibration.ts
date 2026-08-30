@@ -27,7 +27,7 @@ export function recalibrateBudgetAllocations(
   const protectedSpend = normalized.reduce((sum, category) => sum + category.spent, 0);
   const totalAllocated = normalized.reduce((sum, category) => sum + category.allocated, 0);
 
-  if (totalAllocated <= targetBudget) {
+  if (totalAllocated === targetBudget) {
     return {
       allocations: normalized.map((category) => ({ ...category, nextAllocated: category.allocated })),
       protectedSpend,

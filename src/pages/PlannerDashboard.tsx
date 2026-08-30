@@ -41,6 +41,7 @@ import {
   TonalCardHeader,
   TonalCardTitle,
 } from '@/components/ui/tonal-card';
+import ProfessionalLeadInbox from '@/components/leads/ProfessionalLeadInbox';
 
 interface PlannerTaskPulse {
   id: string;
@@ -333,8 +334,8 @@ export default function PlannerDashboard() {
     bypass: plannerPreviewMode,
   });
   const fullPlannerAccess = workspaceDecision.allowed;
-  const collectionHeading = isCommittee ? 'Committee Weddings' : 'My Weddings';
-  const addLabel = isCommittee ? 'Add Wedding' : 'Add Client';
+  const collectionHeading = 'Weddings';
+  const addLabel = isCommittee ? 'Add wedding' : 'Add client';
   const committeeAtCapacity = isCommittee && clients.length >= 1;
   const today = startOfToday();
   const dueSoonLimit = new Date(today.getTime() + (14 * DAY_MS));
@@ -429,6 +430,8 @@ export default function PlannerDashboard() {
         </Card>
       )}
 
+      <ProfessionalLeadInbox />
+
       {/* Pending Link Requests */}
       {(plannerPreviewMode || plannerCanCollaborate(profile)) && incomingLinkRequests.length > 0 && (
         <Card className="semantic-surface-warning">
@@ -489,11 +492,7 @@ export default function PlannerDashboard() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Planner home</p>
-          <h1 className="mt-1 font-display text-3xl font-bold text-foreground">{collectionHeading}</h1>
-          <p className="mt-1 text-muted-foreground">
-            See what needs attention across {clients.length} wedding{clients.length !== 1 ? 's' : ''}.
-          </p>
+          <h1 className="font-display text-3xl font-bold text-foreground">{collectionHeading}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Dialog open={codeDialogOpen} onOpenChange={setCodeDialogOpen}>
@@ -504,16 +503,16 @@ export default function PlannerDashboard() {
               onClick={() => (addWeddingDecision.allowed ? setCodeDialogOpen(true) : setUpgradeDialogOpen(true))}
             >
               <LinkIcon className="h-4 w-4" />
-              Link by Code
+              Link wedding
             </Button>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
               <DialogHeader>
-                <DialogTitle className="font-display">Link an Existing Couple Workspace</DialogTitle>
+                <DialogTitle className="font-display">Link wedding</DialogTitle>
               </DialogHeader>
               <form onSubmit={submitCodeRequest} className="space-y-4">
                 <FormSubmitError message={codeSubmitError} />
                 <div className="space-y-2">
-                  <Label>Couple Collaboration Code</Label>
+                  <Label>Wedding code</Label>
                   <Input
                     value={collabCode}
                     onChange={(e) => {
@@ -527,20 +526,20 @@ export default function PlannerDashboard() {
                   />
                   <FormFieldError message={codeFormErrors.collabCode} />
                   <p className="text-xs text-muted-foreground">
-                    Ask the couple to share the code from their dashboard. Once they approve, their wedding appears here automatically.
+                    Ask the couple for the code from their dashboard.
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Message (optional)</Label>
+                  <Label>Message</Label>
                   <Textarea
                     value={collabNote}
                     onChange={(e) => setCollabNote(e.target.value)}
-                    placeholder="Add a short note so the couple knows why you're requesting access."
+                    placeholder="Optional note"
                     rows={3}
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={submittingCode}>
-                  {submittingCode ? 'Sending request...' : 'Send link request'}
+                  {submittingCode ? 'Sending…' : 'Send request'}
                 </Button>
               </form>
             </DialogContent>
@@ -555,7 +554,7 @@ export default function PlannerDashboard() {
               <Plus className="h-4 w-4" /> {addLabel}
             </Button>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-              <DialogHeader><DialogTitle className="font-display">{isCommittee ? 'New Wedding Workspace' : 'New Client'}</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="font-display">{addLabel}</DialogTitle></DialogHeader>
               <form onSubmit={addClient} className="space-y-4">
                 <FormSubmitError message={clientSubmitError} />
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -569,6 +568,9 @@ export default function PlannerDashboard() {
                     <Input value={form.partner_name} onChange={e => setForm(f => ({ ...f, partner_name: e.target.value }))} placeholder="e.g. John Kamau" />
                   </div>
                 </div>
+                <details className="rounded-2xl border border-border/70">
+                  <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">More details</summary>
+                  <div className="grid gap-4 border-t border-border/70 p-4">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Wedding Date</Label>
@@ -591,8 +593,10 @@ export default function PlannerDashboard() {
                     <FormFieldError message={clientFormErrors.phone} />
                   </div>
                 </div>
+                  </div>
+                </details>
                 <Button type="submit" className="w-full" disabled={addingClient}>
-                  {addingClient ? 'Saving...' : addLabel}
+                  {addingClient ? 'Saving…' : addLabel}
                 </Button>
               </form>
             </DialogContent>
@@ -602,7 +606,7 @@ export default function PlannerDashboard() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <AttentionInbox
-          showEmpty
+          showEmpty={false}
           maxItems={3}
           supplementaryItems={plannerTaskAttentionItems}
           onSupplementaryAction={(item) => {
@@ -615,7 +619,9 @@ export default function PlannerDashboard() {
         />
 
         {clients.length > 0 && (
-          <TonalCard tone="oat">
+          <details className="rounded-2xl border border-border/70 bg-card">
+            <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">Recent changes</summary>
+          <TonalCard tone="oat" className="rounded-t-none border-x-0 border-b-0 shadow-none">
             <TonalCardHeader>
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-current/50">Client activity</p>
               <TonalCardTitle className="text-xl">Recent changes</TonalCardTitle>
@@ -647,6 +653,7 @@ export default function PlannerDashboard() {
               )}
             </TonalCardBody>
           </TonalCard>
+          </details>
         )}
       </div>
 
@@ -666,7 +673,9 @@ export default function PlannerDashboard() {
 
       {clients.length > 0 && (
         <>
-          <section aria-label="Wedding workload overview" className="space-y-4">
+          <details className="rounded-2xl border border-border/70 bg-card">
+            <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">Workload details</summary>
+          <section aria-label="Wedding workload overview" className="space-y-4 border-t border-border/70 p-4">
             <div className="grid overflow-hidden rounded-2xl border border-border/80 bg-card shadow-card sm:grid-cols-3">
               <div className="flex items-center gap-3 border-b border-border/70 px-4 py-3 sm:border-b-0 sm:border-r">
                 <span className="rounded-full bg-muted p-2 text-muted-foreground">
@@ -697,11 +706,11 @@ export default function PlannerDashboard() {
               </div>
             </div>
           </section>
+          </details>
 
           <section aria-labelledby="planner-weddings-heading" className="space-y-3">
             <div>
               <h2 id="planner-weddings-heading" className="font-display text-2xl font-semibold text-foreground">Your weddings</h2>
-              <p className="text-sm text-muted-foreground">Choose a wedding to open its full planning workspace.</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {weddingOverviews.map((overview, i) => {
@@ -801,16 +810,15 @@ export default function PlannerDashboard() {
       {clients.length === 0 && (
         <Card className="border-border/70 bg-muted/10 shadow-card">
           <CardContent className="flex flex-col items-center px-6 py-14 text-center">
-            <Users className="mb-4 h-12 w-12 text-muted-foreground/40" />
             <h3 className="font-display text-2xl text-foreground">
-              {isCommittee ? 'No wedding workspace yet' : plannerPreviewMode ? 'No test weddings yet' : 'No clients yet'}
+              {plannerPreviewMode ? 'No test weddings yet.' : 'No weddings yet.'}
             </h3>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
               {isCommittee
-                ? 'Add your wedding first, then assign committee roles, vendors, and follow-ups from one shared workspace.'
+                ? 'Add the wedding your committee is planning.'
                 : plannerPreviewMode
-                  ? 'Planner preview is working, but this admin account does not have any planner-linked weddings yet. Add a test wedding or link one by code to unlock the rest of the planner workspace.'
-                  : 'Add your first client to start managing their wedding workspace, budget, tasks, guests, and timeline.'}
+                  ? 'Add a test wedding or link one with a code.'
+                  : 'Add your first client wedding.'}
             </p>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Button onClick={() => setOpen(true)} className="gap-2">
@@ -820,7 +828,7 @@ export default function PlannerDashboard() {
               {!isCommittee && (
                 <Button variant="outline" onClick={() => setCodeDialogOpen(true)} className="gap-2">
                   <LinkIcon className="h-4 w-4" />
-                  Link by Code
+                  Link wedding
                 </Button>
               )}
             </div>

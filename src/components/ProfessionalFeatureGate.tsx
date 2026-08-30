@@ -43,14 +43,14 @@ export default function ProfessionalFeatureGate({
         </div>
         <p className="mt-6 text-xs font-semibold uppercase tracking-[0.2em] text-primary">Professional plan</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          Create client documents with Professional
+          Connect client documents with Professional
         </h1>
         <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground">
-          Upgrade to make quotes, invoices, receipts, contracts, and reusable templates.
+          Quotes, invoices, receipts, contracts, templates, and PDF exports are free. Upgrade to connect them to Zania clients and shared workspaces.
         </p>
 
         <div className="mt-7 grid gap-3 sm:grid-cols-3">
-          {['Send clear quotes', 'Track money due', 'Keep receipts together'].map((label) => (
+          {['Link client workspaces', 'Answer in-app requests', 'Sync shared status'].map((label) => (
             <div key={label} className="flex min-h-14 items-center gap-3 rounded-2xl border border-border/70 bg-white/75 px-4 py-3 text-sm font-medium text-foreground">
               <FileText className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
               {label}

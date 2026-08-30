@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, Clock3, FileCheck2, Inbox, PencilLine } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Clock3, Inbox, PencilLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import type { CommercialDocumentRecord } from '@/lib/commercialDocuments';
@@ -30,35 +30,9 @@ export default function DocumentActionOverview({
   const waitingDocuments = documents.filter((document) =>
     document.status === 'sent' || document.status === 'part_paid',
   );
-  const completedDocuments = documents.filter((document) =>
-    ['accepted', 'paid', 'issued'].includes(document.status),
-  );
-
   return (
     <section className="space-y-4" aria-labelledby="document-action-heading">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Document desk</p>
-          <h2 id="document-action-heading" className="mt-1 font-display text-2xl font-semibold text-foreground">
-            What needs attention?
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">Start with the first card. Everything else can wait.</p>
-        </div>
-        <div className="grid grid-cols-3 divide-x divide-border/70 text-right">
-          {[
-            { label: 'Need you', value: needsAction.length, className: needsAction.length > 0 ? 'text-destructive' : 'text-foreground' },
-            { label: 'Waiting', value: waitingDocuments.length, className: 'text-warning-foreground' },
-            { label: 'Filed', value: completedDocuments.length, className: 'text-success' },
-          ].map((metric) => (
-            <div key={metric.label} className="min-w-16 px-3 first:pl-0 last:pr-0">
-              <p className={`text-lg font-semibold leading-none ${metric.className}`}>{metric.value}</p>
-              <p className="mt-1 text-[0.6rem] font-semibold uppercase tracking-[0.13em] text-muted-foreground">
-                {metric.label}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
+      <h2 id="document-action-heading" className="font-display text-2xl font-semibold text-foreground">Needs attention</h2>
 
       {loading ? (
         <Card className="border-border/70 shadow-card">
@@ -122,15 +96,14 @@ export default function DocumentActionOverview({
               <CheckCircle2 className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-semibold text-foreground">Nothing is waiting on you</h3>
-              <p className="text-sm text-muted-foreground">New quote and contract requests will appear here first.</p>
+              <h3 className="font-semibold text-foreground">Nothing needs attention.</h3>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {(waitingDocuments.length > 0 || completedDocuments.length > 0) && (
-        <div className="grid gap-3 lg:grid-cols-2">
+      {waitingDocuments.length > 0 && (
+        <div>
           <Card className="border-[#c8d8eb] bg-[#f3f7fc] shadow-none">
             <CardContent className="p-5">
               <div className="flex items-center gap-2 text-[#315f92]">
@@ -157,18 +130,6 @@ export default function DocumentActionOverview({
             </CardContent>
           </Card>
 
-          <Card className="border-border/70 bg-muted/10 shadow-none">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <FileCheck2 className="h-4 w-4" />
-                <h3 className="font-semibold text-foreground">Completed and filed</h3>
-                <span className="ml-auto text-lg font-semibold leading-none text-foreground">{completedDocuments.length}</span>
-              </div>
-              <p className="mt-3 text-sm text-muted-foreground">
-                Accepted quotes, paid invoices, and issued receipts stay safely filed in the library below.
-              </p>
-            </CardContent>
-          </Card>
         </div>
       )}
     </section>

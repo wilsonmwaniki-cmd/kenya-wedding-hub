@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { Heart, MapPin, Users, Calendar, Star, ArrowLeft, Loader2, Tag, Store } from 'lucide-react';
+import { Star, ArrowLeft } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -76,9 +76,8 @@ export default function WeddingPortfolio() {
   if (!portfolio) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background gap-4">
-        <Heart className="h-12 w-12 text-muted-foreground" />
-        <p className="text-muted-foreground">This wedding story is not available.</p>
-        <Link to="/" className="text-primary hover:underline text-sm">← Back to home</Link>
+        <h1 className="font-display text-2xl font-semibold text-foreground">Wedding story unavailable</h1>
+        <Link to="/" className="text-primary hover:underline text-sm">Go home</Link>
       </div>
     );
   }
@@ -107,24 +106,23 @@ export default function WeddingPortfolio() {
             <ArrowLeft className="h-4 w-4" /> Home
           </Link>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <Heart className="mx-auto h-10 w-10 mb-4" fill="currentColor" />
             <h1 className="font-display text-4xl font-bold sm:text-5xl">{portfolio.title}</h1>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-primary-foreground/80">
               {weddingDate && (
-                <span className="flex items-center gap-1.5"><Calendar className="h-4 w-4" /> {weddingDate}</span>
+                <span>{weddingDate}</span>
               )}
               {portfolio.wedding_location && (
-                <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4" /> {portfolio.wedding_location}</span>
+                <span>{portfolio.wedding_location}</span>
               )}
               {portfolio.guest_count > 0 && (
-                <span className="flex items-center gap-1.5"><Users className="h-4 w-4" /> {portfolio.guest_count} Guests</span>
+                <span>{portfolio.guest_count} guests</span>
               )}
             </div>
             {portfolio.style_tags.length > 0 && (
               <div className="mt-4 flex flex-wrap justify-center gap-2">
                 {portfolio.style_tags.map(tag => (
                   <Badge key={tag} variant="secondary" className="bg-primary-foreground/20 text-primary-foreground border-0">
-                    <Tag className="h-3 w-3 mr-1" /> {tag}
+                    {tag}
                   </Badge>
                 ))}
               </div>
@@ -146,7 +144,6 @@ export default function WeddingPortfolio() {
         {vendors.length > 0 && (
           <section>
             <h2 className="font-display text-2xl font-semibold text-foreground text-center mb-6">
-              <Store className="inline h-6 w-6 mr-2 text-primary" />
               Wedding Team
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -188,7 +185,6 @@ export default function WeddingPortfolio() {
           <section>
             <Separator className="mb-8" />
             <h2 className="font-display text-2xl font-semibold text-foreground text-center mb-6">
-              <Star className="inline h-6 w-6 mr-2 text-accent" />
               Reviews
             </h2>
             <div className="space-y-4">

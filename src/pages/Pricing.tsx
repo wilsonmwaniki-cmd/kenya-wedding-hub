@@ -59,34 +59,6 @@ const coupleCadenceLabels: Record<CouplePlanCadence, string> = {
   annual: 'Annual',
 };
 
-const coupleTierUpgradeCopy: Record<CouplePlanTier, string> = {
-  free: 'Explore Zania and use the complete couple planning workspace without paying.',
-  collaborative: 'Upgrade when you are ready to work directly with your vendors and planner in Zania.',
-};
-
-const professionalPlanCopy: Record<ProfessionalAudience, {
-  sectionTitle: string;
-  sectionDescription: string;
-  freeSummary: string;
-  premiumSummary: string;
-  premiumValue: string;
-}> = {
-  planner: {
-    sectionTitle: 'For planners turning coordination into a repeatable system',
-    sectionDescription: 'Join free, prove the workflow, then upgrade when Zania becomes part of how your business runs.',
-    freeSummary: 'A clean entry into the Zania workflow for testing one live client workspace.',
-    premiumSummary: 'For planners who want reusable systems, stronger reporting, and smoother client operations.',
-    premiumValue: 'Run multiple weddings with more rhythm, tighter client delivery, and less manual follow-up.',
-  },
-  vendor: {
-    sectionTitle: 'For vendors who want to be discovered and booked professionally',
-    sectionDescription: 'Start with a free verified presence, then upgrade when Zania becomes part of how your wider business runs.',
-    freeSummary: 'A strong first step for getting visible inside Zania without friction.',
-    premiumSummary: 'For vendors who want better operations across inquiries, bookings, documents, and delivery.',
-    premiumValue: 'This is where Zania becomes your booking, quoting, invoicing, and contract workspace, not just your listing.',
-  },
-};
-
 function isPricingAudience(value: string | null): value is PricingAudience {
   return value === 'couple' || value === 'committee' || value === 'planner' || value === 'vendor';
 }
@@ -95,7 +67,7 @@ export default function Pricing() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const { weddingId } = useWeddingEntitlements();
   const requestedAudience = searchParams.get('audience');
   const requestedPlanCode = searchParams.get('plan');
@@ -235,23 +207,6 @@ export default function Pricing() {
 
     return null;
   }, [highlightedFeature, targetPlan, upgradeState]);
-
-  const professionalUsePrompt = useMemo(() => {
-    if (!profile) return null;
-
-    const looksProfessional =
-      profile.account_purpose === 'professional_planner'
-      || profile.professional_use_risk_level === 'medium'
-      || profile.professional_use_risk_level === 'high';
-
-    if (!looksProfessional) return null;
-
-    return {
-      title: 'A professional workflow may fit better here',
-      body: 'It looks like you may be helping manage weddings professionally. Zania Collaborative gives you proper access, roles, and tools for working with couples.',
-      badge: profile.professional_use_risk_level === 'high' ? 'Professional signal' : 'Workflow fit',
-    };
-  }, [profile]);
 
   const handleCheckout = async (audience: PricingAudience) => {
     const plan = getAudiencePlan(audience);
@@ -397,51 +352,6 @@ export default function Pricing() {
     if (amount == null) return 'Free';
     return `KES ${amount.toLocaleString()}`;
   };
-
-  const compactComparisonRows = [
-    {
-      feature: 'Core planning workspace',
-      coupleFree: 'All current couple planning tools',
-      coupleCollaborative: 'Everything in Intimate',
-      professionalFree: 'Directory listing and profile',
-      professionalPremium: 'Operational workspace tools',
-    },
-    {
-      feature: 'Shared collaboration',
-      coupleFree: 'Not included',
-      coupleCollaborative: 'Planner and vendor collaboration',
-      professionalFree: 'Join couple-funded workspaces',
-      professionalPremium: 'Manage client work in one place',
-    },
-    {
-      feature: 'AI support',
-      coupleFree: 'Included',
-      coupleCollaborative: 'Included',
-      professionalFree: 'Not included',
-      professionalPremium: 'Included',
-    },
-    {
-      feature: 'Vendor and planner coordination',
-      coupleFree: 'Discovery and private records',
-      coupleCollaborative: 'Shared workspace collaboration',
-      professionalFree: 'Invitations and inquiries',
-      professionalPremium: 'Bookings and follow-through',
-    },
-    {
-      feature: 'Bookings, invoices, contracts',
-      coupleFree: 'Not included',
-      coupleCollaborative: 'Not included',
-      professionalFree: 'Not included',
-      professionalPremium: 'Included',
-    },
-    {
-      feature: 'Public trust and growth',
-      coupleFree: 'Not included',
-      coupleCollaborative: 'Not included',
-      professionalFree: 'Verified listing eligibility',
-      professionalPremium: 'Advanced portfolio and analytics',
-    },
-  ];
 
   const renderFocusedUpgrade = () => {
     if (!targetAudience) return null;
@@ -690,543 +600,202 @@ export default function Pricing() {
 
   const focusedUpgradeContent = isFocusedUpgradeView ? renderFocusedUpgrade() : null;
   const authSignupHref = '/auth?mode=signup';
+  const activeAudience: 'couple' | ProfessionalAudience =
+    targetAudience === 'planner' || targetAudience === 'vendor' ? targetAudience : 'couple';
+  const audienceHeading = activeAudience === 'couple'
+    ? 'Plan privately or bring your team in'
+    : `Choose how you run your ${activeAudience} business`;
+  const audienceDescription = activeAudience === 'couple'
+    ? 'Planning stays free. Pay only when a planner or vendor needs to work inside your wedding workspace.'
+    : 'Your listing and document tools are free. Pay only when you want them connected to Zania clients and bookings.';
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#fcf8f3_0%,#fffdfa_24%,#ffffff_100%)] text-foreground">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#fbf4ec_0%,#fffdfa_48%,#ffffff_100%)] text-foreground">
       <nav className="sticky top-0 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <Link to="/" className="inline-flex items-center">
-            <BrandWordmark size="md" />
-          </Link>
+          <Link to="/" className="inline-flex items-center"><BrandWordmark size="md" /></Link>
           <div className="hidden items-center gap-8 md:flex">
-            <Link to="/vendors-directory" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Vendors</Link>
-            <Link to="/planners" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Planners</Link>
+            <Link to="/vendors-directory" className="text-sm text-muted-foreground hover:text-foreground">Vendors</Link>
+            <Link to="/planners" className="text-sm text-muted-foreground hover:text-foreground">Planners</Link>
             <Link to="/pricing" className="text-sm font-medium text-foreground">Pricing</Link>
-            <Link to="/sign-in" className="inline-flex h-10 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
-              Sign In
-            </Link>
+            <Link to="/sign-in" className="inline-flex h-10 items-center bg-primary px-6 text-sm font-medium text-primary-foreground hover:opacity-90">Sign in</Link>
           </div>
-          <Link to="/sign-in" className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 md:hidden">
-            Sign In
-          </Link>
+          <Link to="/sign-in" className="inline-flex h-10 items-center bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 md:hidden">Sign in</Link>
         </div>
       </nav>
 
-      {focusedUpgradeContent ? (
-        focusedUpgradeContent
-      ) : (
-        <>
-          <section className="mx-auto max-w-[1500px] px-6 py-16 sm:px-8 lg:py-24 xl:px-12">
-            <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-14">
-              <div className="max-w-[46rem]">
-                <EditorialEyebrow tone="info">Free to start</EditorialEyebrow>
-                <h1 className="marketing-h1 mt-8 max-w-[12ch] text-foreground">
-                  Plan freely. Upgrade when you are ready to collaborate.
-                </h1>
-                <p className="mt-8 max-w-[36rem] text-base leading-8 text-muted-foreground sm:text-[17px]">
-                  Zania gives couples, planners, and vendors one elegant workspace for weddings in Kenya and beyond.
-                  Couples can use the planning workspace for free, then move to Collaborative when vendors or a planner need to join them.
-                </p>
-                <p className="mt-5 max-w-[30rem] text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  No clutter. No forced upgrade on day one. Just a better way to run weddings.
-                </p>
-                <div className="mt-10 flex flex-col gap-3 sm:flex-row">
-                  <Link to={authSignupHref}>
-                    <Button className="w-full gap-2 sm:w-auto">
-                      Start free
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  <Link to="/sign-in">
-                    <Button variant="outline" className="w-full sm:w-auto">
-                      Sign in
-                    </Button>
-                  </Link>
-                </div>
-                <div className="mt-10 flex flex-wrap gap-3">
-                  <Link to="/pricing?audience=couple">
-                    <Button variant="outline" className="rounded-full">Couples</Button>
-                  </Link>
-                  <Link to="/pricing?audience=planner">
-                    <Button variant="outline" className="rounded-full">Planners</Button>
-                  </Link>
-                  <Link to="/pricing?audience=vendor">
-                    <Button variant="outline" className="rounded-full">Vendors</Button>
-                  </Link>
-                </div>
-              </div>
-
-              <Card className="rounded-[30px] border-border/60 bg-card/95 shadow-card">
-                <CardHeader className="px-7 pb-4 pt-7 sm:px-8 sm:pt-8">
-                  <div>
-                    <CardTitle className="marketing-h3">How Zania grows with you</CardTitle>
-                    <CardDescription className="mt-3 max-w-[30rem] text-sm leading-7 text-muted-foreground sm:text-base">
-                      You do not pay to explore or plan your wedding. Couples pay when planning becomes collaborative.
-                    </CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4 px-7 pb-7 sm:px-8 sm:pb-8">
-                  <div className="rounded-[24px] border border-border/60 bg-background/70 p-5 sm:p-6">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Couples</p>
-                    <p className="mt-3 max-w-[26rem] text-sm leading-7 text-muted-foreground">
-                      Intimate includes the current planning workspace. Collaborative unlocks direct work with vendors and a planner.
-                    </p>
-                  </div>
-                  <div className="rounded-[24px] border border-border/60 bg-background/70 p-5 sm:p-6">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Planners</p>
-                    <p className="mt-3 max-w-[26rem] text-sm leading-7 text-muted-foreground">
-                      Free includes discovery and couple-funded collaboration. Professional unlocks multi-wedding operations and reusable systems.
-                    </p>
-                  </div>
-                  <div className="rounded-[24px] border border-primary/20 bg-primary/5 p-5 sm:p-6">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Vendors</p>
-                    <p className="mt-3 max-w-[26rem] text-sm leading-7 text-muted-foreground">
-                      Free includes discovery and couple-funded collaboration. Professional unlocks quoting, contracts, invoices, receipts, and analytics.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-
-          {contextMessage && (
-            <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
-              <Card className={`rounded-[28px] border ${
-                contextMessage.tone === 'success'
-                  ? 'border-emerald-200 bg-emerald-50/80'
-                  : contextMessage.tone === 'warning'
-                    ? 'border-amber-200 bg-amber-50/80'
-                    : 'border-primary/20 bg-primary/5'
-              }`}>
-                <CardContent className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Upgrade context</p>
-                    <h2 className="marketing-h3 mt-2">{contextMessage.title}</h2>
-                    <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">{contextMessage.body}</p>
-                  </div>
-                  {targetPlan && (
-                    <StatusLine label="Plan" value={targetPlan.paidTierName} tone="info" className="min-w-36" />
-                  )}
-                </CardContent>
-              </Card>
-            </section>
-          )}
-
-          {professionalUsePrompt && (
-            <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
-              <Card className="rounded-[28px] border border-primary/20 bg-primary/5">
-                <CardContent className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{professionalUsePrompt.badge}</p>
-                    <h2 className="marketing-h3 mt-2">{professionalUsePrompt.title}</h2>
-                    <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">{professionalUsePrompt.body}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <Link to="/pricing?audience=planner">
-                      <Button className="rounded-full">View Collaborative plan</Button>
-                    </Link>
-                    <Link to="/planner-directory">
-                      <Button variant="outline" className="rounded-full">Apply for planner access</Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            </section>
-          )}
-
-          <section className="mx-auto max-w-[1500px] px-6 pb-16 sm:px-8 lg:pb-22 xl:px-12">
-            <div className="mb-8 max-w-[38rem]">
-              <EditorialEyebrow>Couples</EditorialEyebrow>
-              <h2 className="marketing-h2 mt-4">For couples who want one calm place to run the whole wedding</h2>
-              <p className="mt-4 text-base leading-8 text-muted-foreground">
-                Use Zania freely while planning as a couple. Upgrade only when you want vendors or a planner inside your workspace.
+      {focusedUpgradeContent ? focusedUpgradeContent : (
+        <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
+          <section className="grid gap-10 border-b border-border/60 pb-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-end lg:pb-16">
+            <div className="max-w-3xl">
+              <EditorialEyebrow tone="info">Simple pricing</EditorialEyebrow>
+              <h1 className="marketing-h1 mt-6 max-w-[13ch]">Start free. Pay when you need teamwork.</h1>
+              <p className="mt-6 max-w-2xl text-base leading-8 text-muted-foreground sm:text-lg">
+                Pick who you are. We will show you only the plans that matter.
               </p>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-2">
-              {couplePlanDefinitions.map((plan) => {
-                const isPaidTier = plan.tier !== 'free';
-                const isLoading = checkoutTarget === `couple-${plan.tier}`;
-                const cadence = isPaidTier ? selectedCoupleCadence[plan.tier] : null;
-                const priceLabel = !isPaidTier
-                  ? 'Free'
-                  : cadence === 'monthly'
-                    ? `${formatKesPrice(plan.monthlyPriceKes)} / month`
-                    : `${formatKesPrice(plan.annualPriceKes)} / year`;
-
-                return (
-                  <Card
-                    key={plan.tier}
-                    className={`h-full rounded-[30px] border bg-card/95 shadow-card ${
-                      plan.tier === 'collaborative' ? 'border-primary/30 ring-2 ring-primary/10' : 'border-border/60'
+            <div>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">I am a...</p>
+              <div className="grid grid-cols-3 border border-border/70 bg-background" aria-label="Choose your role">
+                {(['couple', 'planner', 'vendor'] as const).map((audience) => (
+                  <Link
+                    key={audience}
+                    to={`/pricing?audience=${audience}`}
+                    aria-current={activeAudience === audience ? 'page' : undefined}
+                    className={`border-r border-border/70 px-3 py-4 text-center text-sm font-semibold transition-colors last:border-r-0 sm:px-5 ${
+                      activeAudience === audience ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                     }`}
                   >
-                    <CardHeader className="space-y-5 px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="max-w-[18rem]">
-                          <CardTitle className="marketing-h3">{plan.title}</CardTitle>
-                          <CardDescription className="mt-2 text-base leading-7">{plan.tagline}</CardDescription>
-                        </div>
-                        {plan.tier === 'collaborative' ? (
-                          <StatusLine
-                            label="Workspace"
-                            value="Collaborate together"
-                            tone="info"
-                            className="max-w-44 shrink-0"
-                          />
-                        ) : null}
-                      </div>
-                      <div>
-                        <p className="marketing-h3">{priceLabel}</p>
-                        <p className="mt-3 text-sm leading-7 text-muted-foreground">{plan.supportCopy}</p>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-6 px-6 pb-6 sm:px-7 sm:pb-7">
-                      {isPaidTier ? (
-                        <div className="inline-flex rounded-full border border-border bg-background p-1">
-                          {(['annual', 'monthly'] as const).map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              onClick={() => setSelectedCoupleCadence((prev) => ({ ...prev, [plan.tier]: option }))}
-                              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                              }`}
-                            >
-                              {coupleCadenceLabels[option]}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      <ul className="space-y-3 text-sm leading-7 text-foreground/85">
-                        {plan.includedFeatures.slice(0, 5).map((item) => (
-                          <li key={item} className="flex items-start gap-2">
-                            <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      <p className="border-t border-border/60 pt-5 text-sm leading-7 text-muted-foreground">
-                        {coupleTierUpgradeCopy[plan.tier]}
-                      </p>
-
-                      {plan.tier === 'free' ? (
-                        <Link to={authSignupHref} className="block">
-                          <Button className="w-full gap-2">
-                            {plan.ctaLabel}
-                            <ArrowRight className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                      ) : (
-                        <Button
-                          onClick={() => void handleCouplePlanCheckout(plan.tier)}
-                          className="w-full gap-2"
-                          disabled={isLoading}
-                        >
-                          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                          {user ? plan.ctaLabel : 'Sign in to continue'}
-                          {!isLoading && <ArrowRight className="h-4 w-4" />}
-                        </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                    {audience === 'couple' ? 'Couple' : `${roleLabels[audience]}`}
+                  </Link>
+                ))}
+              </div>
             </div>
-
-            <p className="mt-6 max-w-[42rem] text-sm leading-7 text-muted-foreground">
-              There are no couple-facing add-ons. Existing planning tools stay included, and collaboration is the only upgrade decision.
-            </p>
           </section>
 
-          <section className="mx-auto max-w-[1500px] px-6 pb-16 sm:px-8 lg:pb-22 xl:px-12">
-            <div className="mb-8 max-w-[38rem]">
-              <EditorialEyebrow>Professional plans</EditorialEyebrow>
-              <h2 className="marketing-h2 mt-4">For planners and vendors building real wedding businesses</h2>
-              <p className="mt-4 text-base leading-8 text-muted-foreground">
-                Both roles begin free and can join a paying couple's workspace. Upgrade only when Zania becomes part of how you run your wider business.
-              </p>
+          {contextMessage ? (
+            <section className={`mt-8 border-l-2 px-5 py-4 ${
+              contextMessage.tone === 'success' ? 'border-emerald-500 bg-emerald-50/70' : 'border-amber-500 bg-amber-50/70'
+            }`}>
+              <p className="font-semibold">{contextMessage.title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{contextMessage.body}</p>
+            </section>
+          ) : null}
+
+          <section className="py-12 lg:py-16">
+            <div className="mb-8 max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{activeAudience === 'couple' ? 'For couples' : `For ${activeAudience}s`}</p>
+              <h2 className="marketing-h2 mt-3">{audienceHeading}</h2>
+              <p className="mt-3 text-base leading-7 text-muted-foreground">{audienceDescription}</p>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-2">
-              {(['planner', 'vendor'] as const).map((audience) => {
-                const freePlan = getProfessionalPlanDefinitionWithContent(audience, 'free');
-                const premiumPlan = getProfessionalPlanDefinitionWithContent(audience, 'premium');
-                const isLoading = checkoutTarget === `audience-${audience}`;
-                const cadence = selectedProfessionalCadence[audience];
-                const priceLabel =
-                  cadence === 'monthly'
-                    ? `${formatKesPrice(premiumPlan.monthlyPriceKes)} / month`
-                    : `${formatKesPrice(premiumPlan.annualPriceKes)} / year`;
+            {activeAudience === 'couple' ? (
+              <div className="grid gap-5 lg:grid-cols-2">
+                {couplePlanDefinitions.map((plan) => {
+                  const isPaid = plan.tier === 'collaborative';
+                  const cadence = isPaid ? selectedCoupleCadence.collaborative : null;
+                  const isLoading = checkoutTarget === `couple-${plan.tier}`;
+                  const price = !isPaid
+                    ? 'Free'
+                    : cadence === 'monthly'
+                      ? `${formatKesPrice(plan.monthlyPriceKes)} / month`
+                      : `${formatKesPrice(plan.annualPriceKes)} / year`;
 
-                return (
-                  <Card key={audience} className="rounded-[30px] border border-border/60 bg-card/95 shadow-card">
-                    <CardHeader className="space-y-4 px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
-                      <div>
-                        <CardTitle className="marketing-h3">{roleLabels[audience]}s</CardTitle>
-                        <CardDescription className="mt-2 text-base leading-7">
-                          {professionalPlanCopy[audience].sectionDescription}
-                        </CardDescription>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-5 px-6 pb-6 sm:px-7 sm:pb-7">
-                      <div className="rounded-[24px] border border-border/60 bg-background/60 p-5">
-                        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{freePlan.title}</p>
-                        <p className="marketing-h3 mt-2">Free</p>
-                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{professionalPlanCopy[audience].freeSummary}</p>
-                        <ul className="mt-4 space-y-2 text-sm leading-7 text-muted-foreground">
-                          {freePlan.includedFeatures.map((item) => (
-                            <li key={item} className="flex items-start gap-2">
-                              <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                              <span>{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="rounded-[24px] border border-primary/20 bg-primary/5 p-5">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{premiumPlan.title}</p>
-                          <div className="inline-flex rounded-full border border-border bg-background p-1">
+                  return (
+                    <Card key={plan.tier} className={`flex h-full flex-col rounded-[22px] shadow-card ${isPaid ? 'border-primary/35 bg-primary/[0.04]' : 'border-border/60 bg-card/95'}`}>
+                      <CardHeader className="px-6 pb-3 pt-6 sm:px-8 sm:pt-8">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{isPaid ? 'Work together' : 'Plan privately'}</p>
+                        <CardTitle className="marketing-h3 mt-2">{plan.title}</CardTitle>
+                        <p className="mt-3 text-3xl font-semibold tracking-tight">{price}</p>
+                        <CardDescription className="mt-3 text-sm leading-7">{plan.tagline}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-1 flex-col px-6 pb-6 sm:px-8 sm:pb-8">
+                        {isPaid ? (
+                          <div className="mb-5 flex border-b border-border/70" aria-label="Choose billing period">
                             {(['annual', 'monthly'] as const).map((option) => (
                               <button
                                 key={option}
                                 type="button"
-                                onClick={() => setSelectedProfessionalCadence((prev) => ({ ...prev, [audience]: option }))}
-                                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                  cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                                }`}
+                                onClick={() => setSelectedCoupleCadence({ collaborative: option })}
+                                className={`border-b-2 px-4 py-2 text-sm font-medium ${cadence === option ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'}`}
                               >
                                 {coupleCadenceLabels[option]}
                               </button>
                             ))}
                           </div>
-                        </div>
-                        <p className="marketing-h3 mt-2">{priceLabel}</p>
-                        <p className="mt-2 text-sm leading-7 text-foreground/80">{professionalPlanCopy[audience].premiumSummary}</p>
-                        <ul className="mt-4 space-y-2 text-sm leading-7 text-foreground/85">
-                          {premiumPlan.includedFeatures.slice(0, 5).map((item) => (
-                            <li key={item} className="flex items-start gap-2">
-                              <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                              <span>{item}</span>
-                            </li>
+                        ) : null}
+                        <ul className="mb-7 space-y-3 text-sm leading-6">
+                          {plan.includedFeatures.slice(0, 4).map((item) => (
+                            <li key={item} className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{item}</span></li>
                           ))}
                         </ul>
-                        <p className="mt-4 text-sm leading-7 text-muted-foreground">{professionalPlanCopy[audience].premiumValue}</p>
-                      </div>
+                        {isPaid ? (
+                          <Button onClick={() => void handleCouplePlanCheckout('collaborative')} className="mt-auto w-full gap-2" disabled={isLoading}>
+                            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                            {user ? 'Choose Collaborative' : 'Sign in to upgrade'}
+                            {!isLoading ? <ArrowRight className="h-4 w-4" /> : null}
+                          </Button>
+                        ) : (
+                          <Button asChild className="mt-auto w-full gap-2"><Link to={authSignupHref}>Start free <ArrowRight className="h-4 w-4" /></Link></Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (() => {
+              const freePlan = getProfessionalPlanDefinitionWithContent(activeAudience, 'free');
+              const premiumPlan = getProfessionalPlanDefinitionWithContent(activeAudience, 'premium');
+              const cadence = selectedProfessionalCadence[activeAudience];
+              const isLoading = checkoutTarget === `audience-${activeAudience}`;
+              const premiumPrice = cadence === 'monthly'
+                ? `${formatKesPrice(premiumPlan.monthlyPriceKes)} / month`
+                : `${formatKesPrice(premiumPlan.annualPriceKes)} / year`;
+              const plans = [freePlan, premiumPlan];
 
-                      <Button
-                        onClick={() => void handleProfessionalPlanCheckout(audience)}
-                        className="w-full gap-2"
-                        disabled={isLoading}
-                      >
-                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        {user ? premiumPlan.ctaLabel : 'Sign in to continue'}
-                        {!isLoading && <ArrowRight className="h-4 w-4" />}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="mx-auto max-w-[1500px] px-6 pb-16 sm:px-8 lg:pb-22 xl:px-12">
-            <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-              <Card className="rounded-[30px] border-border/60 bg-card/95 shadow-card">
-                <CardHeader className="px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
-                  <CardTitle className="marketing-h3">Professional operations</CardTitle>
-                  <CardDescription className="text-base leading-7">
-                    This is the layer that turns Zania from a listing into a working revenue system for vendors.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 px-6 pb-6 text-sm leading-7 text-muted-foreground sm:px-7 sm:pb-7">
-                  <p className="max-w-[28rem]">Use Zania to move from inquiry to booking without leaving the workspace.</p>
-                  <ul className="space-y-3 text-foreground/85">
-                    {[
-                      'Turn inquiries into quotes',
-                      'Generate contracts, invoices, and receipts',
-                      'Track deposits, balances, and payment status',
-                      'Save reusable document templates',
-                      'Keep client records and wedding deliverables together',
-                    ].map((item) => (
-                      <li key={item} className="flex items-start gap-2">
-                        <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-[30px] border-primary/20 bg-primary/5 shadow-card">
-                <CardHeader className="px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
-                  <CardTitle className="marketing-h3">Professional roadmap</CardTitle>
-                  <CardDescription className="text-base leading-7">
-                    New business capabilities will arrive inside Professional without creating a maze of optional add-ons.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 px-6 pb-6 text-sm leading-7 text-foreground/85 sm:px-7 sm:pb-7">
-                  <ul className="space-y-3">
-                    {[
-                      'Advanced portfolio presentation',
-                      'Business performance analytics',
-                      'Team workspace tools (coming soon)',
-                      'New professional workflow features as they are released',
-                    ].map((item) => (
-                      <li key={item} className="flex items-start gap-2">
-                        <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="pt-2 text-sm font-medium uppercase tracking-[0.16em] text-primary">
-                    Verification and public ratings remain available on Free. Trust cannot be bought.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-
-          <section className="mx-auto max-w-[1500px] px-6 pb-16 sm:px-8 lg:pb-22 xl:px-12">
-            <Card className="rounded-[30px] border-border/60 bg-card/95 shadow-card">
-              <CardHeader className="px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
-                <CardTitle className="marketing-h3">Compare the paths</CardTitle>
-                <CardDescription className="text-base leading-7">
-                  The difference is simple: couples pay for collaboration, while planners and vendors pay when Zania runs their wider business operations.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-6 pb-6 sm:px-7 sm:pb-7">
-                <div className="overflow-x-auto">
-                  <div className="min-w-[760px]">
-                    <div className="grid grid-cols-[1.4fr_repeat(4,minmax(120px,1fr))] gap-2 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      <span>Feature</span>
-                      <span className="text-center">Couple Intimate</span>
-                      <span className="text-center">Couple Collaborative</span>
-                      <span className="text-center">Pro Free</span>
-                      <span className="text-center">Professional</span>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      {compactComparisonRows.map((row) => (
-                        <div
-                          key={row.feature}
-                          className="grid grid-cols-[1.4fr_repeat(4,minmax(120px,1fr))] gap-2 rounded-2xl border border-border/50 bg-background/60 px-4 py-4"
-                        >
-                          <p className="text-sm font-medium text-foreground">{row.feature}</p>
-                          <p className="text-center text-sm text-muted-foreground">{row.coupleFree}</p>
-                          <p className="text-center text-sm font-medium text-primary">{row.coupleCollaborative}</p>
-                          <p className="text-center text-sm text-muted-foreground">{row.professionalFree}</p>
-                          <p className="text-center text-sm font-medium text-primary">{row.professionalPremium}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              return (
+                <div className="grid gap-5 lg:grid-cols-2">
+                  {plans.map((plan) => {
+                    const isPaid = plan.tier === 'premium';
+                    return (
+                      <Card key={plan.tier} className={`flex h-full flex-col rounded-[22px] shadow-card ${isPaid ? 'border-primary/35 bg-primary/[0.04]' : 'border-border/60 bg-card/95'}`}>
+                        <CardHeader className="px-6 pb-3 pt-6 sm:px-8 sm:pt-8">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{isPaid ? 'Connected business' : 'Standalone tools'}</p>
+                          <CardTitle className="marketing-h3 mt-2">{plan.title}</CardTitle>
+                          {isPaid && <p className="mt-3 text-3xl font-semibold tracking-tight">{premiumPrice}</p>}
+                          <CardDescription className="mt-3 text-sm leading-7">{plan.tagline}</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-1 flex-col px-6 pb-6 sm:px-8 sm:pb-8">
+                          {isPaid ? (
+                            <div className="mb-5 flex border-b border-border/70" aria-label="Choose billing period">
+                              {(['annual', 'monthly'] as const).map((option) => (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => setSelectedProfessionalCadence((previous) => ({ ...previous, [activeAudience]: option }))}
+                                  className={`border-b-2 px-4 py-2 text-sm font-medium ${cadence === option ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'}`}
+                                >
+                                  {coupleCadenceLabels[option]}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          <ul className="mb-7 space-y-3 text-sm leading-6">
+                            {plan.includedFeatures.slice(0, 4).map((item) => (
+                              <li key={item} className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{item}</span></li>
+                            ))}
+                          </ul>
+                          {isPaid ? (
+                            <Button onClick={() => void handleProfessionalPlanCheckout(activeAudience)} className="mt-auto w-full gap-2" disabled={isLoading}>
+                              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                              {user ? 'Choose Professional' : 'Sign in to upgrade'}
+                              {!isLoading ? <ArrowRight className="h-4 w-4" /> : null}
+                            </Button>
+                          ) : (
+                            <Button asChild className="mt-auto w-full gap-2"><Link to={authSignupHref}>Start free <ArrowRight className="h-4 w-4" /></Link></Button>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
-              </CardContent>
-            </Card>
+              );
+            })()}
           </section>
 
-          <section className="mx-auto max-w-[1500px] px-6 pb-16 sm:px-8 lg:pb-22 xl:px-12">
-            <Card className="rounded-[30px] border-border/60 bg-card/95 shadow-card">
-              <CardHeader className="px-6 pb-4 pt-6 sm:px-7 sm:pt-7">
-                <CardTitle className="marketing-h3">AI that works inside the workflow</CardTitle>
-                <CardDescription className="text-base leading-7">
-                  Zania AI is not just a chatbot. It helps couples plan smarter, planners move faster, and vendors respond more professionally.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4 px-6 pb-6 sm:px-7 sm:pb-7 lg:grid-cols-3">
-                {[
-                  {
-                    title: 'For couples',
-                    items: ['Weekly planning focus', 'Budget and timeline guidance', 'Smarter vendor suggestions'],
-                  },
-                  {
-                    title: 'For planners',
-                    items: ['Operational summaries', 'Decision support', 'Workflow acceleration'],
-                  },
-                  {
-                    title: 'For vendors',
-                    items: ['Quote and contract drafting help', 'Follow-up support', 'Faster response workflows'],
-                  },
-                ].map((group) => (
-                  <div key={group.title} className="rounded-[24px] border border-border/60 bg-background/60 p-5">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">{group.title}</p>
-                    <ul className="mt-4 space-y-3 text-sm leading-7 text-muted-foreground">
-                      {group.items.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </section>
-
-          <section className="mx-auto max-w-[1500px] px-6 pb-16 sm:px-8 lg:pb-22 xl:px-12">
-            <div className="mb-8 max-w-[38rem]">
-              <EditorialEyebrow>FAQ</EditorialEyebrow>
-              <h2 className="marketing-h2 mt-4">A few practical questions</h2>
+          <section className="border-y border-border/60 py-8 sm:flex sm:items-center sm:justify-between sm:gap-8">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">The simple rule</p>
+              <p className="mt-2 max-w-2xl text-lg font-semibold">
+                {activeAudience === 'couple'
+                  ? 'Your planning tools stay free. Collaboration is the upgrade.'
+                  : 'Your documents stay free. Connecting them to clients is the upgrade.'}
+              </p>
             </div>
-            <div className="grid gap-5 lg:grid-cols-2">
-              {[
-                {
-                  question: 'Why is Zania free to start?',
-                  answer: 'Because wedding planning is already expensive, and the core workspace should be accessible before any upgrade decision.',
-                },
-                {
-                  question: 'What usually triggers a couple upgrade?',
-                  answer: 'Inviting vendors or a planner to work directly inside the couple\'s wedding workspace.',
-                },
-                {
-                  question: 'Why would a planner upgrade?',
-                  answer: 'To manage multiple weddings, reuse systems, access analytics, and run their wider client operation from Zania.',
-                },
-                {
-                  question: 'Why would a vendor upgrade?',
-                  answer: 'To handle quotes, contracts, invoices, receipts, bookings, and business analytics from one place.',
-                },
-              ].map((item) => (
-                <Card key={item.question} className="rounded-[26px] border border-border/60 bg-card/95 shadow-card">
-                  <CardContent className="px-6 py-6 sm:px-7">
-                    <h3 className="marketing-h3">{item.question}</h3>
-                    <p className="mt-3 text-sm leading-7 text-muted-foreground">{item.answer}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <Button asChild variant="outline" className="mt-5 shrink-0 sm:mt-0"><Link to={authSignupHref}>Create free account</Link></Button>
           </section>
-
-          <section className="mx-auto max-w-[1500px] px-6 pb-20 sm:px-8 xl:px-12">
-            <Card className="rounded-[30px] border border-primary/20 bg-primary/5 shadow-card">
-              <CardContent className="flex flex-col gap-6 px-6 py-8 sm:px-8 sm:py-10 lg:flex-row lg:items-center lg:justify-between">
-                <div className="max-w-[40rem]">
-                  <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Ready to start?</p>
-                  <h2 className="marketing-h3 mt-2">Choose the path that fits your role. Start free and grow from there.</h2>
-                  <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-                    One elegant wedding workspace. Free to begin. Built to scale with real weddings, real businesses, and real coordination pressure.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <Link to={authSignupHref}>
-                    <Button className="w-full gap-2 sm:w-auto">
-                      Create account
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  <Link to="/">
-                    <Button variant="outline" className="w-full sm:w-auto">
-                      Back to home
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          </section>
-        </>
+        </main>
       )}
       <PublicSiteFooter />
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, BookmarkPlus, Copy, Eye, FilePlus2, Link2, Loader2, Mail, PenLine, RotateCw, Send, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
+import { BookmarkPlus, Copy, Eye, Link2, Loader2, Mail, PenLine, RotateCw, Send, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import DocumentSummaryRail from '@/components/documents/DocumentSummaryRail';
+import DocumentCollaborationUpgrade from '@/components/documents/DocumentCollaborationUpgrade';
 import ContractDocumentEditor, { type ContractDocumentDraft } from '@/components/documents/ContractDocumentEditor';
 import {
   createDocumentTemplate,
@@ -42,6 +43,7 @@ type Props = {
   plannerClients?: PlannerClientOption[];
   vendorListings?: VendorListingOption[];
   vendorBookings?: VendorBookingOption[];
+  canConnectDocuments?: boolean;
 };
 
 function blankDraft(): ContractDocumentDraft {
@@ -77,7 +79,13 @@ function signatureFontStyle() {
   } as const;
 }
 
-export default function ContractsWorkspace({ role, plannerClients = [], vendorListings = [], vendorBookings = [] }: Props) {
+export default function ContractsWorkspace({
+  role,
+  plannerClients = [],
+  vendorListings = [],
+  vendorBookings = [],
+  canConnectDocuments = false,
+}: Props) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -283,9 +291,9 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
         recipientEmail: createDraft.recipientEmail.trim() || null,
         recipientPhone: createDraft.recipientPhone.trim() || null,
         weddingName: createDraft.weddingName.trim() || null,
-        clientId: role === 'planner' ? createDraft.clientId || null : null,
+        clientId: role === 'planner' && canConnectDocuments ? createDraft.clientId || null : null,
         vendorListingId: role === 'vendor' ? createDraft.vendorListingId || null : null,
-        vendorId: role === 'vendor' ? createDraft.vendorId || null : null,
+        vendorId: role === 'vendor' && canConnectDocuments ? createDraft.vendorId || null : null,
         eventDate: createDraft.eventDate || null,
         summary: createDraft.summary.trim() || null,
         terms: createDraft.terms.trim() || null,
@@ -540,7 +548,7 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
       <div className="flex min-h-[40vh] items-center justify-center">
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 text-sm text-muted-foreground shadow-card">
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          Opening contracts workspace...
+          Opening contracts…
         </div>
       </div>
     );
@@ -551,27 +559,29 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
       <header className="space-y-5 border-b border-border/70 pb-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/80">Documents</p>
-            <h1 className="mt-2 font-display text-3xl font-semibold text-foreground sm:text-4xl">Contracts</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Keep terms and signatures together for each client.</p>
+            <h1 className="font-display text-3xl font-semibold text-foreground sm:text-4xl">Contracts</h1>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2 self-start sm:self-auto"><FilePlus2 className="h-4 w-4" />New contract</Button>
+          <Button onClick={() => setCreateOpen(true)} className="self-start sm:self-auto">New contract</Button>
         </div>
-        <DocumentSummaryRail items={[
+        <details className="rounded-2xl border border-border/70 bg-card">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">View details</summary>
+          <div className="border-t border-border/70 p-4"><DocumentSummaryRail items={[
           { label: 'Contracts', value: stats.total },
           { label: 'Needs action', value: stats.awaiting },
           { label: 'Countersigned', value: stats.countersigned },
           { label: 'Completed', value: stats.completed, tone: 'success' },
-        ]} />
+        ]} /></div>
+        </details>
       </header>
+
+      {!canConnectDocuments && <DocumentCollaborationUpgrade audience={role} />}
 
       <section className="grid items-start gap-5 xl:grid-cols-[minmax(260px,0.34fr)_minmax(0,1.66fr)]">
         <Card className="border-border/70 bg-white/95 shadow-card xl:sticky xl:top-5">
           <CardHeader className="space-y-3 pb-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle className="font-display text-lg">Contract library</CardTitle>
-                <CardDescription>Choose an agreement to open.</CardDescription>
+                <CardTitle className="font-display text-lg">Contracts</CardTitle>
               </div>
               {refreshing && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin text-primary" />Refreshing</div>}
             </div>
@@ -582,14 +592,8 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
           </CardHeader>
           <CardContent className="space-y-3 px-3 pb-3">
             {contracts.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-8 text-center">
-                <BadgeCheck className="mx-auto mb-3 h-5 w-5 text-primary" />
-                <p className="font-medium text-foreground">No contracts yet</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">Start with one agreement for your next client so service terms and signatures stop living in chat threads.</p>
-                <Button className="mt-4 gap-2" onClick={() => setCreateOpen(true)}>
-                  <FilePlus2 className="h-4 w-4" />
-                  Create first contract
-                </Button>
+              <div className="border-y border-border/70 py-5">
+                <p className="text-sm font-medium text-foreground">No contracts yet.</p>
               </div>
             ) : (
               <div className="overflow-hidden rounded-xl border border-border">
@@ -632,10 +636,7 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
 
         <Card className="min-w-0 border-border/70 bg-white/95 shadow-card">
           <CardHeader className="pb-4">
-            <CardTitle className="font-display text-xl">Contract details</CardTitle>
-            <CardDescription>
-              {selectedContract ? 'Adjust status, terms, and agreement notes here.' : 'Pick a contract on the left to continue.'}
-            </CardDescription>
+            <CardTitle className="font-display text-xl">{selectedContract ? 'Contract' : 'Choose a contract'}</CardTitle>
           </CardHeader>
           <CardContent>
             {!selectedContract || !detailDraft ? (
@@ -645,22 +646,32 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
             ) : (
               <div className="space-y-5">
                 <ContractDocumentEditor contract={selectedContract} draft={detailDraft} setDraft={setDetailDraft} saving={saving} onSave={() => handleSave()} />
-                <div className="grid gap-4 border border-border/70 bg-muted/10 p-5 md:grid-cols-[1fr_auto] md:items-end">
-                  <div className="space-y-2">
-                    <Label htmlFor="contract-private-note">Private workspace note</Label>
-                    <Textarea id="contract-private-note" rows={3} value={detailDraft.notes} onChange={(event) => setDetailDraft((current) => current ? { ...current, notes: event.target.value } : current)} placeholder="Reminders only your team should see." />
-                    <p className="text-xs text-muted-foreground">This note never appears in the preview or the client signing link.</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" className="gap-2" onClick={handlePreview} disabled={saving}>
-                      <Eye className="h-4 w-4" />Preview contract
-                    </Button>
-                    <Button type="button" variant="outline" className="gap-2" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
-                      {savingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookmarkPlus className="h-4 w-4" />}
-                      Save as reusable
-                    </Button>
+                <details className="rounded-2xl border border-border/70">
+                  <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-foreground marker:content-none">More details</summary>
+                <div className="border-t border-border/70 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <Label htmlFor="contract-private-note">Private note</Label>
+                        <span className="text-xs text-muted-foreground">Only your team can see this</span>
+                      </div>
+                      <Textarea className="min-h-20 resize-y" id="contract-private-note" rows={2} value={detailDraft.notes} onChange={(event) => setDetailDraft((current) => current ? { ...current, notes: event.target.value } : current)} placeholder="Add an internal reminder" />
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2 lg:pt-6">
+                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handlePreview} disabled={saving}>
+                        <Eye className="h-4 w-4" />Preview contract
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
+                        {savingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookmarkPlus className="h-4 w-4" />}
+                        Save template
+                      </Button>
+                    </div>
                   </div>
                 </div>
+                </details>
+                <details className="rounded-2xl border border-border/70">
+                  <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-foreground marker:content-none">Send or sign</summary>
+                  <div className="space-y-4 border-t border-border/70 p-4">
                 <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
                   <div className="rounded-2xl border border-border bg-muted/10 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -690,34 +701,30 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                         Revoke link
                       </Button>
                     </div>
-                    <div className="mt-4 rounded-xl border border-border/70 bg-white/80 p-3 text-sm text-muted-foreground">
-                      {shareUrl ? (
-                        <>
-                          <div className="flex items-center gap-2 text-foreground">
-                            <Link2 className="h-4 w-4 text-primary" />
-                            <span className="font-medium">{shareActive ? 'Public signing link active' : 'Signing link inactive'}</span>
-                          </div>
-                          <p className="mt-2 break-all">{shareUrl}</p>
-                          <p className="mt-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                            {typeof activity?.shareState?.accessCount === 'number'
-                              ? `${activity.shareState.accessCount} public open${activity.shareState.accessCount === 1 ? '' : 's'}`
-                              : 'No public opens yet'}
-                          </p>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {activity?.shareState?.expiresAt
-                              ? `Expires ${new Date(activity.shareState.expiresAt).toLocaleDateString()}`
-                              : 'No expiry set'}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {activity?.shareState?.lastAccessedAt
-                              ? `Last opened ${new Date(activity.shareState.lastAccessedAt).toLocaleString()}`
-                              : 'No public opens recorded yet.'}
-                          </p>
-                        </>
-                      ) : (
-                        <p>Generate the signing link when this agreement is ready for the client.</p>
-                      )}
-                    </div>
+                    {shareUrl && (
+                      <div className="mt-4 border-t border-border/70 pt-3 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2 text-foreground">
+                          <Link2 className="h-4 w-4 text-primary" />
+                          <span className="font-medium">{shareActive ? 'Public signing link active' : 'Signing link inactive'}</span>
+                        </div>
+                        <p className="mt-2 break-all">{shareUrl}</p>
+                        <p className="mt-2 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                          {typeof activity?.shareState?.accessCount === 'number'
+                            ? `${activity.shareState.accessCount} public open${activity.shareState.accessCount === 1 ? '' : 's'}`
+                            : 'No public opens yet'}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {activity?.shareState?.expiresAt
+                            ? `Expires ${new Date(activity.shareState.expiresAt).toLocaleDateString()}`
+                            : 'No expiry set'}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {activity?.shareState?.lastAccessedAt
+                            ? `Last opened ${new Date(activity.shareState.lastAccessedAt).toLocaleString()}`
+                            : 'No public opens recorded yet.'}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-2xl border border-border bg-muted/10 p-4">
@@ -814,6 +821,8 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                     {deleting ? 'Deleting...' : 'Delete contract'}
                   </Button>
                 </div>
+                  </div>
+                </details>
               </div>
             )}
           </CardContent>
@@ -821,16 +830,15 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
       </section>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="flex max-h-[88vh] w-[min(92vw,56rem)] max-w-[56rem] flex-col overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-5">
+        <DialogContent className="flex max-h-[92dvh] w-[calc(100vw-1.5rem)] max-w-5xl flex-col overflow-hidden p-0 sm:w-[min(94vw,64rem)]">
+          <DialogHeader className="shrink-0 border-b border-border/70 px-4 py-4 sm:px-6">
             <DialogTitle>Create contract</DialogTitle>
-            <p className="text-sm text-muted-foreground">Add the basics now. You will edit the agreement itself on the next screen.</p>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
             <div className="grid gap-4 md:grid-cols-2">
               {templates.length > 0 && (
                 <div className="space-y-2 md:col-span-2">
-                  <Label>Start from a reusable contract · Optional</Label>
+                  <Label>Template (optional)</Label>
                   <Select value={selectedTemplateId || '__blank__'} onValueChange={(value) => value === '__blank__' ? setSelectedTemplateId('') : applyContractTemplate(value)}>
                     <SelectTrigger><SelectValue placeholder="Start with a blank contract" /></SelectTrigger>
                     <SelectContent>
@@ -838,10 +846,13 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                       {templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">This fills the title, summary, and agreement wording. You can amend everything before sending.</p>
                 </div>
               )}
-              {role === 'planner' ? (
+              {!canConnectDocuments ? (
+                <div className="md:col-span-2">
+                  <DocumentCollaborationUpgrade audience={role} compact />
+                </div>
+              ) : role === 'planner' ? (
                 <div className="space-y-2 md:col-span-2">
                   <Label>Planner client</Label>
                   <Select value={createDraft.clientId} onValueChange={(value) => setCreateDraft((current) => ({ ...current, clientId: value }))}>
@@ -854,31 +865,18 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                   </Select>
                 </div>
               ) : (
-                <>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Vendor listing</Label>
-                    <Select value={createDraft.vendorListingId} onValueChange={(value) => setCreateDraft((current) => ({ ...current, vendorListingId: value }))}>
-                      <SelectTrigger><SelectValue placeholder="Choose listing" /></SelectTrigger>
-                      <SelectContent>
-                        {vendorListings.map((listing) => (
-                          <SelectItem key={listing.id} value={listing.id}>{listing.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Linked booking</Label>
-                    <Select value={createDraft.vendorId || '__none__'} onValueChange={(value) => setCreateDraft((current) => ({ ...current, vendorId: value === '__none__' ? '' : value }))}>
-                      <SelectTrigger><SelectValue placeholder="Choose booking" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">No linked booking</SelectItem>
-                        {vendorBookings.map((booking) => (
-                          <SelectItem key={booking.id} value={booking.id}>{booking.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Connect to a Zania booking</Label>
+                  <Select value={createDraft.vendorId || '__none__'} onValueChange={(value) => setCreateDraft((current) => ({ ...current, vendorId: value === '__none__' ? '' : value }))}>
+                    <SelectTrigger><SelectValue placeholder="Choose booking" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Keep standalone</SelectItem>
+                      {vendorBookings.map((booking) => (
+                        <SelectItem key={booking.id} value={booking.id}>{booking.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
               <div className="space-y-2 md:col-span-2">
                 <Label>Contract title</Label>
@@ -888,27 +886,31 @@ export default function ContractsWorkspace({ role, plannerClients = [], vendorLi
                 <Label>Recipient name</Label>
                 <Input value={createDraft.recipientName} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientName: event.target.value }))} />
               </div>
-              <div className="space-y-2">
-                <Label>Event date</Label>
-                <Input type="date" value={createDraft.eventDate} onChange={(event) => setCreateDraft((current) => ({ ...current, eventDate: event.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Recipient email</Label>
-                <Input value={createDraft.recipientEmail} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientEmail: event.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Recipient phone</Label>
-                <Input value={createDraft.recipientPhone} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientPhone: event.target.value }))} />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Wedding / project label</Label>
-                <Input value={createDraft.weddingName} onChange={(event) => setCreateDraft((current) => ({ ...current, weddingName: event.target.value }))} />
-              </div>
+              <details className="md:col-span-2 rounded-2xl border border-border/70">
+                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">More details</summary>
+                <div className="grid gap-4 border-t border-border/70 p-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Event date</Label>
+                    <Input type="date" value={createDraft.eventDate} onChange={(event) => setCreateDraft((current) => ({ ...current, eventDate: event.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Recipient email</Label>
+                    <Input value={createDraft.recipientEmail} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientEmail: event.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Recipient phone</Label>
+                    <Input value={createDraft.recipientPhone} onChange={(event) => setCreateDraft((current) => ({ ...current, recipientPhone: event.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Wedding or project</Label>
+                    <Input value={createDraft.weddingName} onChange={(event) => setCreateDraft((current) => ({ ...current, weddingName: event.target.value }))} />
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
-          <div className="flex shrink-0 justify-end border-t border-border/70 bg-background px-6 py-4">
+          <div className="flex shrink-0 justify-end border-t border-border/70 bg-background px-4 py-3 sm:px-6">
             <Button className="gap-2" onClick={handleCreate} disabled={creating}>
-              <FilePlus2 className="h-4 w-4" />
               {creating ? 'Creating...' : 'Create contract'}
             </Button>
           </div>

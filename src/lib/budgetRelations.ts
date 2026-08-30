@@ -98,7 +98,9 @@ export function planningCategoryRelationScore(categoryName: string, candidate?: 
 
 export function getRecordedVendorsForBudgetCategory<T extends RelatedVendor>(categoryName: string, vendors: T[]) {
   return vendors.filter(
-    (vendor) => hasRecordedVendor(vendor) && planningCategoryRelationScore(categoryName, vendor.category) > 0,
+    (vendor) => hasRecordedVendor(vendor)
+      && Boolean(vendor.category)
+      && vendorCategoriesMatch(categoryName, vendor.category ?? ''),
   );
 }
 

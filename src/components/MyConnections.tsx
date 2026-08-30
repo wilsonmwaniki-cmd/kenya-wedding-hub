@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowRight, CheckCircle2, Clock, Copy, Loader2, LockKeyhole, Store, UserPlus, Users, X, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
@@ -26,6 +27,7 @@ import {
 interface PlannerConnection {
   type: 'planner';
   id: string;
+  planner_user_id: string;
   name: string;
   status: string;
   created_at: string;
@@ -105,6 +107,8 @@ export default function MyConnections() {
   const [committeeInviteRole, setCommitteeInviteRole] = useState<CommitteeInviteRole>('committee_member');
   const [committeeInviteSubmitting, setCommitteeInviteSubmitting] = useState(false);
   const [committeeInviteSent, setCommitteeInviteSent] = useState(false);
+  const [plannerVendorAccess, setPlannerVendorAccess] = useState<Record<string, boolean>>({});
+  const [savingPlannerAccess, setSavingPlannerAccess] = useState<string | null>(null);
   const committeeInviteInputRef = useRef<HTMLInputElement | null>(null);
 
   const effectiveCoupleView = profile?.role === 'couple' || (isSuperAdmin && rolePreview === 'couple');
@@ -355,6 +359,7 @@ export default function MyConnections() {
         plannerConns.push({
           type: 'planner',
           id: r.id,
+          planner_user_id: r.planner_user_id,
           name: profileMap.get(r.planner_user_id) || 'Planner',
           status: r.status,
           created_at: r.created_at,
@@ -414,10 +419,30 @@ export default function MyConnections() {
   useEffect(() => {
     if (!ownedWedding) {
       setCommitteeWorkspace(null);
+      setPlannerVendorAccess({});
       return;
     }
 
     void loadCommitteeWorkspaceAccess(ownedWedding.weddingId);
+    setPlannerVendorAccess({});
+    void (async () => {
+      const { data, error } = await (supabase as any)
+        .from('wedding_memberships')
+        .select('user_id, metadata')
+        .eq('wedding_id', ownedWedding.weddingId)
+        .eq('role', 'planner')
+        .eq('membership_status', 'active');
+
+      if (error) {
+        console.error('Could not load planner vendor access:', error);
+        return;
+      }
+
+      setPlannerVendorAccess(Object.fromEntries((data ?? []).map((membership: {
+        user_id: string;
+        metadata: Record<string, unknown> | null;
+      }) => [membership.user_id, membership.metadata?.manage_vendors === true])));
+    })();
   }, [ownedWedding?.weddingId]);
 
   if (loading) return null;
@@ -462,6 +487,31 @@ export default function MyConnections() {
       toast({ title: 'Could not decline request', description: error.message, variant: 'destructive' });
     } finally {
       setCancelling(null);
+    }
+  };
+
+  const updatePlannerVendorAccess = async (plannerUserId: string, allowed: boolean) => {
+    if (!ownedWedding) return;
+    setSavingPlannerAccess(plannerUserId);
+    try {
+      const { error } = await (supabase as any).rpc('set_planner_vendor_management_permission', {
+        target_wedding_id: ownedWedding.weddingId,
+        target_planner_user_id: plannerUserId,
+        allowed,
+      });
+      if (error) throw error;
+
+      setPlannerVendorAccess((current) => ({ ...current, [plannerUserId]: allowed }));
+      toast({
+        title: allowed ? 'Vendor access allowed' : 'Vendor access removed',
+        description: allowed
+          ? 'This planner will receive suitable provider alerts with you.'
+          : 'This planner will no longer receive provider alerts for this wedding.',
+      });
+    } catch (error: any) {
+      toast({ title: 'Could not update planner access', description: error.message, variant: 'destructive' });
+    } finally {
+      setSavingPlannerAccess(null);
     }
   };
 
@@ -953,6 +1003,26 @@ export default function MyConnections() {
                       </div>
                       <span>Added {new Date(conn.created_at).toLocaleDateString()}</span>
                     </div>
+                    {effectiveCoupleView
+                      && plannerConn
+                      && ['approved', 'accepted'].includes(plannerConn.status)
+                      && Object.prototype.hasOwnProperty.call(plannerVendorAccess, plannerConn.planner_user_id)
+                      && ownedWedding && (
+                        <label className="flex max-w-xl cursor-pointer items-start gap-3 border-t border-border pt-3 text-sm">
+                          <Checkbox
+                            checked={plannerVendorAccess[plannerConn.planner_user_id] ?? false}
+                            disabled={savingPlannerAccess === plannerConn.planner_user_id}
+                            onCheckedChange={(checked) => void updatePlannerVendorAccess(plannerConn.planner_user_id, checked === true)}
+                            aria-label={`Allow ${plannerConn.name} to manage vendors`}
+                          />
+                          <span>
+                            <span className="block font-medium text-foreground">Allow this planner to manage vendors</span>
+                            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                              They will receive new provider match alerts with you.
+                            </span>
+                          </span>
+                        </label>
+                      )}
                   </div>
                   <div className="flex items-center gap-2 sm:shrink-0">
                     {plannerNeedsApproval ? (

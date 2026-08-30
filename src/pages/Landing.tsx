@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { getHomeRouteForRole } from '@/lib/roles';
+import { isPlanningExperimentEnabled } from '@/lib/featureFlags';
 import { saveEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 import {
   buildInteractiveBudgetPlan,
@@ -56,7 +57,6 @@ export default function Landing() {
   const [resetAllOpen, setResetAllOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const resultsRef = useRef<HTMLElement | null>(null);
-  const professionalEntryRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotion = useReducedMotion();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -186,14 +186,6 @@ export default function Landing() {
         block: 'start',
       });
     });
-  };
-
-  const handleProfessionalEntry = () => {
-    professionalEntryRef.current?.scrollIntoView({
-      behavior: prefersReducedMotion ? 'auto' : 'smooth',
-      block: 'center',
-    });
-    window.requestAnimationFrame(() => professionalEntryRef.current?.focus({ preventScroll: true }));
   };
 
   const handleAllocationChange = (category: string, value: string, field: 'amount' | 'percentage') => {
@@ -334,10 +326,10 @@ export default function Landing() {
 
       if (seeded) {
         toast({
-          title: 'Wedding plan ready',
-          description: 'Your budget, vendor shortlist, and starter tasks are ready.',
+          title: 'Estimate added',
+          description: 'Confirm three priorities and Zania will build your first plan.',
         });
-        navigate('/budget');
+        navigate(isPlanningExperimentEnabled() ? '/plan' : getHomeRouteForRole(profile?.role, profile?.planner_type));
         return;
       }
 
@@ -372,13 +364,12 @@ export default function Landing() {
             <BrandWordmark light size="md" className="hidden sm:inline-flex" />
             <nav className="flex items-center gap-3 sm:gap-6" aria-label="Landing page navigation">
               {!user ? (
-                <button
-                  type="button"
-                  onClick={handleProfessionalEntry}
+                <Link
+                  to="/auth?mode=signup&audience=professional"
                   className="inline-flex min-h-11 items-center text-xs font-medium text-primary-foreground/75 transition-colors duration-200 hover:text-primary-foreground sm:text-sm"
                 >
                   For professionals
-                </button>
+                </Link>
               ) : null}
               <Link
                 to={user ? getHomeRouteForRole(profile?.role, profile?.planner_type) : '/sign-in'}
@@ -397,15 +388,11 @@ export default function Landing() {
             transition={{ duration: prefersReducedMotion ? 0 : 0.35, ease: 'easeOut' }}
             className="max-w-xl text-center lg:text-left"
           >
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent sm:text-sm sm:tracking-[0.2em]">Wedding planning, made clearer</p>
-            <h1 className="mt-3 font-display text-3xl font-semibold leading-[1.1] tracking-tight text-primary-foreground sm:mt-4 sm:text-5xl lg:text-6xl">
-              Welcome to Zania.
+            <h1 className="font-display text-3xl font-semibold leading-[1.1] tracking-tight text-primary-foreground sm:text-5xl lg:text-6xl">
+              Plan your wedding budget.
             </h1>
-            <p className="mt-4 text-lg font-medium leading-7 text-primary-foreground sm:mt-5 sm:text-2xl sm:leading-9">
-              Start planning your Kenyan wedding from anywhere in the world.
-            </p>
-            <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-primary-foreground/75 sm:mt-5 sm:text-base sm:leading-7 lg:mx-0">
-              Start by getting your wedding budget estimate here.
+            <p className="mx-auto mt-4 max-w-lg text-base leading-7 text-primary-foreground/80 sm:mt-5 sm:text-xl sm:leading-8 lg:mx-0">
+              Set a starting budget and guest count for a Kenyan wedding anywhere in the world.
             </p>
           </motion.div>
 
@@ -413,8 +400,8 @@ export default function Landing() {
             <CardContent className="p-4 sm:p-8">
               <div className="flex items-center justify-between gap-4 border-b border-border pb-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary sm:text-sm sm:tracking-[0.16em]">Your starting point</p>
-                  <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{plan ? 'Step 2 of 3 · Shape your plan' : 'Step 1 of 3 · Set your goal'}</p>
+                  <p className="text-base font-semibold text-foreground sm:text-lg">Budget estimate</p>
+                  <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{plan ? 'Adjust your plan below.' : 'Enter two numbers to begin.'}</p>
                 </div>
                 <span className="max-w-24 text-right text-xs font-semibold text-muted-foreground sm:max-w-none sm:text-sm">No sign-up required</span>
               </div>
@@ -448,62 +435,18 @@ export default function Landing() {
               </div>
 
               <Button onClick={handleBuildPlan} className="mt-5 h-11 w-full gap-2 text-sm font-semibold sm:mt-6 sm:h-12 sm:text-base">
-                Get Estimate
+                Get estimate
               </Button>
 
               {!user ? (
                 <p className="mt-3 text-center text-xs text-muted-foreground sm:text-sm">
-                  Want to start without an estimate?{' '}
                   <Link
                     to="/auth?mode=signup&audience=couple&role=couple"
                     className="font-semibold text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    Skip estimate and create an account
+                    Create an account instead
                   </Link>
                 </p>
-              ) : null}
-
-              {!user ? (
-                <div
-                  ref={professionalEntryRef}
-                  id="professional-entry"
-                  tabIndex={-1}
-                  className="mt-5 scroll-mt-24 border-t border-border pt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 sm:mt-6 sm:pt-5"
-                >
-                  <div className="rounded-lg border border-border bg-secondary/35 p-3 sm:p-4">
-                    <div className="flex flex-wrap items-end justify-between gap-2">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary sm:text-sm sm:tracking-[0.16em]">Professional access</p>
-                        <p className="mt-1 text-sm font-semibold text-foreground sm:text-base">Choose your workspace</p>
-                      </div>
-                      <p className="text-xs text-muted-foreground sm:text-sm">Skip the couple builder</p>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:gap-3 lg:grid-cols-1 xl:grid-cols-2">
-                      <Link
-                        to="/auth?mode=signup&audience=professional&role=planner"
-                        className="group flex min-h-14 items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2 text-foreground transition-[border-color,background-color] duration-200 hover:border-primary/50 hover:bg-background sm:gap-4 sm:px-4 sm:py-3"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-semibold">Planner</span>
-                          <span className="mt-0.5 block text-xs text-muted-foreground sm:text-sm">Create account</span>
-                        </span>
-                        <span className="hidden text-sm font-semibold text-primary transition-colors duration-200 group-hover:text-foreground sm:inline">Open</span>
-                      </Link>
-
-                      <Link
-                        to="/auth?mode=signup&audience=professional&role=vendor"
-                        className="group flex min-h-14 items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2 text-foreground transition-[border-color,background-color] duration-200 hover:border-primary/50 hover:bg-background sm:gap-4 sm:px-4 sm:py-3"
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-semibold">Vendor</span>
-                          <span className="mt-0.5 block text-xs text-muted-foreground sm:text-sm">Create account</span>
-                        </span>
-                        <span className="hidden text-sm font-semibold text-primary transition-colors duration-200 group-hover:text-foreground sm:inline">Open</span>
-                      </Link>
-                    </div>
-                  </div>
-                </div>
               ) : null}
             </CardContent>
           </Card>
@@ -594,9 +537,8 @@ export default function Landing() {
             <CardContent className="p-4 sm:p-8">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary sm:text-sm sm:tracking-[0.18em]">Your first draft</p>
-                    <h2 id="budget-plan-heading" className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">Shape the plan</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Choose an item to adjust its amount or share.</p>
+                    <h2 id="budget-plan-heading" className="text-xl font-semibold tracking-tight sm:text-2xl">Your budget estimate</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Select a category to change it.</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-xs font-semibold text-muted-foreground sm:text-sm">{plan.allocations.length} items</span>
@@ -731,11 +673,11 @@ export default function Landing() {
 
                 <div className="mt-6 rounded-lg border border-border bg-muted/40 p-4 sm:flex sm:items-center sm:justify-between sm:gap-5">
                   <div>
-                    <p className="text-sm font-semibold">Happy with this starting point?</p>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">Save it to your private Zania workspace and continue with linked tasks and vendors.</p>
+                    <p className="text-sm font-semibold">Save this estimate</p>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">Keep it with your wedding plan.</p>
                   </div>
                   <Button disabled={isSaving} onClick={() => void handleSavePlan()} className="mt-4 h-11 w-full gap-2 sm:mt-0 sm:w-auto sm:px-6">
-                    {isSaving ? 'Saving plan...' : user ? 'Save to my workspace' : 'Save this plan'}
+                    {isSaving ? 'Saving…' : user ? 'Save estimate' : 'Create account to save'}
                   </Button>
                 </div>
             </CardContent>

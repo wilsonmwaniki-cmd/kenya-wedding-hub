@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, CalendarDays, CheckCircle2, Clock, Phone, Mail, X, Check, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText, FilePlus2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { vendorHasFullAccess } from '@/lib/vendorAccess';
+import { vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import ContextualAssistantAction from '@/components/ContextualAssistantAction';
@@ -36,6 +36,7 @@ import {
 import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 import AttentionInbox from '@/components/AttentionInbox';
 import RecentWorkspaceChangesCard from '@/components/RecentWorkspaceChangesCard';
+import ProfessionalLeadInbox from '@/components/leads/ProfessionalLeadInbox';
 
 interface Booking {
   id: string;
@@ -621,6 +622,7 @@ export default function VendorDashboard() {
     bypass: vendorPreviewMode,
   });
   const fullAccess = workspaceDecision.allowed;
+  const subscriptionActive = vendorPreviewMode || vendorHasActiveSubscription(listing);
   const workspaceInviteBookings = useMemo(
     () =>
       workspaceInvites.map((invite) => ({
@@ -1163,7 +1165,6 @@ export default function VendorDashboard() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">Track your workspace invites, bookings, and client inquiries.</p>
         </div>
         <ContextualAssistantAction
           prompt="Look at my vendor workspace and tell me the one thing I should do next."
@@ -1171,13 +1172,16 @@ export default function VendorDashboard() {
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <AttentionInbox
-          showEmpty
-          maxItems={3}
-        />
-        <RecentWorkspaceChangesCard maxItems={5} />
-      </div>
+      <ProfessionalLeadInbox />
+
+      <AttentionInbox showEmpty={false} maxItems={3} />
+
+      <details className="rounded-2xl border border-border/70 bg-card">
+        <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">Recent changes</summary>
+        <div className="border-t border-border/70">
+          <RecentWorkspaceChangesCard maxItems={5} />
+        </div>
+      </details>
 
       {claimedWorkspaceInvite && (
         <Card className="semantic-surface-success shadow-card">
@@ -1214,10 +1218,21 @@ export default function VendorDashboard() {
       )}
 
       {listing && !fullAccess && (
-        <InlineUpgradePrompt decision={workspaceDecision} />
+        subscriptionActive ? (
+          <Card className="semantic-surface-warning shadow-card">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+              <p className="text-sm font-medium text-foreground">
+                {listing.is_approved ? 'Verification is under review.' : 'Listing approval is pending.'}
+              </p>
+              <Button asChild size="sm" variant="outline"><Link to="/vendor-settings">View status</Link></Button>
+            </CardContent>
+          </Card>
+        ) : <InlineUpgradePrompt decision={workspaceDecision} />
       )}
 
-      <section aria-labelledby="vendor-overview-title" className="border-y border-border/70 bg-background/35">
+      <details className="rounded-2xl border border-border/70 bg-background/35">
+        <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">View totals</summary>
+      <section aria-labelledby="vendor-overview-title" className="border-t border-border/70">
         <h2 id="vendor-overview-title" className="sr-only">Business at a glance</h2>
         <div className="grid sm:grid-cols-4">
           <div className="px-1 py-4 sm:px-5">
@@ -1240,6 +1255,7 @@ export default function VendorDashboard() {
           </div>
         </div>
       </section>
+      </details>
 
       {!listing && workspaceInvites.length === 0 && (
         <Card className="shadow-card">
@@ -1252,10 +1268,7 @@ export default function VendorDashboard() {
       {workspaceInvites.length > 0 && (
         <Card className="shadow-card">
           <CardHeader>
-            <CardTitle>Wedding Workspace Invites</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              These couples or planners added you into their Zania workspace first. You can collaborate here even before your public vendor listing is fully set up.
-            </p>
+            <CardTitle>Wedding invites</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {workspaceInvites.map((invite) => (
@@ -1506,23 +1519,19 @@ export default function VendorDashboard() {
       {/* Bookings list */}
       <Card className="shadow-card">
         <CardHeader>
-          <CardTitle>Client Bookings</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            See the couple, their wedding context, your payment picture, and whether this booking has already been pushed to Google Calendar.
-          </p>
+          <CardTitle>Bookings</CardTitle>
         </CardHeader>
         <CardContent>
           {bookings.length === 0 ? (
-            <div className="text-center py-12 space-y-2">
-              <CalendarDays className="h-10 w-10 text-muted-foreground/40 mx-auto" />
+            <div className="py-10 text-center">
               <p className="text-muted-foreground">
                 {!fullAccess
-                  ? 'Bookings and planner requests unlock after subscription and verification.'
+                  ? 'Complete access setup to receive bookings.'
                   : workspaceInvites.length > 0
-                  ? 'Your accepted workspace invites appear above. Bookings tied to your public listing will show here once couples or planners connect them.'
+                  ? 'No directory bookings yet.'
                   : listingId
-                  ? 'No bookings yet. When couples or planners connect with you, they\'ll appear here.'
-                  : 'Set up your listing first to start receiving bookings.'}
+                  ? 'No bookings yet.'
+                  : 'Create your listing to receive bookings.'}
               </p>
             </div>
           ) : (

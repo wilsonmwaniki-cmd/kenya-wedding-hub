@@ -1146,9 +1146,15 @@ export async function listPlannerClientOptions() {
 
 export async function listVendorListingOptions() {
   const db = supabase as any;
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError) throw authError;
+  if (!authData.user) return [];
+
   const { data, error } = await db
     .from('vendor_listings')
-    .select('id, business_name, category, email, phone, website, primary_county, primary_town')
+    .select('id, business_name, category, email, phone, website, location_county, location_town')
+    .eq('user_id', authData.user.id)
     .order('business_name', { ascending: true });
 
   if (error) throw error;
@@ -1160,8 +1166,8 @@ export async function listVendorListingOptions() {
     email: typeof row.email === 'string' ? row.email : null,
     phone: typeof row.phone === 'string' ? row.phone : null,
     website: typeof row.website === 'string' ? row.website : null,
-    primaryCounty: typeof row.primary_county === 'string' ? row.primary_county : null,
-    primaryTown: typeof row.primary_town === 'string' ? row.primary_town : null,
+    primaryCounty: typeof row.location_county === 'string' ? row.location_county : null,
+    primaryTown: typeof row.location_town === 'string' ? row.location_town : null,
   })) as VendorListingOption[];
 }
 

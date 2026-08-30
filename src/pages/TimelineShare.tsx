@@ -4,7 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { motion } from 'framer-motion';
-import { Bell, Calendar, CheckCircle2, Clock, Heart, TimerReset, User } from 'lucide-react';
+import { Bell, Calendar, User } from 'lucide-react';
+import { PublicLinkLoading, PublicLinkUnavailable } from '@/components/PublicLinkState';
 
 interface SharedEvent {
   id: string;
@@ -38,20 +39,20 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
-const VENDOR_ROLE_META: Record<string, { label: string; icon: string }> = {
-  photographer: { label: 'Photographer', icon: '📸' },
-  videographer: { label: 'Videographer', icon: '🎬' },
-  mc: { label: 'MC / Host', icon: '🎤' },
-  makeup: { label: 'Makeup Artist', icon: '💄' },
-  hair: { label: 'Hair Stylist', icon: '💇' },
-  dj: { label: 'DJ', icon: '🎵' },
-  florist: { label: 'Florist', icon: '💐' },
-  caterer: { label: 'Caterer', icon: '🍽️' },
-  decorator: { label: 'Decorator', icon: 'D' },
-  planner: { label: 'Planner', icon: '📋' },
-  transport: { label: 'Transport', icon: '🚗' },
-  officiant: { label: 'Officiant', icon: '💍' },
-  other: { label: 'Team Member', icon: '👤' },
+const VENDOR_ROLE_META: Record<string, { label: string }> = {
+  photographer: { label: 'Photographer' },
+  videographer: { label: 'Videographer' },
+  mc: { label: 'MC / Host' },
+  makeup: { label: 'Makeup Artist' },
+  hair: { label: 'Hair Stylist' },
+  dj: { label: 'DJ' },
+  florist: { label: 'Florist' },
+  caterer: { label: 'Caterer' },
+  decorator: { label: 'Decorator' },
+  planner: { label: 'Planner' },
+  transport: { label: 'Transport' },
+  officiant: { label: 'Officiant' },
+  other: { label: 'Team Member' },
 };
 
 interface SharedTimeline {
@@ -136,57 +137,25 @@ export default function TimelineShare() {
 
   const roleMeta = timeline?.vendor_role ? VENDOR_ROLE_META[timeline.vendor_role] : null;
   const isPersonalView = !!timeline?.assignee_name;
-  const completedCount = useMemo(() => {
-    if (!timeline?.events.length || !timeline.timeline_date || timeline.timeline_date !== now.toISOString().split('T')[0]) return 0;
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    return timeline.events.filter((event) => {
-      const [hours, minutes] = event.event_time.split(':').map(Number);
-      return hours * 60 + minutes < currentMinutes;
-    }).length;
-  }, [now, timeline]);
-  const categoryCount = useMemo(
-    () => new Set(timeline?.events.map((event) => event.category).filter(Boolean)).size,
-    [timeline],
-  );
-
+  const isWeddingDay = timeline?.timeline_date === now.toISOString().split('T')[0];
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(222,92,43,0.12),transparent_32%),linear-gradient(180deg,rgba(255,249,246,0.98),rgba(255,255,255,0.98))] px-6">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 text-sm text-muted-foreground shadow-card">
-          <Clock className="h-4 w-4 animate-pulse text-primary" />
-          Opening timeline...
-        </div>
-      </div>
-    );
+    return <PublicLinkLoading loadingLabel="Opening timeline…" />;
   }
 
   if (notFound || !timeline) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(222,92,43,0.12),transparent_32%),linear-gradient(180deg,rgba(255,249,246,0.98),rgba(255,255,255,0.98))] px-6">
-        <div className="rounded-3xl border border-border bg-card p-8 text-center shadow-card">
-          <Clock className="mx-auto mb-4 h-12 w-12 text-muted-foreground/40" />
-          <h1 className="font-display text-2xl font-semibold text-foreground">Timeline not found</h1>
-          <p className="mt-2 text-muted-foreground">This link may have expired or been removed.</p>
-        </div>
-      </div>
-    );
+    return <PublicLinkUnavailable title="Timeline unavailable" message="Ask the couple for a new link." />;
   }
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(222,92,43,0.12),transparent_32%),linear-gradient(180deg,rgba(255,249,246,0.98),rgba(255,255,255,0.98))]">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
         <Card className="overflow-hidden border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.12),rgba(255,255,255,0.98)_40%,rgba(255,243,237,0.9))] shadow-card">
-          <CardContent className="grid gap-6 p-6 sm:p-8 xl:grid-cols-[minmax(0,1.55fr)_280px]">
-            <div className="space-y-5">
-              <div className="flex items-center gap-2">
-                <Heart className="h-4 w-4 text-primary" fill="currentColor" />
-                <span className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Zania Timeline Share</span>
-              </div>
-
+          <CardContent className="space-y-5 p-6 sm:p-8">
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Wedding timeline</p>
               {isPersonalView ? (
                 <div className="space-y-3">
                   <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-                    {roleMeta ? `${roleMeta.icon} My Timeline` : 'My Timeline'}
+                    {timeline.assignee_name}&apos;s timeline
                   </h1>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge className="gap-1.5 rounded-full px-3 py-1 text-sm">
@@ -199,14 +168,11 @@ export default function TimelineShare() {
                       </Badge>
                     )}
                   </div>
-                  <p className="max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">{timeline.title}</p>
+                  <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">{timeline.title}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">{timeline.title}</h1>
-                  <p className="max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-                    A live wedding-day schedule that updates in real time so everyone can stay aligned on what happens next.
-                  </p>
                 </div>
               )}
 
@@ -222,79 +188,7 @@ export default function TimelineShare() {
                     })}
                   </Badge>
                 )}
-                {isPersonalView && (
-                  <Badge variant="outline" className="rounded-full border-border/70 bg-background/80 px-3 py-1 text-sm">
-                    {timeline.events.length} assigned event{timeline.events.length !== 1 ? 's' : ''}
-                  </Badge>
-                )}
               </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-[1.2rem] border border-border/70 bg-background/90 p-4 shadow-sm">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Events</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{timeline.events.length}</p>
-                </div>
-                <div className="rounded-[1.2rem] border border-border/70 bg-background/90 p-4 shadow-sm">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Completed</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{completedCount}</p>
-                </div>
-                <div className="rounded-[1.2rem] border border-border/70 bg-background/90 p-4 shadow-sm">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Categories</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{categoryCount}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-[1.5rem] border border-border/70 bg-background/90 p-6 shadow-sm">
-              <div className="space-y-3">
-                <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Next Best Move</p>
-                <h2 className="text-2xl font-semibold text-foreground">
-                  {nextEvent ? 'Stay ready for the next handoff' : 'Use this page as your live run sheet'}
-                </h2>
-                <p className="text-sm leading-6 text-muted-foreground">
-                  {nextEvent
-                    ? `${nextEvent.title} is the next key moment. Keep this page open so your schedule stays current without refreshing.`
-                    : 'Bookmark this page or keep it open during the wedding day to track the flow as timing shifts.'}
-                </p>
-              </div>
-              <div className="mt-6 space-y-3">
-                {nextEvent ? (
-                  <div className="rounded-2xl border border-primary/20 bg-primary/8 p-4">
-                    <p className="text-sm font-semibold text-foreground">{nextEvent.title}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {formatTime(nextEvent.event_time)} ·{' '}
-                      {nextEvent.minutesUntil <= 60
-                        ? `in ${nextEvent.minutesUntil} minute${nextEvent.minutesUntil !== 1 ? 's' : ''}`
-                        : `in ${Math.floor(nextEvent.minutesUntil / 60)}h ${nextEvent.minutesUntil % 60}m`}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
-                    No upcoming event countdown is active right now.
-                  </div>
-                )}
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                  <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-primary" />
-                      <p className="text-sm font-medium text-foreground">Live updates</p>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">This shared timeline refreshes automatically every 30 seconds.</p>
-                  </div>
-                  <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
-                    <div className="flex items-center gap-2">
-                      <TimerReset className="h-4 w-4 text-primary" />
-                      <p className="text-sm font-medium text-foreground">Role-aware view</p>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {isPersonalView
-                        ? 'You are only seeing the moments assigned to you.'
-                        : 'Everyone viewing this page sees the shared wedding-day schedule.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
@@ -323,7 +217,7 @@ export default function TimelineShare() {
           {timeline.events.length === 0 ? (
             <Card className="shadow-card">
               <CardContent className="py-12 text-center text-muted-foreground">
-                <p>No events scheduled yet</p>
+                <p>No events yet.</p>
               </CardContent>
             </Card>
           ) : (
@@ -331,12 +225,9 @@ export default function TimelineShare() {
               <CardContent className="p-5 sm:p-6">
                 <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="font-display text-2xl text-foreground">Wedding-day flow</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Track every key moment in order, with assignments and timing in one calm place.
-                    </p>
+                    <h2 className="font-display text-2xl text-foreground">Schedule</h2>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  {isWeddingDay && <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/10 px-3 py-1">
                       <span className="h-2.5 w-2.5 rounded-full bg-primary" />
                       Current
@@ -349,13 +240,11 @@ export default function TimelineShare() {
                       <span className="h-2.5 w-2.5 rounded-full bg-muted" />
                       Past
                     </span>
-                  </div>
+                  </div>}
                 </div>
 
                 <div className="relative ml-3 space-y-1 border-l-2 border-primary/20 pl-5 sm:ml-4 sm:pl-6">
                   {timeline.events.map((event, index) => {
-                    const today = now.toISOString().split('T')[0];
-                    const isWeddingDay = timeline.timeline_date === today;
                     let status: 'past' | 'current' | 'upcoming' = 'upcoming';
 
                     if (isWeddingDay) {
@@ -436,7 +325,7 @@ export default function TimelineShare() {
             </Card>
           )}
 
-          <p className="mt-10 text-center text-xs text-muted-foreground">Powered by Zania · This timeline updates in real time</p>
+          <p className="mt-10 text-center text-xs text-muted-foreground">Powered by Zania</p>
         </div>
       </div>
     </div>

@@ -1,13 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { isPathEnabledForRelease, resolveReleaseChannel } from '@/lib/featureFlags';
+import {
+  isPathEnabledForRelease,
+  resolvePlanningExperimentEnabled,
+  resolveReleaseChannel,
+} from '@/lib/featureFlags';
 
 describe('launch feature release controls', () => {
   it('fails closed to production when no release channel is configured', () => {
     expect(resolveReleaseChannel(undefined, false)).toBe('production');
   });
 
+  it('keeps the planning experiment off unless it is explicitly enabled', () => {
+    expect(resolvePlanningExperimentEnabled()).toBe(false);
+    expect(resolvePlanningExperimentEnabled('false')).toBe(false);
+    expect(resolvePlanningExperimentEnabled('true')).toBe(true);
+  });
+
   it('keeps the couple workspace and safe professional entry routes active in production', () => {
-    ['/clients', '/dashboard', '/budget', '/tasks', '/vendors', '/vendor-dashboard', '/vendor-settings', '/settings'].forEach((path) => {
+    ['/clients', '/dashboard', '/start-plan', '/budget', '/tasks', '/vendors', '/vendor-dashboard', '/vendor-settings', '/settings'].forEach((path) => {
       expect(isPathEnabledForRelease(path, 'production')).toBe(true);
     });
 

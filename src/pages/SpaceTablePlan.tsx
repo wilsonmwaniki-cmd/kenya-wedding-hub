@@ -5,9 +5,7 @@ import {
   Armchair,
   CakeSlice,
   Camera,
-  CircleHelp,
   Copy,
-  Download,
   Grid3X3,
   Loader2,
   Lock,
@@ -16,7 +14,6 @@ import {
   Move,
   Music4,
   Plus,
-  Save,
   Square,
   Trash2,
   Users,
@@ -36,6 +33,7 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
@@ -370,6 +368,12 @@ const paletteItems: CanvasPaletteItem[] = [
   },
 ];
 
+const paletteGroups = [
+  { label: 'Tables', items: paletteItems.slice(0, 4) },
+  { label: 'Key areas', items: paletteItems.slice(4, 13) },
+  { label: 'More', items: paletteItems.slice(13) },
+];
+
 const spaceTypeOptions = [
   'Reception tent',
   'Church setup',
@@ -387,12 +391,12 @@ const defaultCanvas = {
 
 const tutorialSteps: TutorialStep[] = [
   {
-    title: 'Start with the top row',
-    body: 'Choose a saved plan, set the room size, then save when the layout feels right.',
+    title: 'Choose a plan',
+    body: 'Open a saved plan or begin with the blank canvas.',
   },
   {
-    title: 'Use the tool strip',
-    body: 'Click any tool to drop it onto the canvas. Start with tables, stage, and walkway zones first.',
+    title: 'Add an item',
+    body: 'Choose Add item, then start with a table or key area.',
   },
   {
     title: 'Edit only the selected item',
@@ -867,6 +871,7 @@ export default function SpaceTablePlan() {
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
+  const [addItemOpen, setAddItemOpen] = useState(false);
 
   const selectedObject = useMemo(
     () => objects.find((object) => object.id === selectedObjectId) ?? null,
@@ -882,11 +887,6 @@ export default function SpaceTablePlan() {
     () => venuePresets.find((space) => space.id === selectedVenueSpaceId) ?? null,
     [selectedVenueSpaceId, venuePresets],
   );
-  const paletteRows = useMemo(() => {
-    const splitIndex = Math.ceil(paletteItems.length / 2);
-    return [paletteItems.slice(0, splitIndex), paletteItems.slice(splitIndex)];
-  }, []);
-
   const exportCoupleName = useMemo(() => {
     const coupleProfileName = [profile?.full_name, profile?.partner_name]
       .map((name) => name?.trim())
@@ -1010,15 +1010,6 @@ export default function SpaceTablePlan() {
     weddingContext?.weddingName,
     zoom,
   ]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const tutorialSeen = window.localStorage.getItem('zania-space-plan-tutorial-seen');
-    if (!tutorialSeen) {
-      setShowTutorial(true);
-      setTutorialStepIndex(0);
-    }
-  }, []);
 
   useEffect(() => {
     setSaved(false);
@@ -2111,12 +2102,11 @@ export default function SpaceTablePlan() {
 
       toast({
         title: 'Plan saved',
-        description: 'Your preview space layout draft is now stored in the private Zania workspace schema.',
       });
     } catch (error: any) {
       toast({
         title: 'Could not save plan',
-        description: error?.message || 'There was a problem saving this layout draft.',
+        description: error?.message || 'Try again.',
         variant: 'destructive',
       });
     } finally {
@@ -2135,10 +2125,10 @@ export default function SpaceTablePlan() {
           <CardHeader>
             <CardTitle className="flex items-center gap-3 text-2xl">
               <AlertCircle className="h-6 w-6 text-destructive" />
-              Space &amp; Table Plan is not ready for this workspace
+              Space plan unavailable
             </CardTitle>
             <CardDescription className="text-base leading-7 text-muted-foreground">
-              {contextError || 'We could not find a wedding workspace to attach this preview feature to right now.'}
+              {contextError || 'Choose a wedding workspace and try again.'}
             </CardDescription>
           </CardHeader>
         </Card>
@@ -2150,61 +2140,72 @@ export default function SpaceTablePlan() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(212,118,70,0.12),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(212,187,125,0.14),transparent_28%),linear-gradient(180deg,#fcf7ef_0%,#f7efe5_52%,#f5ebdf_100%)]">
       <div className="mx-auto max-w-[1680px] px-3 py-4 md:px-4">
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-2">
-            <Badge variant="outline" className="w-fit rounded-full border-primary/20 bg-white/80 px-2.5 py-1 text-[10px] uppercase tracking-[0.24em] text-primary shadow-sm">
-              Preview only
-            </Badge>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary/75">{weddingContext.audienceLabel}</p>
-              <h1 className="workspace-h1 mt-1">Space &amp; Table Plan</h1>
-            </div>
+          <div>
+            <h1 className="workspace-h1">Space &amp; Table Plan</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Arrange tables and key areas.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className={cn(
-              'rounded-full border px-3 py-1.5 text-[11px] font-medium',
-              planHealth.overCapacityTables.length > 0
-                ? 'border-destructive/20 bg-destructive/5 text-destructive'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-800',
-            )}>
-              {planHealth.overCapacityTables.length > 0
-                ? `${planHealth.overCapacityTables.length} capacity issue${planHealth.overCapacityTables.length === 1 ? '' : 's'}`
-                : 'Capacity healthy'}
-            </div>
-            <HoverTip content="Start over with a fresh empty layout draft.">
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={createFreshPlanDraft}>
-                <Plus className="h-3.5 w-3.5" />
-                New draft
-              </Button>
-            </HoverTip>
-            <HoverTip content="Download the current table assignments as a CSV for planning and operations.">
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={exportAssignmentsCsv}>
-                <Download className="h-3.5 w-3.5" />
-                Export table CSV
-              </Button>
-            </HoverTip>
-            <HoverTip content="Open a print-friendly version of the layout for venue or vendor handoff.">
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 bg-white/85 px-3 text-xs" onClick={openPrintLayoutView}>
-                <MapIcon className="h-3.5 w-3.5" />
-                Print layout
-              </Button>
-            </HoverTip>
-            <HoverTip content="Save your latest changes to this draft.">
-              <Button
-                size="sm"
-                className="h-8 gap-1.5 px-3 text-xs"
-                onClick={savePlan}
-                disabled={saving}
-                status={saving ? 'loading' : saved ? 'success' : 'idle'}
-                loadingText="Saving"
-                successText="Saved"
-              >
-                <Save className="h-3.5 w-3.5" />
-                Save draft
-              </Button>
-            </HoverTip>
+            <Button variant="outline" size="sm" className="h-9 bg-white/85" onClick={() => setAddItemOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add item
+            </Button>
+            <Button
+              size="sm"
+              className="h-9"
+              onClick={savePlan}
+              disabled={saving}
+              status={saving ? 'loading' : saved ? 'success' : 'idle'}
+              loadingText="Saving"
+              successText="Saved"
+            >
+              Save plan
+            </Button>
+            <details className="group relative">
+              <summary className="flex h-9 cursor-pointer list-none items-center rounded-md border border-input bg-white/85 px-3 text-sm font-medium marker:content-none">
+                More
+              </summary>
+              <div className="absolute right-0 z-50 mt-2 grid min-w-48 gap-1 rounded-2xl border border-border bg-background p-2 shadow-lg">
+                <Button variant="ghost" size="sm" className="justify-start" onClick={createFreshPlanDraft}>New plan</Button>
+                <Button variant="ghost" size="sm" className="justify-start" onClick={exportAssignmentsCsv}>Export tables</Button>
+                <Button variant="ghost" size="sm" className="justify-start" onClick={openPrintLayoutView}>Print layout</Button>
+                <Button variant="ghost" size="sm" className="justify-start" onClick={restartTutorial}>View guide</Button>
+              </div>
+            </details>
           </div>
         </div>
+
+        <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Add item</DialogTitle>
+              <DialogDescription>Choose something to place on the plan.</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[65vh] space-y-6 overflow-y-auto pr-1">
+              {paletteGroups.map((group) => (
+                <section key={group.label}>
+                  <h2 className="text-sm font-semibold text-foreground">{group.label}</h2>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {group.items.map((item) => (
+                      <button
+                        key={item.type}
+                        type="button"
+                        onClick={() => {
+                          handleAddObject(item);
+                          setAddItemOpen(false);
+                        }}
+                        className="flex min-h-11 items-center gap-3 rounded-xl border border-border bg-background px-3 py-2 text-left transition hover:border-primary/40 hover:bg-primary/5"
+                      >
+                        <item.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="text-sm font-medium text-foreground">{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <div className="grid gap-6">
           <Card className="overflow-hidden border-white/70 bg-white/80 shadow-[0_22px_60px_rgba(67,36,20,0.08)] backdrop-blur">
@@ -2216,9 +2217,6 @@ export default function SpaceTablePlan() {
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
-                      {planHealth.objectCount} objects
-                    </Badge>
-                    <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
                       {planHealth.tableCount} tables
                     </Badge>
                     <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
@@ -2227,12 +2225,17 @@ export default function SpaceTablePlan() {
                     <Badge variant="outline" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
                       {planHealth.unassignedGuests.length} open
                     </Badge>
+                    {planHealth.overCapacityTables.length > 0 ? (
+                      <Badge variant="destructive" className="rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.2em]">
+                        {planHealth.overCapacityTables.length} over capacity
+                      </Badge>
+                    ) : null}
                   </div>
                 </div>
 
-                <div className="grid gap-2 xl:grid-cols-[180px_130px_96px_96px_88px_86px_116px_40px]">
+                <div className="flex flex-wrap items-center gap-2">
                   <Select value={selectedPlanId ?? 'new'} onValueChange={(value) => setSelectedPlanId(value === 'new' ? null : value)}>
-                    <SelectTrigger className="h-9 bg-white/90 text-xs">
+                    <SelectTrigger className="h-9 w-[220px] bg-white/90 text-xs">
                       <SelectValue placeholder="Saved plan" />
                     </SelectTrigger>
                     <SelectContent>
@@ -2245,67 +2248,6 @@ export default function SpaceTablePlan() {
                     </SelectContent>
                   </Select>
 
-                  <Select value={planStatus} onValueChange={(value) => setPlanStatus(value as SpacePlanStatus)}>
-                    <SelectTrigger className="h-9 bg-white/90 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="draft">Draft</SelectItem>
-                      <SelectItem value="review">Review</SelectItem>
-                      <SelectItem value="final">Final</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={formatDimension(canvasSize.width, dimensionUnit)}
-                    onChange={(event) =>
-                      setCanvasSize((current) => ({
-                        ...current,
-                        width: Math.max(MIN_CANVAS_WIDTH, dimensionToPixels(Number(event.target.value) || 0, dimensionUnit)),
-                      }))
-                    }
-                    className="h-9 bg-white/90 text-xs"
-                    aria-label={`Canvas width in ${dimensionUnit}`}
-                  />
-
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={formatDimension(canvasSize.height, dimensionUnit)}
-                    onChange={(event) =>
-                      setCanvasSize((current) => ({
-                        ...current,
-                        height: Math.max(MIN_CANVAS_HEIGHT, dimensionToPixels(Number(event.target.value) || 0, dimensionUnit)),
-                      }))
-                    }
-                    className="h-9 bg-white/90 text-xs"
-                    aria-label={`Canvas height in ${dimensionUnit}`}
-                  />
-
-                  <Select value={dimensionUnit} onValueChange={(value) => setDimensionUnit(value as DimensionUnit)}>
-                    <SelectTrigger className="h-9 bg-white/90 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="meters">Meters</SelectItem>
-                      <SelectItem value="feet">Feet</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <HoverTip content="Snap objects neatly to the grid while arranging the room.">
-                    <Button
-                      type="button"
-                      variant={snapToGrid ? 'default' : 'outline'}
-                      size="sm"
-                      className="h-9 px-3 text-[11px]"
-                      onClick={() => setSnapToGrid((current) => !current)}
-                    >
-                      {snapToGrid ? 'Snap on' : 'Snap off'}
-                    </Button>
-                  </HoverTip>
-
                   <HoverTip content="Zoom the canvas in or out for detail work and broad layout checks.">
                     <div className="flex h-9 items-center gap-0.5 rounded-2xl border border-border/70 bg-white/90 px-1 py-1 shadow-sm">
                       <Button type="button" size="icon" variant="ghost" className="h-7 w-7 rounded-xl" onClick={() => setZoomByDirection('out')} disabled={zoom <= MIN_ZOOM}>
@@ -2317,23 +2259,49 @@ export default function SpaceTablePlan() {
                       </Button>
                     </div>
                   </HoverTip>
-
-                  <div className="flex items-center justify-end gap-1.5 xl:ml-auto">
-                    <HoverTip content="Open the short guided walkthrough for this layout workspace.">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="h-9 w-9 rounded-2xl bg-white/90"
-                        onClick={restartTutorial}
-                        aria-label="Open space plan guide"
-                      >
-                        <CircleHelp className="h-4 w-4" />
+                  <details className="w-full rounded-2xl border border-border/70 bg-white/70">
+                    <summary className="cursor-pointer list-none px-4 py-2 text-sm font-medium text-foreground marker:content-none">
+                      Canvas controls
+                    </summary>
+                    <div className="grid gap-2 border-t border-border/60 p-3 sm:grid-cols-2 xl:grid-cols-[130px_110px_110px_100px_auto]">
+                      <Select value={planStatus} onValueChange={(value) => setPlanStatus(value as SpacePlanStatus)}>
+                        <SelectTrigger className="h-9 bg-white/90 text-xs" aria-label="Plan status"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="draft">Draft</SelectItem>
+                          <SelectItem value="review">Review</SelectItem>
+                          <SelectItem value="final">Final</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={formatDimension(canvasSize.width, dimensionUnit)}
+                        onChange={(event) => setCanvasSize((current) => ({ ...current, width: Math.max(MIN_CANVAS_WIDTH, dimensionToPixels(Number(event.target.value) || 0, dimensionUnit)) }))}
+                        className="h-9 bg-white/90 text-xs"
+                        aria-label={`Canvas width in ${dimensionUnit}`}
+                      />
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={formatDimension(canvasSize.height, dimensionUnit)}
+                        onChange={(event) => setCanvasSize((current) => ({ ...current, height: Math.max(MIN_CANVAS_HEIGHT, dimensionToPixels(Number(event.target.value) || 0, dimensionUnit)) }))}
+                        className="h-9 bg-white/90 text-xs"
+                        aria-label={`Canvas height in ${dimensionUnit}`}
+                      />
+                      <Select value={dimensionUnit} onValueChange={(value) => setDimensionUnit(value as DimensionUnit)}>
+                        <SelectTrigger className="h-9 bg-white/90 text-xs" aria-label="Dimension unit"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="meters">Meters</SelectItem>
+                          <SelectItem value="feet">Feet</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant={snapToGrid ? 'default' : 'outline'} size="sm" className="h-9" onClick={() => setSnapToGrid((current) => !current)}>
+                        {snapToGrid ? 'Snap on' : 'Snap off'}
                       </Button>
-                    </HoverTip>
-                  </div>
+                    </div>
+                  </details>
                 </div>
-                {showTutorial && tutorialStepIndex === 0 ? (
+                {showTutorial && tutorialStepIndex <= 1 ? (
                   <div className="flex justify-end">
                     <TutorialCard
                       stepIndex={tutorialStepIndex}
@@ -2344,42 +2312,13 @@ export default function SpaceTablePlan() {
                   </div>
                 ) : null}
 
-                <div className="rounded-[20px] border border-border/60 bg-white/80 px-2 py-2 shadow-sm">
-                  <div className="space-y-1.5">
-                    {paletteRows.map((row, rowIndex) => (
-                      <div key={rowIndex} className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}>
-                        {row.map((item) => (
-                          <HoverTip key={item.type} content={item.description}>
-                            <button
-                              type="button"
-                              onClick={() => handleAddObject(item)}
-                              className="group flex h-7 items-center gap-1 rounded-md border border-border/70 bg-background/90 px-1.5 text-left shadow-sm transition duration-200 hover:border-primary/40 hover:bg-primary/5"
-                            >
-                              <item.icon className="h-3 w-3 shrink-0 text-muted-foreground/80 transition group-hover:text-primary" />
-                              <span className="truncate text-[9px] font-medium text-foreground">{item.label}</span>
-                            </button>
-                          </HoverTip>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {showTutorial && tutorialStepIndex === 1 ? (
-                  <TutorialCard
-                    stepIndex={tutorialStepIndex}
-                    onSkip={() => closeTutorial(true)}
-                    onBack={() => setTutorialStepIndex((current) => Math.max(0, current - 1))}
-                    onNext={advanceTutorial}
-                  />
-                ) : null}
               </div>
             </CardHeader>
             <CardContent className="space-y-3 p-3 sm:p-4">
               <div className="rounded-[28px] border border-border/60 bg-white/85 p-3 shadow-sm">
                 {!selectedObject ? (
                   <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-                    <span>Select an object to edit it.</span>
-                    <Badge variant="outline" className="rounded-full">Inspector</Badge>
+                    <span>Select an item to edit it.</span>
                   </div>
                 ) : (
                   <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr_1fr_auto]">
@@ -2636,11 +2575,12 @@ export default function SpaceTablePlan() {
                   {!loadingPlan && objects.length === 0 ? (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="max-w-md rounded-[28px] border border-dashed border-primary/25 bg-white/85 px-8 py-8 text-center shadow-sm">
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-primary/70">Blank canvas</p>
-                        <h3 className="workspace-h3 mt-3">Start with the room essentials</h3>
-                        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                          Add tables, stage, dance floor, buffet, and the key guest-flow zones first. We only need the strongest planning moves in this preview.
-                        </p>
+                        <h3 className="workspace-h3">No items yet.</h3>
+                        <Button className="mt-4" onClick={() => {
+                          handleAddObject(paletteItems[0]);
+                        }}>
+                          Add table
+                        </Button>
                       </div>
                     </div>
                   ) : null}
@@ -2812,8 +2752,11 @@ export default function SpaceTablePlan() {
             </CardContent>
           </Card>
 
-          <Card className="border-white/70 bg-white/80 shadow-[0_18px_50px_rgba(67,36,20,0.06)] backdrop-blur">
-            <CardContent className="grid gap-4 pt-4 md:grid-cols-2 xl:grid-cols-8">
+          <details className="rounded-3xl border border-white/70 bg-white/80 shadow-[0_18px_50px_rgba(67,36,20,0.06)] backdrop-blur">
+            <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">
+              Plan details
+            </summary>
+            <div className="grid gap-4 border-t border-border/60 p-5 md:grid-cols-2 xl:grid-cols-8">
                 <div className="space-y-2 xl:col-span-2">
                   <Label>Plan name</Label>
                   <Input value={planName} onChange={(event) => setPlanName(event.target.value)} />
@@ -2889,8 +2832,8 @@ export default function SpaceTablePlan() {
                     className="min-h-[90px]"
                   />
                 </div>
-            </CardContent>
-          </Card>
+            </div>
+          </details>
 
         </div>
       </div>

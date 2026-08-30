@@ -4,6 +4,7 @@ import {
   canonicalizeVendorCategory,
   getVendorCategoryOptions,
   getVendorCategoryScope,
+  isVendorCategory,
   vendorCategoriesMatch,
   vendorCategoryCatalog,
 } from '@/lib/vendorCategories';
@@ -46,26 +47,26 @@ describe('vendor category catalog', () => {
     expect(canonicalizeVendorCategory('MC')).toBe('Master of Ceremonies');
     expect(canonicalizeVendorCategory('Photography')).toBe('Photographer');
     expect(canonicalizeVendorCategory('Videography')).toBe('Cinematographer');
+    expect(canonicalizeVendorCategory('Flowers')).toBe('Décor, Tents, Chairs, Tables');
+    expect(canonicalizeVendorCategory('Accommodation')).toBe('Wedding Venue');
   });
 
-  it('keeps removed and unknown categories available only for existing legacy records', () => {
+  it('folds removed aliases into the catalog and keeps only unknown legacy records available', () => {
     expect(getVendorCategoryOptions().some((category) => category.name === 'Flowers')).toBe(false);
-    expect(getVendorCategoryOptions('Flowers').at(-1)).toEqual({
-      name: 'Flowers',
+    expect(getVendorCategoryOptions('Flowers')).toEqual(vendorCategoryCatalog);
+    expect(getVendorCategoryOptions('Other').at(-1)).toEqual({
+      name: 'Other',
       scope: 'wedding',
       suggestedPercentage: 0,
     });
-    expect(getVendorCategoryOptions('Accommodation').at(-1)).toEqual({
-      name: 'Accommodation',
-      scope: 'wedding',
-      suggestedPercentage: 0,
-    });
+    expect(isVendorCategory('Flowers')).toBe(true);
+    expect(isVendorCategory('Other')).toBe(false);
   });
 
   it('matches canonical categories to existing budget and vendor labels', () => {
     expect(vendorCategoriesMatch('Cake', 'Cake Artist & Baker')).toBe(true);
     expect(vendorCategoriesMatch('Wedding Bands', 'Rings')).toBe(true);
     expect(vendorCategoriesMatch('Bride Attire & Body Prep', 'Bridal Gown, Accessories, Preparation')).toBe(true);
-    expect(vendorCategoriesMatch('Flowers', 'Décor, Tents, Chairs, Tables')).toBe(false);
+    expect(vendorCategoriesMatch('Flowers', 'Décor, Tents, Chairs, Tables')).toBe(true);
   });
 });

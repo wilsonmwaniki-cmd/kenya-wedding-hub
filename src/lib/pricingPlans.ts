@@ -242,6 +242,7 @@ export const professionalEntitlementKeys = [
   'directory_listing',
   'verified_listing',
   'booking_management',
+  'document_collaboration',
   'invoicing',
   'contract_management',
   'public_reputation',
@@ -300,7 +301,7 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
 ];
 
 export const professionalPlanEntitlementMap: Record<Exclude<ProfessionalPlanTier, 'free'>, ProfessionalEntitlementKey[]> = {
-  premium: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
+  premium: ['booking_management', 'document_collaboration', 'media_portfolio'],
 };
 
 const defaultAudiencePlans: AudiencePlan[] = [
@@ -464,12 +465,16 @@ export function formatEntitlementFeatureLabel(feature?: string | null) {
     'committee.calendar_sync': 'sync committee schedules',
     'committee.export_progress': 'export committee progress',
     'planner.ai_assistant': 'unlock the AI planner assistant',
+    'planner.connected_documents': 'connect documents to client workspaces',
+    'planner.invoicing': 'connect documents to client workspaces',
     'planner.additional_weddings': 'add another active wedding',
     'planner.vendor_outreach': 'reach out to vendors',
     'planner.calendar_sync': 'sync planner schedules',
     'planner.full_workspace': 'unlock the full planner workspace',
     'planner.export_progress': 'export client progress',
     'vendor.ai_assistant': 'unlock the AI vendor assistant',
+    'vendor.connected_documents': 'connect documents to couples, planners, and bookings',
+    'vendor.invoicing': 'connect documents to couples, planners, and bookings',
     'vendor.direct_leads': 'receive direct leads',
     'vendor.analytics': 'unlock vendor analytics',
   };

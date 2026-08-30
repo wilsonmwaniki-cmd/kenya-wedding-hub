@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -662,9 +662,13 @@ export default function Guests() {
       <Card className="overflow-hidden border-border shadow-none">
         <CardContent className="space-y-5 p-5 sm:p-6">
           <div className="space-y-5">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-primary">Guests</p>
-              <h1 className="workspace-h1 mt-2">Who is coming?</h1>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <h1 className="workspace-h1">Guests</h1>
+              {guests.length > 0 ? (
+                <Button type="button" onClick={() => { setGuestAdded(false); setOpen(true); }}>
+                  {plannerNeedsApproval ? 'Request guest' : 'Add guest'}
+                </Button>
+              ) : null}
             </div>
 
             <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
@@ -684,24 +688,24 @@ export default function Guests() {
           </div>
 
           <div className="border-t border-border pt-4">
-            <details className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-3">
-              <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Import, export, and check-in tools
+            <details className="rounded-2xl border border-border/70 bg-background/70 p-3">
+              <summary className="cursor-pointer list-none text-sm font-medium text-foreground">
+                More tools
               </summary>
               <div className="mt-3 flex flex-wrap gap-2">
               <input type="file" ref={fileInputRef} accept=".csv" onChange={handleFileUpload} className="hidden" />
               <Button variant="outline" size="sm" onClick={downloadTemplate}>
-                CSV Template
+                Download template
               </Button>
               <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading || plannerNeedsApproval}>
-                {uploading ? 'Uploading...' : 'Upload CSV'}
+                {uploading ? 'Importing…' : 'Import CSV'}
               </Button>
               <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} disabled={plannerNeedsApproval}>
-                Check-In
+                Check in
               </Button>
               {!plannerNeedsApproval && pendingWithEmail.length > 0 && (
                 <Button variant="outline" size="sm" onClick={() => openCompose()}>
-                  Invite All ({pendingWithEmail.length})
+                  Invite all ({pendingWithEmail.length})
                 </Button>
               )}
               </div>
@@ -724,13 +728,13 @@ export default function Guests() {
               </p>
             </div>
 
-            <div className="mt-4">
+            <div>
               <Dialog open={open} onOpenChange={setOpen}>
-                <Button type="button" onClick={() => { setGuestAdded(false); setOpen(true); }}>
-                  {plannerNeedsApproval ? 'Request Guest' : 'Add Guest'}
-                </Button>
                 <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-                  <DialogHeader><DialogTitle className="font-display">{plannerNeedsApproval ? 'Request guest addition' : 'Add Guest'}</DialogTitle></DialogHeader>
+                  <DialogHeader>
+                    <DialogTitle className="font-display">{plannerNeedsApproval ? 'Request guest' : 'Add guest'}</DialogTitle>
+                    <DialogDescription>Name and contact details are enough to start.</DialogDescription>
+                  </DialogHeader>
                   <form onSubmit={addGuest} className="space-y-4">
                     <FormSubmitError message={guestSubmitError} />
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -750,49 +754,54 @@ export default function Guests() {
                         <Input value={phone} onChange={e => { setPhone(e.target.value); setGuestFormErrors((current) => ({ ...current, phone: undefined })); setGuestSubmitError(null); }} placeholder="+254..." aria-invalid={!!guestFormErrors.phone} />
                         <FormFieldError message={guestFormErrors.phone} />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Group</Label>
-                        <Select value={groupName} onValueChange={setGroupName}>
-                          <SelectTrigger><SelectValue placeholder="Select group" /></SelectTrigger>
-                          <SelectContent>
-                            {GUEST_GROUPS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Category</Label>
-                        <Select value={category} onValueChange={setCategory}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {GUEST_CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>RSVP Status</Label>
-                        <Select value={rsvp} onValueChange={setRsvp}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="confirmed">Confirmed</SelectItem>
-                            <SelectItem value="declined">Declined</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Plus One</Label>
-                        <Select value={plusOne} onValueChange={(value: 'yes' | 'no') => setPlusOne(value)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="no">No</SelectItem>
-                            <SelectItem value="yes">Yes</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label>Meal Preference</Label>
-                        <Input value={mealPreference} onChange={e => setMealPreference(e.target.value)} placeholder="Optional meal or dietary note" />
-                      </div>
+                      <details className="rounded-2xl border border-border/70 bg-muted/20 p-3 sm:col-span-2">
+                        <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+                        <div className="mt-4 grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Group</Label>
+                            <Select value={groupName} onValueChange={setGroupName}>
+                              <SelectTrigger><SelectValue placeholder="Choose group" /></SelectTrigger>
+                              <SelectContent>
+                                {GUEST_GROUPS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Category</Label>
+                            <Select value={category} onValueChange={setCategory}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {GUEST_CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>RSVP status</Label>
+                            <Select value={rsvp} onValueChange={setRsvp}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="confirmed">Confirmed</SelectItem>
+                                <SelectItem value="declined">Declined</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Plus one</Label>
+                            <Select value={plusOne} onValueChange={(value: 'yes' | 'no') => setPlusOne(value)}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="no">No</SelectItem>
+                                <SelectItem value="yes">Yes</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <Label>Meal notes</Label>
+                            <Input value={mealPreference} onChange={e => setMealPreference(e.target.value)} placeholder="Dietary needs or meal choice" />
+                          </div>
+                        </div>
+                      </details>
                     </div>
                     <Button
                       type="submit"
@@ -802,7 +811,7 @@ export default function Guests() {
                       loadingText={plannerNeedsApproval ? 'Sending for approval' : 'Adding guest'}
                       successText={plannerNeedsApproval ? 'Request sent' : 'Guest added'}
                     >
-                      {plannerNeedsApproval ? 'Send for approval' : 'Add Guest'}
+                      {plannerNeedsApproval ? 'Send for approval' : 'Add guest'}
                     </Button>
                   </form>
                 </DialogContent>
@@ -818,7 +827,6 @@ export default function Guests() {
             <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
                 <h2 className="workspace-h2">Guest list</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Choose a guest to see more.</p>
               </div>
 
               <div className="flex items-center gap-3 flex-wrap">
@@ -826,7 +834,7 @@ export default function Guests() {
                   <Input
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    placeholder="Search guests..."
+                    placeholder="Search guests"
                   />
                 </div>
                 {uniqueGroups.length > 0 && (
@@ -970,13 +978,18 @@ export default function Guests() {
                   ) : (
                     <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
                       <p className="text-sm font-medium text-foreground">
-                        {searchTerm || filterGroup !== 'all' || guestStatusFilter !== 'all' ? 'No guests match this view' : 'No guests added yet'}
+                        {searchTerm || filterGroup !== 'all' || guestStatusFilter !== 'all' ? 'No guests found' : 'No guests yet'}
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">
                         {searchTerm || filterGroup !== 'all' || guestStatusFilter !== 'all'
-                          ? 'Try a different name, phone, email, or group search.'
-                          : 'Add the first guest and start shaping the wedding headcount.'}
+                          ? 'Try another search or filter.'
+                          : 'Add someone to start your guest list.'}
                       </p>
+                      {!searchTerm && filterGroup === 'all' && guestStatusFilter === 'all' ? (
+                        <Button type="button" className="mt-4" onClick={() => { setGuestAdded(false); setOpen(true); }}>
+                          {plannerNeedsApproval ? 'Request guest' : 'Add guest'}
+                        </Button>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -1293,13 +1306,7 @@ export default function Guests() {
             </div>
           </summary>
           <div className="mt-5">
-            {guestRsvpDecision.allowed ? (
-              <GuestInsights guests={guests as any} />
-            ) : (
-              <div className="semantic-surface-info rounded-2xl border p-4 text-sm text-muted-foreground">
-                Unlock RSVP & Guest Management to open guest insights, invite analytics, and deeper reporting.
-              </div>
-            )}
+            <GuestInsights guests={guests as any} />
           </div>
         </details>
       </div>

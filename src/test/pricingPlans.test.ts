@@ -36,19 +36,19 @@ describe('professional pricing model', () => {
     const professional = getProfessionalPlanDefinitionWithContent(audience, 'premium');
 
     expect(free.title).toBe('Free');
-    expect(free.includedFeatures).toContain('Collaborate in couple-funded workspaces');
+    expect(free.includedFeatures).toContain('Standalone quotes, invoices, receipts, and contracts');
     expect(professional).toMatchObject({
       title: 'Professional',
       monthlyPriceKes: 1000,
       annualPriceKes: 9000,
     });
+    expect(professional.includedFeatures.some((feature) => feature.startsWith('Connect documents'))).toBe(true);
   });
 
   it('uses Professional for business operations without selling trust or advertising', () => {
     expect(professionalPlanEntitlementMap.premium).toEqual([
       'booking_management',
-      'invoicing',
-      'contract_management',
+      'document_collaboration',
       'media_portfolio',
     ]);
   });

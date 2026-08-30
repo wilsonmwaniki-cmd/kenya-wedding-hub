@@ -24,12 +24,12 @@ describe('budget allocation recalibration', () => {
     expect(result.allocations.reduce((sum, category) => sum + category.nextAllocated, 0)).toBe(200_000);
   });
 
-  it('keeps current amounts when the new budget has room for them', () => {
+  it('proportionally expands planned amounts to fill a larger budget', () => {
     const result = recalibrateBudgetAllocations([
       { id: 'catering', allocated: 300_000, spent: 50_000 },
     ], 500_000);
 
-    expect(result.allocations[0].nextAllocated).toBe(300_000);
+    expect(result.allocations[0].nextAllocated).toBe(500_000);
     expect(result.fitsTarget).toBe(true);
   });
 

@@ -73,20 +73,13 @@ export default function CommercialDocumentEditor({
   const hasLineItems = items.some(
     (item) => item.description.trim() && Number(item.quantity ?? 1) > 0 && Number(item.unitPrice ?? 0) > 0,
   );
-  const missingRequiredFields = [
-    !draft.title.trim() && 'title',
-    !draft.recipientName.trim() && 'client name',
-    !draft.issueDate && (isReceipt ? 'payment date' : 'issue date'),
-    !isReceipt && !draft.dueDate && 'due date',
-    !hasLineItems && 'priced item',
-  ].filter(Boolean) as string[];
   const updateDraft = (patch: Partial<CommercialDocumentHeaderDraft>) => {
     setDraft((current) => (current ? { ...current, ...patch } : current));
   };
 
   return (
     <section className="overflow-hidden border border-border/80 bg-[#fffdf9] shadow-[0_18px_44px_rgba(55,42,34,0.08)]">
-      <div className="grid gap-8 bg-primary px-6 py-7 text-primary-foreground md:grid-cols-[1.35fr_0.65fr] md:px-8">
+      <div className="bg-primary px-6 py-7 text-primary-foreground md:px-8">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-primary-foreground/72">
             {commercialDocumentTypeLabel(document.documentType)} {document.documentNumber}
@@ -102,15 +95,6 @@ export default function CommercialDocumentEditor({
           {!draft.title.trim() && (
             <p className="mt-2 text-xs text-primary-foreground/80">Add a clear title before sharing this document.</p>
           )}
-          <p className="mt-2 max-w-xl text-sm leading-6 text-primary-foreground/76">
-            Edit the document directly. The preview will use this same information.
-          </p>
-        </div>
-        <div className="space-y-2 md:text-right">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary-foreground/72">From</p>
-          <p className="text-sm leading-6 text-primary-foreground/88">
-            Your business details are filled from your Zania profile and remain consistent on every document.
-          </p>
         </div>
       </div>
 
@@ -124,18 +108,23 @@ export default function CommercialDocumentEditor({
                 <Input id={`${idPrefix}-recipient`} value={draft.recipientName} onChange={(event) => updateDraft({ recipientName: event.target.value })} />
                 {!draft.recipientName.trim() && <p className="text-xs text-destructive">Add the person receiving this document.</p>}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor={`${idPrefix}-email`}>Email</Label>
-                <Input id={`${idPrefix}-email`} type="email" value={draft.recipientEmail} onChange={(event) => updateDraft({ recipientEmail: event.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={`${idPrefix}-phone`}>Phone</Label>
-                <Input id={`${idPrefix}-phone`} value={draft.recipientPhone} onChange={(event) => updateDraft({ recipientPhone: event.target.value })} />
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor={`${idPrefix}-wedding`}>Wedding or booking</Label>
-                <Input id={`${idPrefix}-wedding`} value={draft.weddingName} onChange={(event) => updateDraft({ weddingName: event.target.value })} />
-              </div>
+              <details className="sm:col-span-2 rounded-2xl border border-border/70">
+                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Contact details</summary>
+                <div className="grid gap-4 border-t border-border/70 p-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor={`${idPrefix}-email`}>Email</Label>
+                    <Input id={`${idPrefix}-email`} type="email" value={draft.recipientEmail} onChange={(event) => updateDraft({ recipientEmail: event.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`${idPrefix}-phone`}>Phone</Label>
+                    <Input id={`${idPrefix}-phone`} value={draft.recipientPhone} onChange={(event) => updateDraft({ recipientPhone: event.target.value })} />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor={`${idPrefix}-wedding`}>Wedding or booking</Label>
+                    <Input id={`${idPrefix}-wedding`} value={draft.weddingName} onChange={(event) => updateDraft({ weddingName: event.target.value })} />
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
           <div className="grid content-start gap-4 sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2">
@@ -169,7 +158,6 @@ export default function CommercialDocumentEditor({
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h3 className="font-display text-xl text-foreground">{isReceipt ? 'What was this payment for?' : 'What are you charging for?'}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{isReceipt ? 'List the deposit, instalment, or service this payment covers.' : 'Add one clear line for each service or deliverable.'}</p>
             </div>
             <Button type="button" variant="outline" className="gap-2" onClick={() => setItems((current) => [...current, { description: '', quantity: 1, unitPrice: 0, sortOrder: current.length }])}>
               <Plus className="h-4 w-4" /> Add item
@@ -203,7 +191,9 @@ export default function CommercialDocumentEditor({
         </div>
 
         <div className="grid gap-8 border-t border-border/70 pt-8 lg:grid-cols-[1fr_360px]">
-          <div className="space-y-5">
+          <details className="rounded-2xl border border-border/70">
+            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Payment and notes</summary>
+          <div className="space-y-5 border-t border-border/70 p-4">
             <div className="space-y-2">
               <Label htmlFor={`${idPrefix}-payment`}>{isReceipt ? 'Payment method or reference' : 'How should the client pay?'}</Label>
               <Textarea id={`${idPrefix}-payment`} rows={3} placeholder={isReceipt ? 'e.g. M-Pesa transaction code, bank reference, cash, or card' : 'e.g. M-Pesa till or paybill, bank details, or payment instructions'} value={draft.paymentInstructions} onChange={(event) => updateDraft({ paymentInstructions: event.target.value })} />
@@ -217,6 +207,7 @@ export default function CommercialDocumentEditor({
               <Textarea id={`${idPrefix}-terms`} rows={4} value={draft.terms} onChange={(event) => updateDraft({ terms: event.target.value })} />
             </div>
           </div>
+          </details>
           <div className="space-y-4">
             <div className="space-y-3 border-b border-border/70 pb-5 text-sm">
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Subtotal</span><strong>{money(subtotal)}</strong></div>
@@ -236,11 +227,6 @@ export default function CommercialDocumentEditor({
         <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border/70 pt-6">
           <div>
             <p className="text-sm text-muted-foreground">{isReceipt ? 'This receipt confirms the payment shown above.' : `Paid: ${money(document.amountPaid)} · Balance after saving: ${money(Math.max(0, total - document.amountPaid))}`}</p>
-            {missingRequiredFields.length > 0 && (
-              <p className="mt-1 text-xs text-destructive">
-                Still needed: {missingRequiredFields.join(', ')}.
-              </p>
-            )}
           </div>
           <Button onClick={onSave} disabled={saving} className="gap-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

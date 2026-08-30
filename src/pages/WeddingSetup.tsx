@@ -40,21 +40,21 @@ type CompletionState = {
 };
 
 const createSteps: Array<{ id: CreateStep; title: string; description: string }> = [
-  { id: 'basics', title: 'Wedding basics', description: 'Name the wedding, choose your role, and add the core details.' },
-  { id: 'planning', title: 'Planning setup', description: 'Set the planning mode, location context, and diaspora preferences if needed.' },
-  { id: 'review', title: 'Review & create', description: 'Double-check the setup before creating the wedding workspace.' },
+  { id: 'basics', title: 'Wedding details', description: 'Add the name, date, location, and your partner.' },
+  { id: 'planning', title: 'Planning location', description: 'Tell us whether you are planning from Kenya or abroad.' },
+  { id: 'review', title: 'Check details', description: 'Check everything before creating the wedding.' },
 ];
 
 const planningModeOptions: Array<{ value: WeddingPlanningMode; title: string; body: string }> = [
   {
     value: 'local',
-    title: 'Planning from Kenya',
-    body: 'Use local wedding planning defaults and keep budgeting centered on the wedding location.',
+    title: 'From Kenya',
+    body: 'Use Kenya time and KES.',
   },
   {
     value: 'diaspora',
-    title: 'Planning from abroad',
-    body: 'Track the wedding from another country with your own timezone and reference currency.',
+    title: 'From another country',
+    body: 'Choose your country, currency, and timezone.',
   },
 ];
 
@@ -350,48 +350,26 @@ export default function WeddingSetup() {
         <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
           <Card className="border-border shadow-none">
             <CardHeader className="border-b border-border/70 text-center sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Setup complete</p>
               <CardTitle className="mt-2 text-3xl sm:text-4xl">
-                {completion.action === 'joined' ? 'You are in' : 'Wedding workspace created'}
+                {completion.action === 'joined' ? 'You joined the wedding' : `${completion.weddingName ?? 'Your wedding'} is ready`}
               </CardTitle>
               <CardDescription className="mx-auto max-w-xl text-base">
                 {completion.action === 'joined'
-                  ? `You are now connected to ${completion.weddingName ?? 'the wedding'} and can continue inside the workspace.`
-                  : `${completion.weddingName ?? 'Your wedding'} is ready. The next step is to start turning plans into action.`}
+                  ? `Open ${completion.weddingName ?? 'the wedding'} to continue.`
+                  : 'Open Wedding Home to see your first task.'}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6 p-5 sm:p-8">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-lg border border-border bg-muted/20 p-4">
-                  <p className="text-sm font-medium text-muted-foreground">Wedding</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{completion.weddingName ?? 'Your wedding'}</p>
-                </div>
-                <div className="rounded-lg border border-border bg-muted/20 p-4">
-                  <p className="text-sm font-medium text-muted-foreground">Partner invite</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">
-                    {completion.partnerInviteSent ? 'Sent' : completion.partnerInviteQueued ? 'Saved' : 'Optional'}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border bg-muted/20 p-4">
-                  <p className="text-sm font-medium text-muted-foreground">Next stop</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">
-                    {completion.action === 'joined' ? 'Wedding Home' : 'Start planning'}
-                  </p>
-                </div>
-              </div>
-              <div className="rounded-lg border border-primary/20 bg-primary/5 p-5">
-                <p className="font-medium text-foreground">What happens next</p>
-                <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                  <li>Review your wedding home for the countdown, setup status, and next actions.</li>
-                  <li>Open Tasks, Budget, Guests, or Timeline whenever you are ready to start moving.</li>
-                  <li>Use Settings later for edits, partner invites, and ownership details.</li>
-                </ul>
-              </div>
+            <CardContent className="space-y-5 p-5 sm:p-8">
+              {completion.partnerInviteSent || completion.partnerInviteQueued ? (
+                <p className="text-sm text-muted-foreground">
+                  Partner invite {completion.partnerInviteSent ? 'sent' : 'saved'}.
+                </p>
+              ) : null}
               <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => navigate('/settings')}>
-                  Open Settings
+                  Open settings
                 </Button>
-                <Button onClick={() => navigate(completion.route)}>Go to wedding home</Button>
+                <Button onClick={() => navigate(completion.route)}>Open Wedding Home</Button>
               </div>
             </CardContent>
           </Card>
@@ -425,16 +403,13 @@ export default function WeddingSetup() {
 
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
         <section className="mb-8 max-w-3xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            {isCreateFlow ? 'Create your wedding' : 'Join a wedding'}
-          </p>
-          <h1 className="mt-3 font-editorial text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
-            {isCreateFlow ? 'Set up your shared wedding workspace.' : 'Finish joining the wedding workspace.'}
+          <h1 className="font-editorial text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
+            {isCreateFlow ? 'Set up your wedding' : 'Join this wedding'}
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
             {isCreateFlow
-              ? 'Add the essentials now. You can refine the details and invite your partner later.'
-              : 'Enter the invitation code to connect to the shared wedding workspace.'}
+              ? 'Add the details you know now. You can change them later.'
+              : 'Enter the code from your invitation.'}
           </p>
         </section>
 
@@ -475,10 +450,7 @@ export default function WeddingSetup() {
           <div className="border-b border-border/70 px-5 py-5 sm:px-8 sm:py-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-                  {isCreateFlow ? 'Couple onboarding' : 'Wedding invite'}
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold text-foreground sm:text-3xl">
+                <h2 className="text-2xl font-semibold text-foreground sm:text-3xl">
                   {isCreateFlow ? createSteps[activeStepIndex].title : 'Join with your wedding code'}
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -495,10 +467,7 @@ export default function WeddingSetup() {
                   <div className="grid gap-6">
                     <Card className="rounded-lg border-border shadow-none">
                       <CardHeader className="p-5 sm:p-6">
-                        <CardTitle className="font-sans text-xl">Make it feel like your wedding</CardTitle>
-                        <CardDescription>
-                          Start with the basics. We will use this to create the shared wedding workspace for both of you.
-                        </CardDescription>
+                        <CardTitle className="font-sans text-xl">Wedding details</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-5 px-5 pb-5 sm:px-6 sm:pb-6">
                         <div className="space-y-2">
@@ -551,7 +520,7 @@ export default function WeddingSetup() {
                               onChange={(event) => setPartnerEmail(event.target.value)}
                               placeholder={weddingOwnerRole === 'bride' ? 'groom@example.com' : 'bride@example.com'}
                             />
-                            <p className="text-xs text-muted-foreground">Optional now. You can send the invite later from Settings too.</p>
+                            <p className="text-xs text-muted-foreground">Optional. You can invite them later.</p>
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="wedding-date">Wedding date</Label>
@@ -584,10 +553,7 @@ export default function WeddingSetup() {
                   <div className="grid gap-6">
                     <Card className="rounded-lg border-border shadow-none">
                       <CardHeader className="p-5 sm:p-6">
-                        <CardTitle className="font-sans text-xl">Planning context</CardTitle>
-                        <CardDescription>
-                          Choose the mode that best matches how this wedding will be managed day to day.
-                        </CardDescription>
+                        <CardTitle className="font-sans text-xl">Where are you planning from?</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-5 px-5 pb-5 sm:px-6 sm:pb-6">
                         <div className="grid gap-3">
@@ -665,7 +631,7 @@ export default function WeddingSetup() {
                           </div>
                         ) : (
                           <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
-                            Zania will use Kenya-first defaults for this wedding and keep the planning context centered on the wedding location.
+                            We will use Kenya time and KES.
                           </div>
                         )}
                       </CardContent>
@@ -677,10 +643,7 @@ export default function WeddingSetup() {
                   <div className="grid gap-6">
                     <Card className="rounded-lg border-border shadow-none">
                       <CardHeader className="p-5 sm:p-6">
-                        <CardTitle className="font-sans text-2xl">Ready to create</CardTitle>
-                        <CardDescription>
-                          Your wedding workspace will start with these details.
-                        </CardDescription>
+                        <CardTitle className="font-sans text-2xl">Check your details</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-5 px-5 pb-5 sm:px-6 sm:pb-6">
                         <div className="grid overflow-hidden rounded-lg border border-border sm:grid-cols-2">
@@ -714,7 +677,7 @@ export default function WeddingSetup() {
                           </div>
                         </div>
                         <div className="rounded-lg border border-primary/15 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
-                          <p className="font-medium text-foreground">You can edit everything later.</p>
+                          <p className="font-medium text-foreground">You can change these later.</p>
                           {partnerEmail ? (
                             <p className="mt-1">Partner invite ready for {partnerEmail}</p>
                           ) : null}
@@ -743,7 +706,7 @@ export default function WeddingSetup() {
                     />
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
-                    Once the code is accepted, we will connect you to the right wedding role automatically and take you straight into the shared workspace.
+                    We will open the wedding after the code is accepted.
                   </div>
                 </CardContent>
               </Card>
@@ -765,8 +728,8 @@ export default function WeddingSetup() {
               ) : (
                 <Button type="button" onClick={finishSetup} disabled={submitting}>
                   {submitting
-                    ? isCreateFlow ? 'Creating workspace…' : 'Joining wedding…'
-                    : isCreateFlow ? 'Create wedding workspace' : 'Join wedding'}
+                    ? isCreateFlow ? 'Creating wedding…' : 'Joining wedding…'
+                    : isCreateFlow ? 'Create wedding' : 'Join wedding'}
                 </Button>
               )}
             </div>

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ExternalLink, Gift, Loader2, Trash2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-react';
 import { WorkspacePageSkeleton, ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -35,12 +36,6 @@ type RegistryFormState = {
   estimatedPriceKes: string;
   purchaseUrl: string;
 };
-
-const registryHighlights = [
-  'Add the gifts you actually want in one list.',
-  'Mark items as bought so they are clearly struck off.',
-  'Keep useful links and pricing notes next to each gift.',
-] as const;
 
 const emptyForm: RegistryFormState = {
   title: '',
@@ -87,6 +82,7 @@ export default function GiftRegistry() {
   const [form, setForm] = useState<RegistryFormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof RegistryFormState, string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [addGiftOpen, setAddGiftOpen] = useState(false);
 
   const canAccessRegistry = Boolean(weddingId);
 
@@ -143,12 +139,6 @@ export default function GiftRegistry() {
       totalEstimatedValue,
     };
   }, [items]);
-  const registryPrimaryAction = items.length === 0
-      ? 'Add the first gift'
-      : stats.activeItems > 0
-        ? 'Review needed gifts and share the list'
-        : 'Review purchased gifts and add anything missing';
-
   const handleCreateItem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitError(null);
@@ -208,6 +198,7 @@ export default function GiftRegistry() {
 
     setItems((current) => sortRegistryItems([normalizeRegistryItem(data), ...current]));
     setForm(emptyForm);
+    setAddGiftOpen(false);
     setSavingItem(false);
     toast({
       title: 'Gift added',
@@ -280,77 +271,41 @@ export default function GiftRegistry() {
           <Card className="border-primary/10 shadow-card">
             <CardHeader>
               <CardTitle className="workspace-h2">Create your wedding workspace first</CardTitle>
-              <CardDescription>
-                Gift Registry is included at no extra cost and will be ready as soon as your wedding workspace exists.
-              </CardDescription>
+              <CardDescription>Gift registry becomes available when your wedding workspace is ready.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="rounded-2xl border border-border/70 bg-muted/20 p-5">
-                <p className="text-sm font-medium text-foreground">What Gift Registry gives you</p>
-                <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                  {registryHighlights.map((item) => (
-                    <li key={item} className="flex gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </CardContent>
           </Card>
         </div>
       ) : (
         <>
-          <Card className="border-border/70 shadow-card">
-            <CardContent className="space-y-5 px-6 py-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="max-w-2xl space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Gift className="h-5 w-5 text-primary" />
-                    <Badge variant="secondary">Gift registry</Badge>
-                  </div>
-                  <div>
-                    <h1 className="workspace-h1">Make gifting easy for guests</h1>
-                    <p className="mt-2 text-muted-foreground">
-                      Start with the gifts that matter most, then keep the list current so guests can see what is still needed.
-                    </p>
-                  </div>
-                </div>
-                <div className="min-w-[220px] rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Next focus</p>
-                  <p className="mt-2 font-medium text-foreground">{registryPrimaryAction}</p>
-                </div>
-              </div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="workspace-h1">Gift registry</h1>
+              <p className="mt-2 text-sm text-muted-foreground sm:text-base">Keep a private list of gifts you would like.</p>
+            </div>
+            {items.length > 0 ? (
+              <Button onClick={() => setAddGiftOpen(true)} className="gap-2">
+                <Plus className="h-4 w-4" /> Add gift
+              </Button>
+            ) : null}
+          </div>
 
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-2xl border border-[#d9e5f4] bg-[#f4f8fd]/90 px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Items</p>
-                  <p className="mt-2 font-display text-3xl font-semibold">{stats.totalItems}</p>
-                </div>
-                <div className="rounded-2xl border border-[#f0dfc5] bg-[#fff8ec]/95 px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Still needed</p>
-                  <p className="mt-2 font-display text-3xl font-semibold">{stats.activeItems}</p>
-                </div>
-                <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 px-4 py-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Estimated value</p>
-                  <p className="mt-2 font-display text-3xl font-semibold">{formatKes(stats.totalEstimatedValue) ?? 'KES 0'}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {items.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-4"><p className="text-xs text-muted-foreground">Gifts</p><p className="mt-1 text-2xl font-semibold">{stats.totalItems}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-4"><p className="text-xs text-muted-foreground">Needed</p><p className="mt-1 text-2xl font-semibold">{stats.activeItems}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-4"><p className="text-xs text-muted-foreground">Estimated value</p><p className="mt-1 text-2xl font-semibold">{formatKes(stats.totalEstimatedValue) ?? 'KES 0'}</p></div>
+            </div>
+          ) : null}
 
-          <Card className="border-border/70 shadow-card">
-            <CardHeader>
-              <CardTitle className="workspace-h2">Add a gift</CardTitle>
-              <CardDescription>
-                Add each item once, then mark it as bought when it gets claimed or purchased.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          <Dialog open={addGiftOpen} onOpenChange={setAddGiftOpen}>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Add gift</DialogTitle>
+                <DialogDescription>Add a gift to your private list.</DialogDescription>
+              </DialogHeader>
               <form onSubmit={handleCreateItem} className="space-y-4">
                 <FormSubmitError message={submitError} />
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="space-y-2">
                     <Label htmlFor="registry-title">Gift name</Label>
                     <Input
                       id="registry-title"
@@ -365,8 +320,11 @@ export default function GiftRegistry() {
                       aria-invalid={!!formErrors.title}
                     />
                     <FormFieldError message={formErrors.title} />
-                  </div>
-                  <div className="space-y-2">
+                </div>
+                <details className="rounded-2xl border border-border/70 p-4">
+                  <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+                  <div className="mt-4 space-y-4">
+                    <div className="space-y-2">
                     <Label htmlFor="registry-category">Category</Label>
                     <Input
                       id="registry-category"
@@ -374,8 +332,8 @@ export default function GiftRegistry() {
                       onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
                       placeholder="e.g. Kitchen, Home, Travel"
                     />
-                  </div>
-                  <div className="space-y-2">
+                    </div>
+                    <div className="space-y-2">
                     <Label htmlFor="registry-price">Estimated price (KES)</Label>
                     <Input
                       id="registry-price"
@@ -392,8 +350,8 @@ export default function GiftRegistry() {
                       aria-invalid={!!formErrors.estimatedPriceKes}
                     />
                     <FormFieldError message={formErrors.estimatedPriceKes} />
-                  </div>
-                  <div className="space-y-2">
+                    </div>
+                    <div className="space-y-2">
                     <Label htmlFor="registry-link">Purchase link</Label>
                     <Input
                       id="registry-link"
@@ -401,32 +359,30 @@ export default function GiftRegistry() {
                       onChange={(event) => setForm((current) => ({ ...current, purchaseUrl: event.target.value }))}
                       placeholder="https://..."
                     />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="registry-description">Notes</Label>
+                      <Textarea
+                        id="registry-description"
+                        value={form.description}
+                        onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                        placeholder="Add a note"
+                        rows={3}
+                      />
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="registry-description">Notes</Label>
-                  <Textarea
-                    id="registry-description"
-                    value={form.description}
-                    onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                    placeholder="Color, preferred brand, or any useful note for whoever is buying this."
-                    rows={3}
-                  />
-                </div>
-                <Button type="submit" className="gap-2" disabled={savingItem}>
+                </details>
+                <Button type="submit" className="w-full gap-2" disabled={savingItem}>
                   {savingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Add to registry
+                  Add gift
                 </Button>
               </form>
-            </CardContent>
-          </Card>
+            </DialogContent>
+          </Dialog>
 
           <Card className="border-border/70 shadow-card">
             <CardHeader>
-              <CardTitle className="workspace-h2">Registry items</CardTitle>
-              <CardDescription>
-                Keep this list current so guests and collaborators can see what is still needed.
-              </CardDescription>
+              <CardTitle className="workspace-h2">Gifts</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {itemsError ? (
@@ -441,10 +397,10 @@ export default function GiftRegistry() {
                 </div>
               ) : items.filter((item) => !pendingDeleteIds.has(item.id)).length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
-                  <p className="font-medium text-foreground">No gifts added yet.</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Start with a few clear items so your registry feels useful immediately.
-                  </p>
+                  <p className="font-medium text-foreground">No gifts yet.</p>
+                  <Button className="mt-4 gap-2" onClick={() => setAddGiftOpen(true)}>
+                    <Plus className="h-4 w-4" /> Add gift
+                  </Button>
                 </div>
               ) : (
                 items.filter((item) => !pendingDeleteIds.has(item.id)).map((item) => {
@@ -513,8 +469,8 @@ export default function GiftRegistry() {
                           </Button>
                           <Button
                             type="button"
-                            variant="outline"
-                            className="gap-2"
+                            variant="ghost"
+                            className="gap-2 text-muted-foreground hover:text-destructive"
                             disabled={isActiveItem}
                             onClick={() => void handleDeleteItem(item)}
                           >

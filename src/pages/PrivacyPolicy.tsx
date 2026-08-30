@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const EFFECTIVE_DATE = "June 18, 2026";
-const LAST_UPDATED = "June 18, 2026";
+const LAST_UPDATED = "August 23, 2026";
 
 const sections = [
   {
@@ -26,6 +26,9 @@ const sections = [
       "User means any individual who accesses, registers for, uses, or interacts with Zania, including couples, wedding planners, vendors, venues, administrators, guests, and invited collaborators.",
       "Vendor means any business, service provider, venue, supplier, or professional offering wedding-related products or services through or in connection with Zania.",
       "Wedding Workspace means a shared digital environment within Zania used to organise, manage, and collaborate on wedding planning activities, including tasks, budgets, timelines, guest information, communications, documents, vendor interactions, and related content.",
+      "Public Profile means a Vendor or Planner listing that may be visible without signing in and may be indexed by search engines.",
+      "Lead means an inquiry or request for wedding services that Zania may route to an eligible Vendor or Planner.",
+      "Shared Link means a link that gives its recipient access to selected content, such as a quote, invoice, contract, timeline, RSVP form, contribution page, or registry, without joining the Wedding Workspace.",
     ],
   },
   {
@@ -63,6 +66,7 @@ const sections = [
           "Vendor preferences",
           "Notes, comments, messages, and planning updates",
           "Uploaded files, images, mood boards, quotations, invoices, contracts, or other documents",
+          "Contribution, gift registry, RSVP, and Shared Link activity",
           "Cultural, religious, or event preferences where you choose to provide them",
         ],
       },
@@ -82,6 +86,8 @@ const sections = [
           "Ratings, reviews, or feedback",
           "Verification documents, where applicable",
           "Payment or billing details, where applicable",
+          "Lead inquiries, referrals, response status, and marketplace activity",
+          "Professional connections, endorsements, verification information, and trust indicators",
         ],
       },
       {
@@ -129,6 +135,7 @@ const sections = [
       "From your use of our website, app, or platform.",
       "From third-party service providers such as payment processors, analytics providers, hosting providers, or communication tools.",
       "From publicly available sources, where relevant for vendor verification or business listing purposes.",
+      "From people who submit an inquiry, RSVP, contribution, review, or other information through a Shared Link.",
     ],
   },
   {
@@ -144,6 +151,8 @@ const sections = [
           "Enable vendor discovery and communication",
           "Manage wedding budgets, timelines, guest lists, tasks, and checklists",
           "Allow collaboration between couples, planners, vendors, and other invited users",
+          "Route and track Leads, referrals, reviews, professional connections, and trust indicators",
+          "Create, share, deliver, and track commercial documents and other Shared Links",
           "Send reminders, updates, and notifications",
           "Provide customer support",
         ],
@@ -227,7 +236,15 @@ const sections = [
       {
         title: "Vendors and Planners",
         body: [
-          "Where you request vendor services, submit inquiries, make bookings, or share planning information, relevant data may be shared with the vendor, planner, or service provider involved.",
+          "Where you request services, submit an inquiry, make a booking, or ask Zania to find a provider, we may share the information needed to respond with an eligible Vendor or Planner. This can include your name, contact details, wedding date, location, service category, budget range, guest count, notes, and inquiry status.",
+          "A recipient may use Lead information only to respond to that inquiry and for related service delivery, legal, security, or record-keeping purposes. They must obtain permission before using it for unrelated marketing.",
+        ],
+      },
+      {
+        title: "People With a Shared Link",
+        body: [
+          "Anyone who receives a Shared Link may be able to view the content made available through that link. Depending on the feature, this may include names, wedding details, document contents, payment instructions, RSVP questions, registry items, or contribution information.",
+          "The sender controls who receives the link and should share it only with intended recipients. Recipients must not forward or misuse the link or its contents.",
         ],
       },
       {
@@ -322,7 +339,8 @@ const sections = [
   {
     title: "Cookies and Analytics",
     body: [
-      "Zania may use cookies, pixels, analytics tools, or similar technologies to support the platform.",
+      "Zania may use cookies, local storage, pixels, analytics tools, or similar technologies to keep you signed in, remember preferences, understand feature use, diagnose errors, protect accounts, and measure service performance.",
+      "Analytics tools may record page views, clicks, device and browser details, and a pseudonymous or account identifier. We configure these tools to avoid intentionally capturing passwords, payment credentials, or the contents of sensitive form fields.",
       "You may control cookies through your browser settings. However, disabling some cookies may affect the functionality of the platform.",
       "Where required, we will request your consent before using non-essential cookies or tracking technologies.",
     ],
@@ -358,7 +376,7 @@ const sections = [
     title: "Data Breaches",
     body: [
       "If we become aware of a personal data breach that may affect your rights or freedoms, we will take reasonable steps to investigate, contain, and address the breach.",
-      "Where required by law, we will notify the Office of the Data Protection Commissioner and affected users within the applicable legal timelines.",
+      "Where unauthorised access or acquisition creates a real risk of harm, we will notify the Office of the Data Protection Commissioner without delay and within the applicable 72-hour period. We will also notify affected individuals within a reasonably practical period where required by law.",
     ],
   },
   {
@@ -373,6 +391,8 @@ const sections = [
     body: [
       "If you create a vendor, planner, or venue profile on Zania, some of your business information may be publicly visible or visible to Zania users.",
       "You should not upload personal data, client images, or wedding content unless you have the right or permission to do so.",
+      "Public Profile content may be indexed, cached, copied, or republished by search engines and other third parties. Removing it from Zania may not immediately remove copies held elsewhere.",
+      "Reviews, ratings, endorsements, connections, and verification or trust indicators may remain where needed to preserve an accurate marketplace record, prevent fraud, or protect other users, subject to applicable law and valid data-rights requests.",
     ],
     bullets: [
       "Business name",
@@ -402,6 +422,14 @@ const sections = [
     ],
   },
   {
+    title: "AI-Assisted Features and Automated Processing",
+    body: [
+      "When you use an AI-assisted feature, relevant prompts, workspace context, and generated output may be processed by Zania and its AI service providers to provide that feature, maintain security, and improve reliability.",
+      "Do not submit personal or confidential information that you are not authorised to share. Review AI-generated output before using it because it may be incomplete or inaccurate.",
+      "Zania may use automated rules to rank search results, route Leads, flag security risks, or suggest planning actions. These tools support the service; they are not intended to make legal or similarly significant decisions about you without appropriate human review where required by law.",
+    ],
+  },
+  {
     title: "Changes to This Privacy Policy",
     body: [
       "We may update this Privacy Policy from time to time to reflect changes in our services, legal requirements, technology, business operations, or data processing practices.",
@@ -409,7 +437,7 @@ const sections = [
     ],
   },
   {
-    title: "Contact Us / Data Protection Officer",
+    title: "Contact Us / Privacy Requests",
     body: [
       "If you have any questions about this Privacy Policy, wish to exercise your data protection rights, submit a complaint, or contact us regarding the processing of your personal data, please contact Zania using the details below:",
       "Data Controller: Scarlet Plume (Zania)",

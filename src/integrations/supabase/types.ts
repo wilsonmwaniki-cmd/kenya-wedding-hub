@@ -1207,6 +1207,148 @@ export type Database = {
           },
         ]
       }
+      professional_review_invites: {
+        Row: {
+          couple_email: string
+          couple_name: string
+          created_at: string
+          expires_at: string
+          id: string
+          planner_profile_id: string | null
+          professional_name: string
+          professional_type: string
+          professional_user_id: string
+          status: string
+          token_hash: string
+          updated_at: string
+          used_at: string | null
+          vendor_listing_id: string | null
+        }
+        Insert: {
+          couple_email: string
+          couple_name: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          planner_profile_id?: string | null
+          professional_name: string
+          professional_type: string
+          professional_user_id: string
+          status?: string
+          token_hash: string
+          updated_at?: string
+          used_at?: string | null
+          vendor_listing_id?: string | null
+        }
+        Update: {
+          couple_email?: string
+          couple_name?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          planner_profile_id?: string | null
+          professional_name?: string
+          professional_type?: string
+          professional_user_id?: string
+          status?: string
+          token_hash?: string
+          updated_at?: string
+          used_at?: string | null
+          vendor_listing_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "professional_review_invites_planner_profile_id_fkey"
+            columns: ["planner_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "professional_review_invites_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      professional_reviews: {
+        Row: {
+          created_at: string
+          id: string
+          invite_id: string
+          planner_profile_id: string | null
+          professional_reply: string | null
+          professional_type: string
+          professional_user_id: string
+          published_at: string | null
+          rating: number
+          replied_at: string | null
+          review_text: string | null
+          reviewer_name: string
+          status: string
+          updated_at: string
+          vendor_listing_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          invite_id: string
+          planner_profile_id?: string | null
+          professional_reply?: string | null
+          professional_type: string
+          professional_user_id: string
+          published_at?: string | null
+          rating: number
+          replied_at?: string | null
+          review_text?: string | null
+          reviewer_name: string
+          status?: string
+          updated_at?: string
+          vendor_listing_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          invite_id?: string
+          planner_profile_id?: string | null
+          professional_reply?: string | null
+          professional_type?: string
+          professional_user_id?: string
+          published_at?: string | null
+          rating?: number
+          replied_at?: string | null
+          review_text?: string | null
+          reviewer_name?: string
+          status?: string
+          updated_at?: string
+          vendor_listing_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "professional_reviews_invite_id_fkey"
+            columns: ["invite_id"]
+            isOneToOne: true
+            referencedRelation: "professional_review_invites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "professional_reviews_planner_profile_id_fkey"
+            columns: ["planner_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "professional_reviews_vendor_listing_id_fkey"
+            columns: ["vendor_listing_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vendor_reputation_reviews: {
         Row: {
           client_id: string | null
@@ -1813,6 +1955,15 @@ export type Database = {
         Returns: Database["public"]["Tables"]["workspace_vendor_task_suggestions"]["Row"]
       }
       admin_dashboard_metrics: { Args: never; Returns: Json }
+      consume_professional_review_invite: {
+        Args: {
+          rating_input: number
+          review_text_input?: string | null
+          reviewer_name_input: string
+          token_hash_input: string
+        }
+        Returns: string
+      }
       admin_list_vendor_reputation_reviews: {
         Args: {
           issue_filter?: string

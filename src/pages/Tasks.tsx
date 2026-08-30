@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Download, Link2, Trash2 } from 'lucide-react';
@@ -36,6 +36,7 @@ import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
 import { HierarchyGroup } from '@/components/HierarchyGroup';
 import { getConfirmedVendorForTask, getRelatedBudgetCategoryForTask } from '@/lib/budgetRelations';
 import { canonicalizeVendorCategory, vendorCategoriesMatch, vendorCategoryCatalog } from '@/lib/vendorCategories';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
 
 interface Task {
   id: string;
@@ -51,6 +52,7 @@ interface Task {
   delegatable: boolean;
   recommended_role: string | null;
   priority_level: number | null;
+  wedding_id: string | null;
 }
 
 interface VendorOption {
@@ -222,7 +224,7 @@ export default function Tasks() {
   const [assignedTo, setAssignedTo] = useState('');
   const [taskCategory, setTaskCategory] = useState('none');
   const [taskTemplateKey, setTaskTemplateKey] = useState('none');
-  const [taskPickerMode, setTaskPickerMode] = useState<TaskPickerMode>('suggested');
+  const [taskPickerMode, setTaskPickerMode] = useState<TaskPickerMode>('custom');
   const [sourceVendorId, setSourceVendorId] = useState<string>('none');
   const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('by_date');
   const [taskScopeFilter, setTaskScopeFilter] = useState<TaskScopeFilter>('all');
@@ -429,7 +431,7 @@ export default function Tasks() {
         setAssignedTo('');
         setTaskCategory('none');
         setTaskTemplateKey('none');
-        setTaskPickerMode('suggested');
+        setTaskPickerMode('custom');
         setSourceVendorId('none');
         setTaskAdded(false);
         setOpen(false);
@@ -471,6 +473,18 @@ export default function Tasks() {
       return;
     }
 
+    if (task.wedding_id) {
+      try {
+        await recalculatePlanningExperiment(task.wedding_id);
+      } catch (recalculationError) {
+        toast({
+          title: 'Task saved; plan refresh delayed',
+          description: recalculationError instanceof Error ? recalculationError.message : 'Open Wedding Home to refresh your next steps.',
+          variant: 'destructive',
+        });
+      }
+    }
+
     queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
       ...current,
       tasks: current.tasks.map((row) => row.id === id ? { ...row, completed: nextCompleted } : row),
@@ -490,6 +504,7 @@ export default function Tasks() {
                 toast({ title: 'Could not reopen task', description: undoError.message, variant: 'destructive' });
                 return;
               }
+              if (task.wedding_id) await recalculatePlanningExperiment(task.wedding_id);
               await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
               toast({ title: 'Task reopened', description: task.title, variant: 'info' });
             }}
@@ -982,9 +997,7 @@ export default function Tasks() {
     <div className="space-y-4 sm:space-y-5">
       <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Tasks</p>
-          <h1 className="mt-2 font-editorial text-3xl font-semibold text-foreground sm:text-4xl">What needs doing?</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Start with the next task. The rest can wait.</p>
+          <h1 className="font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Tasks</h1>
         </div>
         <Button type="button" onClick={() => setOpen(true)}>Add task</Button>
       </header>
@@ -1079,11 +1092,14 @@ export default function Tasks() {
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-              <DialogHeader><DialogTitle className="font-display">Add Task</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle className="font-display">Add task</DialogTitle>
+                <DialogDescription>Choose a checklist task or enter your own.</DialogDescription>
+              </DialogHeader>
               <form onSubmit={addTask} className="space-y-4">
                 <FormSubmitError message={taskSubmitError} />
                 <div className="space-y-2">
-                  <Label>Checklist Category</Label>
+                  <Label>Category</Label>
                   <Select
                     value={taskCategory}
                     onValueChange={(value) => {
@@ -1134,26 +1150,10 @@ export default function Tasks() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {resolvedTaskDefaults && (
-                    <div className="border-l-2 border-primary/25 pl-3 text-xs leading-5 text-muted-foreground">
-                      <p className="font-medium text-foreground">Suggested setup</p>
-                      <p>
-                        {[
-                          resolvedTaskDefaults.visibility === 'private' ? 'Private' : 'Public',
-                          `P${resolvedTaskDefaults.priorityLevel} · ${priorityLabel(resolvedTaskDefaults.priorityLevel)}`,
-                          resolvedTaskDefaults.delegatable && resolvedTaskDefaults.recommendedRole
-                            ? `Delegate to ${resolvedTaskDefaults.recommendedRole}`
-                            : null,
-                          selectedTaskTemplate?.timelineLabel ?? null,
-                          selectedTaskTemplate?.phase ? phaseLabel(selectedTaskTemplate.phase) : null,
-                        ].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                  )}
                 </div>
                 {selectedCategoryName && (
                   <div className="space-y-2">
-                    <Label>Checklist Task</Label>
+                    <Label>Task</Label>
                     <Select
                       value={taskPickerMode === 'custom' ? 'custom' : taskTemplateKey}
                       onValueChange={(value) => {
@@ -1181,15 +1181,14 @@ export default function Tasks() {
                     </Select>
                     {selectedTaskTemplate && (
                       <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">
-                        <p className="text-sm font-medium text-foreground">{selectedTaskTemplate.title}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{selectedTaskTemplate.description}</p>
+                        <p className="text-xs text-muted-foreground">{selectedTaskTemplate.description}</p>
                       </div>
                     )}
                   </div>
                 )}
                 {taskPickerMode === 'custom' && (
                   <div className="space-y-2">
-                    <Label>Custom Task Title</Label>
+                    <Label>Task name</Label>
                     <Input
                       value={title}
                       onChange={(e) => { setTitle(e.target.value); setTaskFormErrors((current) => ({ ...current, title: undefined })); setTaskSubmitError(null); }}
@@ -1198,71 +1197,84 @@ export default function Tasks() {
                       aria-invalid={!!taskFormErrors.title}
                     />
                     <FormFieldError message={taskFormErrors.title} />
-                    <p className="text-xs text-muted-foreground">
-                      Use this only if the checklist task you want is not in the suggested list above.
-                    </p>
                   </div>
                 )}
-                <div className="space-y-2">
-                  <Label>Linked vendor (optional)</Label>
-                  <Select
-                    value={sourceVendorId}
-                    onValueChange={(value) => {
-                      setSourceVendorId(value);
-                      if (value === 'none') return;
-                      const vendor = vendorLookup[value];
-                      if (!vendor) return;
-                      const matchedCategory = categoryOptions.find((category) => (
-                        vendorCategoriesMatch(category.label, vendor.category)
-                      ));
-                      if (matchedCategory) {
-                        setTaskCategory(matchedCategory.value);
-                        const nextTemplates = getSuggestedTaskTemplates({
-                          category: matchedCategory.label,
-                          vendorCategories: vendorOptions.map((option) => option.category),
-                          role: profile?.role,
-                          plannerType: profile?.planner_type,
-                        });
-                        if (nextTemplates.length) {
-                          setTaskPickerMode('suggested');
-                          setTaskTemplateKey(nextTemplates[0].key);
-                          setTitle(nextTemplates[0].title);
-                          setDescription(nextTemplates[0].description);
-                          if (!assignedTo && nextTemplates[0].recommendedRole) {
-                            setAssignedTo(nextTemplates[0].recommendedRole);
+                <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                  <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+                  <div className="mt-4 space-y-4 border-t border-border/70 pt-4">
+                    {resolvedTaskDefaults ? (
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        {[
+                          resolvedTaskDefaults.visibility === 'private' ? 'Private' : 'Shared',
+                          priorityLabel(resolvedTaskDefaults.priorityLevel),
+                          resolvedTaskDefaults.delegatable && resolvedTaskDefaults.recommendedRole
+                            ? `Suggested owner: ${resolvedTaskDefaults.recommendedRole}`
+                            : null,
+                        ].filter(Boolean).join(' · ')}
+                      </p>
+                    ) : null}
+                    <div className="space-y-2">
+                      <Label>Vendor</Label>
+                      <Select
+                        value={sourceVendorId}
+                        onValueChange={(value) => {
+                          setSourceVendorId(value);
+                          if (value === 'none') return;
+                          const vendor = vendorLookup[value];
+                          if (!vendor) return;
+                          const matchedCategory = categoryOptions.find((category) => (
+                            vendorCategoriesMatch(category.label, vendor.category)
+                          ));
+                          if (matchedCategory) {
+                            setTaskCategory(matchedCategory.value);
+                            const nextTemplates = getSuggestedTaskTemplates({
+                              category: matchedCategory.label,
+                              vendorCategories: vendorOptions.map((option) => option.category),
+                              role: profile?.role,
+                              plannerType: profile?.planner_type,
+                            });
+                            if (nextTemplates.length) {
+                              setTaskPickerMode('suggested');
+                              setTaskTemplateKey(nextTemplates[0].key);
+                              setTitle(nextTemplates[0].title);
+                              setDescription(nextTemplates[0].description);
+                              if (!assignedTo && nextTemplates[0].recommendedRole) {
+                                setAssignedTo(nextTemplates[0].recommendedRole);
+                              }
+                            } else {
+                              setTaskTemplateKey('none');
+                              setTaskPickerMode('custom');
+                            }
                           }
-                        } else {
-                          setTaskTemplateKey('none');
-                          setTaskPickerMode('custom');
-                        }
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="No linked vendor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No linked vendor</SelectItem>
-                      {vendorOptions.map((vendor) => (
-                        <SelectItem key={vendor.id} value={vendor.id}>
-                          {vendor.name} · {vendor.category} · {selectionLabel(vendor.selection_status)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Due Date (optional)</Label>
-                  <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Assign To (optional)</Label>
-                  <Input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="e.g. Couple, committee lead, MC" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description (optional)</Label>
-                  <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add contract, deposit, or logistics notes..." rows={3} />
-                </div>
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="No vendor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No vendor</SelectItem>
+                          {vendorOptions.map((vendor) => (
+                            <SelectItem key={vendor.id} value={vendor.id}>
+                              {vendor.name} · {vendor.category} · {selectionLabel(vendor.selection_status)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Due date</Label>
+                      <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Assigned to</Label>
+                      <Input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Couple, committee lead, MC" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Notes</Label>
+                      <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add useful details" rows={3} />
+                    </div>
+                  </div>
+                </details>
                 <Button
                   type="submit"
                   className="w-full"
@@ -1271,7 +1283,7 @@ export default function Tasks() {
                   loadingText="Adding task"
                   successText={plannerNeedsApproval ? 'Request sent' : 'Task added'}
                 >
-                  Add Task
+                  Add task
                 </Button>
               </form>
             </DialogContent>
@@ -1348,8 +1360,7 @@ export default function Tasks() {
           <CardContent className="space-y-5 p-5">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <h2 className="workspace-h2">Tasks</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Choose a task to see more.</p>
+                <h2 className="workspace-h2">Task list</h2>
               </div>
               <div className="shrink-0 border-l border-primary/25 pl-3 text-right" aria-live="polite">
                 <p className="text-lg font-semibold leading-none text-foreground">{visibleTasks.length}</p>
@@ -1362,7 +1373,7 @@ export default function Tasks() {
                 <Input
                   value={taskSearch}
                   onChange={(event) => setTaskSearch(event.target.value)}
-                  placeholder="Search tasks, categories, vendors, or assignees"
+                  placeholder="Search tasks"
                 />
               </div>
               <Select value={taskScopeFilter} onValueChange={(value) => setTaskScopeFilter(value as TaskScopeFilter)}>
@@ -1370,11 +1381,11 @@ export default function Tasks() {
                   <SelectValue placeholder="Filter queue" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All visible work</SelectItem>
-                  <SelectItem value="urgent">Urgent only</SelectItem>
-                  <SelectItem value="vendor">Vendor linked</SelectItem>
-                  <SelectItem value="private">Private only</SelectItem>
-                  <SelectItem value="shared">Shared only</SelectItem>
+                  <SelectItem value="all">All tasks</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                  <SelectItem value="vendor">Vendor tasks</SelectItem>
+                  <SelectItem value="private">Private</SelectItem>
+                  <SelectItem value="shared">Shared</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1383,13 +1394,16 @@ export default function Tasks() {
               (taskViewMode !== 'completed' && filteredPending.length === 0)) ? (
               <div className="rounded-3xl border border-dashed border-border/70 bg-muted/15 p-8 text-center">
                 <p className="text-lg font-semibold text-foreground">
-                  {taskViewMode === 'completed' ? 'No completed tasks yet' : 'No tasks match this view yet'}
+                  {taskViewMode === 'completed' ? 'No completed tasks yet' : 'No tasks found'}
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {taskViewMode === 'completed'
-                    ? 'Completed work will gather here once the checklist starts moving.'
-                    : 'Try another filter or add the first planning task to start the workspace.'}
+                    ? 'Completed tasks will appear here.'
+                    : 'Try another filter or add a task.'}
                 </p>
+                {taskViewMode !== 'completed' && pending.length === 0 ? (
+                  <Button type="button" className="mt-4" onClick={() => setOpen(true)}>Add task</Button>
+                ) : null}
               </div>
             ) : (
               <div className="space-y-6">

@@ -19,11 +19,7 @@ import {
   type WeddingOwnerRole,
   type WeddingSignupIntent,
 } from '@/lib/pendingWeddingSetup';
-import {
-  buildBetaTrialWindow,
-  shouldStartBetaTrial,
-  type BetaTrialStatus,
-} from '@/lib/betaTrial';
+import { inactiveBetaTrialState, type BetaTrialStatus } from '@/lib/betaTrial';
 import {
   isCanonicalProductionHostname,
   isProductionHostname,
@@ -774,38 +770,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return fallbackProfile;
   };
 
-  const initializeBetaTrialIfNeeded = async (
-    authUser: User,
-    existingProfile: Profile,
-  ): Promise<Profile> => {
-    if (!shouldStartBetaTrial(existingProfile)) {
-      return existingProfile;
-    }
-
-    const trialWindow = buildBetaTrialWindow();
-
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update(trialWindow)
-        .eq('user_id', authUser.id);
-
-      if (error) throw error;
-
-      const refreshedProfile = await fetchProfile(authUser.id);
-      if (refreshedProfile) return refreshedProfile;
-    } catch (error) {
-      console.error('Failed to initialize beta trial for profile:', error);
-    }
-
-    const fallbackProfile: Profile = {
-      ...existingProfile,
-      ...trialWindow,
-    };
-    setBaseProfile(fallbackProfile);
-    return fallbackProfile;
-  };
-
   const reconcileRequestedSignupState = async (
     authUser: User,
     existingProfile: Profile,
@@ -876,18 +840,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (existingProfile) {
       const reconciledProfile = await reconcileRequestedSignupState(authUser, existingProfile);
       const profileWithIdentity = await syncMissingProfileIdentity(authUser, reconciledProfile);
-      const profileWithTrial = await initializeBetaTrialIfNeeded(authUser, profileWithIdentity);
 
       const pendingOAuthTarget = getPendingOAuthSignupTarget();
       if (
         pendingOAuthTarget?.role &&
-        profileWithTrial.role === pendingOAuthTarget.role &&
-        (profileWithTrial.planner_type ?? null) === pendingOAuthTarget.plannerType
+        profileWithIdentity.role === pendingOAuthTarget.role &&
+        (profileWithIdentity.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
         clearPendingOAuthSignupState();
       }
 
-      return profileWithTrial;
+      return profileWithIdentity;
     }
 
     const role = await getFallbackRole(authUser);
@@ -909,7 +872,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role,
         planner_type: plannerType,
         committee_name: committeeName,
-        ...buildBetaTrialWindow(),
+        ...inactiveBetaTrialState,
       });
 
     if (error && error.code !== '23505') {

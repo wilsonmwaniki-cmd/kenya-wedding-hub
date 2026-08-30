@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Briefcase, Copy, Eye, EyeOff, Loader2, RefreshCw, ShieldCheck, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -39,7 +39,7 @@ import BrandWordmark from '@/components/BrandWordmark';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import AppleAuthButton from '@/components/AppleAuthButton';
 import { normalizeHumanName, normalizeHumanNameInput } from '@/lib/names';
-import { isAppleAuthEnabled } from '@/lib/featureFlags';
+import { isAppleAuthEnabled, isPlanningExperimentEnabled } from '@/lib/featureFlags';
 import { isEstimatorCoupleSignupEntry } from '@/lib/authEntryFlows';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 import PublicSiteFooter from '@/components/PublicSiteFooter';
@@ -104,11 +104,11 @@ function buildSignupSuccessDescription(
 }
 
 const accountPurposeOptions: Array<{ value: AccountPurpose; label: string }> = [
-  { value: 'planning_my_own_wedding', label: 'I am planning my own wedding' },
-  { value: 'helping_family_or_friend', label: 'I am helping a family member or friend' },
-  { value: 'professional_planner', label: 'I am a professional wedding planner' },
-  { value: 'vendor', label: 'I am a wedding vendor' },
-  { value: 'other', label: 'Other' },
+  { value: 'planning_my_own_wedding', label: 'Plan my wedding' },
+  { value: 'helping_family_or_friend', label: 'Help with a wedding' },
+  { value: 'professional_planner', label: 'Work as a planner' },
+  { value: 'vendor', label: 'Offer wedding services' },
+  { value: 'other', label: 'Something else' },
 ];
 
 function getFallbackRouteFromUserMetadata(
@@ -157,7 +157,7 @@ function SignupTermsNotice({
           onCheckedChange={(checked) => onAcceptedTermsChange(Boolean(checked))}
           className="mt-0.5"
         />
-        <div className="space-y-1">
+        <div>
           <Label htmlFor="signup-terms" className="text-sm font-medium leading-6">
             I agree to the{' '}
             <Link to="/terms" target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">
@@ -169,11 +169,6 @@ function SignupTermsNotice({
             </Link>
             .
           </Label>
-          {!compact ? (
-            <p className="text-xs leading-5 text-muted-foreground">
-              Please review both documents before creating your Zania account.
-            </p>
-          ) : null}
           <FormFieldError message={error} />
         </div>
       </div>
@@ -270,7 +265,7 @@ export default function Auth() {
   );
   const showGenericModeChooser = false;
   const showGenericAudienceChooser = false;
-  const signupProgressStep = isSignupSuccessStep ? 4 : isSignupRoleStep ? 3 : isSignupAccountStep ? 2 : 1;
+  const signupProgressStep = isSignupRoleStep ? 3 : isSignupAccountStep ? 2 : 1;
   const authErrorMessage = useMemo(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('auth_error') !== 'missing_role') return null;
@@ -537,10 +532,15 @@ export default function Auth() {
           if (seeded && active) {
             setRedirecting(true);
             toast({
-              title: 'Wedding plan ready',
-              description: 'Your estimate was turned into a starter budget, vendor list, and tasks.',
+              title: 'Estimate added',
+              description: 'Confirm three priorities and Zania will build your first plan.',
             });
-            navigate('/budget', { replace: true });
+            navigate(
+              isPlanningExperimentEnabled()
+                ? '/plan'
+                : getHomeRouteForRole(profile.role, profile.planner_type),
+              { replace: true },
+            );
             return;
           }
         }
@@ -975,21 +975,21 @@ export default function Auth() {
           </div>
           <CardTitle className="font-display text-xl">
             {isForgot
-              ? 'Forgot Password'
+              ? 'Reset your password'
               : isSignupSuccessStep
                 ? signupSuccess.title
               : isSignUp && isSignupMethodStep
-                ? 'Create your Zania account'
+                ? 'Create account'
               : isSignUp && isSignupAccountStep
                 ? isEstimatorCoupleEntry
                   ? 'Save your wedding plan'
-                  : 'Tell us about you'
+                  : 'Your details'
               : isSignUp && isSignupRoleStep
-                ? 'Choose your path'
+                ? 'Choose account'
               : adminEntry
-                ? 'Admin Sign In'
+                ? 'Admin sign in'
                 : !isSignUp
-                  ? 'Enter Zania'
+                  ? 'Sign in to Zania'
                 : vendorClaimEntry
                 ? 'Create Your Vendor Account'
                 : audience === 'professional'
@@ -1002,21 +1002,21 @@ export default function Auth() {
           </CardTitle>
           {!isEstimatorCoupleEntry ? <CardDescription>
             {isForgot
-              ? 'Enter your email to receive a reset link.'
+              ? 'We will email you a reset link.'
               : isSignupSuccessStep
                 ? signupSuccess.description
               : isSignUp && isSignupMethodStep
-                ? 'Start with one clear choice, then we will guide you the rest of the way.'
+                ? 'Choose how to create your account.'
               : isSignUp && isSignupAccountStep
                 ? isEstimatorCoupleEntry
                   ? 'Your couple workspace is selected. Continue with Google or create it with email.'
-                  : 'Secure your account details first, then we will lock in the workspace that fits you.'
+                  : 'Enter the details you will use to sign in.'
               : isSignUp && isSignupRoleStep
-                ? 'Pick the account you want Zania to open for you so the setup stays tailored from the start.'
+                ? 'Choose what you want to do with Zania.'
               : adminEntry
-                ? 'Open the private Zania operations backend.'
+                ? 'Use your admin account.'
                 : !isSignUp
-                  ? 'Use your Zania details and we will take you straight back into the right workspace.'
+                  ? 'Use your email and password.'
                 : vendorClaimEntry
                 ? 'Sign in with the invited email to claim this vendor listing, or create a vendor account first.'
                 : audience === 'professional'
@@ -1093,13 +1093,11 @@ export default function Auth() {
                           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#c2724f]">
                             {signupSuccess.accent}
                           </p>
-                          <h3 className="marketing-h3 mt-2 text-[#201814]">
-                            Welcome to a calmer way to plan.
-                          </h3>
+                          <h3 className="marketing-h3 mt-2 text-[#201814]">Account created</h3>
                         </div>
                       </div>
                       <p className="max-w-2xl text-sm leading-7 text-[#6f5747]">
-                        Your Zania account is ready. Confirm your email first, then come back and we’ll open the right workspace with your planning, vendors, guests, and next steps waiting for you.
+                        Confirm your email, then sign in.
                       </p>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Button
@@ -1149,7 +1147,7 @@ export default function Auth() {
 
               {!isSignupSuccessStep && (
                 <>
-              {!isSignUp && (
+              {!isSignUp && adminEntry && (
                 <div className="semantic-surface-info mb-5 rounded-2xl border px-4 py-4 text-left">
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5 rounded-full border border-[hsl(var(--info-soft-border))] bg-[hsl(var(--info-soft))] p-2 text-info">
@@ -1157,12 +1155,10 @@ export default function Auth() {
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-foreground">
-                        {adminEntry ? 'Admin backend' : 'Welcome back'}
+                        Admin access
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {adminEntry
-                          ? 'Sign in with your admin account to open the backend portal.'
-                          : 'Sign in once and Zania will open the right workspace automatically.'}
+                        Sign in with your admin account.
                       </p>
                     </div>
                   </div>
@@ -1175,10 +1171,10 @@ export default function Auth() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#c2724f]">
-                          Guided signup
+                          Create account
                         </p>
                         <p className="mt-1 text-sm font-medium text-[#2c211c]">
-                          Step {signupProgressStep} of 4
+                          Step {signupProgressStep} of 3
                         </p>
                       </div>
                       <p className="text-xs text-[#7c6353]">
@@ -1189,12 +1185,12 @@ export default function Auth() {
                           : isSignupAccountStep
                             ? 'Secure your account'
                             : isSignupRoleStep
-                              ? 'Choose your workspace'
+                              ? 'Choose your account'
                               : 'Almost done'}
                       </p>
                     </div>
-                    <div className="mt-4 grid grid-cols-4 gap-2">
-                      {[1, 2, 3, 4].map((step) => (
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      {[1, 2, 3].map((step) => (
                         <div
                           key={step}
                           className={`h-2 rounded-full ${
@@ -1205,76 +1201,13 @@ export default function Auth() {
                     </div>
                   </div> : null}
 
-                  {!isEstimatorCoupleEntry && !isSignupMethodStep && (
-                    <motion.div
-                      initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
-                      animate={hasHomepageCarryover ? { opacity: 1, y: 0, scale: 1 } : { opacity: 1, y: 0, scale: 1 }}
-                      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                      className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {signupMethod === 'email'
-                            ? 'Email signup selected'
-                            : signupMethod === 'google'
-                              ? 'Google signup selected'
-                              : signupMethod === 'apple'
-                                ? 'Apple signup selected'
-                                : 'Choose your account type'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {audience === 'couple' && signupPath === 'join_wedding'
-                            ? 'Use the wedding code the couple shared with you.'
-                            : audience === 'couple'
-                              ? 'This will open a shared couple workspace.'
-                              : audience === 'professional'
-                                ? professionalSignupRole === 'vendor'
-                                  ? 'This will open your vendor portfolio and bookings workspace.'
-                                  : professionalSignupRole === 'planner'
-                                    ? 'This will open your planner operations workspace.'
-                                    : 'Choose whether you are joining as planner or vendor.'
-                                : signupMethod === 'email'
-                                  ? 'You can finish this with your email details.'
-                                  : 'You will continue securely with your selected provider in the final step.'}
-                        </p>
-                      </div>
-                      {audience === 'couple' && isSignupRoleStep && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setPostSignupMessage(null);
-                            setSignupPath(signupPath === 'join_wedding' ? 'create_wedding' : 'join_wedding');
-                          }}
-                        >
-                          {signupPath === 'join_wedding' ? 'Start a wedding instead' : 'I have a wedding code'}
-                        </Button>
-                      )}
-                    </motion.div>
-                  )}
                 </>
-              )}
-
-              {isSignUp && hasChosenAudiencePath && !isEstimatorCoupleEntry && (
-                <div className="semantic-surface-success mb-5 rounded-2xl border px-4 py-3">
-                  <p className="text-sm font-medium text-foreground">14-day full-access beta trial</p>
-                  <p className="mt-1 text-xs leading-6 text-muted-foreground">
-                    New accounts start with two weeks of premium access, so you can test the full experience before any upgrade is required.
-                  </p>
-                </div>
               )}
 
               <form onSubmit={handleSubmit} className={isEstimatorCoupleEntry ? 'space-y-3' : 'space-y-4'}>
                 {isSignUp ? (
                   isSignupMethodStep ? (
                     <>
-                      <div className="semantic-surface-info rounded-2xl border px-4 py-3">
-                        <p className="text-sm font-medium text-foreground">Step 1 of 4</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Choose how you want to begin. We will only show the next choice after this one.
-                        </p>
-                      </div>
                       <div className="grid gap-3">
                         <GoogleAuthButton
                           loading={oauthSubmittingProvider === 'google'}
@@ -1303,25 +1236,13 @@ export default function Auth() {
                   ) : isSignupAccountStep ? (
                     <>
                       {isEstimatorCoupleEntry ? (
-                        <div className="semantic-surface-success flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-2xl border px-4 py-2.5 text-left">
+                        <div className="semantic-surface-success rounded-2xl border px-4 py-2.5 text-left">
                           <div>
                             <p className="text-sm font-semibold text-foreground">Couple account selected</p>
                             <p className="mt-0.5 text-xs text-muted-foreground">Your estimate will be saved after signup.</p>
                           </div>
-                          <span className="text-xs font-semibold text-success">14-day full access</span>
                         </div>
-                      ) : <div className="semantic-surface-info rounded-2xl border px-4 py-3">
-                        <p className="text-sm font-medium text-foreground">Step 2 of 4</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {hasLockedSignupTrack
-                            ? selectedAudience === 'professional'
-                              ? 'Add your details and we will finish creating your vendor account.'
-                              : isEstimatorCoupleEntry
-                                ? 'Your estimate is ready. Create your private couple account to keep it.'
-                                : 'Add your details and wedding code so we can join you to the right wedding.'
-                            : 'Add your details here, then we will move to the workspace choice.'}
-                        </p>
-                      </div>}
+                      ) : null}
                       <FormSubmitError message={submitError} />
                       {isEstimatorCoupleEntry ? (
                         <div className="space-y-3">
@@ -1352,7 +1273,7 @@ export default function Auth() {
                           </div>
                         </div>
                       ) : null}
-                      {hasLockedSignupTrack && !isEstimatorCoupleEntry ? (
+                      {hasLockedSignupTrack && selectedAudience !== 'professional' && !isEstimatorCoupleEntry ? (
                         <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
                           <p className="text-sm font-medium text-foreground">
                             {selectedAudience === 'professional'
@@ -1393,10 +1314,10 @@ export default function Auth() {
                       </div>
 
                       {!isEstimatorCoupleEntry ? <div className="space-y-2">
-                        <Label htmlFor="account-purpose">What best describes how you will use Zania?</Label>
+                        <Label htmlFor="account-purpose">How will you use Zania?</Label>
                         <Select value={accountPurpose} onValueChange={(value: AccountPurpose) => setAccountPurpose(value)}>
                           <SelectTrigger id="account-purpose">
-                            <SelectValue placeholder="Choose how you will use Zania" />
+                            <SelectValue placeholder="Choose one" />
                           </SelectTrigger>
                           <SelectContent>
                             {accountPurposeOptions.map((option) => (
@@ -1406,9 +1327,6 @@ export default function Auth() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-muted-foreground">
-                          We use this to guide you into the right workspace and upgrade path. You can change it later in Settings.
-                        </p>
                       </div> : null}
 
                       <div className="space-y-2">
@@ -1584,12 +1502,6 @@ export default function Auth() {
                     </>
                   ) : (
                     <>
-                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-                        <p className="text-sm font-medium text-foreground">Step 3 of 4</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Lock the workspace you want so Zania sets up the right journey from day one.
-                        </p>
-                      </div>
                       <FormSubmitError message={submitError} />
                       <div className="grid gap-3">
                         <button
@@ -1603,9 +1515,59 @@ export default function Auth() {
                         >
                           <p className="text-sm font-semibold text-foreground">Couple account</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Shared wedding planning, budgets, guests, registry, approvals, and timeline coordination.
+                            Plan your wedding.
                           </p>
                         </button>
+                        <AnimatePresence initial={false}>
+                          {selectedAudience === 'couple' && (
+                            <motion.div
+                              key="couple-account-options"
+                              initial={{ height: 0, opacity: 0, y: -8 }}
+                              animate={{ height: 'auto', opacity: 1, y: 0 }}
+                              exit={{ height: 0, opacity: 0, y: -8 }}
+                              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                              className="overflow-hidden"
+                            >
+                              <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={signupPath === 'create_wedding' ? 'default' : 'outline'}
+                                    onClick={() => setSignupPath('create_wedding')}
+                                  >
+                                    Start a new wedding
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={signupPath === 'join_wedding' ? 'default' : 'outline'}
+                                    onClick={() => setSignupPath('join_wedding')}
+                                  >
+                                    I have a wedding code
+                                  </Button>
+                                </div>
+                                {showJoinDetails && (
+                                  <div className="space-y-2">
+                                    <Label htmlFor="wedding-code">Wedding Code</Label>
+                                    <Input
+                                      id="wedding-code"
+                                      value={weddingCode}
+                                      onChange={(event) => {
+                                        setWeddingCode(normalizeJoinCode(event.target.value));
+                                        setFormErrors((current) => ({ ...current, weddingCode: undefined }));
+                                        setSubmitError(null);
+                                      }}
+                                      placeholder="e.g. ZN-3RM94X"
+                                      required
+                                    />
+                                    <FormFieldError message={formErrors.weddingCode} />
+                                  </div>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                         <button
                           type="button"
                           onClick={() => chooseSignupRole('planner')}
@@ -1617,7 +1579,7 @@ export default function Auth() {
                         >
                           <p className="text-sm font-semibold text-foreground">Planner account</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Client workspaces, approvals, planning operations, and professional coordination tools.
+                            Plan weddings for clients.
                           </p>
                         </button>
                         <button
@@ -1631,50 +1593,10 @@ export default function Auth() {
                         >
                           <p className="text-sm font-semibold text-foreground">Vendor account</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Portfolio, listing, leads, pricing, and booking management for your wedding business.
+                            Run your wedding business.
                           </p>
                         </button>
                       </div>
-
-                      {selectedAudience === 'couple' && (
-                        <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={signupPath === 'create_wedding' ? 'default' : 'outline'}
-                              onClick={() => setSignupPath('create_wedding')}
-                            >
-                              Start a new wedding
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={signupPath === 'join_wedding' ? 'default' : 'outline'}
-                              onClick={() => setSignupPath('join_wedding')}
-                            >
-                              I have a wedding code
-                            </Button>
-                          </div>
-                          {showJoinDetails && (
-                            <div className="space-y-2">
-                              <Label htmlFor="wedding-code">Wedding Code</Label>
-                              <Input
-                                id="wedding-code"
-                                value={weddingCode}
-                                onChange={(event) => {
-                                  setWeddingCode(normalizeJoinCode(event.target.value));
-                                  setFormErrors((current) => ({ ...current, weddingCode: undefined }));
-                                  setSubmitError(null);
-                                }}
-                                placeholder="e.g. ZN-3RM94X"
-                                required
-                              />
-                              <FormFieldError message={formErrors.weddingCode} />
-                            </div>
-                          )}
-                        </div>
-                      )}
 
                       <SignupTermsNotice
                         acceptedTerms={acceptedTerms}
@@ -1727,34 +1649,32 @@ export default function Auth() {
                   )
                 ) : (
                   <>
-                    {!adminEntry ? (
-                      <div className="space-y-3">
-                        <GoogleAuthButton
-                          loading={oauthSubmittingProvider === 'google' && !submitting}
-                          disabled={submitting || oauthSubmitting}
-                          onClick={handleGoogleSignIn}
-                          text="Continue with Google"
-                        />
-                        {appleAuthEnabled ? (
+                    <div className="space-y-3">
+                      <GoogleAuthButton
+                        loading={oauthSubmittingProvider === 'google' && !submitting}
+                        disabled={submitting || oauthSubmitting}
+                        onClick={handleGoogleSignIn}
+                        text="Continue with Google"
+                      />
+                      {!adminEntry && appleAuthEnabled ? (
                           <AppleAuthButton
                             loading={oauthSubmittingProvider === 'apple' && !submitting}
                             disabled={submitting || oauthSubmitting}
                             onClick={handleAppleSignIn}
                             text="Continue with Apple"
                           />
-                        ) : null}
-                        <div className="relative py-1">
-                          <div className="absolute inset-0 flex items-center">
-                            <span className="w-full border-t border-border/60" />
-                          </div>
-                          <div className="relative flex justify-center">
-                            <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                              Or use email
-                            </span>
-                          </div>
+                      ) : null}
+                      <div className="relative py-1">
+                        <div className="absolute inset-0 flex items-center">
+                          <span className="w-full border-t border-border/60" />
+                        </div>
+                        <div className="relative flex justify-center">
+                          <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Or use email
+                          </span>
                         </div>
                       </div>
-                    ) : null}
+                    </div>
 
                     <FormSubmitError message={submitError} />
                     <div className="space-y-2">
@@ -1825,15 +1745,6 @@ export default function Auth() {
                 )}
               </form>
 
-              {!isSignUp && !adminEntry ? (
-                <div className="mt-5 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
-                  <p className="text-sm font-medium text-foreground">One sign-in. The right workspace.</p>
-                  <p className="mt-1 text-xs leading-6 text-muted-foreground">
-                    Couple, planner, and vendor accounts now open automatically from the email already attached to them.
-                  </p>
-                </div>
-              ) : null}
-
               <div className="mt-4 text-center">
                 {!isSignUp ? (
                   <button
@@ -1847,7 +1758,7 @@ export default function Auth() {
                     }}
                     className="text-sm text-muted-foreground transition-colors hover:text-primary"
                   >
-                    Need an account? Start signup
+                    Create account
                   </button>
                 ) : null}
               </div>

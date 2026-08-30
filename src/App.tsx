@@ -4,14 +4,14 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Analytics } from "@vercel/analytics/react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PublicErrorBoundary, WorkspaceErrorBoundary } from "@/components/AppErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import type { AppRole } from "@/lib/roles";
 import LaunchFeature from "@/components/LaunchFeature";
-import ProfessionalFeatureGate from "@/components/ProfessionalFeatureGate";
+import { isLeadMarketplaceEnabled, isPlanningExperimentEnabled } from "@/lib/featureFlags";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -44,6 +44,7 @@ const PlannerDirectory = lazy(() => import("./pages/PlannerDirectory"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const WeddingSetup = lazy(() => import("./pages/WeddingSetup"));
+const PlanningExperiment = lazy(() => import("./pages/PlanningExperiment"));
 const AdminPortal = lazy(() => import("./pages/AdminPortal"));
 const TimelinePage = lazy(() => import("./pages/Timeline"));
 const TimelineShare = lazy(() => import("./pages/TimelineShare"));
@@ -55,6 +56,9 @@ const LabsIndex = lazy(() => import("./pages/LabsIndex"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const ProfessionalNetwork = lazy(() => import("./pages/ProfessionalNetwork"));
+const ReviewInvitations = lazy(() => import("./pages/ReviewInvitations"));
+const GuestReview = lazy(() => import("./pages/GuestReview"));
+const LeadConversation = lazy(() => import("./pages/LeadConversation"));
 const AppAnalytics = lazy(() => import("@/components/AppAnalytics"));
 const AppLayout = lazy(() => import("@/components/AppLayout"));
 const WorkspaceProviders = lazy(() => import("@/components/WorkspaceProviders"));
@@ -70,7 +74,7 @@ function RouteLoader() {
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/35" />
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary/75" />
           </span>
-          <p className="font-display text-xl font-semibold text-foreground">Opening wedding workspace...</p>
+          <p className="font-display text-xl font-semibold text-foreground">Loading…</p>
         </div>
         <div className="mt-5 flex items-center justify-center gap-2" aria-hidden="true">
           <div className="h-2 w-2 animate-pulse rounded-full bg-muted-foreground/35" />
@@ -133,6 +137,7 @@ const App = () => (
           <Suspense fallback={<RouteLoader />}>
             <Routes>
               <Route path="/" element={<PublicPage><Landing /></PublicPage>} />
+              <Route path="/start-plan" element={<PublicPage><Landing /></PublicPage>} />
               <Route path="/auth" element={<PublicPage><Auth /></PublicPage>} />
               <Route path="/sign-in" element={<PublicPage><Auth /></PublicPage>} />
               <Route path="/forgot-password" element={<PublicPage><Auth /></PublicPage>} />
@@ -154,9 +159,16 @@ const App = () => (
               <Route path="/timeline/share/:token" element={<PublicPage><TimelineShare /></PublicPage>} />
               <Route path="/rsvp/:token" element={<PublicPage><GuestRsvp /></PublicPage>} />
               <Route path="/wedding/:token" element={<PublicPage><WeddingPortfolio /></PublicPage>} />
+              <Route path="/review/:token" element={<PublicPage><GuestReview /></PublicPage>} />
               <Route path="/wedding-setup" element={<ProtectedStandalonePage allowedRoles={['couple']}><WeddingSetup /></ProtectedStandalonePage>} />
-              <Route path="/documents/:documentId/print" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><ProfessionalFeatureGate feature="invoicing"><CommercialDocumentPrint /></ProfessionalFeatureGate></ProtectedStandalonePage>} />
-              <Route path="/contracts/:contractId/preview" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><ProfessionalFeatureGate feature="invoicing"><ProfessionalContractPreview /></ProfessionalFeatureGate></ProtectedStandalonePage>} />
+              <Route
+                path="/plan"
+                element={isPlanningExperimentEnabled()
+                  ? <ProtectedPage allowedRoles={['couple']}><PlanningExperiment /></ProtectedPage>
+                  : <Navigate to="/dashboard" replace />}
+              />
+              <Route path="/documents/:documentId/print" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><CommercialDocumentPrint /></ProtectedStandalonePage>} />
+              <Route path="/contracts/:contractId/preview" element={<ProtectedStandalonePage allowedRoles={['vendor', 'planner']}><ProfessionalContractPreview /></ProtectedStandalonePage>} />
               <Route path="/labs" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><LabsIndex /></ProtectedPage>} />
               <Route path="/labs/network" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><ProfessionalNetwork /></ProtectedPage>} />
               <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
@@ -169,10 +181,17 @@ const App = () => (
               <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
               <Route path="/space-plan" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/space-plan"><SpaceTablePlan /></LaunchFeature></ProtectedPage>} />
               <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
-              <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><ProfessionalFeatureGate audience="vendor" feature="invoicing"><VendorDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
-              <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><ProfessionalFeatureGate audience="vendor" feature="invoicing"><VendorDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
-              <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><ProfessionalFeatureGate audience="planner" feature="invoicing"><PlannerDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
-              <Route path="/planner-documents/:section" element={<ProtectedPage allowedRoles={['planner']}><ProfessionalFeatureGate audience="planner" feature="invoicing"><PlannerDocuments /></ProfessionalFeatureGate></ProtectedPage>} />
+              <Route
+                path="/matches/:matchId"
+                element={isLeadMarketplaceEnabled()
+                  ? <ProtectedPage allowedRoles={['couple', 'vendor', 'planner']}><LeadConversation /></ProtectedPage>
+                  : <Navigate to="/dashboard" replace />}
+              />
+              <Route path="/vendor-documents" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
+              <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
+              <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
+              <Route path="/planner-documents/:section" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
+              <Route path="/reviews" element={<ProtectedPage allowedRoles={['vendor', 'planner']}><ReviewInvitations /></ProtectedPage>} />
               <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
               <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><LaunchFeature path="/ai-chat"><AiChat /></LaunchFeature></ProtectedPage>} />
               <Route path="/admin" element={<ProtectedPage allowedRoles={['admin']}><AdminPortal /></ProtectedPage>} />

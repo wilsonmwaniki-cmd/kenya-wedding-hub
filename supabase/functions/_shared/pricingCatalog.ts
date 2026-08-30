@@ -1,6 +1,6 @@
 type CouplePlanTier = 'collaborative';
 type CoupleBundleType = 'wedding_pass' | 'registry_addon' | 'guest_rsvp_addon';
-type ProfessionalFeatureKey = 'booking_management' | 'invoicing' | 'contract_management' | 'media_portfolio';
+type ProfessionalFeatureKey = 'booking_management' | 'document_collaboration' | 'invoicing' | 'contract_management' | 'media_portfolio';
 
 export type CoupleCheckoutMapping = {
   bundleCode: string;
@@ -127,16 +127,16 @@ const defaultCoupleCheckoutMap: Record<string, CoupleCheckoutMapping> = {
 
 const defaultProfessionalCheckoutMap: Record<string, ProfessionalCheckoutMapping> = {
   planner_premium_monthly: {
-    features: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
+    features: ['booking_management', 'document_collaboration', 'media_portfolio'],
   },
   planner_premium_annual: {
-    features: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
+    features: ['booking_management', 'document_collaboration', 'media_portfolio'],
   },
   vendor_premium_monthly: {
-    features: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
+    features: ['booking_management', 'document_collaboration', 'media_portfolio'],
   },
   vendor_premium_annual: {
-    features: ['booking_management', 'invoicing', 'contract_management', 'media_portfolio'],
+    features: ['booking_management', 'document_collaboration', 'media_portfolio'],
   },
 };
 

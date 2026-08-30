@@ -6,7 +6,7 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   LayoutDashboard, Wallet, CheckSquare, Users, Store,
-  Settings, LogOut, Menu, X, Briefcase, ArrowLeft, Clock, BookHeart, ShieldCheck, Gift, HandCoins, NotebookPen, ChevronDown, HeartHandshake, FlaskConical, Map, LifeBuoy
+  Settings, LogOut, Menu, X, Briefcase, ArrowLeft, ShieldCheck, NotebookPen, ChevronDown, HeartHandshake, FlaskConical, Map, LifeBuoy, Star, MoreHorizontal
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -50,16 +50,24 @@ const coupleNavItems: NavItem[] = [
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
-  { path: '/contributions', label: 'Contributions', icon: HandCoins },
-  { path: '/gift-registry', label: 'Gift Registry', icon: Gift },
   { path: '/vendors', label: 'Vendors', icon: Store },
-  { path: '/timeline', label: 'Timeline', icon: Clock },
-  { path: '/portfolio', label: 'Portfolio', icon: BookHeart },
+  {
+    path: '/more',
+    label: 'More',
+    icon: MoreHorizontal,
+    children: [
+      { path: '/contributions', label: 'Contributions' },
+      { path: '/gift-registry', label: 'Gift registry' },
+      { path: '/timeline', label: 'Timeline' },
+      { path: '/portfolio', label: 'Wedding story' },
+    ],
+  },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 const plannerNavItems: NavItem[] = [
-  { path: '/clients', label: 'My Weddings', icon: Briefcase },
+  { path: '/clients', label: 'Weddings', icon: Briefcase },
+  { path: '/reviews', label: 'Reviews', icon: Star },
   {
     path: '/planner-documents',
     label: 'Documents',
@@ -79,6 +87,7 @@ const plannerNavItems: NavItem[] = [
 
 const vendorNavItems: NavItem[] = [
   { path: '/vendor-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/reviews', label: 'Reviews', icon: Star },
   {
     path: '/vendor-documents',
     label: 'Documents',
@@ -93,7 +102,7 @@ const vendorNavItems: NavItem[] = [
       { path: '/vendor-documents/templates', label: 'Templates' },
     ],
   },
-  { path: '/vendor-settings', label: 'My Listing', icon: Store },
+  { path: '/vendor-settings', label: 'Listing', icon: Store },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -149,9 +158,12 @@ function AccountPlanStatus({ label, paid }: { label: string; paid: boolean }) {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [compactNavigation, setCompactNavigation] = useState(false);
   const [supportDialogOpen, setSupportDialogOpen] = useState(false);
   const [expandedNavItems, setExpandedNavItems] = useState<Record<string, boolean>>(readExpandedNavItems);
   const navScrollRef = useRef<HTMLElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeSidebarButtonRef = useRef<HTMLButtonElement | null>(null);
   const prefersReducedMotion = useReducedMotion();
   const location = useLocation();
   const navigate = useNavigate();
@@ -159,6 +171,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname, location.search, location.hash]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 1023px)');
+    const update = () => setCompactNavigation(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener('change', update);
+    return () => mediaQuery.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    if (!compactNavigation || !sidebarOpen) return;
+
+    const focusFrame = window.requestAnimationFrame(() => closeSidebarButtonRef.current?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setSidebarOpen(false);
+      window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [compactNavigation, sidebarOpen]);
 
   useEffect(() => {
     window.sessionStorage.setItem(SIDEBAR_EXPANSION_KEY, JSON.stringify(expandedNavItems));
@@ -215,7 +251,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       previewNavItems.push({ path: getLabsPath(), label: 'Labs', icon: FlaskConical });
     }
 
-    const releaseAwareCoupleNavItems = coupleNavItems.filter((item) => isLaunchFeatureEnabled(item.path));
+    const releaseAwareCoupleNavItems = coupleNavItems
+      .map((item) => item.children
+        ? { ...item, children: item.children.filter((child) => isLaunchFeatureEnabled(child.path)) }
+        : item)
+      .filter((item) => item.children ? item.children.length > 0 : isLaunchFeatureEnabled(item.path));
     const coupleSettingsItem = releaseAwareCoupleNavItems.find((item) => item.path === '/settings');
     const resolvedCoupleNavItems = [
       ...releaseAwareCoupleNavItems.filter((item) => item.path !== '/settings'),
@@ -247,9 +287,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       : isAdmin
         ? ['/admin', '/settings']
         : isVendor
-          ? ['/vendor-dashboard', '/vendor-documents', '/vendor-settings', '/settings']
+          ? ['/vendor-dashboard', '/reviews', '/vendor-settings', '/settings']
           : isPlanner && !selectedClient
-            ? ['/clients', '/planner-documents', '/settings']
+            ? ['/clients', '/reviews', '/planner-documents', '/settings']
             : ['/dashboard', '/budget', '/tasks', '/vendors', '/settings'];
 
     return preferredPaths
@@ -326,7 +366,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       navItems.forEach((item) => {
         if (!item.children?.length) return;
-        const shouldBeOpen = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
+        const shouldBeOpen = location.pathname === item.path
+          || location.pathname.startsWith(`${item.path}/`)
+          || item.children.some((child) => location.pathname === child.path || location.pathname.startsWith(`${child.path}/`));
         if (shouldBeOpen && !next[item.path]) {
           next[item.path] = true;
           changed = true;
@@ -339,6 +381,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <AssistantPanelProvider>
+    <a
+      href="#main-content"
+      className="fixed left-4 top-4 z-[100] -translate-y-24 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background shadow-lg transition-transform focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+    >
+      Skip to content
+    </a>
     <div className="flex min-h-screen w-full min-w-0 overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(212,118,70,0.12),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(212,187,125,0.12),transparent_26%),linear-gradient(180deg,#fbf7f1_0%,#f7f1e8_42%,#f5ede2_100%)] lg:pl-[clamp(14.5rem,18vw,17.5rem)] xl:pl-[18rem]">
       {/* Mobile overlay */}
       <AnimatePresence>
@@ -348,13 +396,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-40 bg-foreground/18 lg:hidden"
-            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+            onClick={() => {
+              setSidebarOpen(false);
+              window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+            }}
           />
         )}
       </AnimatePresence>
 
       {/* Sidebar */}
-      <aside className={`
+      <aside
+        id="workspace-navigation"
+        aria-label="Main navigation"
+        aria-hidden={compactNavigation && !sidebarOpen ? true : undefined}
+        aria-modal={compactNavigation && sidebarOpen ? true : undefined}
+        inert={compactNavigation && !sidebarOpen ? '' : undefined}
+        role={compactNavigation ? 'dialog' : undefined}
+        className={`
         fixed inset-y-0 left-0 z-50 h-[100dvh] w-[17.5rem] overflow-hidden border-r border-white/15 sm:w-[18rem] lg:z-20 lg:h-screen lg:w-[clamp(14.5rem,18vw,17.5rem)] xl:w-[18rem]
         bg-[linear-gradient(180deg,rgba(34,20,17,0.97),rgba(53,31,26,0.95)_36%,rgba(76,47,38,0.92))]
         text-sidebar-foreground shadow-[0_28px_80px_rgba(20,12,10,0.38)] backdrop-blur-2xl
@@ -368,7 +427,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="border-b border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.04))] px-6 py-5">
             <div className="flex items-center gap-2">
               <BrandWordmark light size="sm" />
-              <button onClick={() => setSidebarOpen(false)} className="ml-auto text-white/85 hover:text-white lg:hidden">
+              <button
+                ref={closeSidebarButtonRef}
+                type="button"
+                aria-label="Close navigation"
+                onClick={() => {
+                  setSidebarOpen(false);
+                  window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+                }}
+                className="ml-auto rounded-md text-white/85 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 lg:hidden"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -409,7 +477,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     key={option.value}
                     type="button"
                     onClick={() => handlePreviewSwitch(option.value)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 ${
                       rolePreview === option.value
                         ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_8px_20px_rgba(216,106,63,0.32)]'
                         : 'border border-white/12 bg-black/10 text-white/84 hover:bg-white/[0.14] hover:text-white'
@@ -430,10 +498,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="border-b border-white/12 bg-white/[0.05] px-4 py-3">
               <button
                 onClick={() => { selectClient(null); navigate('/clients'); }}
-                className="flex w-full items-center gap-2 text-xs font-medium text-white/80 transition-colors hover:text-white"
+                className="flex w-full items-center gap-2 rounded-md text-xs font-medium text-white/80 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
               >
                 <ArrowLeft className="h-3 w-3" />
-                Back to clients
+                Change wedding
               </button>
               <p className="mt-1 truncate text-sm font-semibold text-white">
                 {selectedClient.client_name}{selectedClient.partner_name ? ` & ${selectedClient.partner_name}` : ''}
@@ -448,16 +516,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <div className="space-y-2 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path || location.pathname.startsWith(`${item.path}/`);
-              const releaseDisabled = !isLaunchFeatureEnabled(item.path);
-              const disabled = releaseDisabled || (needsClient && planningPaths.includes(item.path));
               const hasChildren = Boolean(item.children?.length);
+              const isActive = location.pathname === item.path
+                || location.pathname.startsWith(`${item.path}/`)
+                || Boolean(item.children?.some((child) => location.pathname === child.path || location.pathname.startsWith(`${child.path}/`)));
+              const releaseDisabled = !hasChildren && !isLaunchFeatureEnabled(item.path);
+              const disabled = releaseDisabled || (needsClient && planningPaths.includes(item.path));
               const isExpanded = expandedNavItems[item.path] ?? isActive;
               return (
                 <div key={item.path} className="space-y-1">
                   {hasChildren ? (
                     <button
                       type="button"
+                      aria-expanded={isExpanded}
+                      aria-controls={`${item.path.replaceAll('/', '-') || 'home'}-submenu`}
                       onClick={() => {
                         if (disabled) return;
                         setExpandedNavItems((current) => ({
@@ -466,7 +538,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         }));
                       }}
                       className={`
-                        ease-zania relative isolate flex w-full items-center gap-3 overflow-hidden rounded-[1.15rem] border px-4 py-3 text-left text-sm font-medium transition-[color,border-color,background-color,transform] duration-200 active:scale-[0.985] motion-reduce:transition-none lg:px-3 lg:py-2.5
+                        ease-zania relative isolate flex w-full items-center gap-3 overflow-hidden rounded-[1.15rem] border px-4 py-3 text-left text-sm font-medium transition-[color,border-color,background-color,transform] duration-200 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 motion-reduce:transition-none lg:px-3 lg:py-2.5
                         ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
                         ${isActive
                           ? 'border-primary/45 bg-transparent text-white'
@@ -511,7 +583,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         setSidebarOpen(false);
                       }}
                       className={`
-                        ease-zania relative isolate flex items-center gap-3 overflow-hidden rounded-[1.15rem] border px-4 py-3 text-sm font-medium transition-[color,border-color,background-color,transform] duration-200 active:scale-[0.985] motion-reduce:transition-none lg:px-3 lg:py-2.5
+                        ease-zania relative isolate flex items-center gap-3 overflow-hidden rounded-[1.15rem] border px-4 py-3 text-sm font-medium transition-[color,border-color,background-color,transform] duration-200 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 motion-reduce:transition-none lg:px-3 lg:py-2.5
                         ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
                         ${isActive
                           ? 'border-primary/45 bg-transparent text-white'
@@ -552,6 +624,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {hasChildren && isExpanded ? (
                     <motion.div
                       key={`${item.path}-children`}
+                      id={`${item.path.replaceAll('/', '-') || 'home'}-submenu`}
                       initial={{ opacity: 0, height: 0, y: -4 }}
                       animate={{ opacity: 1, height: 'auto', y: 0 }}
                       exit={{ opacity: 0, height: 0, y: -4 }}
@@ -565,7 +638,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             key={child.path}
                             to={child.path}
                             onClick={() => setSidebarOpen(false)}
-                            className={`relative block rounded-lg px-3 py-2 text-sm transition-[color,background-color,transform] duration-150 active:scale-[0.985] motion-reduce:transition-none ${
+                            className={`relative block rounded-lg px-3 py-2 text-sm transition-[color,background-color,transform] duration-150 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 motion-reduce:transition-none ${
                               childActive
                                 ? 'bg-white/[0.12] text-white'
                                 : 'text-white/70 hover:bg-white/[0.08] hover:text-white'
@@ -591,29 +664,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 setSidebarOpen(false);
                 setSupportDialogOpen(true);
               }}
-              className="mb-1 flex w-full items-center gap-3 rounded-[1.15rem] border border-transparent px-4 py-2.5 text-sm font-medium text-white/72 transition-[color,border-color,background-color,transform] duration-200 hover:border-white/12 hover:bg-white/[0.1] hover:text-white active:scale-[0.985] motion-reduce:transition-none"
+              className="mb-1 flex w-full items-center gap-3 rounded-[1.15rem] border border-transparent px-4 py-2.5 text-sm font-medium text-white/72 transition-[color,border-color,background-color,transform] duration-200 hover:border-white/12 hover:bg-white/[0.1] hover:text-white active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 motion-reduce:transition-none"
             >
               <LifeBuoy className="h-4.5 w-4.5" />
               Help & feedback
             </button>
             <button
               onClick={handleSignOut}
-              className="flex w-full items-center gap-3 rounded-[1.15rem] border border-transparent bg-[linear-gradient(180deg,rgba(0,0,0,0.16),rgba(255,255,255,0.03))] px-4 py-3 text-sm font-medium text-white/90 transition-[color,border-color,background-color,transform] duration-200 hover:border-white/12 hover:bg-white/[0.12] hover:text-white active:scale-[0.985] motion-reduce:transition-none"
+              className="flex w-full items-center gap-3 rounded-[1.15rem] border border-transparent bg-[linear-gradient(180deg,rgba(0,0,0,0.16),rgba(255,255,255,0.03))] px-4 py-3 text-sm font-medium text-white/90 transition-[color,border-color,background-color,transform] duration-200 hover:border-white/12 hover:bg-white/[0.12] hover:text-white active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 motion-reduce:transition-none"
             >
               <LogOut className="h-4.5 w-4.5" />
-              Sign Out
+              Sign out
             </button>
           </div>
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="flex min-h-screen w-full min-w-0 flex-1 flex-col overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(227,144,100,0.08),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,237,0.96))]">
+      <main id="main-content" tabIndex={-1} className="flex min-h-screen w-full min-w-0 flex-1 flex-col overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(227,144,100,0.08),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,237,0.96))]">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-[#eadbca] bg-[linear-gradient(180deg,rgba(255,251,247,0.96),rgba(248,241,232,0.92))] px-4 py-3 shadow-[0_10px_30px_rgba(28,22,18,0.04)] backdrop-blur-sm lg:hidden">
           <Button
+            ref={menuButtonRef}
             type="button"
             variant="ghost"
             size="icon"
+            aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={sidebarOpen}
+            aria-controls="workspace-navigation"
             onClick={() => setSidebarOpen((open) => !open)}
             className="relative z-10 h-11 w-11 touch-manipulation"
           >

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight, MapPin, Receipt, BriefcaseBusiness, AlertTriangle, ShieldCheck, EyeOff, HandCoins } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useNavigate, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
 import AttentionInbox from '@/components/AttentionInbox';
 import RecentWorkspaceChangesCard from '@/components/RecentWorkspaceChangesCard';
@@ -283,8 +283,21 @@ function getDashboardAssistantFeature(role?: string | null, plannerType?: string
 }
 
 export default function Dashboard() {
+  const location = useLocation();
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner, plannerClientHydrating } = usePlanner();
+
+  useEffect(() => {
+    if (location.hash !== '#planner-change-requests' || isPlanner) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const reviewSection = document.getElementById('planner-change-requests');
+      reviewSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      reviewSection?.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isPlanner, location.hash]);
   const navigate = useNavigate();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
@@ -294,6 +307,18 @@ export default function Dashboard() {
   const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
   const labsEnabled = isLabsEnabled();
   const [dashboardNudgeDismissed, setDashboardNudgeDismissed] = useState(false);
+
+  useEffect(() => {
+    if (location.hash !== '#planner-change-requests' || isPlanner) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const reviewSection = document.getElementById('planner-change-requests');
+      reviewSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      reviewSection?.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isPlanner, location.hash]);
 
   const dashboardQuery = useQuery({
     queryKey: ['dashboard', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null],
@@ -690,7 +715,7 @@ export default function Dashboard() {
       return {
         href: `/tasks?task=${encodeURIComponent(nextGuidedTask.id)}`,
         label: nextGuidedTask.title,
-        description: `${guidedTimelineDescription(nextGuidedStep.timelineLabel)} Step ${nextGuidedStep.step} of ${nextGuidedStep.totalSteps} in Zania's guided checklist.`,
+        description: `${guidedTimelineDescription(nextGuidedStep.timelineLabel)} · Step ${nextGuidedStep.step} of ${nextGuidedStep.totalSteps}.`,
         cta: 'Start this step',
       };
     }
@@ -908,7 +933,7 @@ export default function Dashboard() {
   if (showSharedWeddingHome) {
     const supportingActions = homeActionCards
       .filter((action) => action.href !== homePrimaryAction.href && isLaunchFeatureEnabled(action.href))
-      .slice(0, 2);
+      .slice(0, 1);
     const remainingBudget = stats.totalBudget - stats.totalSpent;
 
     return (
@@ -960,7 +985,7 @@ export default function Dashboard() {
               <p className="mt-1 text-lg font-semibold text-foreground">
                 {stats.totalVendors > 0 ? `${stats.totalVendors} saved` : 'None saved'}
               </p>
-              <p className="text-xs text-muted-foreground">Browse your options</p>
+              <p className="text-xs text-muted-foreground">{stats.totalVendors > 0 ? 'Open vendor list' : 'Add a vendor'}</p>
             </Link>
           </div>
         </section>
@@ -980,6 +1005,8 @@ export default function Dashboard() {
             compact
           />
         </div>
+
+        {!isPlanner && <PlannerChangeRequestsCard hideWhenEmpty />}
 
         {supportingActions.length > 0 ? (
           <section aria-labelledby="coming-up-title">
@@ -1002,7 +1029,7 @@ export default function Dashboard() {
 
         <div className="border-t border-border/70 pt-4">
           <Link to="/settings" className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-            Wedding settings and planning team
+            Wedding settings and team
           </Link>
         </div>
       </div>

@@ -246,17 +246,6 @@ export default function ProfessionalExchangeTab({
     }
   }, [filteredQuestions, selectedQuestion, selectedQuestionId]);
 
-  const exchangeStats = useMemo(() => {
-    const openCount = questions.filter((question) => !question.is_resolved).length;
-    const urgentCount = questions.filter((question) => question.urgency === 'event_day' && !question.is_resolved).length;
-    return {
-      total: questions.length,
-      open: openCount,
-      resolved: questions.filter((question) => question.is_resolved).length,
-      urgent: urgentCount,
-    };
-  }, [questions]);
-
   const topCategories = useMemo(() => {
     const counts = questions.reduce<Record<string, number>>((accumulator, question) => {
       accumulator[question.category] = (accumulator[question.category] ?? 0) + 1;
@@ -466,41 +455,13 @@ export default function ProfessionalExchangeTab({
         </Card>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-border/60 bg-background/70 shadow-card">
-          <CardContent className="p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Questions</p>
-            <p className="mt-2 text-3xl font-semibold text-foreground">{exchangeStats.total}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60 bg-background/70 shadow-card">
-          <CardContent className="p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Open</p>
-            <p className="mt-2 text-3xl font-semibold text-foreground">{exchangeStats.open}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60 bg-background/70 shadow-card">
-          <CardContent className="p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Solved</p>
-            <p className="mt-2 text-3xl font-semibold text-foreground">{exchangeStats.resolved}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60 bg-background/70 shadow-card">
-          <CardContent className="p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Event-day urgent</p>
-            <p className="mt-2 text-3xl font-semibold text-foreground">{exchangeStats.urgent}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
-        <div className="space-y-6">
-          <Card className="shadow-card">
+      <div className="grid gap-6">
+        <div className="order-2 space-y-4">
+          <details open={questions.length === 0} className="group rounded-2xl border border-border/60 bg-background/70">
+            <summary className="cursor-pointer list-none px-5 py-4 font-medium text-foreground">Ask question</summary>
+          <Card className="rounded-t-none border-x-0 border-b-0 shadow-none">
             <CardHeader>
-              <CardTitle className="font-display text-2xl">Ask the network</CardTitle>
-              <CardDescription>
-                Ask practical wedding-work questions so planners, decorators, and vendors can solve real sourcing and execution problems together.
-              </CardDescription>
+              <CardTitle className="font-display text-2xl">Ask question</CardTitle>
             </CardHeader>
             <CardContent>
               <form className="space-y-4" onSubmit={handleAskQuestion}>
@@ -586,11 +547,13 @@ export default function ProfessionalExchangeTab({
               </form>
             </CardContent>
           </Card>
+          </details>
 
-          <Card className="shadow-card">
+          <details className="group rounded-2xl border border-border/60 bg-background/70">
+            <summary className="cursor-pointer list-none px-5 py-4 font-medium text-foreground">Tips</summary>
+          <Card className="rounded-t-none border-x-0 border-b-0 shadow-none">
             <CardHeader>
-              <CardTitle className="font-display text-2xl">What gets the best answers</CardTitle>
-              <CardDescription>Keep the exchange practical so it becomes a real industry utility, not noise.</CardDescription>
+              <CardTitle className="font-display text-2xl">Get useful answers</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="rounded-2xl border border-border/60 bg-background/70 p-4 text-sm text-muted-foreground">
@@ -604,27 +567,27 @@ export default function ProfessionalExchangeTab({
               </div>
             </CardContent>
           </Card>
+          </details>
         </div>
 
-        <div className="space-y-6">
+        <div className="order-1 space-y-6">
           <Card className="shadow-card">
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <CardTitle className="font-display text-2xl">Planner exchange</CardTitle>
-                  <CardDescription>Professionals helping professionals find suppliers, solve logistics, and rescue event-day issues.</CardDescription>
+                  <CardTitle className="font-display text-2xl">Questions</CardTitle>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                {questions.length > 0 ? <div className="flex flex-wrap gap-2">
                   {topCategories.map((item) => (
                     <Badge key={item.category} variant="outline" className="rounded-full">
                       {professionalExchangeCategoryMeta[item.category].shortLabel} {item.count}
                     </Badge>
                   ))}
-                </div>
+                </div> : null}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
+              {questions.length > 0 ? <div className="grid gap-3 md:grid-cols-3">
                 <Select value={filterCategory} onValueChange={(value) => setFilterCategory(value as 'all' | ProfessionalExchangeCategory)}>
                   <SelectTrigger>
                     <SelectValue placeholder="All categories" />
@@ -661,16 +624,13 @@ export default function ProfessionalExchangeTab({
                     <SelectItem value="resolved">Solved only</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </div> : null}
 
-              <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
+              <div className={filteredQuestions.length === 0 ? 'block' : 'grid gap-6 xl:grid-cols-[0.92fr_1.08fr]'}>
                 <div className="space-y-3">
                   {filteredQuestions.length === 0 ? (
                     <div className="rounded-3xl border border-dashed border-border/70 bg-background/60 p-8 text-center">
-                      <h3 className="text-2xl font-semibold text-foreground">No exchange questions yet</h3>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Start the first useful thread. Ask about sourcing, backups, or event-day problem solving.
-                      </p>
+                      <h3 className="text-2xl font-semibold text-foreground">{questions.length === 0 ? 'No questions yet.' : 'No matching questions.'}</h3>
                     </div>
                   ) : (
                     filteredQuestions.map((question) => {
@@ -723,7 +683,7 @@ export default function ProfessionalExchangeTab({
                   )}
                 </div>
 
-                <div>
+                {filteredQuestions.length > 0 ? <div>
                   {selectedQuestion ? (
                     <div className="rounded-3xl border border-border/60 bg-background/70 p-5">
                       <div className="flex flex-wrap items-center gap-2">
@@ -778,7 +738,7 @@ export default function ProfessionalExchangeTab({
 
                         {(answersByQuestionId[selectedQuestion.id] ?? []).length === 0 ? (
                           <div className="rounded-2xl border border-dashed border-border/70 bg-card/60 p-5 text-sm text-muted-foreground">
-                            No answers yet. The first useful answer can become a real trust signal on Zania.
+                            No answers yet.
                           </div>
                         ) : (
                           (answersByQuestionId[selectedQuestion.id] ?? []).map((answer) => {
@@ -856,7 +816,7 @@ export default function ProfessionalExchangeTab({
                       </p>
                     </div>
                   )}
-                </div>
+                </div> : null}
               </div>
             </CardContent>
           </Card>

@@ -56,7 +56,14 @@ Required server-side secrets live in Supabase, not the frontend `.env`:
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL` such as `Zania Weddings <invites@planwithzania.com>`
 - `OPENAI_API_KEY`
-- `OPENAI_MODEL` (optional override)
+
+The AI assistant routes requests by complexity with these defaults:
+
+- Routine actions and lookups: `OPENAI_ROUTINE_MODEL=gpt-5.6-luna`
+- Standard planning assistance: `OPENAI_BALANCED_MODEL=gpt-5.6-terra`
+- Complex strategy and multi-constraint analysis: `OPENAI_COMPLEX_MODEL=gpt-5.6-sol`
+
+Each model can be overridden with the corresponding secret above. Routed requests use a stable explicit prompt-cache prefix and record cache reads, cache writes, token usage, the selected model, and estimated cost. If a custom model has different pricing, set `OPENAI_<TIER>_INPUT_COST_PER_MILLION_USD`, `OPENAI_<TIER>_CACHED_INPUT_COST_PER_MILLION_USD`, `OPENAI_<TIER>_CACHE_WRITE_COST_PER_MILLION_USD`, and `OPENAI_<TIER>_OUTPUT_COST_PER_MILLION_USD`, where `<TIER>` is `ROUTINE`, `BALANCED`, or `COMPLEX`.
 
 Optional client/server billing provider switch while migrating:
 

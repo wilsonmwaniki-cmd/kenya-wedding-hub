@@ -2,7 +2,7 @@ import BrandWordmark from "@/components/BrandWordmark";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-const LAST_UPDATED = "June 18, 2026";
+const LAST_UPDATED = "August 23, 2026";
 
 const sections = [
   {
@@ -24,6 +24,9 @@ const sections = [
       "Workspace means a wedding project, account area, collaboration environment, organisation space, or other digital area within the Platform where users manage wedding-related information and activities.",
       "Subscription means any recurring or fixed-term paid plan, package, membership, licence, or access arrangement that provides access to paid features or services on the Platform.",
       "AI-assisted Features means any artificial intelligence, machine learning, automated recommendation, content generation, matching, prediction, drafting, analysis, or decision-support functionality made available through the Platform.",
+      "Lead means an inquiry or request for wedding services that Zania may route to an eligible Planner or Vendor.",
+      "Public Profile means a Vendor or Planner listing that may be visible without signing in and may be indexed by search engines.",
+      "Shared Link means a link that gives its recipient access to selected content, such as a quote, invoice, contract, timeline, RSVP form, contribution page, or registry, without joining the Workspace.",
       "User, you, or your means any individual, business, organisation, couple, Planner, Vendor, guest, collaborator, or other person who accesses or uses the Platform.",
     ],
   },
@@ -109,6 +112,8 @@ const sections = [
       "Vendors are solely responsible for the accuracy of their profiles, prices, availability, services, representations, qualifications, images, portfolio work, and communication.",
       "Unless expressly stated, Zania Weddings does not guarantee a vendor’s work quality, availability, pricing, licensing, compliance, outcome, or performance.",
       "Vendor verification, where offered, is not a guarantee of performance.",
+      "Verification labels, rankings, recommendations, reviews, and trust indicators are informational only and are not endorsements or guarantees by Zania Weddings.",
+      "Public Profiles may be indexed, cached, or copied by search engines and other third parties. You must have permission to publish portfolio work, client images, testimonials, and contact information that you add to a Public Profile.",
     ],
   },
   {
@@ -124,6 +129,8 @@ const sections = [
     ],
     body: [
       "Any contract, quotation, booking, payment, refund, cancellation, dispute, or service delivery arrangement between a couple, planner, vendor, venue, guest, or other third party is solely between those parties.",
+      "Zania may route, rank, or recommend Leads using information such as service category, location, availability, subscription eligibility, and user preferences. Zania is not an agent, broker, employer, fiduciary, insurer, or escrow provider for any user.",
+      "We do not guarantee the availability, quality, exclusivity, accuracy, or conversion of a Lead. Contact details received through a Lead may be used only to respond to that lawful wedding-services inquiry and must not be added to unrelated marketing lists without permission.",
     ],
   },
   {
@@ -132,6 +139,7 @@ const sections = [
       "Some parts of Zania Weddings may be free, while others may require payment.",
       "By purchasing a paid plan or service, you agree to pay the fees shown at the time of purchase, including any applicable taxes, transaction fees, or payment processing charges.",
       "We may change our prices or introduce new fees from time to time. Where required, we will give reasonable notice before material pricing changes take effect.",
+      "Payment schedules, contribution records, invoices, receipts, balances, and status labels shown in Zania are record-keeping tools. Unless Zania expressly states otherwise for a particular transaction, they do not confirm cleared funds and Zania does not hold money in escrow.",
     ],
   },
   {
@@ -166,6 +174,7 @@ const sections = [
       "AI-assisted outputs are provided for convenience and planning support only. They may be incomplete, inaccurate, inappropriate, outdated, or unsuitable for your specific wedding.",
       "You are responsible for reviewing and confirming any AI-generated suggestions before relying on them.",
       "Zania Weddings does not guarantee that AI-generated recommendations will be correct, complete, culturally appropriate, legally compliant, financially suitable, or operationally practical.",
+      "Do not submit personal, confidential, or third-party information to an AI-assisted Feature unless you are authorised to do so. Relevant prompts and content may be processed by service providers as described in our Privacy Policy.",
     ],
   },
   {
@@ -236,6 +245,7 @@ const sections = [
       "Zania Weddings may provide templates, checklists, timelines, budget categories, planning guides, vendor questions, suggested workflows, or other content.",
       "These materials are provided for general planning support only. They are not professional advice and may not fit every wedding, culture, budget, religion, venue, family structure, or legal requirement.",
       "You are responsible for adapting any templates or suggestions to your own situation.",
+      "Quotes, invoices, receipts, contracts, tax fields, payment schedules, and other document templates are not legal, tax, accounting, or financial advice. You are responsible for reviewing them and obtaining professional advice where needed.",
     ],
   },
   {
@@ -307,6 +317,39 @@ const sections = [
       "Reputational harm.",
       "Payment disputes between users.",
       "Third-party service failures.",
+    ],
+  },
+  {
+    title: "28. Indemnity",
+    body: [
+      "To the extent permitted by law, you agree to compensate Zania Weddings for losses, claims, or reasonable costs arising from your unlawful use of the Platform, your breach of these Terms, your User Content, or your infringement of another person’s rights. This obligation does not apply to losses caused by Zania Weddings’ own unlawful conduct, fraud, gross negligence, or wilful misconduct.",
+    ],
+  },
+  {
+    title: "29. Governing Law and Disputes",
+    body: [
+      "These Terms are governed by the laws of Kenya. Before starting formal proceedings, you and Zania Weddings agree to make a good-faith effort to resolve a dispute by contacting the other party and allowing a reasonable time for a response.",
+      "If a dispute cannot be resolved informally, the courts of Kenya will have jurisdiction, unless applicable law requires a different forum or the parties agree in writing to another lawful dispute-resolution process.",
+    ],
+  },
+  {
+    title: "30. Changes to These Terms",
+    body: [
+      "We may update these Terms when the Platform, our business, or applicable law changes. We will post the updated Terms with a new date and, where required, give additional notice before a material change takes effect.",
+      "Your continued use of the Platform after an update takes effect means you accept the updated Terms. If you do not agree, you should stop using the Platform and may request account deletion or data export where available.",
+    ],
+  },
+  {
+    title: "31. General",
+    body: [
+      "If any part of these Terms is found unenforceable, the remaining parts will continue to apply. A delay in enforcing a right is not a waiver of that right. These Terms and the Privacy Policy form the agreement between you and Zania Weddings concerning the Platform, except where separate written terms apply to a specific service.",
+    ],
+  },
+  {
+    title: "32. Contact Us",
+    body: [
+      "Zania Weddings is operated by Scarlet Plume in Kenya.",
+      "Questions about these Terms may be sent to hello@planwithzania.com.",
     ],
   },
 ];

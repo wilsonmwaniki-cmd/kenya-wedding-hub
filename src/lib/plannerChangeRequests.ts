@@ -29,6 +29,7 @@ export type PlannerChangeRequestRow = {
   reviewed_by: string | null;
   created_at: string;
   updated_at: string;
+  target_label?: string | null;
 };
 
 type SubmitPlannerChangeRequestInput = {
@@ -81,7 +82,45 @@ export async function listPendingPlannerChangeRequests(coupleUserId: string) {
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return ((data ?? []) as any[]).map(asRow);
+  const rows = ((data ?? []) as any[]).map(asRow);
+  const labelFields: Partial<Record<PlannerChangeTargetTable, string>> = {
+    guests: 'name',
+    wedding_contributions: 'contributor_name',
+    contribution_rounds: 'title',
+    budget_categories: 'name',
+    tasks: 'title',
+    vendors: 'name',
+    timelines: 'title',
+    timeline_events: 'title',
+  };
+  const labels = new Map<string, string>();
+
+  await Promise.all(Object.entries(labelFields).map(async ([table, labelField]) => {
+    const ids = [...new Set(rows
+      .filter((row) => row.target_table === table && row.target_id)
+      .map((row) => row.target_id as string))];
+    if (ids.length === 0) return;
+
+    const { data: targetRows, error: targetError } = await db
+      .from(table)
+      .select(`id,${labelField}`)
+      .in('id', ids);
+    if (targetError) throw targetError;
+
+    for (const targetRow of targetRows ?? []) {
+      const label = targetRow[labelField];
+      if (typeof label === 'string' && label.trim()) {
+        labels.set(`${table}:${targetRow.id}`, label.trim());
+      }
+    }
+  }));
+
+  return rows.map((row) => ({
+    ...row,
+    target_label: row.target_id
+      ? labels.get(`${row.target_table}:${row.target_id}`) ?? null
+      : null,
+  }));
 }
 
 function getApprovalInsertPayload(request: PlannerChangeRequestRow) {
@@ -315,7 +354,7 @@ export function describePlannerChangeRequest(request: PlannerChangeRequestRow) {
       ?? proposed.contributor_name
       ?? proposed.title
       ?? proposed.in_kind_item
-      ?? request.target_id
+      ?? request.target_label
       ?? 'this item',
     );
 
@@ -338,12 +377,36 @@ export function describePlannerChangeRequest(request: PlannerChangeRequestRow) {
         ? 'contribution'
         : 'fundraising round';
 
-  const verb =
-    request.change_type === 'create'
-      ? 'proposed a new'
-      : request.change_type === 'update'
-        ? 'requested updates to'
-        : 'requested removal of';
+  const verb = request.change_type === 'create'
+    ? 'Add'
+    : request.change_type === 'update'
+      ? 'Update'
+      : 'Remove';
 
   return `${verb} ${targetLabel}: ${name}`;
+}
+
+export function describePlannerChangeDetails(request: PlannerChangeRequestRow) {
+  const current = request.current_payload ?? {};
+  const proposed = request.proposed_payload ?? {};
+
+  if (request.target_table === 'tasks' && typeof proposed.completed === 'boolean') {
+    return proposed.completed ? 'Mark this task as done.' : 'Mark this task as not done.';
+  }
+
+  if (typeof proposed.due_date === 'string' && proposed.due_date !== current.due_date) {
+    return `Change the due date to ${new Date(`${proposed.due_date}T12:00:00`).toLocaleDateString('en-KE', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })}.`;
+  }
+
+  if (request.note?.trim()) return request.note.trim();
+
+  return request.change_type === 'create'
+    ? 'Add this to your wedding plan.'
+    : request.change_type === 'delete'
+      ? 'Remove this from your wedding plan.'
+      : 'Apply the planner’s update.';
 }

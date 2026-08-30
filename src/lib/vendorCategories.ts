@@ -51,6 +51,7 @@ function normalizeCategoryKey(value: string) {
 }
 
 const categoryAliases: Record<string, string> = {
+  accommodation: 'Wedding Venue',
   venue: 'Wedding Venue',
   'ceremony venue': 'Wedding Venue',
   'reception venue': 'Wedding Venue',
@@ -62,7 +63,7 @@ const categoryAliases: Record<string, string> = {
   decor: 'Décor, Tents, Chairs, Tables',
   'decor tents chairs tables': 'Décor, Tents, Chairs, Tables',
   'setup rentals': 'Décor, Tents, Chairs, Tables',
-  flowers: 'Flowers',
+  flowers: 'Décor, Tents, Chairs, Tables',
   mc: 'Master of Ceremonies',
   'master of ceremonies': 'Master of Ceremonies',
   'music dj': 'DJ (or Band) and Sound',
@@ -96,6 +97,10 @@ const categoryAliases: Record<string, string> = {
   'wedding planner': 'Wedding Planner / Planning Team',
   'wedding planner planning team': 'Wedding Planner / Planning Team',
   'bridal party': 'Bridal Gown, Accessories, Preparation',
+  attire: 'Bridal Gown, Accessories, Preparation',
+  beauty: "Bride's Make-up Artist",
+  entertainment: 'DJ (or Band) and Sound',
+  planning: 'Wedding Planner / Planning Team',
 };
 
 const catalogByKey = new Map(
@@ -108,6 +113,10 @@ export function canonicalizeVendorCategory(value: string) {
 
   const key = normalizeCategoryKey(trimmed);
   return categoryAliases[key] ?? catalogByKey.get(key)?.name ?? trimmed;
+}
+
+export function isVendorCategory(value: string) {
+  return catalogByKey.has(normalizeCategoryKey(canonicalizeVendorCategory(value)));
 }
 
 export function getVendorCategoryScope(value: string): VendorCategoryScope {

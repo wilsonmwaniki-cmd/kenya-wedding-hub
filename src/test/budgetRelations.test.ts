@@ -28,6 +28,19 @@ describe('budget relationships', () => {
     expect(getRecordedVendorsForBudgetCategory('Photography', [realVendor])).toEqual([realVendor]);
   });
 
+  it('does not attach vendors that only share a generic role word', () => {
+    const cakeVendor = {
+      ...placeholderVendor,
+      id: 'keki-tamu',
+      name: 'Keki Tamu',
+      category: 'Cake Artist & Baker',
+      selection_status: 'final',
+    };
+
+    expect(getRecordedVendorsForBudgetCategory("Bride's Make-up Artist", [cakeVendor])).toEqual([]);
+    expect(getRecordedVendorsForBudgetCategory('Cake Artist & Baker', [cakeVendor])).toEqual([cakeVendor]);
+  });
+
   it('matches common planning category vocabulary', () => {
     expect(planningCategoryRelationScore('Photography', 'Photographer')).toBeGreaterThan(0);
     expect(planningCategoryRelationScore('Videography', 'Cinematographer')).toBeGreaterThan(0);

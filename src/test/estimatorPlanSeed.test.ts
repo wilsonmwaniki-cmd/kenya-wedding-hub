@@ -45,6 +45,26 @@ describe('estimator plan handoff', () => {
     expect(editedPlan.allocations.find((row) => row.name === 'Caterer')?.lastEditedField).toBe('amount');
   });
 
+  it('normalizes legacy draft names without seeding duplicate categories', () => {
+    const rows = buildEstimatorRowsFromDraft({
+      guestCount: 120,
+      county: 'Nairobi',
+      weddingStyle: 'classic',
+      venueTier: 'mid_tier',
+      totalBudget: 1_000_000,
+      allocations: [
+        { name: 'Cake', amount: 75_000, percentage: 7.5 },
+        { name: 'Flowers', amount: 125_000, percentage: 12.5 },
+      ],
+    });
+
+    expect(rows).toHaveLength(21);
+    expect(new Set(rows?.map((row) => row.category)).size).toBe(21);
+    expect(rows?.find((row) => row.category === 'Cake Artist & Baker')?.suggested_amount).toBe(75_000);
+    expect(rows?.find((row) => row.category === 'Décor, Tents, Chairs, Tables')?.suggested_amount).toBe(125_000);
+    expect(rows?.some((row) => row.category === 'Cake' || row.category === 'Flowers')).toBe(false);
+  });
+
   it('only seeds couples and committee planners', () => {
     expect(canSeedEstimatorPlan('couple')).toBe(true);
     expect(canSeedEstimatorPlan('planner', 'committee')).toBe(true);

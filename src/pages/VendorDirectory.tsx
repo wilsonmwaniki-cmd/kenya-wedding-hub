@@ -139,7 +139,7 @@ export default function VendorDirectory() {
 
   useEffect(() => {
     const load = async () => {
-      const [listingsRes, ratingsRes, recommendationsRes] = await Promise.all([
+      const [listingsRes, ratingsRes, guestRatingsRes, recommendationsRes] = await Promise.all([
         supabase
           .from('vendor_listings')
           .select('id, business_name, category, description, logo_url, location, location_county, location_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes, services, is_verified, subscription_status, subscription_expires_at, phone, email, website, profile_kind, public_listing_note, featured_rank')
@@ -150,6 +150,11 @@ export default function VendorDirectory() {
         supabase
           .from('vendor_reviews')
           .select('vendor_listing_id, rating'),
+        supabase
+          .from('professional_reviews')
+          .select('vendor_listing_id, rating')
+          .eq('professional_type', 'vendor')
+          .eq('status', 'published'),
         professionalNetworkEnabled
           ? supabase
               .from('vendor_planner_recommendations' as any)
@@ -165,6 +170,12 @@ export default function VendorDirectory() {
 
       const ratingsMap: Record<string, { total: number; count: number }> = {};
       ((ratingsRes.data || []) as Array<{ vendor_listing_id: string; rating: number }>).forEach((rating) => {
+        if (!ratingsMap[rating.vendor_listing_id]) ratingsMap[rating.vendor_listing_id] = { total: 0, count: 0 };
+        ratingsMap[rating.vendor_listing_id].total += rating.rating;
+        ratingsMap[rating.vendor_listing_id].count += 1;
+      });
+      ((guestRatingsRes.data || []) as Array<{ vendor_listing_id: string; rating: number }>).forEach((rating) => {
+        if (!rating.vendor_listing_id) return;
         if (!ratingsMap[rating.vendor_listing_id]) ratingsMap[rating.vendor_listing_id] = { total: 0, count: 0 };
         ratingsMap[rating.vendor_listing_id].total += rating.rating;
         ratingsMap[rating.vendor_listing_id].count += 1;
