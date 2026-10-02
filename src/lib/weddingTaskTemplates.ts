@@ -1,4 +1,9 @@
 import type { PlannerType } from '@/lib/roles';
+import {
+  getMaximumTimelineDays,
+  resolveAdaptiveTaskDueDate,
+  timelineLabelToOffsetDays,
+} from '@/lib/adaptiveTaskSchedule';
 
 export type WeddingTaskPhase =
   | 'foundation'
@@ -43,6 +48,15 @@ export interface SuggestedTaskTemplateOption {
   priorityLevel: 1 | 2 | 3 | 4;
   timelineOffsetMonths: number | null;
   timelineLabel: string | null;
+}
+
+export interface WeddingChecklistStep {
+  key: string;
+  title: string;
+  category: string;
+  timelineLabel: string | null;
+  step: number;
+  totalSteps: number;
 }
 
 type RawChecklistRow = readonly [
@@ -1254,7 +1268,7 @@ const CATEGORY_ALIASES: Record<string, string> = {
   decor: 'Décor, Tents, Chairs, Tables',
   'décor': 'Décor, Tents, Chairs, Tables',
   'décor tents chairs tables': 'Décor, Tents, Chairs, Tables',
-  flowers: 'Décor, Tents, Chairs, Tables',
+  flowers: 'Flowers',
   invitations: 'Invitations',
   stationery: 'Invitations',
   transport: 'Transport',
@@ -1262,9 +1276,11 @@ const CATEGORY_ALIASES: Record<string, string> = {
   'couples rings': 'Rings',
   'couple rings': 'Rings',
   rings: 'Rings',
-  'hair stylist': 'Hair Stylist',
-  'make-up artist': 'Make-up Artist',
-  'make up artist': 'Make-up Artist',
+  'hair stylist': "Bride's Hair Stylist",
+  'bride s hair stylist': "Bride's Hair Stylist",
+  'make-up artist': "Bride's Make-up Artist",
+  'make up artist': "Bride's Make-up Artist",
+  'bride s make up artist': "Bride's Make-up Artist",
   'church and officiating minister': 'Church & Officiating Minister',
   'church officiating minister': 'Church & Officiating Minister',
   'officiating minister': 'Church & Officiating Minister',
@@ -1422,7 +1438,7 @@ const CHECKLIST_TEMPLATES: WeddingTaskTemplate[] = RAW_CHECKLIST_ROWS.map((row) 
   return {
     key,
     title,
-    category,
+    category: canonicalizeCategory(category),
     description: buildDescription(title, timelineLabel, visibility, recommendedRole, delegatableRaw),
     phase: inferPhase(title, timelineLabel),
     visibility,
@@ -1433,6 +1449,57 @@ const CHECKLIST_TEMPLATES: WeddingTaskTemplate[] = RAW_CHECKLIST_ROWS.map((row) 
     timelineLabel,
   };
 });
+
+function normalizeChecklistTitle(value?: string | null) {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+const CHECKLIST_STEP_BY_TITLE = new Map(
+  CHECKLIST_TEMPLATES.map((template, index) => [
+    normalizeChecklistTitle(template.title),
+    {
+      key: template.key,
+      title: template.title,
+      category: template.category,
+      timelineLabel: template.timelineLabel ?? null,
+      step: index + 1,
+      totalSteps: CHECKLIST_TEMPLATES.length,
+    } satisfies WeddingChecklistStep,
+  ]),
+);
+
+export function getWeddingChecklistStep(task: { title: string }): WeddingChecklistStep | null {
+  return CHECKLIST_STEP_BY_TITLE.get(normalizeChecklistTitle(task.title)) ?? null;
+}
+
+export function compareTasksByWeddingChecklistOrder<T extends { title: string; due_date?: string | null }>(left: T, right: T) {
+  const leftStep = getWeddingChecklistStep(left);
+  const rightStep = getWeddingChecklistStep(right);
+
+  if (leftStep && rightStep) return leftStep.step - rightStep.step;
+  if (leftStep) return -1;
+  if (rightStep) return 1;
+
+  const dueDateComparison = (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31');
+  return dueDateComparison || left.title.localeCompare(right.title);
+}
+
+export function getNextWeddingChecklistTask<T extends { title: string; completed: boolean; due_date?: string | null }>(tasks: T[]) {
+  const nextTask = tasks
+    .filter((task) => !task.completed && getWeddingChecklistStep(task))
+    .sort(compareTasksByWeddingChecklistOrder)[0] ?? null;
+
+  if (!nextTask) return null;
+  return {
+    task: nextTask,
+    step: getWeddingChecklistStep(nextTask)!,
+  };
+}
 
 const CHECKLIST_CATEGORIES = [...new Set(CHECKLIST_TEMPLATES.map((template) => template.category))].sort((left, right) => left.localeCompare(right));
 
@@ -1523,25 +1590,48 @@ export function buildSeededTasksFromTemplates(input: {
   role: string | null | undefined;
   plannerType?: PlannerType | null;
   weddingDate?: string | null;
+  planningStartDate?: string | null;
 }) {
   const templates = getWeddingTaskTemplates(input);
-  const weddingDate = input.weddingDate ? new Date(input.weddingDate) : null;
+  const offsets = templates.map((template) => timelineLabelToOffsetDays(template.timelineLabel));
+  const maximumTimelineDays = getMaximumTimelineDays(offsets);
 
-  return templates.map((template) => {
-    const resolvedDueDate = weddingDate ? resolveDueDateFromTimeline(weddingDate, template.timelineLabel) : null;
+  return templates.map((template, index) => {
+    const timelineOffsetDays = offsets[index];
+    const resolvedDueDate = input.planningStartDate
+      ? resolveAdaptiveTaskDueDate({
+          weddingDate: input.weddingDate,
+          planningStartDate: input.planningStartDate,
+          timelineOffsetDays,
+          maximumTimelineDays,
+        })
+      : input.weddingDate
+        ? resolveDueDateFromTimeline(new Date(input.weddingDate), template.timelineLabel)
+            ?.toISOString()
+            .slice(0, 10) ?? null
+        : null;
+
     return {
       title: template.title,
       description: template.description,
       category: template.category,
       assigned_to: template.recommendedRole,
-      due_date: resolvedDueDate ? resolvedDueDate.toISOString().slice(0, 10) : null,
-      completed: false,
+      due_date: resolvedDueDate,
+      completed: Boolean(
+        input.weddingDate
+        && template.key === 'couples-tasks-decide-on-a-wedding-date'
+      ),
       phase: template.phase,
       visibility: template.visibility,
       delegatable: template.delegatable,
       recommended_role: template.recommendedRole,
       priority_level: template.priorityLevel,
       template_source: 'zania_checklist_v2',
+      template_key: template.key,
+      timeline_offset_days: timelineOffsetDays,
+      due_date_source: resolvedDueDate ? 'automatic' : 'unscheduled',
+      schedule_anchor_date: input.planningStartDate ?? null,
+      last_auto_scheduled_at: resolvedDueDate ? new Date().toISOString() : null,
     };
   });
 }

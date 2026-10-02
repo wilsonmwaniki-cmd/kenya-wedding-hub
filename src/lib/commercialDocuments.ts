@@ -1,4 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
+import { retryTransientRequest } from '@/lib/requestRetry';
+import { normalizeInvokeError } from '@/lib/invokeErrors';
 
 export const commercialDocumentRoleOptions = ['vendor', 'planner'] as const;
 export type CommercialDocumentRole = (typeof commercialDocumentRoleOptions)[number];
@@ -10,7 +12,7 @@ export const commercialDocumentPaymentMethodOptions = ['mpesa', 'bank', 'cash', 
 export type CommercialDocumentPaymentMethod = (typeof commercialDocumentPaymentMethodOptions)[number];
 
 export const commercialDocumentStatuses = {
-  quote: ['draft', 'sent', 'accepted', 'rejected', 'expired'] as const,
+  quote: ['draft', 'sent', 'changes_requested', 'accepted', 'rejected', 'expired'] as const,
   invoice: ['draft', 'sent', 'part_paid', 'paid', 'void'] as const,
   receipt: ['issued', 'void'] as const,
 } as const;
@@ -19,6 +21,23 @@ export type QuoteStatus = (typeof commercialDocumentStatuses.quote)[number];
 export type InvoiceStatus = (typeof commercialDocumentStatuses.invoice)[number];
 export type ReceiptStatus = (typeof commercialDocumentStatuses.receipt)[number];
 export type CommercialDocumentStatus = QuoteStatus | InvoiceStatus | ReceiptStatus;
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Returns valid, unique copies of recipient emails, excluding the primary recipient. */
+export function normaliseAdditionalRecipientEmails(value: unknown, primaryEmail?: string | null) {
+  const primary = String(primaryEmail ?? '').trim().toLowerCase();
+  const entries = Array.isArray(value) ? value : [];
+  const emails = entries
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((email) => emailPattern.test(email) && email !== primary);
+  return [...new Set(emails)].slice(0, 10);
+}
+
+export function additionalRecipientEmailsFromMetadata(metadata: Record<string, unknown>, primaryEmail?: string | null) {
+  return normaliseAdditionalRecipientEmails(metadata.additionalRecipientEmails, primaryEmail);
+}
 
 export type CommercialDocumentRecord = {
   id: string;
@@ -39,6 +58,7 @@ export type CommercialDocumentRecord = {
   vendorListingId: string | null;
   vendorId: string | null;
   quoteSourceId: string | null;
+  payoutAccountId: string | null;
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
@@ -151,6 +171,15 @@ export type SharedCommercialDocument = {
   issuerPhone: string | null;
   issuerWebsite: string | null;
   issuerLocation: string | null;
+  paymentInstructions: string | null;
+  authorisedBy: string | null;
+  sourceInvoiceNumber: string | null;
+  sourceInvoiceTitle: string | null;
+  receiptPaymentMethod: string | null;
+  receiptPaymentReference: string | null;
+  receiptProcessingFee: number;
+  receiptZaniaServiceFee: number;
+  receiptTotalCharged: number;
   items: Array<{
     id: string;
     description: string;
@@ -177,6 +206,42 @@ export type CommercialDocumentShareState = {
   revokedAt: string | null;
   lastAccessedAt: string | null;
   accessCount: number;
+};
+
+export type CommercialDocumentEmailEvent = {
+  id: string;
+  documentId: string;
+  recipientEmail: string;
+  subject: string;
+  providerMessageId: string | null;
+  sentAt: string;
+};
+
+export type SendCommercialDocumentResult = {
+  success: true;
+  recipientEmail: string;
+  recipientEmails: string[];
+  shareUrl: string;
+  sentAt: string;
+  status: CommercialDocumentStatus;
+};
+
+export type QuoteResponseAction = 'accepted' | 'changes_requested';
+
+export type QuoteResponseRecord = {
+  id: string;
+  documentId: string | null;
+  response: QuoteResponseAction;
+  message: string | null;
+  responderName: string;
+  createdAt: string;
+};
+
+export type SharedQuoteResponseContext = {
+  available: boolean;
+  canRespond: boolean;
+  status: CommercialDocumentStatus | null;
+  latestResponse: QuoteResponseRecord | null;
 };
 
 export type CreateCommercialDocumentInput = {
@@ -251,6 +316,12 @@ export type ProfessionalContractStatus = (typeof professionalContractStatusOptio
 export const professionalTemplateTypeOptions = ['quote', 'invoice', 'receipt', 'contract'] as const;
 export type ProfessionalTemplateType = (typeof professionalTemplateTypeOptions)[number];
 
+export type ContractPaymentScheduleItem = {
+  title: string;
+  amount: number;
+  dueDate: string;
+};
+
 export type ProfessionalContractRecord = {
   id: string;
   createdAt: string;
@@ -273,11 +344,106 @@ export type ProfessionalContractRecord = {
   summary: string | null;
   notes: string | null;
   terms: string | null;
+  currency: string;
+  totalAmount: number | null;
+  depositAmount: number | null;
+  paymentSchedule: ContractPaymentScheduleItem[];
   metadata: Record<string, unknown>;
+  contentVersion: number;
+  lockedAt: string | null;
+  lockedHash: string | null;
+  lockedSnapshot: Record<string, unknown> | null;
+};
+
+export type ProfessionalContractShareState = {
+  id: string;
+  contractId: string;
+  shareToken: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
+};
+
+export type ProfessionalContractSignerRole = 'issuer' | 'client';
+
+export type ProfessionalContractSignerRecord = {
+  id: string;
+  contractId: string;
+  signerRole: ProfessionalContractSignerRole;
+  signerName: string;
+  signerEmail: string | null;
+  signerTitle: string | null;
+  signatureMethod: 'typed';
+  signedName: string | null;
+  signedAt: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type ProfessionalContractEventType =
+  | 'created'
+  | 'share_link_created'
+  | 'share_link_revoked'
+  | 'sent_for_signature'
+  | 'email_sent'
+  | 'share_viewed'
+  | 'signed_by_client'
+  | 'signed_by_issuer'
+  | 'completed'
+  | 'cancelled';
+
+export type ProfessionalContractEventRecord = {
+  id: string;
+  contractId: string;
+  eventType: ProfessionalContractEventType;
+  actorSource: 'system' | 'owner' | 'public_signer';
+  actorName: string | null;
+  actorEmail: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type ProfessionalContractActivity = {
+  shareState: ProfessionalContractShareState | null;
+  signers: ProfessionalContractSignerRecord[];
+  events: ProfessionalContractEventRecord[];
+};
+
+export type SharedProfessionalContract = {
+  id: string;
+  role: CommercialDocumentRole;
+  title: string;
+  status: ProfessionalContractStatus;
+  recipientName: string;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  weddingName: string | null;
+  eventDate: string | null;
+  sentAt: string | null;
+  signedAt: string | null;
+  summary: string | null;
+  notes: string | null;
+  terms: string | null;
+  currency: string;
+  totalAmount: number | null;
+  depositAmount: number | null;
+  paymentSchedule: ContractPaymentScheduleItem[];
+  issuerName: string;
+  issuerEmail: string | null;
+  issuerPhone: string | null;
+  issuerWebsite: string | null;
+  issuerLocation: string | null;
+  shareExpiresAt: string | null;
+  contentVersion: number;
+  documentHash: string | null;
+  lockedAt: string | null;
+  signers: ProfessionalContractSignerRecord[];
+  events: ProfessionalContractEventRecord[];
 };
 
 export type DocumentTemplateItem = {
   description: string;
+  content?: string;
   quantity?: number;
   unitPrice?: number;
 };
@@ -322,6 +488,10 @@ export type CreateProfessionalContractInput = {
   summary?: string | null;
   notes?: string | null;
   terms?: string | null;
+  currency?: string;
+  totalAmount?: number | null;
+  depositAmount?: number | null;
+  paymentSchedule?: ContractPaymentScheduleItem[];
   metadata?: Record<string, unknown>;
 };
 
@@ -385,6 +555,7 @@ function mapCommercialDocument(row: Record<string, unknown>): CommercialDocument
     vendorListingId: typeof row.vendor_listing_id === 'string' ? row.vendor_listing_id : null,
     vendorId: typeof row.vendor_id === 'string' ? row.vendor_id : null,
     quoteSourceId: typeof row.quote_source_id === 'string' ? row.quote_source_id : null,
+    payoutAccountId: typeof row.payout_account_id === 'string' ? row.payout_account_id : null,
     subtotal: toNumber(row.subtotal),
     discountAmount: toNumber(row.discount_amount),
     taxAmount: toNumber(row.tax_amount),
@@ -460,7 +631,26 @@ function mapProfessionalContract(row: Record<string, unknown>): ProfessionalCont
     summary: typeof row.summary === 'string' ? row.summary : null,
     notes: typeof row.notes === 'string' ? row.notes : null,
     terms: typeof row.terms === 'string' ? row.terms : null,
+    currency: typeof row.currency === 'string' ? row.currency : 'KES',
+    totalAmount: row.total_amount == null ? null : toNumber(row.total_amount),
+    depositAmount: row.deposit_amount == null ? null : toNumber(row.deposit_amount),
+    paymentSchedule: Array.isArray(row.payment_schedule)
+      ? row.payment_schedule.flatMap((item) => {
+          if (!item || typeof item !== 'object') return [];
+          const value = item as Record<string, unknown>;
+          const title = typeof value.title === 'string' ? value.title : '';
+          const dueDate = typeof value.dueDate === 'string' ? value.dueDate : '';
+          const amount = toNumber(value.amount);
+          return title && dueDate && amount > 0 ? [{ title, dueDate, amount }] : [];
+        })
+      : [],
     metadata: toObject(row.metadata),
+    contentVersion: toNumber(row.content_version),
+    lockedAt: typeof row.locked_at === 'string' ? row.locked_at : null,
+    lockedHash: typeof row.locked_hash === 'string' ? row.locked_hash : null,
+    lockedSnapshot: row.locked_snapshot && typeof row.locked_snapshot === 'object'
+      ? toObject(row.locked_snapshot)
+      : null,
   };
 }
 
@@ -483,6 +673,9 @@ function mapDocumentTemplate(row: Record<string, unknown>): ProfessionalDocument
     defaultItems: Array.isArray(row.default_items)
       ? row.default_items.map((item) => ({
           description: String((item as Record<string, unknown>).description ?? ''),
+          content: typeof (item as Record<string, unknown>).content === 'string'
+            ? String((item as Record<string, unknown>).content)
+            : undefined,
           quantity: (item as Record<string, unknown>).quantity == null ? undefined : toNumber((item as Record<string, unknown>).quantity),
           unitPrice: (item as Record<string, unknown>).unit_price == null && (item as Record<string, unknown>).unitPrice == null
             ? undefined
@@ -490,6 +683,69 @@ function mapDocumentTemplate(row: Record<string, unknown>): ProfessionalDocument
         }))
       : [],
     metadata: toObject(row.metadata),
+  };
+}
+
+function mapProfessionalContractSigner(row: Record<string, unknown>): ProfessionalContractSignerRecord {
+  return {
+    id: String(row.id ?? ''),
+    contractId: String(row.contract_id ?? row.contractId ?? ''),
+    signerRole: row.signer_role === 'client' || row.signerRole === 'client' ? 'client' : 'issuer',
+    signerName: String(row.signer_name ?? row.signerName ?? ''),
+    signerEmail:
+      typeof row.signer_email === 'string'
+        ? row.signer_email
+        : typeof row.signerEmail === 'string'
+          ? row.signerEmail
+          : null,
+    signerTitle:
+      typeof row.signer_title === 'string'
+        ? row.signer_title
+        : typeof row.signerTitle === 'string'
+          ? row.signerTitle
+          : null,
+    signatureMethod: 'typed',
+    signedName:
+      typeof row.signed_name === 'string'
+        ? row.signed_name
+        : typeof row.signedName === 'string'
+          ? row.signedName
+          : null,
+    signedAt:
+      typeof row.signed_at === 'string'
+        ? row.signed_at
+        : typeof row.signedAt === 'string'
+          ? row.signedAt
+          : null,
+    metadata: toObject(row.metadata),
+  };
+}
+
+function mapProfessionalContractEvent(row: Record<string, unknown>): ProfessionalContractEventRecord {
+  return {
+    id: String(row.id ?? ''),
+    contractId: String(row.contract_id ?? row.contractId ?? ''),
+    eventType: String(row.event_type ?? row.eventType ?? 'created') as ProfessionalContractEventType,
+    actorSource:
+      row.actor_source === 'owner' || row.actorSource === 'owner'
+        ? 'owner'
+        : row.actor_source === 'public_signer' || row.actorSource === 'public_signer'
+          ? 'public_signer'
+          : 'system',
+    actorName:
+      typeof row.actor_name === 'string'
+        ? row.actor_name
+        : typeof row.actorName === 'string'
+          ? row.actorName
+          : null,
+    actorEmail:
+      typeof row.actor_email === 'string'
+        ? row.actor_email
+        : typeof row.actorEmail === 'string'
+          ? row.actorEmail
+          : null,
+    payload: toObject(row.payload),
+    createdAt: String(row.created_at ?? row.createdAt ?? ''),
   };
 }
 
@@ -533,6 +789,8 @@ export function commercialDocumentStatusLabel(status: CommercialDocumentStatus |
       return 'Sent';
     case 'accepted':
       return 'Accepted';
+    case 'changes_requested':
+      return 'Changes requested';
     case 'rejected':
       return 'Rejected';
     case 'expired':
@@ -585,6 +843,32 @@ export function professionalContractStatusLabel(status: ProfessionalContractStat
   }
 }
 
+export function professionalContractEventLabel(eventType: ProfessionalContractEventType | string | null | undefined) {
+  switch (eventType) {
+    case 'share_link_created':
+      return 'Signing link created';
+    case 'share_link_revoked':
+      return 'Signing link revoked';
+    case 'sent_for_signature':
+      return 'Sent for signature';
+    case 'email_sent':
+      return 'Email sent';
+    case 'share_viewed':
+      return 'Opened by recipient';
+    case 'signed_by_client':
+      return 'Signed by client';
+    case 'signed_by_issuer':
+      return 'Signed by issuer';
+    case 'completed':
+      return 'Contract completed';
+    case 'cancelled':
+      return 'Contract cancelled';
+    case 'created':
+    default:
+      return 'Draft created';
+  }
+}
+
 export function professionalTemplateTypeLabel(type: ProfessionalTemplateType | string | null | undefined) {
   switch (type) {
     case 'invoice':
@@ -601,27 +885,28 @@ export function professionalTemplateTypeLabel(type: ProfessionalTemplateType | s
 
 export async function listCommercialDocuments(filters: CommercialDocumentListFilters = {}) {
   const db = supabase as any;
-  let query = db
-    .from('commercial_documents')
-    .select('*')
-    .order('issue_date', { ascending: false })
-    .order('created_at', { ascending: false });
+  const { data, error } = await retryTransientRequest(() => {
+    let query = db
+      .from('commercial_documents')
+      .select('*')
+      .order('issue_date', { ascending: false })
+      .order('created_at', { ascending: false });
 
-  if (filters.role) query = query.eq('role', filters.role);
-  if (filters.documentType) query = query.eq('document_type', filters.documentType);
-  if (filters.status) query = query.eq('status', filters.status);
-  if (filters.clientId) query = query.eq('client_id', filters.clientId);
-  if (filters.vendorListingId) query = query.eq('vendor_listing_id', filters.vendorListingId);
-  if (filters.vendorId) query = query.eq('vendor_id', filters.vendorId);
-  if (filters.limit) query = query.limit(filters.limit);
-  if (filters.search?.trim()) {
-    const search = filters.search.trim();
-    query = query.or(
-      `document_number.ilike.%${search}%,title.ilike.%${search}%,recipient_name.ilike.%${search}%,wedding_name.ilike.%${search}%`,
-    );
-  }
-
-  const { data, error } = await query;
+    if (filters.role) query = query.eq('role', filters.role);
+    if (filters.documentType) query = query.eq('document_type', filters.documentType);
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.clientId) query = query.eq('client_id', filters.clientId);
+    if (filters.vendorListingId) query = query.eq('vendor_listing_id', filters.vendorListingId);
+    if (filters.vendorId) query = query.eq('vendor_id', filters.vendorId);
+    if (filters.limit) query = query.limit(filters.limit);
+    if (filters.search?.trim()) {
+      const search = filters.search.trim();
+      query = query.or(
+        `document_number.ilike.%${search}%,title.ilike.%${search}%,recipient_name.ilike.%${search}%,wedding_name.ilike.%${search}%`,
+      );
+    }
+    return query;
+  });
   if (error) throw error;
 
   return ((data ?? []) as Record<string, unknown>[]).map(mapCommercialDocument);
@@ -773,6 +1058,38 @@ export async function ensureCommercialDocumentShareToken(documentId: string) {
   return String(data);
 }
 
+export async function sendCommercialDocumentEmail(documentId: string) {
+  const { data, error } = await supabase.functions.invoke('send-commercial-document', {
+    body: { documentId },
+  });
+
+  if (error) {
+    const normalized = await normalizeInvokeError(error, 'Could not send the document.');
+    throw new Error(normalized.message);
+  }
+
+  return data as SendCommercialDocumentResult;
+}
+
+export async function listCommercialDocumentEmailEvents(documentId: string) {
+  const { data, error } = await (supabase as any)
+    .from('commercial_document_email_events')
+    .select('id, document_id, recipient_email, subject, provider_message_id, sent_at')
+    .eq('document_id', documentId)
+    .order('sent_at', { ascending: false });
+
+  if (error) throw error;
+
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: String(row.id),
+    documentId: String(row.document_id),
+    recipientEmail: String(row.recipient_email),
+    subject: String(row.subject),
+    providerMessageId: typeof row.provider_message_id === 'string' ? row.provider_message_id : null,
+    sentAt: String(row.sent_at),
+  } satisfies CommercialDocumentEmailEvent));
+}
+
 export async function getCommercialDocumentShareState(documentId: string) {
   const { data, error } = await (supabase as any)
     .from('commercial_document_shares')
@@ -845,7 +1162,7 @@ export async function revokeCommercialDocumentShareToken(documentId: string) {
 }
 
 export async function getSharedCommercialDocument(shareToken: string) {
-  const { data, error } = await (supabase as any).rpc('get_shared_commercial_document', {
+  const { data, error } = await (supabase as any).rpc('get_shared_commercial_document_v2', {
     _share_token: shareToken,
   });
 
@@ -882,6 +1199,15 @@ export async function getSharedCommercialDocument(shareToken: string) {
     issuerPhone: typeof row.issuerPhone === 'string' ? row.issuerPhone : null,
     issuerWebsite: typeof row.issuerWebsite === 'string' ? row.issuerWebsite : null,
     issuerLocation: typeof row.issuerLocation === 'string' ? row.issuerLocation : null,
+    paymentInstructions: typeof row.paymentInstructions === 'string' ? row.paymentInstructions : null,
+    authorisedBy: typeof row.authorisedBy === 'string' ? row.authorisedBy : null,
+    sourceInvoiceNumber: typeof row.sourceInvoiceNumber === 'string' ? row.sourceInvoiceNumber : null,
+    sourceInvoiceTitle: typeof row.sourceInvoiceTitle === 'string' ? row.sourceInvoiceTitle : null,
+    receiptPaymentMethod: typeof row.receiptPaymentMethod === 'string' ? row.receiptPaymentMethod : null,
+    receiptPaymentReference: typeof row.receiptPaymentReference === 'string' ? row.receiptPaymentReference : null,
+    receiptProcessingFee: toNumber(row.receiptProcessingFee),
+    receiptZaniaServiceFee: toNumber(row.receiptZaniaServiceFee),
+    receiptTotalCharged: toNumber(row.receiptTotalCharged),
     items: Array.isArray(row.items)
       ? row.items.map((item) => ({
           id: String((item as Record<string, unknown>).id ?? ''),
@@ -915,16 +1241,71 @@ export async function getSharedCommercialDocument(shareToken: string) {
   } satisfies SharedCommercialDocument;
 }
 
+function mapQuoteResponse(value: unknown): QuoteResponseRecord | null {
+  const row = toObject(value);
+  if (!row.id || (row.response !== 'accepted' && row.response !== 'changes_requested')) return null;
+
+  return {
+    id: String(row.id),
+    documentId: typeof row.documentId === 'string' ? row.documentId : null,
+    response: row.response,
+    message: typeof row.message === 'string' ? row.message : null,
+    responderName: String(row.responderName ?? 'Quote recipient'),
+    createdAt: String(row.createdAt ?? ''),
+  };
+}
+
+export function commercialDocumentLatestQuoteResponse(
+  document: Pick<CommercialDocumentRecord, 'metadata'>,
+) {
+  return mapQuoteResponse(toObject(document.metadata).latestQuoteResponse);
+}
+
+export async function getSharedQuoteResponseContext(
+  shareToken: string,
+): Promise<SharedQuoteResponseContext> {
+  const { data, error } = await (supabase as any).rpc('get_shared_quote_response_context', {
+    _share_token: shareToken,
+  });
+  if (error) throw error;
+
+  const row = toObject(data);
+  return {
+    available: row.available === true,
+    canRespond: row.canRespond === true,
+    status: typeof row.status === 'string' ? row.status as CommercialDocumentStatus : null,
+    latestResponse: mapQuoteResponse(row.latestResponse),
+  };
+}
+
+export async function respondToSharedQuote(
+  shareToken: string,
+  input: { response: QuoteResponseAction; message?: string | null },
+) {
+  const { data, error } = await (supabase as any).rpc('respond_to_shared_quote', {
+    _share_token: shareToken,
+    _response: input.response,
+    _message: input.message ?? null,
+  });
+  if (error) throw error;
+
+  const response = mapQuoteResponse(data);
+  if (!response) throw new Error('Zania could not save this quote response.');
+  return response;
+}
+
+import { isProductionHostname, PRIMARY_PRODUCTION_ORIGIN } from '@/lib/appDomain';
+
 export function canonicalZaniaOrigin(origin?: string) {
-  if (!origin) return 'https://www.zaniaweddings.com';
+  if (!origin) return PRIMARY_PRODUCTION_ORIGIN;
   try {
     const url = new URL(origin);
-    if (url.hostname === 'zaniaweddings.com' || url.hostname === 'www.zaniaweddings.com') {
-      return 'https://www.zaniaweddings.com';
+    if (isProductionHostname(url.hostname)) {
+      return PRIMARY_PRODUCTION_ORIGIN;
     }
     return url.origin;
   } catch {
-    return 'https://www.zaniaweddings.com';
+    return PRIMARY_PRODUCTION_ORIGIN;
   }
 }
 
@@ -946,7 +1327,7 @@ export function buildCommercialDocumentShareEmailDraft(input: {
     `${input.document.title}\n` +
     `Amount: KES ${input.document.totalAmount.toLocaleString()}\n` +
     dueLine +
-    `Open it here: ${shareUrl}\n\n` +
+    `Open it here: ${input.shareUrl}\n\n` +
     `Thank you.`;
 
   return {
@@ -982,9 +1363,15 @@ export async function listPlannerClientOptions() {
 
 export async function listVendorListingOptions() {
   const db = supabase as any;
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError) throw authError;
+  if (!authData.user) return [];
+
   const { data, error } = await db
     .from('vendor_listings')
-    .select('id, business_name, category, email, phone, website, primary_county, primary_town')
+    .select('id, business_name, category, email, phone, website, location_county, location_town')
+    .eq('user_id', authData.user.id)
     .order('business_name', { ascending: true });
 
   if (error) throw error;
@@ -996,8 +1383,8 @@ export async function listVendorListingOptions() {
     email: typeof row.email === 'string' ? row.email : null,
     phone: typeof row.phone === 'string' ? row.phone : null,
     website: typeof row.website === 'string' ? row.website : null,
-    primaryCounty: typeof row.primary_county === 'string' ? row.primary_county : null,
-    primaryTown: typeof row.primary_town === 'string' ? row.primary_town : null,
+    primaryCounty: typeof row.location_county === 'string' ? row.location_county : null,
+    primaryTown: typeof row.location_town === 'string' ? row.location_town : null,
   })) as VendorListingOption[];
 }
 
@@ -1056,6 +1443,17 @@ export async function listProfessionalContracts(filters: ProfessionalContractLis
   return ((data ?? []) as Record<string, unknown>[]).map(mapProfessionalContract);
 }
 
+export async function getProfessionalContract(contractId: string) {
+  const { data, error } = await (supabase as any)
+    .from('professional_contracts')
+    .select('*')
+    .eq('id', contractId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? mapProfessionalContract(data as Record<string, unknown>) : null;
+}
+
 export async function createProfessionalContract(input: CreateProfessionalContractInput) {
   const payload = {
     role: input.role,
@@ -1072,6 +1470,10 @@ export async function createProfessionalContract(input: CreateProfessionalContra
     summary: input.summary ?? null,
     notes: input.notes ?? null,
     terms: input.terms ?? null,
+    currency: input.currency ?? 'KES',
+    total_amount: input.totalAmount ?? null,
+    deposit_amount: input.depositAmount ?? null,
+    payment_schedule: input.paymentSchedule ?? [],
     metadata: input.metadata ?? {},
   };
 
@@ -1088,7 +1490,6 @@ export async function createProfessionalContract(input: CreateProfessionalContra
 export async function updateProfessionalContract(contractId: string, input: UpdateProfessionalContractInput) {
   const payload: Record<string, unknown> = {};
   if (input.title !== undefined) payload.title = input.title;
-  if (input.status !== undefined) payload.status = input.status;
   if (input.recipientName !== undefined) payload.recipient_name = input.recipientName;
   if (input.recipientEmail !== undefined) payload.recipient_email = input.recipientEmail;
   if (input.recipientPhone !== undefined) payload.recipient_phone = input.recipientPhone;
@@ -1100,18 +1501,24 @@ export async function updateProfessionalContract(contractId: string, input: Upda
   if (input.summary !== undefined) payload.summary = input.summary;
   if (input.notes !== undefined) payload.notes = input.notes;
   if (input.terms !== undefined) payload.terms = input.terms;
-  if (input.sentAt !== undefined) payload.sent_at = input.sentAt;
-  if (input.signedAt !== undefined) payload.signed_at = input.signedAt;
-  if (input.cancelledAt !== undefined) payload.cancelled_at = input.cancelledAt;
+  if (input.currency !== undefined) payload.currency = input.currency;
+  if (input.totalAmount !== undefined) payload.total_amount = input.totalAmount;
+  if (input.depositAmount !== undefined) payload.deposit_amount = input.depositAmount;
+  if (input.paymentSchedule !== undefined) payload.payment_schedule = input.paymentSchedule;
   if (input.metadata !== undefined) payload.metadata = input.metadata;
+  const { data, error } = await (supabase as any).rpc('update_professional_contract_draft', {
+    _contract_id: contractId,
+    _patch: payload,
+  });
 
-  const { data, error } = await (supabase as any)
-    .from('professional_contracts')
-    .update(payload)
-    .eq('id', contractId)
-    .select('*')
-    .single();
+  if (error) throw error;
+  return mapProfessionalContract(data as Record<string, unknown>);
+}
 
+export async function cancelProfessionalContract(contractId: string) {
+  const { data, error } = await (supabase as any).rpc('cancel_professional_contract', {
+    _contract_id: contractId,
+  });
   if (error) throw error;
   return mapProfessionalContract(data as Record<string, unknown>);
 }
@@ -1119,6 +1526,268 @@ export async function updateProfessionalContract(contractId: string, input: Upda
 export async function deleteProfessionalContract(contractId: string) {
   const { error } = await (supabase as any).from('professional_contracts').delete().eq('id', contractId);
   if (error) throw error;
+}
+
+export async function ensureProfessionalContractShareToken(contractId: string) {
+  const { data, error } = await (supabase as any).rpc('ensure_professional_contract_share_token', {
+    _contract_id: contractId,
+  });
+
+  if (error) throw error;
+  return String(data);
+}
+
+export async function markProfessionalContractSent(contractId: string) {
+  const { data, error } = await (supabase as any).rpc('mark_professional_contract_sent', {
+    _contract_id: contractId,
+  });
+
+  if (error) throw error;
+  return String(data);
+}
+
+export async function refreshProfessionalContractShareToken(contractId: string) {
+  const { data, error } = await (supabase as any).rpc('refresh_professional_contract_share_token', {
+    _contract_id: contractId,
+  });
+
+  if (error) throw error;
+  return String(data);
+}
+
+export async function revokeProfessionalContractShareToken(contractId: string) {
+  const { error } = await (supabase as any).rpc('revoke_professional_contract_share_token', {
+    _contract_id: contractId,
+  });
+
+  if (error) throw error;
+}
+
+export async function getProfessionalContractShareState(contractId: string) {
+  const { data, error } = await (supabase as any)
+    .from('professional_contract_shares')
+    .select('id, contract_id, share_token, expires_at, revoked_at, last_accessed_at, access_count')
+    .eq('contract_id', contractId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    id: String(data.id),
+    contractId: String(data.contract_id),
+    shareToken: String(data.share_token),
+    expiresAt: typeof data.expires_at === 'string' ? data.expires_at : null,
+    revokedAt: typeof data.revoked_at === 'string' ? data.revoked_at : null,
+    lastAccessedAt: typeof data.last_accessed_at === 'string' ? data.last_accessed_at : null,
+    accessCount: Number(data.access_count ?? 0),
+  } satisfies ProfessionalContractShareState;
+}
+
+export async function listProfessionalContractSigners(contractId: string) {
+  const { data, error } = await (supabase as any)
+    .from('professional_contract_signers')
+    .select('*')
+    .eq('contract_id', contractId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map(mapProfessionalContractSigner);
+}
+
+export async function listProfessionalContractEvents(contractId: string) {
+  const { data, error } = await (supabase as any)
+    .from('professional_contract_events')
+    .select('*')
+    .eq('contract_id', contractId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map(mapProfessionalContractEvent);
+}
+
+export async function getProfessionalContractActivity(contractId: string) {
+  const [shareState, signers, events] = await Promise.all([
+    getProfessionalContractShareState(contractId),
+    listProfessionalContractSigners(contractId),
+    listProfessionalContractEvents(contractId),
+  ]);
+
+  return {
+    shareState,
+    signers,
+    events,
+  } satisfies ProfessionalContractActivity;
+}
+
+export async function signOwnedProfessionalContract(contractId: string, signedName?: string | null) {
+  const { data, error } = await (supabase as any).rpc('sign_owned_professional_contract', {
+    _contract_id: contractId,
+    _signed_name: signedName ?? null,
+  });
+
+  if (error) throw error;
+  if (!data) return null;
+  return mapSharedProfessionalContract(data as Record<string, unknown>);
+}
+
+function mapSharedProfessionalContract(row: Record<string, unknown>): SharedProfessionalContract {
+  return {
+    id: String(row.id ?? ''),
+    role: row.role === 'planner' ? 'planner' : 'vendor',
+    title: String(row.title ?? ''),
+    status: String(row.status ?? 'draft') as ProfessionalContractStatus,
+    recipientName: String(row.recipientName ?? row.recipient_name ?? ''),
+    recipientEmail:
+      typeof row.recipientEmail === 'string'
+        ? row.recipientEmail
+        : typeof row.recipient_email === 'string'
+          ? row.recipient_email
+          : null,
+    recipientPhone:
+      typeof row.recipientPhone === 'string'
+        ? row.recipientPhone
+        : typeof row.recipient_phone === 'string'
+          ? row.recipient_phone
+          : null,
+    weddingName:
+      typeof row.weddingName === 'string'
+        ? row.weddingName
+        : typeof row.wedding_name === 'string'
+          ? row.wedding_name
+          : null,
+    eventDate:
+      typeof row.eventDate === 'string'
+        ? row.eventDate
+        : typeof row.event_date === 'string'
+          ? row.event_date
+          : null,
+    sentAt:
+      typeof row.sentAt === 'string'
+        ? row.sentAt
+        : typeof row.sent_at === 'string'
+          ? row.sent_at
+          : null,
+    signedAt:
+      typeof row.signedAt === 'string'
+        ? row.signedAt
+        : typeof row.signed_at === 'string'
+          ? row.signed_at
+          : null,
+    summary: typeof row.summary === 'string' ? row.summary : null,
+    notes: typeof row.notes === 'string' ? row.notes : null,
+    terms: typeof row.terms === 'string' ? row.terms : null,
+    currency: typeof row.currency === 'string' ? row.currency : 'KES',
+    totalAmount: row.totalAmount == null ? null : toNumber(row.totalAmount),
+    depositAmount: row.depositAmount == null ? null : toNumber(row.depositAmount),
+    paymentSchedule: Array.isArray(row.paymentSchedule)
+      ? row.paymentSchedule.flatMap((item) => {
+          if (!item || typeof item !== 'object') return [];
+          const payment = item as Record<string, unknown>;
+          const title = typeof payment.title === 'string' ? payment.title : '';
+          const dueDate = typeof payment.dueDate === 'string' ? payment.dueDate : '';
+          const amount = toNumber(payment.amount);
+          return title && dueDate && amount > 0 ? [{ title, dueDate, amount }] : [];
+        })
+      : [],
+    issuerName: String(row.issuerName ?? ''),
+    issuerEmail: typeof row.issuerEmail === 'string' ? row.issuerEmail : null,
+    issuerPhone: typeof row.issuerPhone === 'string' ? row.issuerPhone : null,
+    issuerWebsite: typeof row.issuerWebsite === 'string' ? row.issuerWebsite : null,
+    issuerLocation: typeof row.issuerLocation === 'string' ? row.issuerLocation : null,
+    shareExpiresAt: typeof row.shareExpiresAt === 'string' ? row.shareExpiresAt : null,
+    contentVersion: toNumber(row.contentVersion ?? row.content_version),
+    documentHash:
+      typeof row.documentHash === 'string'
+        ? row.documentHash
+        : typeof row.document_hash === 'string'
+          ? row.document_hash
+          : null,
+    lockedAt:
+      typeof row.lockedAt === 'string'
+        ? row.lockedAt
+        : typeof row.locked_at === 'string'
+          ? row.locked_at
+          : null,
+    signers: Array.isArray(row.signers)
+      ? row.signers.map((signer) => mapProfessionalContractSigner(signer as Record<string, unknown>))
+      : [],
+    events: Array.isArray(row.events)
+      ? row.events.map((event) => mapProfessionalContractEvent(event as Record<string, unknown>))
+      : [],
+  };
+}
+
+export async function getSharedProfessionalContract(shareToken: string) {
+  const { data, error } = await (supabase as any).rpc('get_shared_professional_contract', {
+    _share_token: shareToken,
+  });
+
+  if (error) throw error;
+  if (!data) return null;
+  return mapSharedProfessionalContract(data as Record<string, unknown>);
+}
+
+export async function signSharedProfessionalContract(input: {
+  shareToken: string;
+  signedName: string;
+  verificationCode: string;
+  agreedToTerms: boolean;
+  signerUserAgent?: string | null;
+  signerTimezone?: string | null;
+  signerLocale?: string | null;
+}) {
+  const { data, error } = await (supabase as any).rpc('sign_shared_professional_contract', {
+    _share_token: input.shareToken,
+    _signed_name: input.signedName,
+    _verification_code: input.verificationCode,
+    _agreed_to_terms: input.agreedToTerms,
+    _signer_user_agent: input.signerUserAgent ?? null,
+    _signer_timezone: input.signerTimezone ?? null,
+    _signer_locale: input.signerLocale ?? null,
+  });
+
+  if (error) throw error;
+  if (!data) return null;
+  return mapSharedProfessionalContract(data as Record<string, unknown>);
+}
+
+export async function sendProfessionalContract(contractId: string) {
+  const { data, error } = await supabase.functions.invoke('send-professional-contract', {
+    body: { contractId },
+  });
+
+  if (error) {
+    const normalized = await normalizeInvokeError(error, 'Could not send the contract.');
+    throw new Error(normalized.message);
+  }
+  return data as { recipientEmail: string; shareUrl: string; expiresAt: string | null };
+}
+
+export function buildProfessionalContractShareUrl(shareToken: string, origin?: string) {
+  return `${canonicalZaniaOrigin(origin)}/contracts/share/${shareToken}`;
+}
+
+export function buildProfessionalContractShareEmailDraft(input: {
+  contract: Pick<ProfessionalContractRecord, 'title' | 'recipientName' | 'eventDate'>;
+  shareUrl: string;
+}) {
+  const subject = `Signature request: ${input.contract.title}`;
+  const eventLine = input.contract.eventDate
+    ? `Event date: ${new Date(input.contract.eventDate).toLocaleDateString('en-KE')}\n`
+    : '';
+  const body =
+    `Hello ${input.contract.recipientName},\n\n` +
+    `Please review and sign your contract here:\n${input.shareUrl}\n\n` +
+    `${eventLine}` +
+    `You can open the link without creating a Zania account.\n\n` +
+    `Thank you.`;
+
+  return {
+    subject,
+    body,
+    href: `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+  };
 }
 
 export async function listDocumentTemplates(filters: DocumentTemplateListFilters) {
@@ -1151,6 +1820,7 @@ export async function createDocumentTemplate(input: CreateDocumentTemplateInput)
     default_terms: input.defaultTerms ?? null,
     default_items: (input.defaultItems ?? []).map((item) => ({
       description: item.description,
+      content: item.content ?? '',
       quantity: item.quantity ?? 1,
       unit_price: item.unitPrice ?? 0,
     })),
@@ -1178,6 +1848,7 @@ export async function updateDocumentTemplate(templateId: string, input: UpdateDo
   if (input.defaultItems !== undefined) {
     payload.default_items = input.defaultItems.map((item) => ({
       description: item.description,
+      content: item.content ?? '',
       quantity: item.quantity ?? 1,
       unit_price: item.unitPrice ?? 0,
     }));
@@ -1198,4 +1869,54 @@ export async function updateDocumentTemplate(templateId: string, input: UpdateDo
 export async function deleteDocumentTemplate(templateId: string) {
   const { error } = await (supabase as any).from('professional_document_templates').delete().eq('id', templateId);
   if (error) throw error;
+}
+
+export async function duplicateCommercialDocument(document: CommercialDocumentDetail) {
+  if (document.documentType === 'receipt') throw new Error('Receipts cannot be duplicated. Issue a new receipt from its payment instead.');
+  const created = await createCommercialDocument({
+    role: document.role,
+    documentType: document.documentType,
+    title: `${document.title} copy`,
+    recipientName: document.recipientName,
+    recipientEmail: document.recipientEmail,
+    recipientPhone: document.recipientPhone,
+    clientId: document.clientId,
+    vendorListingId: document.vendorListingId,
+    vendorId: document.vendorId,
+    issueDate: new Date().toISOString().slice(0, 10),
+    dueDate: document.dueDate,
+    notes: document.notes,
+    terms: document.terms,
+    weddingName: document.weddingName,
+    status: 'draft',
+    currency: document.currency,
+    metadata: { ...document.metadata, duplicatedFrom: document.id },
+  });
+  if (document.items.length) {
+    await saveCommercialDocumentItems(created.id, document.items.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      sortOrder: item.sortOrder,
+    })));
+  }
+  return getCommercialDocument(created.id);
+}
+
+export function createTemplateFromCommercialDocument(document: CommercialDocumentDetail) {
+  return createDocumentTemplate({
+    role: document.role,
+    templateType: document.documentType,
+    name: document.title,
+    description: `${commercialDocumentTypeLabel(document.documentType)} starter`,
+    defaultTitle: document.title,
+    defaultNotes: document.notes,
+    defaultTerms: document.terms,
+    defaultItems: document.items.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+    })),
+    metadata: { source: 'document_actions', sourceDocumentId: document.id, useCount: 0 },
+  });
 }

@@ -3,35 +3,36 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
-import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import {
   Plus, Trash2, Users, Upload, Download, Mail, Send, Loader2, Eye, EyeOff,
-  Link2, Copy, UserCheck, BarChart3, Search, RotateCw, ShieldOff,
+  Link2, Copy, UserCheck, BarChart3, Search, RotateCw, ShieldOff, ChevronDown,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import GuestInsights from '@/components/guests/GuestInsights';
 import InfoTip from '@/components/InfoTip';
-import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
-import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
-import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
-import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { FormFieldError, FormFieldSuccess, FormSubmitError } from '@/components/FormFeedback';
+import { sanitizeHtml } from '@/lib/security';
+import { ToastAction } from '@/components/ui/toast';
+import AnimatedNumber from '@/components/AnimatedNumber';
+import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
 
 const GuestCheckIn = lazy(() => import('@/components/guests/GuestCheckIn'));
+type GuestStatusFilter = 'all' | 'confirmed' | 'pending' | 'declined';
 
 interface Guest {
   id: string;
@@ -146,20 +147,20 @@ async function loadGuestsWorkspace(dataOrFilter: string): Promise<Guest[]> {
 export default function Guests() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
-  const { weddingId, entitlements, couplePlanTier, loading: entitlementsLoading, refresh } = useWeddingEntitlements();
+  const { weddingId } = useWeddingEntitlements();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const prefersReducedMotion = useReducedMotion();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
   const [open, setOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeGuest, setComposeGuest] = useState<Guest | null>(null);
   const [checkInMode, setCheckInMode] = useState(false);
-  const [activeTab, setActiveTab] = useState('list');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGroup, setFilterGroup] = useState<string>('all');
+  const [guestStatusFilter, setGuestStatusFilter] = useState<GuestStatusFilter>('all');
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [savingGuestId, setSavingGuestId] = useState<string | null>(null);
 
@@ -183,10 +184,9 @@ export default function Guests() {
   const [showPreview, setShowPreview] = useState(false);
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState({ sent: 0, failed: 0, total: 0 });
-  const [upgradePromptOpen, setUpgradePromptOpen] = useState(false);
-  const [guestAddonCheckoutLoading, setGuestAddonCheckoutLoading] = useState(false);
-  const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
   const [savingGuest, setSavingGuest] = useState(false);
+  const [guestAdded, setGuestAdded] = useState(false);
+  const guestSuccessTimerRef = useRef<number | null>(null);
   const [guestFormErrors, setGuestFormErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
   const [guestSubmitError, setGuestSubmitError] = useState<string | null>(null);
   const [selectedGuestDraft, setSelectedGuestDraft] = useState<Guest | null>(null);
@@ -199,6 +199,20 @@ export default function Guests() {
     staleTime: 30_000,
   });
   const guests = guestsQuery.data ?? [];
+
+  useEffect(() => () => {
+    if (guestSuccessTimerRef.current != null) window.clearTimeout(guestSuccessTimerRef.current);
+  }, []);
+
+  const finishGuestCreation = () => {
+    if (guestSuccessTimerRef.current != null) window.clearTimeout(guestSuccessTimerRef.current);
+    setGuestAdded(true);
+    guestSuccessTimerRef.current = window.setTimeout(() => {
+      setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general'); setMealPreference(''); setPlusOne('no');
+      setGuestAdded(false);
+      setOpen(false);
+    }, 700);
+  };
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
@@ -316,8 +330,7 @@ export default function Guests() {
             wedding_id: selectedClient.wedding_id ?? null,
           },
         });
-        setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general'); setMealPreference(''); setPlusOne('no');
-        setOpen(false);
+        finishGuestCreation();
         toast({
           title: 'Guest request sent to the couple',
           description: 'This guest will stay pending until the couple approves the change.',
@@ -332,10 +345,9 @@ export default function Guests() {
     }
     const { error } = await supabase.from('guests').insert(insert);
     if (error) { setGuestSubmitError(error.message || 'Could not save this guest right now.'); setSavingGuest(false); toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    setName(''); setEmail(''); setPhone(''); setRsvp('pending'); setGroupName(''); setCategory('general'); setMealPreference(''); setPlusOne('no');
-    setOpen(false);
     await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
     setSavingGuest(false);
+    finishGuestCreation();
   };
 
   const updateRsvp = async (id: string, status: string) => {
@@ -368,9 +380,10 @@ export default function Guests() {
   };
 
   const deleteGuest = async (id: string) => {
+    const guest = guests.find((row) => row.id === id);
+    if (!guest) return;
+
     if (plannerNeedsApproval && selectedClient?.linked_user_id) {
-      const guest = guests.find((row) => row.id === id);
-      if (!guest) return;
       try {
         await submitPlannerChangeRequest({
           clientId: selectedClient.id,
@@ -394,8 +407,36 @@ export default function Guests() {
       }
       return;
     }
-    await supabase.from('guests').delete().eq('id', id);
-    await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+
+    queryClient.setQueryData<Guest[]>(guestsQueryKey, (current = []) => current.filter((row) => row.id !== id));
+    setSelectedGuestId(null);
+    const deletionTimer = window.setTimeout(async () => {
+      const { error } = await supabase.from('guests').delete().eq('id', id);
+      if (error) {
+        await queryClient.invalidateQueries({ queryKey: guestsQueryKey });
+        toast({ title: 'Could not remove guest', description: error.message, variant: 'destructive' });
+      }
+    }, 5_500);
+
+    toast({
+      title: 'Guest removed',
+      description: `${guest.name} was removed from this wedding.`,
+      variant: 'info',
+      duration: 6_000,
+      action: (
+        <ToastAction
+          altText={`Restore ${guest.name}`}
+          onClick={() => {
+            window.clearTimeout(deletionTimer);
+            queryClient.setQueryData<Guest[]>(guestsQueryKey, (current = []) => [...current, guest].sort((left, right) => left.name.localeCompare(right.name)));
+            setSelectedGuestId(guest.id);
+            toast({ title: 'Guest restored', description: `${guest.name} is back on the guest list.`, variant: 'success' });
+          }}
+        >
+          Undo
+        </ToastAction>
+      ),
+    });
   };
 
   const saveGuestDetails = async (guest: Guest, updates: Partial<Guest>) => {
@@ -434,117 +475,7 @@ export default function Guests() {
     setSavingGuestId(null);
   };
 
-  const guestRsvpDecision = getEntitlementDecision('couple.guest_rsvp_management', {
-    profile,
-    bypass: isSuperAdmin && rolePreview === 'couple',
-    weddingEntitlements: entitlements,
-    couplePlanTier,
-  });
-
-  const requireGuestRsvpManagement = () => {
-    if (guestRsvpDecision.allowed) return true;
-    setUpgradePromptOpen(true);
-    return false;
-  };
-
-  const guestAddon = getCoupleAddonDefinition('guest_rsvp_management_addon');
-  const isFocusedGuestUpgrade = searchParams.get('intent') === 'upgrade';
-  const guestUpgradeState = searchParams.get('upgrade');
-  const checkoutSessionId = searchParams.get('checkout_session_id');
-
-  useEffect(() => {
-    if (
-      guestUpgradeState !== 'success'
-      || !checkoutSessionId
-      || processedCheckoutSessionId === checkoutSessionId
-      || !profile
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    setProcessedCheckoutSessionId(checkoutSessionId);
-
-    const runSync = async () => {
-      try {
-        await syncCoupleCheckout(checkoutSessionId);
-        if (cancelled) return;
-
-        await refresh();
-        if (cancelled) return;
-
-        toast({
-          title: 'RSVP & Guest Management unlocked',
-          description: 'Your wedding can now collect RSVPs and manage guest coordination in one flow.',
-        });
-        navigate('/guests?upgrade=success', { replace: true });
-      } catch (error: any) {
-        if (cancelled) return;
-        toast({
-          title: 'Payment completed but activation is still pending',
-          description: error?.message || 'The checkout succeeded, but we could not sync RSVP & Guest Management yet.',
-          variant: 'destructive',
-        });
-      }
-    };
-
-    void runSync();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [checkoutSessionId, guestUpgradeState, navigate, processedCheckoutSessionId, profile, refresh, toast]);
-
-  const handleGuestAddonCheckout = async () => {
-    if (!profile) return;
-
-    if (profile.role !== 'couple' && !(isSuperAdmin && rolePreview === 'couple')) {
-      toast({
-        title: 'Couple owners purchase wedding add-ons',
-        description: 'Open this page as the couple workspace owner to add RSVP & Guest Management.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!weddingId) {
-      toast({
-        title: 'Create or join a wedding first',
-        description: 'This add-on attaches to a specific wedding workspace.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!guestAddon.stripeMonthlyLookupKey) {
-      toast({
-        title: 'Checkout is not configured',
-        description: 'This add-on does not have a Stripe price configured yet.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setGuestAddonCheckoutLoading(true);
-    try {
-      await startStripeCheckout({
-        audience: 'couple',
-        feature: 'guest_rsvp_management',
-        lookupKey: guestAddon.stripeMonthlyLookupKey,
-        cadence: 'monthly',
-        weddingId,
-        successPath: withCheckoutSessionId('/guests?upgrade=success'),
-        cancelPath: '/guests?intent=upgrade&upgrade=cancelled',
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Could not start checkout',
-        description: error?.message || 'There was a problem creating your Stripe checkout session.',
-        variant: 'destructive',
-      });
-      setGuestAddonCheckoutLoading(false);
-    }
-  };
+  const requireGuestRsvpManagement = () => true;
 
   const copyRsvpLink = (guest: Guest) => {
     if (!requireGuestRsvpManagement()) return;
@@ -670,13 +601,24 @@ export default function Guests() {
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
     const matchesGroup = filterGroup === 'all' || g.group_name === filterGroup;
-    return matchesSearch && matchesGroup;
+    const matchesStatus = guestStatusFilter === 'all' || (g.rsvp_status || 'pending') === guestStatusFilter;
+    return matchesSearch && matchesGroup && matchesStatus;
   });
 
   const uniqueGroups = [...new Set(guests.map(g => g.group_name).filter(Boolean))] as string[];
   const pendingGuests = guests.filter(g => g.rsvp_status === 'pending').length;
   const declinedGuests = guests.filter(g => g.rsvp_status === 'declined').length;
   const guestsWithEmail = guests.filter(g => Boolean(g.email)).length;
+  const confirmed = guests.filter(g => g.rsvp_status === 'confirmed').length;
+  const guestsMissingContact = guests.filter(g => !g.email && !g.phone).length;
+  const guestsWithoutTables = guests.filter(g => !g.table_number && g.rsvp_status !== 'declined').length;
+  const guestPrimaryAction = guests.length === 0
+    ? 'Add the first guest'
+    : pendingWithEmail.length > 0
+      ? `Send ${pendingWithEmail.length} pending invite${pendingWithEmail.length === 1 ? '' : 's'}`
+      : pendingGuests > 0
+        ? 'Follow up missing contact details'
+        : 'Review confirmed seating and VIP groups';
 
   const selectedGuest = useMemo(
     () => visibleGuests.find((guest) => guest.id === selectedGuestId) ?? null,
@@ -694,13 +636,8 @@ export default function Guests() {
   }, [selectedGuest]);
 
   useEffect(() => {
-    if (visibleGuests.length === 0) {
-      if (selectedGuestId !== null) setSelectedGuestId(null);
-      return;
-    }
-
-    if (!selectedGuestId || !visibleGuests.some((guest) => guest.id === selectedGuestId)) {
-      setSelectedGuestId(visibleGuests[0].id);
+    if (selectedGuestId && !visibleGuests.some((guest) => guest.id === selectedGuestId)) {
+      setSelectedGuestId(null);
     }
   }, [selectedGuestId, visibleGuests]);
 
@@ -720,108 +657,61 @@ export default function Guests() {
     );
   }
 
-  const confirmed = guests.filter(g => g.rsvp_status === 'confirmed').length;
-  const guestPrimaryAction = guests.length === 0
-    ? 'Add the first guest'
-    : pendingWithEmail.length > 0
-      ? `Send ${pendingWithEmail.length} pending invite${pendingWithEmail.length === 1 ? '' : 's'}`
-      : pendingGuests > 0
-        ? 'Follow up missing contact details'
-        : 'Review confirmed seating and VIP groups';
-
   return (
     <div className="space-y-6">
-      {(!guestRsvpDecision.allowed || guestUpgradeState) && (isFocusedGuestUpgrade || guestUpgradeState) && (
-        <Card className={`border ${guestUpgradeState === 'success' ? 'border-primary/25 bg-primary/10' : guestUpgradeState === 'cancelled' ? 'border-accent/35 bg-accent/15' : 'border-primary/20 bg-primary/5'}`}>
-          <CardContent className="px-6 py-5">
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Guest add-on</p>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">
-              {guestUpgradeState === 'success'
-                ? 'RSVP & Guest Management unlocked'
-                : 'Add RSVP & Guest Management'}
-            </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">
-              {guestUpgradeState === 'success'
-                ? 'This wedding now has RSVP sending, insights, and check-in tools unlocked.'
-                : 'Unlock RSVP links, invite sending, guest insights, and check-in tools without leaving the guest workspace.'}
-            </p>
-            {!guestRsvpDecision.allowed && (
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <Button className="gap-2" onClick={() => void handleGuestAddonCheckout()} disabled={guestAddonCheckoutLoading}>
-                  {guestAddonCheckoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Add RSVP & Guest Management
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
-        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.3fr_0.95fr] lg:p-8">
+      <Card className="overflow-hidden border-border shadow-none">
+        <CardContent className="space-y-5 p-5 sm:p-6">
           <div className="space-y-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Guest Workspace</p>
-                <InfoTip content="Manage your guest list, RSVP replies, contact details, groups, and invite follow-up in one place." />
-              </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Keep the guest list moving</h1>
-              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Guests, RSVPs, and invites in one flow.
-              </p>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <h1 className="workspace-h1">Guests</h1>
+              {guests.length > 0 ? (
+                <Button type="button" onClick={() => { setGuestAdded(false); setOpen(true); }}>
+                  {plannerNeedsApproval ? 'Request guest' : 'Add guest'}
+                </Button>
+              ) : null}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-4">
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Total guests</p>
+            <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
+              <div className="border-r border-border p-4">
+                <p className="text-xs text-muted-foreground">Total</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{guests.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Everyone currently on the list</p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Confirmed</p>
+              <div className="border-r border-border p-4">
+                <p className="text-xs text-muted-foreground">Confirmed</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{confirmed}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Guests who have said yes</p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Pending</p>
+              <div className="p-4">
+                <p className="text-xs text-muted-foreground">Waiting</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">{pendingGuests}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Still waiting on RSVP replies</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{guestPrimaryAction}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest actions</p>
-              <InfoTip content="Use quick actions here to import guests, export a template, start check-in, or send invites in bulk." />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
+          <div className="border-t border-border pt-4">
+            <details className="rounded-2xl border border-border/70 bg-background/70 p-3">
+              <summary className="cursor-pointer list-none text-sm font-medium text-foreground">
+                More tools
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-2">
               <input type="file" ref={fileInputRef} accept=".csv" onChange={handleFileUpload} className="hidden" />
-              <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
-                <Download className="h-4 w-4" /> CSV Template
+              <Button variant="outline" size="sm" onClick={downloadTemplate}>
+                Download template
               </Button>
-              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading || plannerNeedsApproval} className="gap-2">
-                <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload CSV'}
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading || plannerNeedsApproval}>
+                {uploading ? 'Importing…' : 'Import CSV'}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} className="gap-2" disabled={plannerNeedsApproval}>
-                <UserCheck className="h-4 w-4" /> Check-In
+              <Button variant="outline" size="sm" onClick={() => requireGuestRsvpManagement() && setCheckInMode(true)} disabled={plannerNeedsApproval}>
+                Check in
               </Button>
               {!plannerNeedsApproval && pendingWithEmail.length > 0 && (
-                <Button variant="outline" size="sm" onClick={() => openCompose()} className="gap-2">
-                  <Send className="h-4 w-4" /> Invite All ({pendingWithEmail.length})
+                <Button variant="outline" size="sm" onClick={() => openCompose()}>
+                  Invite all ({pendingWithEmail.length})
                 </Button>
               )}
-            </div>
+              </div>
+            </details>
 
-            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+            <div className="hidden semantic-surface-info mt-4 rounded-2xl border p-4">
               <p className="text-sm font-medium text-foreground">
                 {guests.length === 0
                   ? 'Start light, then enrich the details'
@@ -838,14 +728,13 @@ export default function Guests() {
               </p>
             </div>
 
-            <div className="mt-4">
+            <div>
               <Dialog open={open} onOpenChange={setOpen}>
-                <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  {plannerNeedsApproval ? 'Request Guest' : 'Add Guest'}
-                </Button>
                 <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-                  <DialogHeader><DialogTitle className="font-display">{plannerNeedsApproval ? 'Request guest addition' : 'Add Guest'}</DialogTitle></DialogHeader>
+                  <DialogHeader>
+                    <DialogTitle className="font-display">{plannerNeedsApproval ? 'Request guest' : 'Add guest'}</DialogTitle>
+                    <DialogDescription>Name and contact details are enough to start.</DialogDescription>
+                  </DialogHeader>
                   <form onSubmit={addGuest} className="space-y-4">
                     <FormSubmitError message={guestSubmitError} />
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -856,60 +745,73 @@ export default function Guests() {
                       </div>
                       <div className="space-y-2">
                         <Label>Email</Label>
-                        <Input type="email" value={email} onChange={e => { setEmail(e.target.value); setGuestFormErrors((current) => ({ ...current, email: undefined })); setGuestSubmitError(null); }} placeholder="guest@example.com" aria-invalid={!!guestFormErrors.email} />
+                        <Input type="email" value={email} onChange={e => { setEmail(e.target.value); setGuestFormErrors((current) => ({ ...current, email: undefined })); setGuestSubmitError(null); }} placeholder="guest@example.com" aria-invalid={!!guestFormErrors.email} data-valid={email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? 'true' : undefined} />
                         <FormFieldError message={guestFormErrors.email} />
+                        <FormFieldSuccess message={!guestFormErrors.email && email.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? 'Email looks ready for an invitation.' : null} />
                       </div>
                       <div className="space-y-2">
                         <Label>Phone</Label>
                         <Input value={phone} onChange={e => { setPhone(e.target.value); setGuestFormErrors((current) => ({ ...current, phone: undefined })); setGuestSubmitError(null); }} placeholder="+254..." aria-invalid={!!guestFormErrors.phone} />
                         <FormFieldError message={guestFormErrors.phone} />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Group</Label>
-                        <Select value={groupName} onValueChange={setGroupName}>
-                          <SelectTrigger><SelectValue placeholder="Select group" /></SelectTrigger>
-                          <SelectContent>
-                            {GUEST_GROUPS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Category</Label>
-                        <Select value={category} onValueChange={setCategory}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {GUEST_CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>RSVP Status</Label>
-                        <Select value={rsvp} onValueChange={setRsvp}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="confirmed">Confirmed</SelectItem>
-                            <SelectItem value="declined">Declined</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Plus One</Label>
-                        <Select value={plusOne} onValueChange={(value: 'yes' | 'no') => setPlusOne(value)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="no">No</SelectItem>
-                            <SelectItem value="yes">Yes</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label>Meal Preference</Label>
-                        <Input value={mealPreference} onChange={e => setMealPreference(e.target.value)} placeholder="Optional meal or dietary note" />
-                      </div>
+                      <details className="rounded-2xl border border-border/70 bg-muted/20 p-3 sm:col-span-2">
+                        <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+                        <div className="mt-4 grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Group</Label>
+                            <Select value={groupName} onValueChange={setGroupName}>
+                              <SelectTrigger><SelectValue placeholder="Choose group" /></SelectTrigger>
+                              <SelectContent>
+                                {GUEST_GROUPS.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Category</Label>
+                            <Select value={category} onValueChange={setCategory}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {GUEST_CATEGORIES.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>RSVP status</Label>
+                            <Select value={rsvp} onValueChange={setRsvp}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="confirmed">Confirmed</SelectItem>
+                                <SelectItem value="declined">Declined</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Plus one</Label>
+                            <Select value={plusOne} onValueChange={(value: 'yes' | 'no') => setPlusOne(value)}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="no">No</SelectItem>
+                                <SelectItem value="yes">Yes</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <Label>Meal notes</Label>
+                            <Input value={mealPreference} onChange={e => setMealPreference(e.target.value)} placeholder="Dietary needs or meal choice" />
+                          </div>
+                        </div>
+                      </details>
                     </div>
-                    <Button type="submit" className="w-full" disabled={savingGuest}>
-                      {savingGuest ? 'Saving...' : plannerNeedsApproval ? 'Send for approval' : 'Add Guest'}
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={savingGuest}
+                      status={savingGuest ? 'loading' : guestAdded ? 'success' : 'idle'}
+                      loadingText={plannerNeedsApproval ? 'Sending for approval' : 'Adding guest'}
+                      successText={plannerNeedsApproval ? 'Request sent' : 'Guest added'}
+                    >
+                      {plannerNeedsApproval ? 'Send for approval' : 'Add guest'}
                     </Button>
                   </form>
                 </DialogContent>
@@ -919,128 +821,188 @@ export default function Guests() {
         </CardContent>
       </Card>
 
-      {!entitlementsLoading && !guestRsvpDecision.allowed && !isFocusedGuestUpgrade && !guestUpgradeState && (
-        <InlineUpgradePrompt decision={guestRsvpDecision} />
-      )}
+      <div className="space-y-4">
+        <Card className="overflow-hidden shadow-card">
+          <CardContent className="space-y-5 p-5 lg:p-6">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <h2 className="workspace-h2">Guest list</h2>
+              </div>
 
-      {/* Tabs: List / Insights */}
-      <Tabs
-        value={activeTab}
-        onValueChange={(nextTab) => {
-          if (nextTab === 'insights' && !requireGuestRsvpManagement()) return;
-          setActiveTab(nextTab);
-        }}
-      >
-        <TabsList className="h-auto w-full flex-wrap justify-start">
-          <TabsTrigger value="list" className="gap-1.5"><Users className="h-3.5 w-3.5" /> Guest List</TabsTrigger>
-          <TabsTrigger value="insights" className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" /> Insights</TabsTrigger>
-        </TabsList>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="min-w-0 flex-1 sm:min-w-[220px]">
+                  <Input
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    placeholder="Search guests"
+                  />
+                </div>
+                {uniqueGroups.length > 0 && (
+                  <Select value={filterGroup} onValueChange={setFilterGroup}>
+                    <SelectTrigger className="w-44"><SelectValue placeholder="All groups" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Groups</SelectItem>
+                      {uniqueGroups.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            </div>
 
-        <TabsContent value="insights" className="mt-4">
-          <GuestInsights guests={guests as any} />
-        </TabsContent>
-
-        <TabsContent value="list" className="mt-4 space-y-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative min-w-0 flex-1 sm:min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                placeholder="Search guests..."
-                className="pl-10"
+            <div className="flex justify-center overflow-x-auto rounded-lg border border-border bg-muted/20 p-3">
+              <SlidingSegmentedControl
+                label="Guest RSVP status"
+                layoutId="guest-status-selection"
+                value={guestStatusFilter}
+                options={[
+                  { value: 'all', label: 'All' },
+                  { value: 'confirmed', label: 'Confirmed' },
+                  { value: 'pending', label: 'Pending' },
+                  { value: 'declined', label: 'Declined' },
+                ]}
+                onChange={setGuestStatusFilter}
+                reducedMotion={Boolean(prefersReducedMotion)}
+                minWidthClassName="w-full min-w-0"
               />
             </div>
-            {uniqueGroups.length > 0 && (
-              <Select value={filterGroup} onValueChange={setFilterGroup}>
-                <SelectTrigger className="w-40"><SelectValue placeholder="All groups" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Groups</SelectItem>
-                  {uniqueGroups.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
 
-          <Card className="overflow-hidden shadow-card">
-            <CardContent className="p-0">
-              <div className="grid lg:grid-cols-[360px_minmax(0,1fr)]">
-                <div className="border-b border-border/70 bg-muted/20 lg:border-b-0 lg:border-r">
-                  <div className="grid gap-3 p-5 sm:grid-cols-3 lg:grid-cols-1">
-                    <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Visible</p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">{visibleGuests.length}</p>
-                    </div>
-                    <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Invite ready</p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">{pendingWithEmail.length}</p>
-                    </div>
-                    <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Declined</p>
-                      <p className="mt-2 text-xl font-semibold text-foreground">{declinedGuests}</p>
-                    </div>
-                  </div>
+            <div className="hidden grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
+              <div className="border-r border-border px-4 py-3">
+                <p className="text-xs text-muted-foreground">Guests</p>
+                <AnimatedNumber value={visibleGuests.length} className="mt-2 block text-xl font-semibold text-foreground" />
+              </div>
+              <div className="border-r border-border px-4 py-3">
+                <p className="text-xs text-muted-foreground">Waiting</p>
+                <AnimatedNumber value={pendingWithEmail.length} className="mt-2 block text-xl font-semibold text-foreground" />
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-muted-foreground">Need contact</p>
+                <AnimatedNumber value={guestsMissingContact} className="mt-2 block text-xl font-semibold text-foreground" />
+              </div>
+            </div>
 
-                  <div className="max-h-[620px] space-y-2 overflow-y-auto border-t border-border/70 p-3">
-                    {visibleGuests.length > 0 ? (
-                      visibleGuests.map((g) => {
-                        const isSelected = selectedGuest?.id === g.id;
-                        return (
+            <div>
+              <div>
+                <div className="space-y-2">
+                  {visibleGuests.length > 0 ? (
+                    <AnimatePresence initial={false} mode="popLayout">
+                    {visibleGuests.map((g) => {
+                      const isSelected = selectedGuest?.id === g.id;
+                      return (
+                        <motion.div
+                          key={g.id}
+                          layout
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: isSelected && !prefersReducedMotion ? -1 : 0, scale: isSelected && !prefersReducedMotion ? 1.006 : 1 }}
+                          exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                          className={`relative w-full overflow-hidden rounded-lg border px-4 py-4 text-left transition-[border-color,background-color,box-shadow,transform] duration-200 ${
+                            isSelected
+                              ? 'z-10 border-primary/70 bg-primary/[0.075] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15'
+                              : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'
+                          }`}
+                        >
+                          <span aria-hidden="true" className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
                           <button
-                            key={g.id}
                             type="button"
-                            onClick={() => setSelectedGuestId(g.id)}
-                            className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
-                              isSelected
-                                ? 'border-primary bg-primary/6 shadow-sm'
-                                : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20'
-                            }`}
+                            onClick={() => setSelectedGuestId(isSelected ? null : g.id)}
+                            aria-expanded={isSelected}
+                            className="w-full text-left"
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <p className="truncate text-sm font-medium text-foreground">{g.name}</p>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <Badge variant={g.rsvp_status === 'confirmed' ? 'default' : g.rsvp_status === 'declined' ? 'destructive' : 'secondary'} className="capitalize">
-                                    {g.rsvp_status || 'pending'}
-                                  </Badge>
-                                  {g.category && g.category !== 'general' && (
-                                    <Badge variant="secondary" className="text-[10px] capitalize">{g.category}</Badge>
-                                  )}
-                                  {g.group_name && (
-                                    <Badge variant="outline" className="text-[10px]">{g.group_name}</Badge>
-                                  )}
-                                </div>
+                                {isSelected ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-primary">Open</span> : null}
                               </div>
-                              <Users className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <Badge variant={g.rsvp_status === 'confirmed' ? 'success' : g.rsvp_status === 'declined' ? 'destructive' : 'warning'} className="capitalize">
+                                  {g.rsvp_status || 'pending'}
+                                </Badge>
+                                {g.category && g.category !== 'general' && (
+                                  <Badge variant="secondary" className="text-[10px] capitalize">{g.category}</Badge>
+                                )}
+                                {g.group_name && (
+                                  <Badge variant="outline" className="text-[10px]">{g.group_name}</Badge>
+                                )}
+                              </div>
                             </div>
-                            <p className="mt-3 truncate text-xs text-muted-foreground">
-                              {g.email || g.phone || 'No contact details yet'}
-                            </p>
+                            <span className={`inline-flex shrink-0 items-center gap-1 text-xs font-semibold ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
+                              {isSelected ? 'Hide details' : 'View details'}
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 motion-reduce:transition-none ${isSelected ? 'rotate-180' : ''}`} aria-hidden="true" />
+                            </span>
+                          </div>
+                          <p className="mt-3 truncate text-xs text-muted-foreground">
+                            {g.email || g.phone || 'No contact details yet'}
+                          </p>
                           </button>
-                        );
-                      })
-                    ) : (
-                      <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
-                        <p className="text-sm font-medium text-foreground">
-                          {searchTerm || filterGroup !== 'all' ? 'No guests match this view' : 'No guests added yet'}
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {searchTerm || filterGroup !== 'all'
-                            ? 'Try a different name, phone, email, or group search.'
-                            : 'Add the first guest and start shaping the wedding headcount.'}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
 
-                <div className="bg-background">
-                  {guestEditor && selectedGuest ? (
-                    <div className="space-y-6 p-5 lg:p-6">
+                          <AnimatePresence initial={false}>
+                            {isSelected && guestEditor ? (
+                              <motion.div
+                                initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                                className="overflow-hidden"
+                              >
+                                <div className="mt-4 space-y-4 border-t border-primary/15 pt-4">
+                                  <div className="grid gap-3 sm:grid-cols-3">
+                                    <div className="space-y-1"><Label>Name</Label><Input value={guestEditor.name} onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, name: e.target.value } : current)} /></div>
+                                    <div className="space-y-1"><Label>Email</Label><Input type="email" value={guestEditor.email || ''} onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, email: e.target.value || null } : current)} /></div>
+                                    <div className="space-y-1"><Label>Phone</Label><Input value={guestEditor.phone || ''} onChange={(e) => setSelectedGuestDraft((current) => current ? { ...current, phone: e.target.value || null } : current)} /></div>
+                                  </div>
+                                  <div className="grid gap-3 sm:grid-cols-3">
+                                    <div className="space-y-1">
+                                      <Label>RSVP</Label>
+                                      <Select value={g.rsvp_status || 'pending'} onValueChange={(value) => void updateRsvp(g.id, value)}>
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent><SelectItem value="pending">Pending</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem><SelectItem value="declined">Declined</SelectItem></SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div><p className="text-xs text-muted-foreground">Plus one</p><p className="mt-2 text-sm font-medium">{guestEditor.plus_one ? 'Yes' : 'No'}</p></div>
+                                    <div><p className="text-xs text-muted-foreground">Meal</p><p className="mt-2 text-sm font-medium">{guestEditor.meal_preference || 'Not set'}</p></div>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button type="button" onClick={() => saveGuestDetails(g, { name: guestEditor.name, email: guestEditor.email, phone: guestEditor.phone } as Partial<Guest>)} disabled={savingGuestId === g.id}>{savingGuestId === g.id ? 'Saving…' : 'Save'}</Button>
+                                    {!plannerNeedsApproval && g.email ? <Button type="button" variant="outline" onClick={() => openCompose(g)}>Send invite</Button> : null}
+                                    <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label={plannerNeedsApproval ? 'Request guest removal' : 'Remove guest'} title={plannerNeedsApproval ? 'Request guest removal' : 'Remove guest'} onClick={() => deleteGuest(g.id)}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            ) : null}
+                          </AnimatePresence>
+                        </motion.div>
+                      );
+                    })}
+                    </AnimatePresence>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
+                      <p className="text-sm font-medium text-foreground">
+                        {searchTerm || filterGroup !== 'all' || guestStatusFilter !== 'all' ? 'No guests found' : 'No guests yet'}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {searchTerm || filterGroup !== 'all' || guestStatusFilter !== 'all'
+                          ? 'Try another search or filter.'
+                          : 'Add someone to start your guest list.'}
+                      </p>
+                      {!searchTerm && filterGroup === 'all' && guestStatusFilter === 'all' ? (
+                        <Button type="button" className="mt-4" onClick={() => { setGuestAdded(false); setOpen(true); }}>
+                          {plannerNeedsApproval ? 'Request guest' : 'Add guest'}
+                        </Button>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="hidden bg-background">
+                {guestEditor && selectedGuest ? (
+                  <div className="space-y-6 p-5 lg:p-6">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant={selectedGuest.rsvp_status === 'confirmed' ? 'default' : selectedGuest.rsvp_status === 'declined' ? 'destructive' : 'secondary'} className="capitalize">
+                            <Badge variant={selectedGuest.rsvp_status === 'confirmed' ? 'success' : selectedGuest.rsvp_status === 'declined' ? 'destructive' : 'warning'} className="capitalize">
                               {selectedGuest.rsvp_status || 'pending'}
                             </Badge>
                             {selectedGuest.category && selectedGuest.category !== 'general' && (
@@ -1051,7 +1013,7 @@ export default function Guests() {
                             )}
                           </div>
                           <div>
-                            <h2 className="font-display text-2xl font-semibold text-foreground">{guestEditor.name}</h2>
+                            <h2 className="workspace-h2">{guestEditor.name}</h2>
                             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
                               Everything for this guest, in one place.
                             </p>
@@ -1061,11 +1023,13 @@ export default function Guests() {
                         <Button
                           type="button"
                           variant="ghost"
-                          className="gap-2 text-destructive hover:text-destructive"
+                          size="icon"
+                          className="text-destructive hover:text-destructive"
+                          aria-label={plannerNeedsApproval ? 'Request guest removal' : 'Delete guest'}
+                          title={plannerNeedsApproval ? 'Request guest removal' : 'Delete guest'}
                           onClick={() => deleteGuest(selectedGuest.id)}
                         >
-                          <Trash2 className="h-4 w-4" />
-                          {plannerNeedsApproval ? 'Request removal' : 'Delete guest'}
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       </div>
 
@@ -1188,10 +1152,26 @@ export default function Guests() {
 
                         <div className="space-y-4">
                           <div className="rounded-2xl border border-border/70 bg-background p-4">
-                            <p className="text-sm font-medium text-foreground">{plannerNeedsApproval ? 'Planner visibility' : 'RSVP and invite actions'}</p>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {plannerNeedsApproval ? 'RSVP links, invite sending, and public guest access controls stay on the couple side.' : 'Update status, then send or copy the invite.'}
-                            </p>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-medium text-foreground">{plannerNeedsApproval ? 'Planner visibility' : 'RSVP and invite actions'}</p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {plannerNeedsApproval ? 'RSVP links, invite sending, and public guest access controls stay on the couple side.' : 'Update status, then send or copy the invite.'}
+                                </p>
+                              </div>
+                              <div className="semantic-surface-info rounded-2xl border px-3 py-2 text-left sm:text-right">
+                                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-info">Readiness</p>
+                                <p className="mt-1 text-sm font-medium text-foreground">
+                                  {!selectedGuest.email && !selectedGuest.phone
+                                    ? 'Needs contact'
+                                    : selectedGuest.rsvp_status === 'pending'
+                                      ? 'Ready to invite'
+                                      : selectedGuest.rsvp_status === 'confirmed'
+                                        ? 'Ready for seating'
+                                        : 'Closed out'}
+                                </p>
+                              </div>
+                            </div>
 
                             <div className="mt-4 space-y-3">
                               <div className="space-y-2">
@@ -1210,14 +1190,14 @@ export default function Guests() {
                               </div>
 
                               {plannerNeedsApproval ? (
-                                <div className="rounded-2xl border border-primary/15 bg-primary/5 p-3 text-sm text-muted-foreground">
+                                <div className="semantic-surface-info rounded-2xl border p-3 text-sm text-muted-foreground">
                                   Couples keep RSVP links, invite sending, link refresh, revoke controls, and check-in access. You can still request guest detail updates above.
                                 </div>
                               ) : (
                                 <>
                                   <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <Badge variant={selectedGuestRsvpActive ? 'default' : 'secondary'}>
+                                      <Badge variant={selectedGuestRsvpActive ? 'success' : 'outline'}>
                                         {selectedGuestRsvpActive ? 'Link active' : 'Link inactive'}
                                       </Badge>
                                       {selectedGuest.rsvp_token_expires_at && (
@@ -1279,11 +1259,9 @@ export default function Guests() {
                                 </>
                               )}
                             </div>
-                          </div>
-
-                          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                            <p className="text-sm font-medium text-foreground">Guest readiness</p>
-                            <p className="mt-1 text-sm text-muted-foreground">
+                            <div className="semantic-surface-info mt-4 rounded-2xl border p-4">
+                              <p className="text-xs font-medium uppercase tracking-[0.12em] text-info">What to do next</p>
+                              <p className="mt-2 text-sm text-muted-foreground">
                               {!selectedGuest.email && !selectedGuest.phone
                                 ? 'This guest still needs at least one contact method before outreach gets easier.'
                                 : selectedGuest.rsvp_status === 'pending'
@@ -1291,28 +1269,48 @@ export default function Guests() {
                                   : selectedGuest.rsvp_status === 'confirmed'
                                     ? 'This guest is confirmed. You can now use group, meal, and plus-one details for seating and service planning.'
                                     : 'This guest has declined, so the slot is no longer part of the active headcount.'}
-                            </p>
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
+                  </div>
+                ) : (
+                  <div className="flex min-h-[420px] items-center justify-center p-8">
+                    <div className="max-w-md text-center">
+                      <h2 className="workspace-h2">No guest selected</h2>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Pick a guest to manage details and RSVP actions.
+                      </p>
                     </div>
-                  ) : (
-                    <div className="flex min-h-[420px] items-center justify-center p-8">
-                      <div className="max-w-md text-center">
-                        <Users className="mx-auto h-10 w-10 text-muted-foreground" />
-                        <h2 className="mt-4 font-display text-2xl font-semibold text-foreground">No guest selected</h2>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          Pick a guest to manage details and RSVP actions.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          </CardContent>
+        </Card>
+
+        <details className="hidden rounded-3xl border border-border/70 bg-background p-5 shadow-card">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Guest reports</p>
+                <h3 className="workspace-h3 mt-2">Invite analytics and deeper coordination</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Open this when you need RSVP intelligence, response patterns, and fuller guest reporting.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <BarChart3 className="h-4 w-4" />
+                Hidden by default
+              </div>
+            </div>
+          </summary>
+          <div className="mt-5">
+            <GuestInsights guests={guests as any} />
+          </div>
+        </details>
+      </div>
 
       {/* Compose Invite Dialog */}
       <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
@@ -1369,7 +1367,7 @@ export default function Guests() {
                   </h3>
                   <div className="mt-3 border-t border-border pt-4">
                     {composeMode === 'html' && contentHtml.trim() ? (
-                      <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: contentHtml }} />
+                      <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: sanitizeHtml(contentHtml) }} />
                     ) : (
                       <div className="space-y-3 text-sm text-foreground">
                         <p>Dear <strong>{composeGuest?.name || '{Guest Name}'}</strong>,</p>
@@ -1400,11 +1398,6 @@ export default function Guests() {
         </DialogContent>
       </Dialog>
 
-      <UpgradePromptDialog
-        open={upgradePromptOpen}
-        onOpenChange={setUpgradePromptOpen}
-        decision={guestRsvpDecision}
-      />
     </div>
   );
 }

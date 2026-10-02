@@ -1,563 +1,785 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Loader2,
-} from 'lucide-react';
-import { motion } from 'framer-motion';
-import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
-import { getHomeRouteForRole } from '@/lib/roles';
-import { getPublicBudgetEstimate, type PublicBudgetEstimateRow } from '@/lib/publicBudgetEstimator';
-import { saveEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
-import { kenyaCounties } from '@/lib/kenyaLocations';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { ArrowRight, ChevronDown, Info, Trash2 } from 'lucide-react';
 import heroImage from '@/assets/hero-wedding.jpg';
 import BrandWordmark from '@/components/BrandWordmark';
-import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
+import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
+import PublicSiteFooter from '@/components/PublicSiteFooter';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { getHomeRouteForRole } from '@/lib/roles';
+import { isPlanningExperimentEnabled } from '@/lib/featureFlags';
+import { saveEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import { formatNonNegativeNumberInputText } from '@/lib/nonNegativeNumberInput';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  buildInteractiveBudgetPlan,
+  getBudgetUtilizationPercentage,
+  getBudgetUtilizationStatus,
+  getCoreGuestCost,
+  removeInteractiveBudgetCategory,
+  resetAllInteractiveBudgetAllocations,
+  resetInteractiveBudgetAllocation,
+  updateInteractiveBudgetAllocation,
+  updateInteractiveBudgetPercentage,
+  updateInteractiveBudgetSettings,
+  type BudgetResizeStrategy,
+  type InteractiveBudgetPlan,
+} from '@/lib/interactiveBudgetPlan';
 
-const heroStats = [
-  { index: '01', title: 'Planning workspace', desc: 'Keep guests, budgets, tasks, documents, and vendor notes in one place.' },
-  { index: '02', title: 'Private vendor tracking', desc: 'Add the vendors you already have now, then invite them to join later.' },
-  { index: '03', title: 'Diaspora-ready', desc: 'Plan from anywhere while staying anchored at home.' },
-];
-
-function formatCurrency(value: number | null | undefined) {
-  if (value == null) return 'N/A';
-  return `KES ${Number(value).toLocaleString()}`;
+function formatCurrency(value: number) {
+  return `KES ${Math.round(value).toLocaleString()}`;
 }
 
-function PublicBudgetEstimator({ compact = false }: { compact?: boolean }) {
-  const [guestCount, setGuestCount] = useState('120');
-  const [county, setCounty] = useState('Nakuru');
-  const [weddingStyle, setWeddingStyle] = useState<'intimate' | 'classic' | 'luxury' | 'garden'>('classic');
-  const [venueTier, setVenueTier] = useState<'budget' | 'mid_tier' | 'luxury'>('mid_tier');
-  const [loadingEstimate, setLoadingEstimate] = useState(false);
-  const [estimateRows, setEstimateRows] = useState<PublicBudgetEstimateRow[]>([]);
-  const [startingPlan, setStartingPlan] = useState(false);
-  const { toast } = useToast();
-  const navigate = useNavigate();
-
-  const handleTurnIntoPlan = () => {
-    const normalizedGuestCount = Number(guestCount);
-    if (!Number.isFinite(normalizedGuestCount) || normalizedGuestCount <= 0) {
-      toast({
-        title: 'Invalid guest count',
-        description: 'Enter a realistic guest count greater than zero.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setStartingPlan(true);
-    saveEstimatorPlanDraft({
-      guestCount: normalizedGuestCount,
-      county: county.trim() || 'Nairobi',
-      weddingStyle,
-      venueTier,
-    });
-    navigate('/auth?mode=signup');
-  };
-
-  const loadEstimate = async () => {
-    const normalizedGuestCount = Number(guestCount);
-    if (!Number.isFinite(normalizedGuestCount) || normalizedGuestCount <= 0) {
-      toast({
-        title: 'Invalid guest count',
-        description: 'Enter a realistic guest count greater than zero.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setLoadingEstimate(true);
-    try {
-      const data = await getPublicBudgetEstimate({
-        guestCount: normalizedGuestCount,
-        county: county.trim() || null,
-        venueTier,
-        weddingStyle,
-        minSampleSize: 5,
-      });
-      setEstimateRows(data);
-    } catch (error: any) {
-      toast({
-        title: 'Estimator unavailable',
-        description: error.message,
-        variant: 'destructive',
-      });
-    } finally {
-      setLoadingEstimate(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadEstimate();
-  }, []);
-
-  const totals = useMemo(() => {
-    return estimateRows.reduce(
-      (acc, row) => {
-        acc.suggested += row.suggested_amount;
-        acc.low += row.low_amount;
-        acc.high += row.high_amount;
-        acc.marketCount += row.source === 'market' ? 1 : 0;
-        return acc;
-      },
-      { suggested: 0, low: 0, high: 0, marketCount: 0 },
-    );
-  }, [estimateRows]);
-
-  if (compact) {
-    return (
-        <Card className="border-white/18 bg-[linear-gradient(180deg,rgba(30,22,19,0.92),rgba(42,30,25,0.88))] shadow-[0_28px_80px_rgba(20,12,10,0.3)] backdrop-blur-md">
-        <CardContent className="space-y-4 p-5 sm:space-y-5 sm:p-7">
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl border border-[#ead7c4]/18 bg-[#c9a96e]/10 px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#ead4aa]">
-              Estimator
-            </div>
-            <div>
-              <h3 className="font-editorial text-[1.7rem] font-medium leading-none text-[#f7efe7] sm:text-[2.2rem]">Quick Cost Estimate</h3>
-              <p className="mt-2 text-xs font-medium uppercase tracking-[0.24em] text-[#dcb188]">Free, instant, and no sign-up required</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]">Number of guests</Label>
-            <Select value={guestCount} onValueChange={setGuestCount}>
-              <SelectTrigger className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="50">Up to 50 guests</SelectItem>
-                <SelectItem value="80">50 - 100 guests</SelectItem>
-                <SelectItem value="120">100 - 150 guests</SelectItem>
-                <SelectItem value="180">150 - 220 guests</SelectItem>
-                <SelectItem value="260">220+ guests</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="hero-county" className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]">County</Label>
-            <Select value={county} onValueChange={setCounty}>
-              <SelectTrigger id="hero-county" className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12">
-                <SelectValue placeholder="Choose a county" />
-              </SelectTrigger>
-              <SelectContent>
-                {kenyaCounties.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-[0.16em] text-[#f7efe7]">Wedding style</Label>
-            <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
-              <SelectTrigger className="h-11 border-border/70 bg-white text-foreground shadow-sm sm:h-12"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="intimate">Intimate & Simple</SelectItem>
-                <SelectItem value="classic">Classic</SelectItem>
-                <SelectItem value="garden">Garden</SelectItem>
-                <SelectItem value="luxury">Luxury</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Button onClick={() => void loadEstimate()} className="h-11 w-full gap-2 border border-[#ce7d57] bg-[#c2724f] text-[#fff8f1] hover:bg-[#a85c3c] sm:h-12" disabled={loadingEstimate}>
-            {loadingEstimate ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Get Estimate
-          </Button>
-
-          <div className="rounded-2xl border border-[#ead7c4]/14 bg-[rgba(15,10,8,0.28)] p-4">
-            <p className="text-sm font-medium text-[#f7efe7]">Estimated total budget</p>
-            <p className="mt-1 font-editorial text-3xl font-semibold text-[#fff8f1]">{formatCurrency(totals.suggested)}</p>
-            <p className="mt-2 text-xs font-medium text-[#f7efe7]">
-              Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-[#ead7c4]/14 bg-[rgba(255,255,255,0.05)] p-4">
-            <p className="text-sm font-medium text-[#f7efe7]">What your estimate includes</p>
-            <div className="mt-3 grid gap-2 text-xs text-[#f7efe7]/85 sm:grid-cols-2">
-              {estimateRows.slice(0, 4).map((row) => (
-                <div key={row.category} className="rounded-xl border border-[#ead7c4]/12 bg-[rgba(13,10,8,0.24)] px-3 py-2">
-                  <p className="font-medium text-[#fff8f1]">{row.category}</p>
-                  <p className="font-medium text-[#f4dfc8]">{formatCurrency(row.suggested_amount)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <Button variant="outline" className="h-11 w-full gap-2 border-[#ead7c4]/24 bg-[#f6efe8] text-[#241814] hover:bg-[#eadfcf]" onClick={handleTurnIntoPlan} disabled={startingPlan}>
-            {startingPlan ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            <span>Turn This Into a Plan</span>
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="border-border/60 bg-card/95 shadow-warm backdrop-blur-sm">
-      <CardContent className="space-y-5 p-6">
-        <div className="flex items-start gap-3">
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-primary">
-            Estimator
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">Cost Estimator</p>
-            <h3 className="mt-1 font-display text-2xl font-semibold text-foreground">
-              Start with a realistic budget
-            </h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Use live Kenyan wedding pricing signals before you lock the rest of your plan.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="guest-count">Guest count</Label>
-            <Input
-              id="guest-count"
-              type="number"
-              value={guestCount}
-              onChange={(e) => setGuestCount(e.target.value)}
-              placeholder="120"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="county">County / town</Label>
-            <Select value={county} onValueChange={setCounty}>
-              <SelectTrigger id="county">
-                <SelectValue placeholder="Choose a county" />
-              </SelectTrigger>
-              <SelectContent>
-                {kenyaCounties.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Wedding style</Label>
-            <Select value={weddingStyle} onValueChange={(value: 'intimate' | 'classic' | 'luxury' | 'garden') => setWeddingStyle(value)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="intimate">Intimate</SelectItem>
-                <SelectItem value="classic">Classic</SelectItem>
-                <SelectItem value="garden">Garden</SelectItem>
-                <SelectItem value="luxury">Luxury</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Venue tier</Label>
-            <Select value={venueTier} onValueChange={(value: 'budget' | 'mid_tier' | 'luxury') => setVenueTier(value)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="budget">Budget</SelectItem>
-                <SelectItem value="mid_tier">Mid-tier</SelectItem>
-                <SelectItem value="luxury">Luxury</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-2xl bg-primary/5 p-5">
-            <p className="text-sm font-medium text-muted-foreground">Estimated total budget</p>
-            <p className="mt-2 font-display text-3xl font-bold text-foreground">{formatCurrency(totals.suggested)}</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Working range {formatCurrency(totals.low)} - {formatCurrency(totals.high)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-background/70 p-5">
-            <p className="text-sm font-medium text-foreground">Market confidence</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{totals.marketCount}/{estimateRows.length || 0}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              categories using live observations
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          {estimateRows.slice(0, 4).map((row) => (
-            <div key={row.category} className="rounded-xl border border-border/70 bg-background/80 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-foreground">{row.category}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {row.source === 'market' ? `${row.sample_size} live observations` : 'Modeled fallback'}
-                  </p>
-                </div>
-                <span className="rounded-full border border-border px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {row.source}
-                </span>
-              </div>
-              <p className="mt-3 text-base font-semibold text-foreground">{formatCurrency(row.suggested_amount)}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Button onClick={() => void loadEstimate()} className="gap-2 sm:flex-1" disabled={loadingEstimate}>
-            {loadingEstimate ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Refresh Estimate
-          </Button>
-          <Button variant="outline" className="w-full gap-2 sm:flex-1" onClick={handleTurnIntoPlan} disabled={startingPlan}>
-            {startingPlan ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            <span>Turn This Into a Plan</span>
-          </Button>
-        </div>
-
-        <p className="text-xs text-muted-foreground">
-          Early estimate only. Sign up to turn this into a working wedding workspace with vendors, guests, tasks, and approvals.
-        </p>
-      </CardContent>
-    </Card>
-  );
+function formatIntegerInput(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return digits ? Number(digits).toLocaleString('en-KE') : '';
 }
 
-function QuickSignupChooser() {
-  const navigate = useNavigate();
+function sanitizeIntegerInput(value: string) {
+  return value.replace(/\D/g, '');
+}
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, delay: 0.4 }}
-    >
-      <div className="rounded-[30px] border border-[#ead7c4]/32 bg-[linear-gradient(180deg,#f8f2ea,#f1e5d7)] p-5 shadow-[0_28px_60px_rgba(42,25,20,0.16)] backdrop-blur-sm">
-        <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#c2724f]">Start here</p>
-          <h3 className="font-editorial text-[2rem] font-medium leading-none text-[#201814]">Start planning before anyone else joins.</h3>
-          <p className="text-sm leading-relaxed text-[#6f5747]">
-            Create your account once, open your wedding workspace, and start adding the guests, budgets, and vendors you already have. Planners and vendors can join later.
-          </p>
-        </div>
+function keepEditingKeysInsideField(event: KeyboardEvent<HTMLInputElement>) {
+  if (event.key === 'Backspace' || event.key === 'Delete') event.stopPropagation();
+}
 
-        <div className="mt-4 grid gap-4">
-          <div className="rounded-[24px] border border-[#d9b79d] bg-[rgba(255,255,255,0.45)] p-4 shadow-[0_12px_28px_rgba(194,114,79,0.1)]">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-[#201814]">Create your Zania account</p>
-              <p className="text-xs leading-relaxed text-[#6f5747]">
-                Start with your name, email, and password. Couples can begin planning immediately, even if their vendors are still off-platform.
-              </p>
-            </div>
-
-            <div className="mt-4 grid gap-2">
-              <Button
-                className="gap-2"
-                onClick={() => navigate('/auth?mode=signup')}
-              >
-                Sign up to Zania
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-2 border-[#d6b698] bg-[#fffaf4] text-[#241814] hover:bg-[#f3e5d7]"
-                onClick={() => navigate('/sign-in')}
-              >
-                I already have an account
-              </Button>
-            </div>
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <Button
-                type="button"
-                variant="ghost"
-                className="justify-start px-0 text-[#a85c3c] hover:bg-transparent hover:text-[#8f4f34]"
-                onClick={() => navigate('/auth?mode=signup&flow=join_wedding&audience=couple')}
-              >
-                I already have a wedding code
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="justify-start px-0 text-[#a85c3c] hover:bg-transparent hover:text-[#8f4f34]"
-                onClick={() => navigate('/auth?mode=signup&audience=professional&role=vendor')}
-              >
-                Claim a vendor profile
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
+function allocationDomId(name: string) {
+  return `estimator-allocation-${name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}`;
 }
 
 export default function Landing() {
+  const [budgetInput, setBudgetInput] = useState('1,500,000');
+  const [guestInput, setGuestInput] = useState('120');
+  const [plan, setPlan] = useState<InteractiveBudgetPlan | null>(null);
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const [selectedAllocationName, setSelectedAllocationName] = useState<string | null>(null);
+  const [allocationDraft, setAllocationDraft] = useState<{ amount: string; percentage: string; lastEditedField: 'amount' | 'percentage' } | null>(null);
+  const [pendingRemovalName, setPendingRemovalName] = useState<string | null>(null);
+  const [pendingTotalBudget, setPendingTotalBudget] = useState<number | null>(null);
+  const [resetAllOpen, setResetAllOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const resultsRef = useRef<HTMLElement | null>(null);
+  const prefersReducedMotion = useReducedMotion();
+  const { toast } = useToast();
+  const navigate = useNavigate();
   const { user, profile, loading } = useAuth();
-  const workspaceRoute = user ? getHomeRouteForRole(profile?.role, profile?.planner_type) : '/dashboard';
-  const signInRoute = '/sign-in';
-  const primaryCtaLabel = user ? 'Continue to workspace' : 'Sign up free';
-  const secondaryCtaLabel = user ? 'Open workspace' : 'Sign In';
+
+  // Editing is deliberately local. The budget summary and category list only
+  // change when the person explicitly presses Apply, so ordinary typing never
+  // makes cards jump, disappear, or change position.
+  const previewPlan = plan;
+
+  const coreGuestCost = useMemo(
+    () => previewPlan ? getCoreGuestCost(previewPlan) : 0,
+    [previewPlan],
+  );
+
+  const utilizationPercentage = useMemo(
+    () => previewPlan ? getBudgetUtilizationPercentage(previewPlan) : 0,
+    [previewPlan],
+  );
+
+  const utilizationStatus = getBudgetUtilizationStatus(utilizationPercentage);
+  const utilizationLabel = utilizationStatus === 'complete'
+    ? 'Budget fully allocated'
+    : utilizationStatus === 'under'
+      ? 'Left to allocate'
+      : 'Over budget';
+  const utilizationClassName = utilizationStatus === 'complete'
+    ? 'text-success'
+    : utilizationStatus === 'under'
+      ? 'text-foreground'
+      : 'text-destructive';
+
+  const totalAllocated = useMemo(
+    () => previewPlan?.allocations.reduce((sum, allocation) => sum + allocation.amount, 0) ?? 0,
+    [previewPlan],
+  );
+  const remainingAllocation = (previewPlan?.totalBudget ?? 0) - totalAllocated;
+
+  const visibleAllocations = useMemo(() => {
+    if (!previewPlan) return [];
+    if (showAllCategories) return previewPlan.allocations;
+    const allocated = [...previewPlan.allocations]
+      .filter((allocation) => allocation.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 6);
+    // Any category someone has edited is still part of their working plan.
+    // Keep it available below the essentials, even when its new amount is
+    // smaller (or zero), rather than making it seem deleted.
+    const edited = previewPlan.allocations.filter((allocation) => (
+      allocation.isManuallyEdited && !allocated.some((item) => item.name === allocation.name)
+    ));
+    return [...allocated, ...edited];
+  }, [previewPlan, showAllCategories]);
+
+  const persistPlanDraft = (nextPlan: InteractiveBudgetPlan) => {
+    saveEstimatorPlanDraft({
+      guestCount: nextPlan.guestCount,
+      county: 'Nairobi',
+      weddingStyle: 'classic',
+      venueTier: 'mid_tier',
+      totalBudget: nextPlan.totalBudget,
+      allocations: nextPlan.allocations.map(({ name, amount, percentage, suggestedAmount, suggestedPercentage, isManuallyEdited, lastEditedField }) => ({
+        name,
+        amount,
+        percentage,
+        suggestedAmount,
+        suggestedPercentage,
+        isManuallyEdited,
+        lastEditedField,
+      })),
+    });
+  };
+
+  useEffect(() => {
+    if (!plan || !selectedAllocationName) return;
+    const selectedAllocation = plan.allocations.find((allocation) => allocation.name === selectedAllocationName);
+    if (!selectedAllocation) return;
+    setAllocationDraft({
+      amount: String(selectedAllocation.amount),
+      percentage: selectedAllocation.percentage.toFixed(1),
+      lastEditedField: selectedAllocation.lastEditedField ?? 'amount',
+    });
+  }, [plan, selectedAllocationName]);
+
+  const handleBuildPlan = () => {
+    const totalBudget = Number(budgetInput.replace(/,/g, ''));
+    const guestCount = Number(guestInput.replace(/,/g, ''));
+
+    if (!Number.isFinite(totalBudget) || totalBudget <= 0) {
+      toast({
+        title: 'Enter your wedding budget',
+        description: 'Use any amount above zero. You can change it as often as you like.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!Number.isFinite(guestCount) || guestCount <= 0) {
+      toast({
+        title: 'Enter your expected guests',
+        description: 'Use your best estimate for now—you can change it later.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const nextPlan = buildInteractiveBudgetPlan(totalBudget, guestCount);
+    setBudgetInput(totalBudget.toLocaleString('en-KE'));
+    setGuestInput(guestCount.toLocaleString('en-KE'));
+    setPlan(nextPlan);
+    persistPlanDraft(nextPlan);
+    window.requestAnimationFrame(() => {
+      resultsRef.current?.scrollIntoView({
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+        block: 'start',
+      });
+    });
+  };
+
+  const handleAllocationChange = (category: string, value: string, field: 'amount' | 'percentage') => {
+    if (!plan) return;
+    const nextValue = Number(value.replace(/,/g, ''));
+    if (!Number.isFinite(nextValue) || nextValue < 0) return;
+
+    const nextPlan = field === 'amount'
+      ? updateInteractiveBudgetAllocation(plan, category, nextValue)
+      : updateInteractiveBudgetPercentage(plan, category, nextValue);
+    setPlan(nextPlan);
+    persistPlanDraft(nextPlan);
+    setSelectedAllocationName(null);
+    setAllocationDraft(null);
+  };
+
+  const handleAllocationDraftChange = (value: string, field: 'amount' | 'percentage') => {
+    setAllocationDraft((current) => {
+      const fallback = current ?? { amount: '', percentage: '', lastEditedField: field };
+      return { ...fallback, [field]: value, lastEditedField: field };
+    });
+  };
+
+  const handleRemoveCategory = (category: string) => {
+    if (!plan) return;
+    const nextPlan = removeInteractiveBudgetCategory(plan, category);
+    setPlan(nextPlan);
+    persistPlanDraft(nextPlan);
+    if (selectedAllocationName === category) {
+      setSelectedAllocationName(null);
+      setAllocationDraft(null);
+    }
+  };
+
+  const handleBudgetGoalChange = () => {
+    if (!plan) return;
+    const totalBudget = Number(budgetInput.replace(/,/g, ''));
+    if (!Number.isFinite(totalBudget) || totalBudget <= 0) {
+      setBudgetInput(plan.totalBudget.toLocaleString('en-KE'));
+      toast({
+        title: 'Enter a valid budget',
+        description: 'Your wedding budget must be greater than zero.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (totalBudget !== plan.totalBudget) setPendingTotalBudget(totalBudget);
+  };
+
+  const applyBudgetGoalChange = (strategy: BudgetResizeStrategy) => {
+    if (!plan || pendingTotalBudget == null) return;
+    const nextPlan = updateInteractiveBudgetSettings(plan, pendingTotalBudget, plan.guestCount, strategy);
+    setPlan(nextPlan);
+    setBudgetInput(nextPlan.totalBudget.toLocaleString('en-KE'));
+    persistPlanDraft(nextPlan);
+    setPendingTotalBudget(null);
+  };
+
+  const handleGuestCountChange = () => {
+    if (!plan) return;
+    const guestCount = Number(guestInput.replace(/,/g, ''));
+    if (!Number.isFinite(guestCount) || guestCount <= 0) {
+      setGuestInput(plan.guestCount.toLocaleString('en-KE'));
+      toast({ title: 'Enter a valid guest count', description: 'Use at least one guest.', variant: 'destructive' });
+      return;
+    }
+
+    const nextPlan = updateInteractiveBudgetSettings(plan, plan.totalBudget, guestCount, 'keep_amounts');
+    setGuestInput(guestCount.toLocaleString('en-KE'));
+    setPlan(nextPlan);
+    persistPlanDraft(nextPlan);
+  };
+
+  const openAllocation = (name: string) => {
+    if (!plan) return;
+    if (selectedAllocationName === name) {
+      setSelectedAllocationName(null);
+      setAllocationDraft(null);
+      return;
+    }
+    const allocation = plan.allocations.find((item) => item.name === name);
+    if (!allocation) return;
+    setSelectedAllocationName(name);
+    setAllocationDraft({
+      amount: String(allocation.amount),
+      percentage: allocation.percentage.toFixed(1),
+      lastEditedField: allocation.lastEditedField ?? 'amount',
+    });
+  };
+
+  const closeAllocation = () => {
+    setSelectedAllocationName(null);
+    setAllocationDraft(null);
+  };
+
+  const resetAllocation = (name: string) => {
+    if (!plan) return;
+    const nextPlan = resetInteractiveBudgetAllocation(plan, name);
+    setPlan(nextPlan);
+    persistPlanDraft(nextPlan);
+    closeAllocation();
+  };
+
+  const handleSavePlan = async () => {
+    if (!plan) return;
+    persistPlanDraft(plan);
+
+    if (!user) {
+      navigate('/auth?mode=signup&flow=estimator&audience=couple&role=couple');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const seeded = await seedPendingEstimatorPlanForUser({
+        userId: user.id,
+        role: profile?.role,
+        plannerType: profile?.planner_type,
+        userMetadata: user.user_metadata,
+      });
+
+      if (seeded) {
+        toast({
+          title: 'Estimate added',
+          description: 'Confirm three priorities and Zania will build your first plan.',
+        });
+        navigate(isPlanningExperimentEnabled() ? '/plan' : getHomeRouteForRole(profile?.role, profile?.planner_type));
+        return;
+      }
+
+      navigate(getHomeRouteForRole(profile?.role, profile?.planner_type));
+    } catch (error) {
+      toast({
+        title: 'We could not save your plan',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (loading) {
-    return <PublicPageSkeleton card={false} />;
+    return <div className="min-h-screen bg-background" />;
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f9f3ec_0%,#f6f1e8_18%,#fbf8f4_38%,#ffffff_100%)] text-foreground">
-      <section className="relative overflow-hidden bg-[#120d0b] text-[#f6eee6]">
-        <div className="absolute inset-0">
-          <img
-            src={heroImage}
-            alt="Zania wedding planning hero"
-            className="h-full w-full object-cover object-center"
-          />
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(13,9,7,0.82)_0%,rgba(24,16,12,0.64)_34%,rgba(24,15,11,0.58)_58%,rgba(13,9,7,0.78)_100%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_22%,rgba(210,152,95,0.18),transparent_25%),radial-gradient(circle_at_86%_18%,rgba(212,187,125,0.14),transparent_20%),linear-gradient(180deg,rgba(19,13,10,0.16)_0%,rgba(19,13,10,0.42)_100%)]" />
+    <div className="min-h-screen bg-background text-foreground">
+      <section className="relative overflow-hidden border-b border-border bg-foreground text-primary-foreground">
+        <div className="absolute inset-0" aria-hidden="true">
+          <img src={heroImage} alt="" className="h-full w-full object-cover object-center" />
+          <div className="absolute inset-0 bg-gradient-to-r from-foreground/95 via-foreground/75 to-foreground/55" />
+          <div className="absolute inset-0 bg-gradient-to-t from-foreground/75 via-transparent to-foreground/30" />
         </div>
 
-        <nav className="relative z-20">
-          <div className="mx-auto flex max-w-[1680px] items-center justify-between gap-3 px-6 py-7 sm:px-8 lg:px-12 xl:px-16">
-            <BrandWordmark light size="lg" />
-            <Link to={user ? workspaceRoute : signInRoute} className="inline-flex h-11 items-center rounded-sm border border-[#e4cf9e]/40 bg-[#d4bb7d]/95 px-5 text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#201814] transition-colors hover:bg-[#c2724f] hover:text-[#fffaf4] md:hidden">
-              {secondaryCtaLabel}
-            </Link>
-            <div className="hidden items-center gap-8 md:flex">
-              <Link to="/vendors-directory" className="text-[0.72rem] font-medium uppercase tracking-[0.24em] text-[#f6eee6]/72 transition-colors hover:text-[#e9d4a9]">Find vendors</Link>
-              <Link to="/planners" className="text-[0.72rem] font-medium uppercase tracking-[0.24em] text-[#f6eee6]/72 transition-colors hover:text-[#e9d4a9]">Planners</Link>
-              <Link to="/pricing" className="text-[0.72rem] font-medium uppercase tracking-[0.24em] text-[#f6eee6]/72 transition-colors hover:text-[#e9d4a9]">Pricing</Link>
-              <a href="#cost-estimator" className="text-[0.72rem] font-medium uppercase tracking-[0.24em] text-[#f6eee6]/72 transition-colors hover:text-[#e9d4a9]">Estimator</a>
-              <Link to={user ? workspaceRoute : signInRoute} className="inline-flex h-11 items-center rounded-sm border border-[#f1dfb6]/28 bg-transparent px-6 text-[0.72rem] font-medium uppercase tracking-[0.22em] text-[#f6eee6] transition-colors hover:border-[#d4bb7d] hover:bg-[#d4bb7d] hover:text-[#1d1511]">
-                {secondaryCtaLabel}
-              </Link>
-            </div>
-          </div>
-        </nav>
-
-        <div className="relative z-10 mx-auto grid min-h-[860px] max-w-[1680px] gap-10 px-6 pb-14 pt-12 sm:px-8 lg:grid-cols-[1.18fr_0.82fr] lg:px-12 lg:pb-16 lg:pt-10 xl:px-16">
-          <div className="flex flex-col justify-between">
-            <div className="max-w-[780px] pt-10 lg:pt-16">
-              <motion.div
-                initial={{ opacity: 0, scaleX: 0 }}
-                animate={{ opacity: 1, scaleX: 1 }}
-                transition={{ duration: 0.55, delay: 0.06 }}
-                className="mb-8 h-[2px] w-14 origin-left bg-[#d4bb7d]"
-              />
-              <motion.p
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.16 }}
-                className="text-[0.72rem] uppercase tracking-[0.36em] text-[#d69d7a]"
-              >
-                Kenya • Diaspora • Wedding planning workspace
-              </motion.p>
-              <motion.h1
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.28 }}
-                className="mt-7 max-w-[9.3ch] font-editorial text-[3.7rem] font-medium leading-[0.86] tracking-[-0.03em] text-[#fbf4ec] sm:text-[5.2rem] lg:text-[6.3rem] xl:text-[7.4rem]"
-              >
-                Plan your wedding,
-                <br />
-                <span className="italic font-normal text-[#d4bb7d]">all in one</span>
-                <br />
-                place.
-              </motion.h1>
-              <motion.p
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.44 }}
-                className="mt-8 max-w-2xl text-lg leading-[1.9] text-[#f6eee6]/74 sm:text-[1.17rem]"
-              >
-                Zania gives couples one wedding workspace for budgets, guests, tasks, documents, payments, and vendor coordination. Your vendors do not need to be on Zania yet. Add them yourself now and invite them later if you want.
-              </motion.p>
-              <motion.div
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.58 }}
-                className="mt-10 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center"
-              >
+        <header className="relative z-20 border-b border-primary-foreground/15 bg-foreground/20 backdrop-blur-md">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-8 sm:py-4 lg:px-10">
+            <BrandWordmark light size="sm" className="sm:hidden" />
+            <BrandWordmark light size="md" className="hidden sm:inline-flex" />
+            <nav className="flex items-center gap-3 sm:gap-6" aria-label="Landing page navigation">
+              {!user ? (
                 <Link
-                  to={user ? workspaceRoute : '/auth?mode=signup'}
+                  to="/auth?mode=signup&audience=professional"
+                  className="inline-flex min-h-11 items-center text-xs font-medium text-primary-foreground/75 transition-colors duration-200 hover:text-primary-foreground sm:text-sm"
                 >
-                  <Button className="h-12 rounded-sm bg-[#d4bb7d] px-8 text-[0.72rem] font-medium uppercase tracking-[0.28em] text-[#1f1712] hover:bg-[#c6a660]">
-                    {primaryCtaLabel}
-                  </Button>
+                  For professionals
                 </Link>
-                {user ? (
-                  <p className="text-sm leading-7 text-[#f6eee6]/70">
-                    You’re signed in. Explore publicly, then jump back into your workspace whenever you’re ready.
-                  </p>
-                ) : (
-                  <Link to="#cost-estimator" className="inline-flex items-center gap-3 text-[0.8rem] font-medium uppercase tracking-[0.26em] text-[#f6eee6]/82 transition-colors hover:text-[#e9d4a9]">
-                    Try the estimator
-                    <span aria-hidden="true">/</span>
-                  </Link>
-                )}
-              </motion.div>
-            </div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.74 }}
-              className="mt-12 grid gap-5 border-t border-[#f3e4ce]/12 pt-8 sm:grid-cols-3"
-            >
-              {heroStats.map((stat) => (
-                <div key={stat.title} className="space-y-3">
-                  <p className="font-editorial text-[1.35rem] leading-none text-[#f5dfbb]">
-                    <span className="mr-2 text-[1rem] italic text-[#d4bb7d]/9">{stat.index}</span>
-                    {stat.title}
-                  </p>
-                  <p className="max-w-xs text-sm leading-7 text-[#f6eee6]/58">{stat.desc}</p>
-                </div>
-              ))}
-            </motion.div>
+              ) : null}
+              <Link
+                to={user ? getHomeRouteForRole(profile?.role, profile?.planner_type) : '/sign-in'}
+                className="inline-flex min-h-11 items-center text-xs font-semibold text-primary-foreground transition-colors duration-200 hover:text-accent sm:text-sm"
+              >
+                {user ? 'Open workspace' : 'Sign in'}
+              </Link>
+            </nav>
           </div>
+        </header>
 
+        <main className="relative z-10 mx-auto grid max-w-7xl items-center gap-8 px-4 py-8 sm:px-8 sm:py-12 lg:min-h-[720px] lg:grid-cols-[minmax(0,0.9fr)_minmax(34rem,1.1fr)] lg:gap-14 lg:px-10 lg:py-20">
           <motion.div
-            id="cost-estimator"
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.7, delay: 0.62 }}
-            className="flex items-end lg:justify-end"
+            initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.35, ease: 'easeOut' }}
+            className="max-w-xl text-center lg:text-left"
           >
-            <div className="w-full max-w-[600px] rounded-[30px] border border-[#ecd9c7]/12 bg-[linear-gradient(180deg,rgba(32,23,19,0.9),rgba(28,20,17,0.96))] p-4 shadow-[0_28px_85px_rgba(8,5,4,0.38)] backdrop-blur-md sm:p-5 lg:mb-8">
-              <PublicBudgetEstimator compact />
+            <h1 className="font-display text-3xl font-semibold leading-[1.1] tracking-tight text-primary-foreground sm:text-5xl lg:text-6xl">
+              See your wedding come together.
+            </h1>
+            <p className="mx-auto mt-4 max-w-lg text-base leading-7 text-primary-foreground/80 sm:mt-5 sm:text-xl sm:leading-8 lg:mx-0">
+              Explore one calm place for your tasks, vendors, documents and budget—then personalise it when you are ready.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">
+              <Button asChild size="lg" className="font-semibold"><Link to="/explore">Explore Zania <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+              <Button asChild size="lg" variant="outline" className="border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"><a href="#budget-builder">Try the budget tool</a></Button>
             </div>
           </motion.div>
-        </div>
+
+          <Card id="budget-builder" className="w-full border-border/80 bg-card/95 text-card-foreground shadow-card backdrop-blur-md">
+            <CardContent className="p-4 sm:p-8">
+              <div className="flex items-center justify-between gap-4 border-b border-border pb-4">
+                <div>
+                  <p className="text-base font-semibold text-foreground sm:text-lg">Optional budget estimate</p>
+                  <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{plan ? 'Adjust your plan below.' : 'Use this now—or explore first and return later.'}</p>
+                </div>
+                <span className="max-w-24 text-right text-xs font-semibold text-muted-foreground sm:max-w-none sm:text-sm">No sign-up required</span>
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:mt-5 sm:grid-cols-2 sm:gap-5 lg:grid-cols-1 xl:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="wedding-budget" className="text-sm font-semibold">Intended wedding budget</Label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">KES</span>
+                    <Input
+                      id="wedding-budget"
+                      type="text"
+                      inputMode="numeric"
+                      value={budgetInput}
+                      onFocus={() => setBudgetInput((current) => sanitizeIntegerInput(current))}
+                      onChange={(event) => setBudgetInput(sanitizeIntegerInput(event.target.value))}
+                      onBlur={() => setBudgetInput((current) => formatIntegerInput(current))}
+                      className="h-11 bg-background pl-14 text-sm font-semibold sm:h-12 sm:text-base"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="guest-count" className="text-sm font-semibold">Expected guests</Label>
+                  <Input
+                    id="guest-count"
+                    type="text"
+                    inputMode="numeric"
+                    value={guestInput}
+                    onFocus={() => setGuestInput((current) => sanitizeIntegerInput(current))}
+                    onChange={(event) => setGuestInput(sanitizeIntegerInput(event.target.value))}
+                    onBlur={() => setGuestInput((current) => formatIntegerInput(current))}
+                    className="h-11 bg-background text-sm font-semibold sm:h-12 sm:text-base"
+                  />
+                </div>
+              </div>
+
+              <Button onClick={handleBuildPlan} className="mt-5 h-11 w-full gap-2 text-sm font-semibold sm:mt-6 sm:h-12 sm:text-base">
+                Get estimate
+              </Button>
+
+              <div className="mt-4 flex gap-3 rounded-lg border border-border bg-muted/35 p-3 text-left" role="note">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                <p className="text-xs leading-5 text-muted-foreground sm:text-sm">
+                  This is a planning estimate based on the total budget you enter. It is not a vendor quote: actual service prices can change with the vendor, location, wedding date, guest count and availability.
+                </p>
+              </div>
+
+              {!user ? (
+                <p className="mt-3 text-center text-xs text-muted-foreground sm:text-sm">
+                  <Link
+                    to="/explore"
+                    className="font-semibold text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Explore what’s inside
+                  </Link>
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+        </main>
       </section>
 
-      <section className="mx-auto max-w-[1500px] px-6 py-14 sm:px-8 sm:py-18 lg:px-12">
-        <div>
-          <QuickSignupChooser />
-        </div>
-      </section>
+      {plan ? (
+        <motion.section
+          ref={resultsRef}
+          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.25, ease: 'easeOut' }}
+          className="mx-auto max-w-5xl scroll-mt-4 px-4 py-8 sm:px-8 sm:py-16 lg:px-10"
+          aria-labelledby="budget-plan-heading"
+        >
+          <Card className="border-border bg-card shadow-card">
+            <CardContent className="grid p-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
+              <div className="border-b border-border p-4 sm:p-5 lg:border-b-0 lg:border-r">
+                <Label htmlFor="plan-total-budget" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">
+                  Intended wedding budget
+                </Label>
+                <div className="relative mt-2">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">KES</span>
+                  <Input
+                    id="plan-total-budget"
+                    aria-label="Adjust wedding budget"
+                    type="text"
+                    inputMode="numeric"
+                    value={budgetInput}
+                    onFocus={() => setBudgetInput((current) => sanitizeIntegerInput(current))}
+                    onChange={(event) => setBudgetInput(sanitizeIntegerInput(event.target.value))}
+                    onBlur={() => {
+                      setBudgetInput((current) => formatIntegerInput(current));
+                      handleBudgetGoalChange();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') event.currentTarget.blur();
+                    }}
+                    className="h-10 bg-background pl-12 text-sm font-semibold sm:h-11 sm:text-base"
+                  />
+                </div>
+              </div>
 
-      <footer className="bg-[#1c1612] px-6 py-8 text-[#f6eee6]">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-sm sm:flex-row lg:px-2">
-          <BrandWordmark light size="md" />
-          <div className="flex flex-col items-center gap-2 text-center text-[#f6eee6]/72 sm:items-end sm:text-right">
-            <div className="flex items-center gap-4 text-xs uppercase tracking-[0.18em]">
-              <Link to="/pricing" className="transition-opacity hover:opacity-100">
-                Pricing
-              </Link>
-              <Link to={user ? workspaceRoute : signInRoute} className="transition-opacity hover:opacity-100">
-                {secondaryCtaLabel}
-              </Link>
-            </div>
-            © {new Date().getFullYear()} Zania. Wedding planning for Kenya and the diaspora.
+              <div className="border-b border-border lg:border-b-0 lg:border-r">
+                <p className="border-b border-border px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground sm:px-5">
+                  Tracking intended wedding budget
+                </p>
+                <div className="grid grid-cols-2">
+                  <div className="border-r border-border p-4 sm:p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Allocated</p>
+                    <p className="mt-3 text-base font-bold sm:text-xl">{formatCurrency(totalAllocated)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{utilizationPercentage.toFixed(1)}% of budget</p>
+                  </div>
+                  <div className="p-4 sm:p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">
+                      {remainingAllocation >= 0 ? 'Remaining' : 'Over budget'}
+                    </p>
+                    <p className={`mt-3 text-base font-bold sm:text-xl ${remainingAllocation < 0 ? 'text-destructive' : ''}`}>
+                      {formatCurrency(Math.abs(remainingAllocation))}
+                    </p>
+                    <div className={`mt-2 inline-flex items-center gap-2 text-xs font-semibold ${utilizationClassName}`} aria-live="polite">
+                      <span aria-hidden="true" className="h-px w-4 shrink-0 bg-current opacity-55" />
+                      {utilizationLabel}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 sm:p-5">
+                <Label htmlFor="plan-guest-count" className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">
+                  Expected guests
+                </Label>
+                <Input
+                  id="plan-guest-count"
+                  aria-label="Adjust guest count"
+                  type="text"
+                  inputMode="numeric"
+                  value={guestInput}
+                  onFocus={() => setGuestInput((current) => sanitizeIntegerInput(current))}
+                  onChange={(event) => setGuestInput(sanitizeIntegerInput(event.target.value))}
+                  onBlur={() => {
+                    setGuestInput((current) => formatIntegerInput(current));
+                    handleGuestCountChange();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur();
+                  }}
+                  className="mt-2 h-10 bg-background text-sm font-semibold sm:h-11 sm:text-base"
+                />
+                <p className="mt-2 text-xs text-muted-foreground sm:text-sm">{formatCurrency(coreGuestCost / plan.guestCount)} per guest</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="mt-5 border-border bg-card shadow-card">
+            <CardContent className="p-4 sm:p-8">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+                  <div>
+                    <h2 id="budget-plan-heading" className="text-xl font-semibold tracking-tight sm:text-2xl">Your budget estimate</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">A suggested split of your overall budget—not confirmed vendor pricing.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-muted-foreground sm:text-sm">{plan.allocations.length} items</span>
+                    {plan.allocations.some((allocation) => allocation.isManuallyEdited) ? (
+                      <button type="button" onClick={() => setResetAllOpen(true)} className="text-xs font-semibold text-primary underline-offset-4 hover:underline">Reset all</button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="mt-4 flex gap-3 rounded-lg border border-border bg-muted/35 p-3" role="note">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                  <p className="text-xs leading-5 text-muted-foreground sm:text-sm">
+                    Treat these amounts as a starting point. Actual service costs may be higher or lower, so confirm pricing directly with each vendor before making a booking or payment.
+                  </p>
+                </div>
+
+                <div id="budget-category-list" className="mt-4 space-y-2 sm:mt-6">
+                  <AnimatePresence initial={false}>
+                    {visibleAllocations.map((allocation) => {
+                      const isSelected = selectedAllocationName === allocation.name;
+                      const perGuestAmount = allocation.guestSensitive && plan.guestCount > 0
+                        ? allocation.amount / plan.guestCount
+                        : null;
+                      return (
+                        <motion.div
+                          layout={!prefersReducedMotion}
+                          key={allocation.name}
+                          initial={false}
+                          exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -4 }}
+                          transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: 'easeOut' }}
+                          className={`relative overflow-hidden rounded-lg border transition-[border-color,background-color,box-shadow] duration-200 ${isSelected ? 'border-primary/70 bg-primary/[0.025] shadow-card ring-1 ring-primary/15' : 'border-border bg-card hover:border-primary/30'}`}
+                        >
+                          <span aria-hidden="true" className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary transition-opacity duration-200 ${isSelected ? 'opacity-100' : 'opacity-0'}`} />
+                          <button
+                            type="button"
+                            aria-expanded={isSelected}
+                            aria-controls={allocationDomId(allocation.name)}
+                            onClick={() => openAllocation(allocation.name)}
+                            className={`min-h-[4.5rem] w-full px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5 ${isSelected ? 'bg-primary/[0.06]' : 'hover:bg-muted/25'}`}
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-sm font-semibold">{allocation.name}</p>
+                                  {allocation.isManuallyEdited ? <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-primary">Edited</span> : null}
+                                </div>
+                                <p className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  <span>{isSelected ? 'Hide details' : 'View details'}
+                                  {perGuestAmount == null ? '' : ` · ${formatCurrency(perGuestAmount)} per guest`}
+                                  </span>
+                                  <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 motion-reduce:transition-none ${isSelected ? 'rotate-180' : ''}`} aria-hidden="true" />
+                                </p>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <p className="text-sm font-semibold">{formatCurrency(allocation.amount)}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">{allocation.percentage.toFixed(1)}% of budget</p>
+                              </div>
+                            </div>
+                            <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
+                              <motion.div layout className="h-full rounded-full bg-primary" animate={{ width: `${Math.min(allocation.percentage, 100)}%` }} transition={{ duration: prefersReducedMotion ? 0 : 0.28, ease: 'easeOut' }} />
+                            </div>
+                          </button>
+
+                          <AnimatedCardDetails open={isSelected}>
+                            <div id={allocationDomId(allocation.name)} className="space-y-4 border-t border-border bg-background/60 p-4 sm:p-5">
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                  <Label htmlFor={`${allocationDomId(allocation.name)}-amount`}>Planned amount</Label>
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
+                                    <Input
+                                      id={`${allocationDomId(allocation.name)}-amount`}
+                                      aria-label={`Edit planned allocation for ${allocation.name}`}
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={allocationDraft?.amount ?? String(allocation.amount)}
+                                      onChange={(event) => handleAllocationDraftChange(formatNonNegativeNumberInputText(event.target.value), 'amount')}
+                                      onKeyDown={keepEditingKeysInsideField}
+                                      className="pl-12"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor={`${allocationDomId(allocation.name)}-percentage`}>Allocation percentage</Label>
+                                  <div className="relative">
+                                    <Input
+                                      id={`${allocationDomId(allocation.name)}-percentage`}
+                                      aria-label={`Edit percentage allocation for ${allocation.name}`}
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={allocationDraft?.percentage ?? allocation.percentage.toFixed(1)}
+                                      onChange={(event) => handleAllocationDraftChange(formatNonNegativeNumberInputText(event.target.value), 'percentage')}
+                                      onKeyDown={keepEditingKeysInsideField}
+                                      className="pr-9"
+                                    />
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">%</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <Button type="button" size="sm" onClick={() => allocationDraft && handleAllocationChange(allocation.name, allocationDraft[allocationDraft.lastEditedField], allocationDraft.lastEditedField)}>Apply</Button>
+                                  <Button type="button" size="sm" variant="outline" onClick={closeAllocation}>Cancel</Button>
+                                  {allocation.isManuallyEdited ? <Button type="button" size="sm" variant="link" onClick={() => resetAllocation(allocation.name)}>Reset</Button> : null}
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  disabled={plan.allocations.length <= 1}
+                                  onClick={() => setPendingRemovalName(allocation.name)}
+                                  className="text-destructive hover:text-destructive"
+                                  aria-label={`Remove ${allocation.name}`}
+                                  title={`Remove ${allocation.name}`}
+                                >
+                                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                </Button>
+                              </div>
+                            </div>
+                          </AnimatedCardDetails>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                </div>
+
+                <AlertDialog open={Boolean(pendingRemovalName)} onOpenChange={(open) => {
+                  if (!open) setPendingRemovalName(null);
+                }}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove this category?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {pendingRemovalName ? `${pendingRemovalName} will be removed from this estimate. You can add it back later.` : ''}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Keep category</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={() => {
+                          if (pendingRemovalName) handleRemoveCategory(pendingRemovalName);
+                          setPendingRemovalName(null);
+                        }}
+                      >
+                        Remove category
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+
+                <Button
+                  variant="outline"
+                  onClick={() => setShowAllCategories((current) => !current)}
+                  aria-expanded={showAllCategories}
+                  aria-controls="budget-category-list"
+                  className="mt-3 h-11 w-full gap-2 border-border bg-muted/25 text-sm font-semibold text-foreground shadow-none transition-[background-color,border-color] duration-200 hover:border-primary/35 hover:bg-muted/55"
+                >
+                  {showAllCategories ? 'Show the essentials' : `View all ${plan.allocations.length} budget items`}
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${showAllCategories ? 'rotate-180' : ''}`}
+                    aria-hidden="true"
+                  />
+                </Button>
+
+                <div className="mt-6 rounded-lg border border-border bg-muted/40 p-4 sm:flex sm:items-center sm:justify-between sm:gap-5">
+                  <div>
+                    <p className="text-sm font-semibold">Save this estimate</p>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">Keep it with your wedding plan.</p>
+                  </div>
+                  <Button disabled={isSaving} onClick={() => void handleSavePlan()} className="mt-4 h-11 w-full gap-2 sm:mt-0 sm:w-auto sm:px-6">
+                    {isSaving ? 'Saving…' : user ? 'Save estimate' : 'Create account to save'}
+                  </Button>
+                </div>
+            </CardContent>
+          </Card>
+        </motion.section>
+      ) : null}
+
+      <Dialog
+        open={pendingTotalBudget != null}
+        onOpenChange={(open) => {
+          if (!open && plan) {
+            setBudgetInput(plan.totalBudget.toLocaleString('en-KE'));
+            setPendingTotalBudget(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Update your budget</DialogTitle>
+            <DialogDescription>How should Zania update the category amounts?</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <Button type="button" variant="outline" className="h-auto justify-start px-4 py-3 text-left" onClick={() => applyBudgetGoalChange('scale_percentages')}>
+              <span><span className="block font-semibold">Keep the same budget split</span><span className="mt-1 block text-xs font-normal text-muted-foreground">Category amounts scale with your new budget.</span></span>
+            </Button>
+            <Button type="button" className="h-auto justify-start px-4 py-3 text-left" onClick={() => applyBudgetGoalChange('keep_amounts')}>
+              <span><span className="block font-semibold">Keep current category amounts</span><span className="mt-1 block text-xs font-normal opacity-80">Recommended · leave the added budget available for your next choice.</span></span>
+            </Button>
           </div>
-        </div>
-      </footer>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetAllOpen} onOpenChange={setResetAllOpen}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Reset all allocations?</DialogTitle>
+            <DialogDescription>This restores Zania’s suggested split for the current wedding budget.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setResetAllOpen(false)}>Cancel</Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!plan) return;
+                const nextPlan = resetAllInteractiveBudgetAllocations(plan);
+                setPlan(nextPlan);
+                persistPlanDraft(nextPlan);
+                setResetAllOpen(false);
+              }}
+            >
+              Reset allocations
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <PublicSiteFooter />
     </div>
   );
 }

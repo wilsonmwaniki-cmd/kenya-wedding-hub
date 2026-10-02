@@ -22,15 +22,19 @@ export function vendorHasFullAccess(record?: VendorAccessRecord | null) {
   return Boolean(record?.is_approved && record?.is_verified && vendorHasActiveSubscription(record));
 }
 
+export function vendorCanCollaborate(record?: VendorAccessRecord | null) {
+  return Boolean(record?.is_approved && record?.is_verified);
+}
+
 export function vendorAccessMessage(record?: VendorAccessRecord | null) {
   if (hasActiveBetaTrial(record)) {
     if (!record?.is_approved) return 'Your 14-day beta trial is active. Paid vendor tools are unlocked while approval is still pending.';
     if (record?.verification_requested && !record?.is_verified) return 'Your 14-day beta trial is active. Paid vendor tools are unlocked while verification is under review.';
     if (!record?.is_verified) return 'Your 14-day beta trial is active. Paid vendor tools are unlocked while you finish verification.';
-    return 'Your 14-day beta trial is active. Vendor Pro features are unlocked while the trial runs.';
+    return 'Your 14-day beta trial is active. Professional features are unlocked while the trial runs.';
   }
   if (!record?.is_approved) return 'Listing approval is still pending.';
-  if (!vendorHasActiveSubscription(record)) return 'Active subscription required before planner connections and analytics unlock.';
+  if (!vendorHasActiveSubscription(record)) return 'Professional is required for business operations and analytics.';
   if (record?.verification_requested && !record?.is_verified) return 'Verification request is in admin review.';
   if (!record?.is_verified) return 'Verification required.';
   return 'Full vendor access is active.';

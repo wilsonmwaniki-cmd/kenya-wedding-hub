@@ -1,37 +1,76 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { HierarchyGroup } from '@/components/HierarchyGroup';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Loader2, Save, Receipt, Lock, CalendarDays, Download, HandCoins, Search, ChevronRight, CircleDashed, AlertTriangle } from 'lucide-react';
+import { ExternalLink, Loader2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
+import { committeeResponsibilityOptions, contractStatusLabel } from '@/lib/committeeRoles';
 import { createVendorPriceObservation, getVendorPriceBenchmark, type VendorPriceBenchmark } from '@/lib/vendorPriceIntelligence';
-import { vendorPaymentStatusLabel, vendorPaymentStatusTone } from '@/lib/vendorPayments';
+import {
+  deriveVendorPaymentStatus,
+  totalRecordedVendorPayments,
+  updateVendorPaymentState,
+  vendorPaymentStatusLabel,
+  vendorPaymentStatusTone,
+  type VendorPaymentStatus,
+} from '@/lib/vendorPayments';
+import {
+  coupleVendorContractMessage,
+  coupleVendorContractShareUrl,
+  coupleVendorContractStatusLabel,
+  getCoupleVendorContract,
+} from '@/lib/coupleVendorContracts';
+import {
+  hasRecordedVendor,
+  setVendorSelectionStatus,
+  vendorSelectionLabel,
+  vendorSelectionStatuses,
+  type VendorSelectionStatus,
+} from '@/lib/vendorSelection';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
 import { personalBudgetTemplates } from '@/lib/personalBudgetTemplates';
 import { weddingBudgetTemplates } from '@/lib/weddingBudgetTemplates';
-import { getEntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
+import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
-import InlineAssistantCard from '@/components/InlineAssistantCard';
 import InfoTip from '@/components/InfoTip';
-import { useInlineAssistant } from '@/hooks/useInlineAssistant';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
-import { syncCoupleCheckout } from '@/lib/billing';
+import { getCheckoutProviderFromSearchParams, getCheckoutReferenceFromSearchParams, syncCoupleCheckout } from '@/lib/billing';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { createVendorTask } from '@/lib/vendorTasks';
+import { getSuggestedTaskTemplates, type SuggestedTaskTemplateOption } from '@/lib/weddingTaskTemplates';
+import { PaymentReminderStatus } from '@/components/PaymentReminderStatus';
+import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import {
+  getRecordedVendorsForBudgetCategory,
+  getRelatedTasksForBudgetCategory,
+  planningCategoryRelationScore,
+} from '@/lib/budgetRelations';
+import {
+  canonicalizeVendorCategory,
+  getVendorCategoryScope,
+  isVendorCategory,
+  vendorCategoryCatalog,
+  vendorCategoriesMatch,
+} from '@/lib/vendorCategories';
+import { recalibrateBudgetAllocations } from '@/lib/budgetRecalibration';
+import { summarizeWeddingBudget } from '@/lib/budgetAllocation';
 
 interface BudgetCategory {
   id: string;
@@ -42,6 +81,11 @@ interface BudgetCategory {
   visibility: 'public' | 'private';
   committee_role_in_charge: string | null;
   contract_status: string;
+  suggested_allocated: number | null;
+  suggested_percentage: number | null;
+  allocation_manually_edited: boolean;
+  allocation_last_edited_field: 'amount' | 'percentage' | null;
+  wedding_id: string | null;
 }
 
 type BudgetScope = 'wedding' | 'personal';
@@ -86,9 +130,55 @@ interface BudgetVendorOption {
   category: string;
   price: number | null;
   amount_paid: number;
+  deposit_amount: number;
+  contract_status: string;
   payment_status: string;
   payment_due_date: string | null;
   selection_status?: string | null;
+  status?: string | null;
+  vendor_listing_id?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
+}
+
+interface DirectoryVendorSuggestion {
+  id: string;
+  business_name: string;
+  category: string;
+  phone: string | null;
+  email: string | null;
+  location: string | null;
+  is_verified: boolean;
+}
+
+interface BudgetTaskOption {
+  id: string;
+  title: string;
+  description: string | null;
+  category: string | null;
+  completed: boolean;
+  due_date: string | null;
+  source_vendor_id: string | null;
+}
+
+interface VendorEditorDraft {
+  name: string;
+  category: string;
+  phone: string;
+  email: string;
+  price: string;
+  selectionStatus: VendorSelectionStatus;
+  depositAmount: string;
+  paymentDueDate: string;
+  notes: string;
+}
+
+interface TaskEditorDraft {
+  title: string;
+  description: string;
+  dueDate: string;
+  completed: boolean;
 }
 
 interface PaymentCategoryOption {
@@ -96,8 +186,6 @@ interface PaymentCategoryOption {
   name: string;
   budgetCategoryId: string | null;
 }
-
-type BudgetViewMode = 'by_category' | 'payments_made';
 
 interface PaymentLogForm {
   budgetScope: BudgetScope;
@@ -113,6 +201,15 @@ interface PaymentLogForm {
 function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'N/A';
   return `KES ${Number(value).toLocaleString()}`;
+}
+
+function formatIntegerDraft(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return digits ? Number(digits).toLocaleString('en-KE') : '';
+}
+
+function sanitizeIntegerDraft(value: string) {
+  return value.replace(/\D/g, '');
 }
 
 function normalizeCategoryName(value: string) {
@@ -134,31 +231,33 @@ function benchmarkSummary(benchmark?: VendorPriceBenchmark | null) {
   return 'No market observations captured yet for this category.';
 }
 
-function getBudgetAssistantFeature(role?: string | null, plannerType?: string | null): EntitlementFeature {
-  if (role === 'planner' && plannerType === 'committee') return 'committee.ai_assistant';
-  if (role === 'planner') return 'planner.ai_assistant';
-  return 'couple.ai_assistant';
-}
-
 async function loadBudgetCategories(dataOrFilter: string): Promise<BudgetCategory[]> {
   const { data, error } = await supabase.from('budget_categories').select('*').or(dataOrFilter).order('created_at');
   if (error) throw error;
 
   return ((data ?? []) as any[]).map((item) => ({
     ...item,
+    name: canonicalizeVendorCategory(item.name),
     allocated: Number(item.allocated),
     spent: Number(item.spent),
     budget_scope: (item.budget_scope ?? 'wedding') as BudgetScope,
     visibility: (item.visibility ?? 'public') as 'public' | 'private',
     committee_role_in_charge: item.committee_role_in_charge ?? null,
     contract_status: item.contract_status ?? (item.budget_scope === 'personal' ? 'not_required' : 'not_started'),
-  })) as BudgetCategory[];
+    suggested_allocated: item.suggested_allocated == null ? null : Number(item.suggested_allocated),
+    suggested_percentage: item.suggested_percentage == null ? null : Number(item.suggested_percentage),
+    allocation_manually_edited: Boolean(item.allocation_manually_edited),
+    allocation_last_edited_field:
+      item.allocation_last_edited_field === 'amount' || item.allocation_last_edited_field === 'percentage'
+        ? item.allocation_last_edited_field
+        : null,
+  })).filter((item) => isVendorCategory(item.name)) as BudgetCategory[];
 }
 
 async function loadBudgetVendorOptions(dataOrFilter: string): Promise<BudgetVendorOption[]> {
   const { data, error } = await supabase
     .from('vendors')
-    .select('id, name, category, price, amount_paid, payment_status, payment_due_date, selection_status')
+    .select('id, name, category, price, amount_paid, deposit_amount, contract_status, payment_status, payment_due_date, selection_status, status, vendor_listing_id, phone, email, notes')
     .or(dataOrFilter)
     .order('category');
 
@@ -166,8 +265,27 @@ async function loadBudgetVendorOptions(dataOrFilter: string): Promise<BudgetVend
 
   return ((data ?? []) as any[]).map((row) => ({
     ...row,
+    category: canonicalizeVendorCategory(row.category),
     amount_paid: Number(row.amount_paid ?? 0),
+    deposit_amount: Number(row.deposit_amount ?? 0),
+    contract_status: row.contract_status ?? 'not_started',
     price: row.price != null ? Number(row.price) : null,
+  }));
+}
+
+async function loadDirectoryVendorSuggestions(): Promise<DirectoryVendorSuggestion[]> {
+  const { data, error } = await supabase
+    .from('vendor_listings')
+    .select('id, business_name, category, phone, email, location, is_verified')
+    .eq('is_approved', true)
+    .order('is_verified', { ascending: false })
+    .order('business_name')
+    .limit(200);
+
+  if (error) throw error;
+  return ((data ?? []) as DirectoryVendorSuggestion[]).map((row) => ({
+    ...row,
+    category: canonicalizeVendorCategory(row.category),
   }));
 }
 
@@ -186,15 +304,36 @@ async function loadBudgetPaymentRecords(dataOrFilter: string): Promise<BudgetPay
   })) as BudgetPaymentRecord[];
 }
 
+async function loadBudgetTasks(dataOrFilter: string): Promise<BudgetTaskOption[]> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('id, title, description, category, completed, due_date, source_vendor_id')
+    .or(dataOrFilter)
+    .order('completed');
+
+  if (error) throw error;
+  return (data ?? []) as BudgetTaskOption[];
+}
+
+async function loadWorkspaceGuestCount(dataOrFilter: string) {
+  const { count, error } = await supabase
+    .from('guests')
+    .select('id', { count: 'exact', head: true })
+    .or(dataOrFilter);
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export default function Budget() {
-  const { user, profile } = useAuth();
-  const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
+  const { user, profile, updateProfile } = useAuth();
+  const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating, loadClients } = usePlanner();
   const { entitlements: weddingEntitlements, couplePlanTier, refresh } = useWeddingEntitlements();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
-  const assistantPanel = useAssistantPanel();
+  const prefersReducedMotion = useReducedMotion();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -205,13 +344,35 @@ export default function Budget() {
   const [selectedTemplateName, setSelectedTemplateName] = useState('');
   const [newCategoryScope, setNewCategoryScope] = useState<BudgetScope>('wedding');
   const [activeBudgetScope, setActiveBudgetScope] = useState<BudgetScope>('wedding');
-  const [budgetViewMode, setBudgetViewMode] = useState<BudgetViewMode>('by_category');
   const [categorySearch, setCategorySearch] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [inlineModule, setInlineModule] = useState<{ categoryId: string; type: 'vendor' | 'task' } | null>(null);
+  const [inlineVendorDrafts, setInlineVendorDrafts] = useState<Record<string, string>>({});
+  const [inlineTaskDrafts, setInlineTaskDrafts] = useState<Record<string, string>>({});
+  const [savingInlineVendorId, setSavingInlineVendorId] = useState<string | null>(null);
+  const [savingInlineTaskId, setSavingInlineTaskId] = useState<string | null>(null);
+  const [vendorEditorCategory, setVendorEditorCategory] = useState<BudgetCategory | null>(null);
+  const [vendorEditorRecord, setVendorEditorRecord] = useState<BudgetVendorOption | null>(null);
+  const [vendorEditorOpen, setVendorEditorOpen] = useState(false);
+  const [savingVendorEditor, setSavingVendorEditor] = useState(false);
+  const [vendorEditorDraft, setVendorEditorDraft] = useState<VendorEditorDraft | null>(null);
+  const [taskEditorCategory, setTaskEditorCategory] = useState<BudgetCategory | null>(null);
+  const [taskEditorRecord, setTaskEditorRecord] = useState<BudgetTaskOption | null>(null);
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false);
+  const [savingTaskEditor, setSavingTaskEditor] = useState(false);
+  const [taskEditorDraft, setTaskEditorDraft] = useState<TaskEditorDraft | null>(null);
   const [spentDrafts, setSpentDrafts] = useState<Record<string, string>>({});
+  const [allocationDrafts, setAllocationDrafts] = useState<Record<string, { amount: string; percentage: string; lastEditedField: 'amount' | 'percentage' }>>({});
+  const [savingAllocationId, setSavingAllocationId] = useState<string | null>(null);
   const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, BudgetWorkflowDraft>>({});
   const [savingSpentId, setSavingSpentId] = useState<string | null>(null);
   const [savingWorkflowId, setSavingWorkflowId] = useState<string | null>(null);
+  const [budgetGoalDraft, setBudgetGoalDraft] = useState('');
+  const editingBudgetGoalRef = useRef(false);
+  const [savingBudgetGoal, setSavingBudgetGoal] = useState(false);
+  const [expectedGuestCountDraft, setExpectedGuestCountDraft] = useState('');
+  const editingExpectedGuestCountRef = useRef(false);
+  const [savingExpectedGuestCount, setSavingExpectedGuestCount] = useState(false);
   const [benchmarksLoading, setBenchmarksLoading] = useState(false);
   const [categoryBenchmarks, setCategoryBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
   const [addModalBenchmark, setAddModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
@@ -222,6 +383,9 @@ export default function Budget() {
   const [spendSubmitError, setSpendSubmitError] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [recordingPaymentMade, setRecordingPaymentMade] = useState(false);
+  const [paymentRecorded, setPaymentRecorded] = useState(false);
+  const paymentSuccessTimerRef = useRef<number | null>(null);
+  const estimatorRecoveryAttemptedRef = useRef(false);
   const [paymentFormErrors, setPaymentFormErrors] = useState<{ categorySelection?: string; payeeName?: string; amount?: string }>({});
   const [paymentSubmitError, setPaymentSubmitError] = useState<string | null>(null);
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
@@ -242,12 +406,16 @@ export default function Budget() {
     notes: '',
   });
   const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
+  const budgetItemsRef = useRef<HTMLDivElement>(null);
   const upgradeState = searchParams.get('upgrade');
-  const checkoutSessionId = searchParams.get('checkout_session_id');
+  const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
+  const checkoutProvider = getCheckoutProviderFromSearchParams(searchParams);
 
   const categoriesQueryKey = ['budget', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
   const vendorsQueryKey = ['budget-vendors', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
   const paymentsQueryKey = ['budget-payments', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+  const tasksQueryKey = ['budget-tasks', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+  const guestCountQueryKey = ['budget-guest-count', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
 
   const categoriesQuery = useQuery({
     queryKey: categoriesQueryKey,
@@ -270,9 +438,74 @@ export default function Budget() {
     staleTime: 30_000,
   });
 
+  const vendorEditorContractQuery = useQuery({
+    queryKey: ['couple-vendor-contract', vendorEditorRecord?.id ?? null],
+    queryFn: () => getCoupleVendorContract(vendorEditorRecord!.id),
+    enabled: Boolean(vendorEditorOpen && vendorEditorRecord?.id),
+    staleTime: 30_000,
+  });
+
+  const tasksQuery = useQuery({
+    queryKey: tasksQueryKey,
+    queryFn: () => loadBudgetTasks(dataOrFilter!),
+    enabled: Boolean(dataOrFilter),
+    staleTime: 30_000,
+  });
+
+  const guestCountQuery = useQuery({
+    queryKey: guestCountQueryKey,
+    queryFn: () => loadWorkspaceGuestCount(dataOrFilter!),
+    enabled: Boolean(dataOrFilter),
+    staleTime: 30_000,
+  });
+
+  const directorySuggestionsQuery = useQuery({
+    queryKey: ['budget-directory-suggestions'],
+    queryFn: loadDirectoryVendorSuggestions,
+    enabled: Boolean(dataOrFilter),
+    staleTime: 5 * 60_000,
+  });
+
   const categories = categoriesQuery.data ?? [];
+  const activeWeddingId = isPlanner
+    ? selectedClient?.wedding_id ?? null
+    : categories.find((category) => category.budget_scope === 'wedding' && category.wedding_id)?.wedding_id ?? null;
   const vendorOptions = vendorOptionsQuery.data ?? [];
   const paymentRecords = paymentRecordsQuery.data ?? [];
+  const budgetTasks = tasksQuery.data ?? [];
+  const directorySuggestions = directorySuggestionsQuery.data ?? [];
+
+  useEffect(() => {
+    if (
+      estimatorRecoveryAttemptedRef.current
+      || isPlanner
+      || !user
+      || categoriesQuery.isLoading
+      || categoriesQuery.isError
+      || categories.length > 0
+      || !hasPendingEstimatorPlanDraft(user.user_metadata)
+    ) return;
+
+    estimatorRecoveryAttemptedRef.current = true;
+    void (async () => {
+      const result = await seedPendingEstimatorPlanForUser({
+        userId: user.id,
+        role: profile?.role,
+        userMetadata: user.user_metadata,
+      });
+
+      if (!result) return;
+      await refreshBudgetWorkspace();
+      toast({
+        title: 'Wedding estimate restored',
+        description: 'Your saved estimate is now in your budget.',
+      });
+    })();
+  }, [categories.length, categoriesQuery.isError, categoriesQuery.isLoading, isPlanner, profile?.role, user]);
+
+  useEffect(() => () => {
+    if (paymentSuccessTimerRef.current != null) window.clearTimeout(paymentSuccessTimerRef.current);
+  }, []);
   const finalVendorPayments = useMemo(
     () => vendorOptions.filter((row) => row.selection_status === 'final') as FinalVendorPayment[],
     [vendorOptions],
@@ -283,31 +516,339 @@ export default function Budget() {
       queryClient.invalidateQueries({ queryKey: categoriesQueryKey }),
       queryClient.invalidateQueries({ queryKey: vendorsQueryKey }),
       queryClient.invalidateQueries({ queryKey: paymentsQueryKey }),
+      queryClient.invalidateQueries({ queryKey: tasksQueryKey }),
     ]);
+  };
+
+  const openVendorEditor = (category: BudgetCategory, vendor?: BudgetVendorOption) => {
+    setVendorEditorCategory(category);
+    setVendorEditorRecord(vendor ?? null);
+    setVendorEditorDraft({
+      name: vendor?.name ?? '',
+      category: vendor?.category ?? category.name,
+      phone: vendor?.phone ?? '',
+      email: vendor?.email ?? '',
+      price: vendor?.price == null ? '' : String(vendor.price),
+      selectionStatus: (vendor?.selection_status ?? 'shortlisted') as VendorSelectionStatus,
+      depositAmount: String(vendor?.deposit_amount ?? 0),
+      paymentDueDate: vendor?.payment_due_date ?? '',
+      notes: vendor?.notes ?? '',
+    });
+    setVendorEditorOpen(true);
+  };
+
+  const saveVendorEditor = async () => {
+    if (!user || !vendorEditorCategory || !vendorEditorDraft) return;
+    const name = vendorEditorDraft.name.trim();
+    const price = vendorEditorDraft.price.trim() === '' ? null : Number(vendorEditorDraft.price);
+    const depositAmount = Number(vendorEditorDraft.depositAmount || 0);
+    const amountPaid = vendorEditorRecord
+      ? totalRecordedVendorPayments(
+          paymentRecords.filter((payment) => payment.vendor_id === vendorEditorRecord.id),
+        )
+      : 0;
+    const paymentStatus = deriveVendorPaymentStatus({
+      totalCost: price,
+      depositRequired: depositAmount,
+      totalPaid: amountPaid,
+    });
+    if (!name) {
+      toast({ title: 'Add the vendor name', description: 'A business or contact name is required.', variant: 'destructive' });
+      return;
+    }
+    if ((price != null && (!Number.isFinite(price) || price < 0)) || !Number.isFinite(depositAmount) || depositAmount < 0) {
+      toast({ title: 'Check the amounts', description: 'Invoice and agreed deposit amounts must be zero or higher.', variant: 'destructive' });
+      return;
+    }
+
+    const updates = {
+      name,
+      category: vendorEditorCategory.name,
+      phone: vendorEditorDraft.phone.trim() || null,
+      email: vendorEditorDraft.email.trim() || null,
+      price,
+      contract_status: vendorEditorRecord?.contract_status ?? 'not_started',
+      deposit_amount: depositAmount,
+      amount_paid: amountPaid,
+      payment_status: paymentStatus,
+      payment_due_date: vendorEditorDraft.paymentDueDate || null,
+      notes: vendorEditorDraft.notes.trim() || null,
+      selection_status: vendorEditorDraft.selectionStatus,
+      status: vendorEditorDraft.selectionStatus === 'final' ? 'booked' : vendorEditorRecord?.status ?? 'contacted',
+    };
+
+    setSavingVendorEditor(true);
+    try {
+      if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'vendors',
+          changeType: vendorEditorRecord ? 'update' : 'create',
+          targetId: vendorEditorRecord?.id,
+          currentPayload: vendorEditorRecord ? vendorEditorRecord as unknown as Record<string, unknown> : undefined,
+          proposedPayload: vendorEditorRecord
+            ? updates
+            : { ...updates, wedding_id: activeWeddingId },
+        });
+        toast({ title: vendorEditorRecord ? 'Vendor update sent for approval' : 'Vendor sent for approval', description: 'The couple will review these details.' });
+      } else if (vendorEditorRecord) {
+        const { selection_status: _selectionStatus, ...recordUpdates } = updates;
+        const { error } = await supabase.from('vendors').update(recordUpdates).eq('id', vendorEditorRecord.id);
+        if (error) throw error;
+        if (vendorEditorDraft.selectionStatus !== vendorEditorRecord.selection_status) {
+          await setVendorSelectionStatus(vendorEditorRecord.id, vendorEditorDraft.selectionStatus);
+        }
+        await updateVendorPaymentState({
+          vendorId: vendorEditorRecord.id,
+          contractAmount: price,
+          depositAmount,
+          amountPaid,
+          paymentStatus,
+          paymentDueDate: vendorEditorDraft.paymentDueDate || null,
+        });
+        toast({ title: 'Vendor updated', description: `${name}'s details are now current.` });
+      } else {
+        const { selection_status: requestedSelectionStatus, ...newVendorDetails } = updates;
+        const { data: insertedVendor, error } = await supabase.from('vendors').insert({
+          user_id: user.id,
+          client_id: isPlanner && selectedClient ? selectedClient.id : null,
+          wedding_id: activeWeddingId,
+          ...newVendorDetails,
+          selection_status: 'shortlisted',
+        }).select('id').single();
+        if (error) throw error;
+        if (requestedSelectionStatus !== 'shortlisted') {
+          await setVendorSelectionStatus(insertedVendor.id, requestedSelectionStatus);
+        }
+        toast({
+          title: 'Vendor added',
+          description: requestedSelectionStatus === 'final'
+            ? `${name} is now the confirmed ${vendorEditorCategory.name} vendor.`
+            : `${name} is now in the ${vendorEditorCategory.name} shortlist.`,
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: vendorsQueryKey });
+      setVendorEditorOpen(false);
+    } catch (error) {
+      toast({ title: 'Could not save vendor', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setSavingVendorEditor(false);
+    }
+  };
+
+  const openTaskEditor = (category: BudgetCategory, task?: BudgetTaskOption) => {
+    setTaskEditorCategory(category);
+    setTaskEditorRecord(task ?? null);
+    setTaskEditorDraft({
+      title: task?.title ?? '',
+      description: task?.description ?? '',
+      dueDate: task?.due_date ?? '',
+      completed: task?.completed ?? false,
+    });
+    setTaskEditorOpen(true);
+  };
+
+  const saveTaskEditor = async () => {
+    if (!user || !taskEditorCategory || !taskEditorDraft) return;
+    const title = taskEditorDraft.title.trim();
+    if (!title) {
+      toast({ title: 'Add a task title', description: 'Write the action that needs to be completed.', variant: 'destructive' });
+      return;
+    }
+    const updates = {
+      title,
+      description: taskEditorDraft.description.trim() || null,
+      due_date: taskEditorDraft.dueDate || null,
+      category: taskEditorCategory.name,
+      completed: taskEditorDraft.completed,
+    };
+
+    setSavingTaskEditor(true);
+    try {
+      if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'tasks',
+          changeType: taskEditorRecord ? 'update' : 'create',
+          targetId: taskEditorRecord?.id,
+          currentPayload: taskEditorRecord ? taskEditorRecord as unknown as Record<string, unknown> : undefined,
+          proposedPayload: updates,
+        });
+        toast({ title: taskEditorRecord ? 'Task update sent for approval' : 'Task sent for approval', description: 'The couple will review this change.' });
+      } else if (taskEditorRecord) {
+        const { error } = await supabase.from('tasks').update(updates).eq('id', taskEditorRecord.id);
+        if (error) throw error;
+        toast({ title: 'Task updated', description: `${title} is now current.` });
+      } else {
+        await createVendorTask({
+          userId: user.id,
+          clientId: isPlanner && selectedClient ? selectedClient.id : null,
+          title,
+          description: updates.description,
+          dueDate: updates.due_date,
+          category: taskEditorCategory.name,
+        });
+        toast({ title: 'Task added', description: `It is now connected to ${taskEditorCategory.name}.` });
+      }
+      await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+      setTaskEditorOpen(false);
+    } catch (error) {
+      toast({ title: 'Could not save task', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setSavingTaskEditor(false);
+    }
+  };
+
+  const addInlineVendor = async (category: BudgetCategory, suggestion?: DirectoryVendorSuggestion) => {
+    if (!user) return;
+    const vendorName = suggestion?.business_name ?? inlineVendorDrafts[category.id]?.trim();
+    if (!vendorName) {
+      toast({ title: 'Enter a vendor name', description: 'Add the business name before saving.' });
+      return;
+    }
+
+    const savingKey = suggestion?.id ?? `custom-${category.id}`;
+    setSavingInlineVendorId(savingKey);
+    const insert: Record<string, unknown> = {
+      user_id: user.id,
+      name: vendorName,
+      category: category.name,
+      phone: suggestion?.phone ?? null,
+      email: suggestion?.email ?? null,
+      price: null,
+      status: 'contacted',
+      selection_status: 'shortlisted',
+      vendor_listing_id: suggestion?.id ?? null,
+    };
+    if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+    if (activeWeddingId) insert.wedding_id = activeWeddingId;
+
+    try {
+      if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'vendors',
+          changeType: 'create',
+          proposedPayload: {
+            name: insert.name,
+            category: insert.category,
+            phone: insert.phone,
+            email: insert.email,
+            price: insert.price,
+            status: insert.status,
+            selection_status: insert.selection_status,
+            vendor_listing_id: insert.vendor_listing_id,
+            wedding_id: insert.wedding_id ?? null,
+          },
+        });
+        toast({ title: 'Vendor sent for approval', description: `${vendorName} will appear after the couple approves it.` });
+      } else {
+        const { error } = await supabase.from('vendors').insert(insert);
+        if (error) throw error;
+        toast({ title: 'Vendor added', description: `${vendorName} is now linked to ${category.name}.` });
+      }
+      setInlineVendorDrafts((current) => ({ ...current, [category.id]: '' }));
+      await queryClient.invalidateQueries({ queryKey: vendorsQueryKey });
+    } catch (error: unknown) {
+      toast({
+        title: 'Could not add vendor',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingInlineVendorId(null);
+    }
+  };
+
+  const addInlineTask = async (category: BudgetCategory, suggestion?: SuggestedTaskTemplateOption) => {
+    if (!user) return;
+    const taskTitle = suggestion?.title ?? inlineTaskDrafts[category.id]?.trim();
+    if (!taskTitle) {
+      toast({ title: 'Enter a task', description: 'Add a short task before saving.' });
+      return;
+    }
+
+    const savingKey = suggestion?.key ?? `custom-${category.id}`;
+    setSavingInlineTaskId(savingKey);
+    try {
+      if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'tasks',
+          changeType: 'create',
+          proposedPayload: {
+            title: taskTitle,
+            description: suggestion?.description ?? null,
+            category: category.name,
+            phase: suggestion?.phase ?? null,
+            visibility: suggestion?.visibility ?? 'public',
+            priority_level: suggestion?.priorityLevel ?? null,
+            delegatable: suggestion?.delegatable ?? false,
+            recommended_role: suggestion?.recommendedRole ?? null,
+            template_source: suggestion ? 'budget_context_suggestion_v1' : 'budget_context_custom_v1',
+            completed: false,
+          },
+        });
+        toast({ title: 'Task sent for approval', description: 'The couple will review it before it is added.' });
+      } else {
+        await createVendorTask({
+          userId: user.id,
+          clientId: isPlanner && selectedClient ? selectedClient.id : null,
+          title: taskTitle,
+          description: suggestion?.description ?? null,
+          category: category.name,
+          phase: suggestion?.phase ?? null,
+          visibility: suggestion?.visibility ?? 'public',
+          priorityLevel: suggestion?.priorityLevel ?? null,
+          delegatable: suggestion?.delegatable ?? false,
+          recommendedRole: suggestion?.recommendedRole ?? null,
+          templateSource: suggestion ? 'budget_context_suggestion_v1' : 'budget_context_custom_v1',
+        });
+        toast({ title: 'Task added', description: `It is now connected to ${category.name}.` });
+      }
+      setInlineTaskDrafts((current) => ({ ...current, [category.id]: '' }));
+      await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+    } catch (error: unknown) {
+      toast({
+        title: 'Could not add task',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingInlineTaskId(null);
+    }
   };
 
   useEffect(() => {
     if (
       upgradeState !== 'success'
-      || !checkoutSessionId
-      || processedCheckoutSessionId === checkoutSessionId
+      || !checkoutReference
+      || processedCheckoutSessionId === checkoutReference
       || !profile
     ) {
       return;
     }
 
     let cancelled = false;
-    setProcessedCheckoutSessionId(checkoutSessionId);
+    setProcessedCheckoutSessionId(checkoutReference);
 
     const runSync = async () => {
       try {
-        const result = await syncCoupleCheckout(checkoutSessionId);
+        const result = await syncCoupleCheckout(checkoutReference, checkoutProvider);
         if (cancelled) return;
 
         await refresh();
         if (cancelled) return;
 
-        const planLabel = result.couplePlanTier === 'premium' ? 'Premium' : 'Basic';
+        const planLabel = result.couplePlanTier === 'collaborative' ? 'Collaborative' : 'Intimate';
         toast({
           title: `${planLabel} activated`,
           description: 'Your wedding workspace now has the upgraded planning access.',
@@ -316,7 +857,7 @@ export default function Budget() {
       } catch (error: any) {
         if (cancelled) return;
         toast({
-          title: 'Payment completed but activation is still pending',
+          title: 'Payment received. Waiting for activation',
           description: error?.message || 'The checkout succeeded, but we could not sync your wedding upgrade yet.',
           variant: 'destructive',
         });
@@ -328,7 +869,7 @@ export default function Budget() {
     return () => {
       cancelled = true;
     };
-  }, [checkoutSessionId, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
+  }, [checkoutProvider, checkoutReference, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
@@ -357,6 +898,7 @@ export default function Budget() {
 
   useEffect(() => {
     if (paymentDialogOpen) {
+      setPaymentRecorded(false);
       setPaymentLog((prev) => ({
         ...prev,
         budgetScope: activeBudgetScope,
@@ -463,7 +1005,11 @@ export default function Budget() {
     if (!user) return;
     const nextErrors: { name?: string; allocated?: string } = {};
     const allocatedAmount = allocated.trim() === '' ? Number.NaN : parseFloat(allocated);
-    if (!name.trim()) nextErrors.name = 'Choose a suggested category or type your own before saving.';
+    const canonicalName = canonicalizeVendorCategory(name);
+    if (!canonicalName || !isVendorCategory(canonicalName)) nextErrors.name = 'Choose one of the planning categories.';
+    if (categories.some((category) => vendorCategoriesMatch(category.name, canonicalName))) {
+      nextErrors.name = 'This category is already in the plan.';
+    }
     if (!Number.isFinite(allocatedAmount) || allocatedAmount < 0) nextErrors.allocated = 'Enter a valid allocated amount in KES.';
     setCategoryFormErrors(nextErrors);
     setCategorySubmitError(null);
@@ -473,8 +1019,14 @@ export default function Budget() {
 
     const insert: Record<string, unknown> = {
       user_id: user.id,
-      name,
+      name: canonicalName,
       allocated: allocatedAmount,
+      suggested_allocated: allocatedAmount,
+      suggested_percentage: visibleBudgetGoal > 0
+        ? (allocatedAmount / visibleBudgetGoal) * 100
+        : null,
+      allocation_manually_edited: false,
+      allocation_last_edited_field: null,
       spent: 0,
       budget_scope: newCategoryScope,
       visibility: newCategoryScope === 'personal' ? 'private' : 'public',
@@ -493,6 +1045,10 @@ export default function Budget() {
           proposedPayload: {
             name: insert.name,
             allocated: insert.allocated,
+            suggested_allocated: insert.suggested_allocated,
+            suggested_percentage: insert.suggested_percentage,
+            allocation_manually_edited: insert.allocation_manually_edited,
+            allocation_last_edited_field: insert.allocation_last_edited_field,
             spent: insert.spent,
             budget_scope: insert.budget_scope,
             visibility: insert.visibility,
@@ -632,12 +1188,11 @@ export default function Budget() {
           currentPayload: category as unknown as Record<string, unknown>,
           proposedPayload: {
             committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
-            contract_status: draft.contractStatus,
           },
         });
         toast({
           title: 'Budget workflow sent for approval',
-          description: `${category.name} ownership and contract updates are pending couple approval.`,
+          description: `${category.name} changes are waiting for couple approval.`,
         });
       } catch (error: any) {
         toast({ title: 'Could not submit workflow update', description: error?.message, variant: 'destructive' });
@@ -649,7 +1204,6 @@ export default function Budget() {
       .from('budget_categories')
       .update({
         committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
-        contract_status: draft.contractStatus,
       })
       .eq('id', category.id);
 
@@ -658,7 +1212,7 @@ export default function Budget() {
     } else {
       toast({
         title: 'Budget workflow updated',
-        description: `${category.name} now tracks ownership and contract state.`,
+        description: `${category.name} now has a clear owner.`,
       });
       await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
     }
@@ -756,17 +1310,224 @@ export default function Budget() {
     }
   };
 
-  const totalAllocated = categories.reduce((sum, category) => sum + category.allocated, 0);
-  const totalSpent = categories.reduce((sum, category) => sum + category.spent, 0);
   const weddingCategories = categories.filter((category) => category.budget_scope === 'wedding');
   const personalCategories = categories.filter((category) => category.budget_scope === 'personal');
   const visibleCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
   const visibleAllocated = visibleCategories.reduce((sum, category) => sum + category.allocated, 0);
   const visibleSpent = visibleCategories.reduce((sum, category) => sum + category.spent, 0);
+  const storedWeddingBudgetGoal = Number(isPlanner ? selectedClient?.wedding_budget_goal : profile?.wedding_budget_goal);
+  const weddingAllocated = weddingCategories.reduce((sum, category) => sum + category.allocated, 0);
+  const weddingBudgetGoal = storedWeddingBudgetGoal > 0 ? storedWeddingBudgetGoal : weddingAllocated;
+  const visibleBudgetGoal = activeBudgetScope === 'wedding' ? weddingBudgetGoal : visibleAllocated;
+  const weddingBudgetSummary = useMemo(
+    () => summarizeWeddingBudget(categories, weddingBudgetGoal),
+    [categories, weddingBudgetGoal],
+  );
+  const visibleAllocationPercentage = visibleBudgetGoal > 0
+    ? (visibleAllocated / visibleBudgetGoal) * 100
+    : 0;
+  const remainingAllocationBudget = visibleBudgetGoal - visibleAllocated;
+  const weddingAllocationPercentage = weddingBudgetGoal > 0
+    ? (weddingAllocated / weddingBudgetGoal) * 100
+    : 0;
+  const weddingRemainingBudget = weddingBudgetGoal - weddingAllocated;
+  const storedExpectedGuestCount = Number(
+    isPlanner ? selectedClient?.expected_guest_count : profile?.expected_guest_count,
+  );
+  const expectedGuestCount = storedExpectedGuestCount > 0
+    ? storedExpectedGuestCount
+    : Math.max(guestCountQuery.data ?? 0, 120);
+  const guestSensitiveAllocated = weddingCategories.reduce((sum, category) => {
+    const normalizedName = category.name.toLowerCase();
+    return normalizedName.includes('cater')
+      || normalizedName.includes('decor')
+      || normalizedName.includes('décor')
+      || normalizedName.includes('cake')
+      ? sum + category.allocated
+      : sum;
+  }, 0);
+
+  useEffect(() => {
+    if (!editingBudgetGoalRef.current) {
+      setBudgetGoalDraft(Math.round(weddingBudgetGoal).toLocaleString('en-KE'));
+    }
+  }, [weddingBudgetGoal]);
+
+  useEffect(() => {
+    if (!editingExpectedGuestCountRef.current) {
+      setExpectedGuestCountDraft(Math.round(expectedGuestCount).toLocaleString('en-KE'));
+    }
+  }, [expectedGuestCount]);
+
+  const saveBudgetGoal = async () => {
+    if (!user || savingBudgetGoal) return;
+
+    const nextBudgetGoal = Number(budgetGoalDraft.replace(/,/g, ''));
+    if (!Number.isFinite(nextBudgetGoal) || nextBudgetGoal <= 0) {
+      setBudgetGoalDraft(Math.round(weddingBudgetGoal).toLocaleString('en-KE'));
+      toast({
+        title: 'Enter a valid budget',
+        description: 'Your wedding budget must be greater than zero.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const normalizedBudgetGoal = Math.round(nextBudgetGoal);
+    if (
+      normalizedBudgetGoal === Math.round(weddingBudgetGoal)
+      && weddingAllocated <= normalizedBudgetGoal
+    ) {
+      setBudgetGoalDraft(normalizedBudgetGoal.toLocaleString('en-KE'));
+      return;
+    }
+
+    setSavingBudgetGoal(true);
+    const shouldRecalibrate = normalizedBudgetGoal !== Math.round(weddingAllocated) && !plannerNeedsApproval;
+    const recalibration = shouldRecalibrate
+      ? recalibrateBudgetAllocations(weddingCategories, normalizedBudgetGoal)
+      : null;
+    const previousAllocations = weddingCategories.map((category) => ({
+      id: category.id,
+      allocated: category.allocated,
+      suggested_allocated: category.suggested_allocated,
+    }));
+    try {
+      if (recalibration) {
+        const allocationUpdates = await Promise.all(recalibration.allocations.map(async (allocation) => {
+          const category = categories.find((item) => item.id === allocation.id);
+          if (!category) return null;
+          const suggestedAllocated = category.suggested_percentage == null
+            ? category.suggested_allocated
+            : Math.round((category.suggested_percentage / 100) * normalizedBudgetGoal);
+          if (
+            allocation.nextAllocated === category.allocated
+            && suggestedAllocated === category.suggested_allocated
+          ) return null;
+          return supabase
+            .from('budget_categories')
+            .update({
+              allocated: allocation.nextAllocated,
+              suggested_allocated: suggestedAllocated,
+            })
+            .eq('id', category.id);
+        }));
+        const failedAllocation = allocationUpdates.find((result) => result?.error);
+        if (failedAllocation?.error) throw failedAllocation.error;
+      }
+
+      if (isPlanner && selectedClient) {
+        const { error } = await supabase
+          .from('planner_clients')
+          .update({ wedding_budget_goal: normalizedBudgetGoal })
+          .eq('id', selectedClient.id)
+          .eq('planner_user_id', user.id);
+        if (error) throw error;
+        await loadClients();
+      } else {
+        if (activeWeddingId) {
+          await recalculatePlanningExperiment(activeWeddingId, { estimatedBudget: normalizedBudgetGoal });
+        }
+        await updateProfile({ wedding_budget_goal: normalizedBudgetGoal });
+      }
+
+      await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
+      setBudgetGoalDraft(normalizedBudgetGoal.toLocaleString('en-KE'));
+      toast({
+        title: recalibration ? 'Budget and allocations updated' : 'Wedding budget updated',
+        description: recalibration
+          ? recalibration.fitsTarget
+            ? `Wedding category plans now fit within ${formatCurrency(normalizedBudgetGoal)}.`
+            : `${formatCurrency(recalibration.protectedSpend)} is already recorded as paid, so Zania kept those payments protected.`
+          : `Your spending limit is now ${formatCurrency(normalizedBudgetGoal)}. The extra amount is ready for you to allocate.`,
+      });
+    } catch (error) {
+      if (recalibration) {
+        await Promise.all(previousAllocations.map((category) => supabase
+          .from('budget_categories')
+          .update({
+            allocated: category.allocated,
+            suggested_allocated: category.suggested_allocated,
+          })
+          .eq('id', category.id)));
+        await queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
+      }
+      setBudgetGoalDraft(Math.round(weddingBudgetGoal).toLocaleString('en-KE'));
+      toast({
+        title: 'Could not update the budget',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingBudgetGoal(false);
+    }
+  };
+
+  const saveExpectedGuestCount = async () => {
+    if (!user || savingExpectedGuestCount) return;
+
+    const nextGuestCount = Number(expectedGuestCountDraft.replace(/,/g, ''));
+    if (!Number.isFinite(nextGuestCount) || nextGuestCount <= 0) {
+      setExpectedGuestCountDraft(Math.round(expectedGuestCount).toLocaleString('en-KE'));
+      toast({
+        title: 'Enter a valid guest count',
+        description: 'Expected guests must be at least one.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const normalizedGuestCount = Math.round(nextGuestCount);
+    if (normalizedGuestCount === Math.round(expectedGuestCount) && storedExpectedGuestCount > 0) {
+      setExpectedGuestCountDraft(normalizedGuestCount.toLocaleString('en-KE'));
+      return;
+    }
+
+    setSavingExpectedGuestCount(true);
+    try {
+      if (isPlanner && selectedClient) {
+        const { error } = await supabase
+          .from('planner_clients')
+          .update({ expected_guest_count: normalizedGuestCount })
+          .eq('id', selectedClient.id)
+          .eq('planner_user_id', user.id);
+        if (error) throw error;
+        await loadClients();
+      } else {
+        if (activeWeddingId) {
+          await recalculatePlanningExperiment(activeWeddingId, { estimatedGuestCount: normalizedGuestCount });
+        }
+        await updateProfile({ expected_guest_count: normalizedGuestCount });
+      }
+
+      setExpectedGuestCountDraft(normalizedGuestCount.toLocaleString('en-KE'));
+      toast({
+        title: 'Expected guests updated',
+        description: `Your planning target is now ${normalizedGuestCount.toLocaleString()} guests.`,
+      });
+    } catch (error) {
+      setExpectedGuestCountDraft(Math.round(expectedGuestCount).toLocaleString('en-KE'));
+      toast({
+        title: 'Could not update expected guests',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingExpectedGuestCount(false);
+    }
+  };
   const totalFinalVendorContract = finalVendorPayments.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
-  const totalFinalVendorPaid = finalVendorPayments.reduce((sum, vendor) => sum + vendor.amount_paid, 0);
+  const finalVendorIds = new Set(finalVendorPayments.map((vendor) => vendor.id));
+  const totalFinalVendorPaid = totalRecordedVendorPayments(
+    paymentRecords.filter((payment) => payment.vendor_id && finalVendorIds.has(payment.vendor_id)),
+  );
   const totalFinalVendorOutstanding = finalVendorPayments.reduce(
-    (sum, vendor) => sum + Math.max((vendor.price ?? 0) - vendor.amount_paid, 0),
+    (sum, vendor) => {
+      const recordedTotal = totalRecordedVendorPayments(
+        paymentRecords.filter((payment) => payment.vendor_id === vendor.id),
+      );
+      return sum + Math.max((vendor.price ?? 0) - recordedTotal, 0);
+    },
     0,
   );
 
@@ -777,7 +1538,6 @@ export default function Budget() {
     }));
   }, [weddingCategories, categoryBenchmarks]);
 
-  const currentScopeCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
   const paymentScopeCategories = paymentLog.budgetScope === 'personal' ? personalCategories : weddingCategories;
   const paymentCategoryOptions = useMemo<PaymentCategoryOption[]>(() => {
     const existingByName = new Map(
@@ -807,16 +1567,13 @@ export default function Budget() {
   const selectedPaymentCategoryOption = paymentCategoryOptions.find(
     (option) => option.value === paymentLog.categorySelection,
   );
-  const currentScopePayments = paymentRecords.filter((payment) => payment.budget_scope === activeBudgetScope);
+  const currentScopePayments = paymentRecords.filter(
+    (payment) => payment.budget_scope === activeBudgetScope,
+  );
   const currentScopePaymentTotal = currentScopePayments.reduce((sum, payment) => sum + payment.amount, 0);
   const invoiceTotal = activeBudgetScope === 'wedding' ? totalFinalVendorContract : visibleAllocated;
   const totalBalance = Math.max(invoiceTotal - currentScopePaymentTotal, 0);
-  const remainingBudget = Math.max(visibleAllocated - currentScopePaymentTotal, 0);
-  const budgetAssistantFeature = useMemo(
-    () => getBudgetAssistantFeature(profile?.role, profile?.planner_type),
-    [profile?.planner_type, profile?.role],
-  );
-
+  const remainingBudget = Math.max(visibleBudgetGoal - currentScopePaymentTotal, 0);
   const visibleOverBudgetCategories = useMemo(
     () => visibleCategories.filter((category) => category.allocated > 0 && category.spent > category.allocated),
     [visibleCategories],
@@ -846,72 +1603,9 @@ export default function Budget() {
     });
   }, [activeBudgetScope, finalVendorPayments]);
 
-  const budgetPrompts = useMemo(() => {
-    const scopeLabel = activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget';
-    const prompts: string[] = [];
-
-    if (visibleOverBudgetCategories[0]) {
-      prompts.push(`Review our ${scopeLabel} and tell me which categories need urgent rebalancing first.`);
-    }
-
-    if (visibleNearLimitCategories[0]) {
-      prompts.push(`Tell me which ${scopeLabel} lines are close to the limit and what to do before we overspend.`);
-    }
-
-    if (paymentsDueSoon[0]) {
-      prompts.push('Review upcoming vendor payment deadlines and tell me what should be paid first.');
-    }
-
-    if (visibleCategories.length > 0) {
-      prompts.push(`Give me a simple budget health check for this ${scopeLabel}.`);
-    } else {
-      prompts.push(`Help me set up the first categories for this ${scopeLabel}.`);
-    }
-
-    return prompts.slice(0, 3);
-  }, [
-    activeBudgetScope,
-    paymentsDueSoon,
-    visibleCategories.length,
-    visibleNearLimitCategories,
-    visibleOverBudgetCategories,
-  ]);
-
-  const budgetAssistant = useInlineAssistant({
-    feature: budgetAssistantFeature,
-    page: 'budget',
-    surface: 'budget_pressure_card',
-    contextSource: activeBudgetScope === 'personal' ? 'personal_budget_summary' : 'wedding_budget_summary',
-  });
-  const [budgetNudgeDismissed, setBudgetNudgeDismissed] = useState(false);
-
-  const budgetNudge = useMemo(() => {
-    if (visibleOverBudgetCategories[0]) {
-      return {
-        title: `${visibleOverBudgetCategories.length} budget line${visibleOverBudgetCategories.length === 1 ? '' : 's'} over the limit`,
-        body: 'Get a quick rebalance suggestion before the gap grows.',
-        prompt: `Review our ${activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget'} and tell me which categories need urgent rebalancing first.`,
-      };
-    }
-
-    if (paymentsDueSoon.length > 0) {
-      return {
-        title: `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due soon`,
-        body: 'Use the assistant to decide what should be paid first.',
-        prompt: 'Review upcoming vendor payment deadlines and tell me what should be paid first.',
-      };
-    }
-
-    if (visibleNearLimitCategories[0]) {
-      return {
-        title: 'Some categories are nearly at the limit',
-        body: 'A quick budget check now can prevent overspend later.',
-        prompt: `Tell me which ${activeBudgetScope === 'personal' ? 'personal budget' : 'wedding budget'} lines are close to the limit and what to do before we overspend.`,
-      };
-    }
-
-    return null;
-  }, [activeBudgetScope, paymentsDueSoon.length, visibleNearLimitCategories, visibleOverBudgetCategories]);
+  const visibleSpentPercentage = visibleBudgetGoal > 0
+    ? Math.min(Math.round((visibleSpent / visibleBudgetGoal) * 100), 999)
+    : 0;
 
   const paymentsByCategory = useMemo(() => {
     return currentScopePayments.reduce<Record<string, BudgetPaymentRecord[]>>((groups, payment) => {
@@ -923,10 +1617,12 @@ export default function Budget() {
   }, [currentScopePayments]);
 
   const availableVendorsForPayment = useMemo(() => {
-    if (paymentLog.budgetScope !== 'wedding') return [];
     const selectedCategory = selectedPaymentCategoryOption?.name;
-    if (!selectedCategory) return vendorOptions;
-    return vendorOptions.filter((vendor) => vendor.category === selectedCategory);
+    return vendorOptions.filter((vendor) => (
+      hasRecordedVendor(vendor)
+      && getVendorCategoryScope(vendor.category) === paymentLog.budgetScope
+      && (!selectedCategory || vendorCategoriesMatch(vendor.category, selectedCategory))
+    ));
   }, [paymentLog.budgetScope, selectedPaymentCategoryOption, vendorOptions]);
 
   const recordPaymentMade = async (e: React.FormEvent) => {
@@ -992,13 +1688,19 @@ export default function Budget() {
       }
 
       if (plannerNeedsApproval && selectedClient?.linked_user_id) {
-        const nextPaid = selectedVendor ? Number(selectedVendor.amount_paid ?? 0) + amount : null;
-        const nextStatus =
-          selectedVendor && selectedVendor.price && nextPaid != null && nextPaid >= selectedVendor.price
-            ? 'paid_full'
-            : selectedVendor && nextPaid != null && nextPaid > 0
-              ? 'part_paid'
-              : selectedVendor?.payment_status ?? null;
+        const recordedVendorPayments = selectedVendor
+          ? paymentRecords.filter((payment) => payment.vendor_id === selectedVendor.id)
+          : [];
+        const nextPaid = selectedVendor
+          ? totalRecordedVendorPayments(recordedVendorPayments) + amount
+          : null;
+        const nextStatus = selectedVendor && nextPaid != null
+          ? deriveVendorPaymentStatus({
+              totalCost: selectedVendor.price,
+              depositRequired: selectedVendor.deposit_amount,
+              totalPaid: nextPaid,
+            })
+          : null;
 
         await submitPlannerChangeRequest({
           clientId: selectedClient.id,
@@ -1029,7 +1731,12 @@ export default function Budget() {
           description: `${formatCurrency(amount)} is waiting on the couple before it affects the budget.`,
         });
 
-        setPaymentDialogOpen(false);
+        setPaymentRecorded(true);
+        if (paymentSuccessTimerRef.current != null) window.clearTimeout(paymentSuccessTimerRef.current);
+        paymentSuccessTimerRef.current = window.setTimeout(() => {
+          setPaymentRecorded(false);
+          setPaymentDialogOpen(false);
+        }, 800);
         return;
       }
 
@@ -1057,14 +1764,16 @@ export default function Budget() {
       if (categoryError) throw categoryError;
 
       if (selectedVendor) {
-        const nextPaid = Number(selectedVendor.amount_paid ?? 0) + amount;
+        const recordedVendorPayments = paymentRecords.filter(
+          (payment) => payment.vendor_id === selectedVendor.id,
+        );
+        const nextPaid = totalRecordedVendorPayments(recordedVendorPayments) + amount;
         const contractAmount = selectedVendor.price ?? null;
-        const nextStatus =
-          contractAmount && nextPaid >= contractAmount
-            ? 'paid_full'
-            : nextPaid > 0
-              ? 'part_paid'
-              : selectedVendor.payment_status;
+        const nextStatus = deriveVendorPaymentStatus({
+          totalCost: contractAmount,
+          depositRequired: selectedVendor.deposit_amount,
+          totalPaid: nextPaid,
+        });
 
         await supabase
           .from('vendors')
@@ -1081,8 +1790,13 @@ export default function Budget() {
         description: `${formatCurrency(amount)} added to ${selectedCategory.name}.`,
       });
 
-      setPaymentDialogOpen(false);
       await refreshBudgetWorkspace();
+      setPaymentRecorded(true);
+      if (paymentSuccessTimerRef.current != null) window.clearTimeout(paymentSuccessTimerRef.current);
+      paymentSuccessTimerRef.current = window.setTimeout(() => {
+        setPaymentRecorded(false);
+        setPaymentDialogOpen(false);
+      }, 800);
     } catch (error: any) {
       setPaymentSubmitError(error.message || 'We could not record this payment right now.');
       toast({
@@ -1105,6 +1819,109 @@ export default function Budget() {
     const source = newCategoryScope === 'personal' ? personalBudgetTemplates : weddingBudgetTemplates;
     return source.filter((template) => !existingNames.has(template.name.toLowerCase().trim()));
   }, [categories, newCategoryScope]);
+
+  const persistCategoryAllocation = async (
+    category: BudgetCategory,
+    nextAllocated: number,
+    editedField: 'amount' | 'percentage',
+    manuallyEdited: boolean,
+  ) => {
+    if (!user || !Number.isFinite(nextAllocated) || nextAllocated < 0) return;
+    const normalizedAllocated = Math.round(nextAllocated);
+    setSavingAllocationId(category.id);
+
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user.id,
+          targetTable: 'budget_categories',
+          targetId: category.id,
+          changeType: 'update',
+          proposedPayload: {
+            allocated: normalizedAllocated,
+            allocation_manually_edited: manuallyEdited,
+            allocation_last_edited_field: manuallyEdited ? editedField : null,
+          },
+        });
+        toast({ title: 'Allocation sent for approval', description: `${category.name} will update after the couple approves it.` });
+      } catch (error) {
+        toast({ title: 'Could not update allocation', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+      } finally {
+        setSavingAllocationId(null);
+      }
+      return;
+    }
+
+    const previousCategories = queryClient.getQueryData<BudgetCategory[]>(categoriesQueryKey);
+    queryClient.setQueryData<BudgetCategory[]>(categoriesQueryKey, (current = []) => current.map((item) => (
+      item.id === category.id
+        ? {
+            ...item,
+            allocated: normalizedAllocated,
+            allocation_manually_edited: manuallyEdited,
+            allocation_last_edited_field: manuallyEdited ? editedField : null,
+          }
+        : item
+    )));
+
+    try {
+      const { error } = await supabase
+        .from('budget_categories')
+        .update({
+          allocated: normalizedAllocated,
+          allocation_manually_edited: manuallyEdited,
+          allocation_last_edited_field: manuallyEdited ? editedField : null,
+        })
+        .eq('id', category.id);
+      if (error) throw error;
+      setAllocationDrafts((current) => {
+        const next = { ...current };
+        delete next[category.id];
+        return next;
+      });
+      toast({ title: manuallyEdited ? 'Allocation updated' : 'Suggestion restored', description: `${category.name} is now ${formatCurrency(normalizedAllocated)}.` });
+    } catch (error) {
+      queryClient.setQueryData(categoriesQueryKey, previousCategories);
+      toast({ title: 'Could not update allocation', description: error instanceof Error ? error.message : 'Your previous amount has been restored.', variant: 'destructive' });
+    } finally {
+      setSavingAllocationId(null);
+    }
+  };
+
+  const updateAllocationDraft = (
+    category: BudgetCategory,
+    currentPercentage: number,
+    value: string,
+    field: 'amount' | 'percentage',
+  ) => {
+    const numericValue = Number(value.replace(/,/g, ''));
+    setAllocationDrafts((current) => {
+      const fallback = current[category.id] ?? {
+        amount: String(category.allocated),
+        percentage: currentPercentage.toFixed(1),
+        lastEditedField: field,
+      };
+      if (!Number.isFinite(numericValue) || numericValue < 0 || value.trim() === '') {
+        return { ...current, [category.id]: { ...fallback, [field]: value, lastEditedField: field } };
+      }
+      return {
+        ...current,
+        [category.id]: field === 'amount'
+          ? {
+              amount: value,
+              percentage: visibleBudgetGoal > 0 ? ((numericValue / visibleBudgetGoal) * 100).toFixed(1) : '0.0',
+              lastEditedField: field,
+            }
+          : {
+              amount: String(Math.round((numericValue / 100) * visibleBudgetGoal)),
+              percentage: value,
+              lastEditedField: field,
+            },
+      };
+    });
+  };
 
   const filteredVisibleCategories = useMemo(() => {
     const searchTerm = categorySearch.trim().toLowerCase();
@@ -1129,6 +1946,15 @@ export default function Budget() {
         return left.name.localeCompare(right.name);
       });
   }, [categorySearch, visibleCategories]);
+
+  const openBudgetCategory = (categoryId: string) => {
+    setCategorySearch('');
+    setSelectedCategoryId(categoryId);
+    setInlineModule(null);
+    window.requestAnimationFrame(() => {
+      budgetItemsRef.current?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
+    });
+  };
 
   const selectedBudgetCategory = useMemo(
     () => filteredVisibleCategories.find((category) => category.id === selectedCategoryId) ?? null,
@@ -1168,52 +1994,69 @@ export default function Budget() {
       return;
     }
 
-    if (!selectedCategoryId || !filteredVisibleCategories.some((category) => category.id === selectedCategoryId)) {
+    if (selectedCategoryId && !filteredVisibleCategories.some((category) => category.id === selectedCategoryId)) {
       setSelectedCategoryId(filteredVisibleCategories[0].id);
     }
   }, [filteredVisibleCategories, selectedCategoryId]);
 
-  const visibleSpentPercentage = visibleAllocated > 0
-    ? Math.min(Math.round((visibleSpent / visibleAllocated) * 100), 999)
-    : 0;
-  const paymentCoveragePercentage = invoiceTotal > 0
-    ? Math.min(Math.round((currentScopePaymentTotal / invoiceTotal) * 100), 999)
-    : 0;
+  const budgetScopeLabel = 'budget';
 
-  const budgetPrimaryAction = (() => {
-    if (visibleCategories.length === 0) {
+  const contextualBudgetMessage = (() => {
+    if (activeBudgetScope === 'wedding' && visibleAllocationPercentage > 100.01) {
       return {
-        label: activeBudgetScope === 'personal' ? 'Add private budget lines' : 'Add wedding budget lines',
-        description: activeBudgetScope === 'personal'
-          ? 'Start the couple-only budget so private spending does not get lost.'
-          : 'Build the first wedding categories before payments start spreading across WhatsApp and M-PESA.',
+        className: 'semantic-surface-danger',
+        label: 'Plan is over budget',
+        message: `${formatCurrency(visibleAllocated - visibleBudgetGoal)} needs to be removed from your category plans or added to your overall budget.`,
       };
     }
 
-    if (visibleOverBudgetCategories[0]) {
+    if (activeBudgetScope === 'wedding' && visibleBudgetGoal > 0 && visibleAllocationPercentage < 99.99) {
       return {
-        label: `Rebalance ${visibleOverBudgetCategories[0].name}`,
-        description: 'One or more categories have already gone over the limit and need attention first.',
+        className: 'semantic-surface-info',
+        label: 'Money left to plan',
+        message: `${formatCurrency(visibleBudgetGoal - visibleAllocated)} is still available for your categories.`,
       };
     }
 
-    if (paymentsDueSoon[0]) {
+    const over = visibleOverBudgetCategories[0];
+    if (over) {
       return {
-        label: `Review ${paymentsDueSoon[0].name} payment`,
-        description: 'A vendor payment is coming up soon and should be checked before the deadline slips.',
+        className: 'semantic-surface-danger',
+        label: 'Over budget',
+        message: `${over.name} is ${formatCurrency(over.spent - over.allocated)} over its plan. Adjust it before the next payment.`,
       };
     }
 
-    if (currentScopePayments.length === 0) {
+    const near = visibleNearLimitCategories[0];
+    if (near) {
       return {
-        label: 'Record the first payment',
-        description: 'Start a visible payment history so the real cash movement matches the budget.',
+        className: 'semantic-surface-warning',
+        label: 'Getting close',
+        message: `${near.name} has ${formatCurrency(Math.max(near.allocated - near.spent, 0))} left. Check it before paying more.`,
+      };
+    }
+
+    const due = paymentsDueSoon[0];
+    if (due) {
+      return {
+        className: 'semantic-surface-info',
+        label: 'Payment coming up',
+        message: `${due.name} has a payment due soon. Open its budget item to review it.`,
+      };
+    }
+
+    if (visibleAllocated > 0 && visibleSpent === 0) {
+      return {
+        className: 'semantic-surface-info',
+        label: 'Plan ready',
+        message: 'Your budget is divided into categories. Record payments as you make them.',
       };
     }
 
     return {
-      label: 'Review category pressure',
-      description: 'Open the category workspace and check which lines are tightening up.',
+      className: 'semantic-surface-success',
+      label: 'On track',
+      message: `${visibleSpentPercentage}% of the budget is spent, with ${formatCurrency(remainingBudget)} left.`,
     };
   })();
 
@@ -1250,169 +2093,297 @@ export default function Budget() {
   };
 
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
-  if (categoriesQuery.isLoading || vendorOptionsQuery.isLoading || paymentRecordsQuery.isLoading) {
+  if (categoriesQuery.isLoading || vendorOptionsQuery.isLoading || paymentRecordsQuery.isLoading || tasksQuery.isLoading) {
     return <WorkspacePageSkeleton compact />;
   }
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
-        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.35fr_0.95fr] lg:p-8">
-          <div className="space-y-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Budget Workspace</p>
-                <InfoTip content="Track shared wedding spending separately from private couple-only costs, then record real payments against each budget line." />
+      <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Budget</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Plan costs and record payments.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (!exportDecision.allowed) {
+                setExportUpgradeOpen(true);
+                return;
+              }
+              exportBudgetData();
+            }}
+          >
+            Export budget
+          </Button>
+          {categories.length < vendorCategoryCatalog.length ? (
+            <Button type="button" onClick={() => setOpen(true)}>Add category</Button>
+          ) : null}
+        </div>
+      </header>
+
+      {showPersonalBudget ? (
+        <div className="flex w-fit items-center rounded-xl border border-border bg-card p-1 shadow-sm" aria-label="Budget type">
+          <Button
+            type="button"
+            size="sm"
+            variant={activeBudgetScope === 'wedding' ? 'default' : 'ghost'}
+            onClick={() => setActiveBudgetScope('wedding')}
+          >
+            Wedding budget
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={activeBudgetScope === 'personal' ? 'default' : 'ghost'}
+            onClick={() => setActiveBudgetScope('personal')}
+          >
+            Personal costs
+          </Button>
+        </div>
+      ) : null}
+
+      <section
+        className="grid overflow-hidden rounded-[1.35rem] border border-border bg-card shadow-card lg:grid-cols-[1fr_2fr_1fr]"
+        aria-label="Wedding budget summary"
+      >
+        <div className="border-b border-border p-4 sm:p-5 lg:border-b-0 lg:border-r">
+          {activeBudgetScope === 'wedding' ? (
+            <>
+              <Label
+                htmlFor="workspace-total-budget"
+                className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]"
+              >
+                Intended wedding budget
+              </Label>
+              <div className="relative mt-2">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
+                <Input
+                  id="workspace-total-budget"
+                  aria-label="Adjust wedding budget"
+                  type="text"
+                  inputMode="numeric"
+                  value={budgetGoalDraft}
+                  onFocus={() => {
+                    editingBudgetGoalRef.current = true;
+                    setBudgetGoalDraft((current) => sanitizeIntegerDraft(current));
+                  }}
+                  onChange={(event) => setBudgetGoalDraft(sanitizeIntegerDraft(event.target.value))}
+                  onBlur={() => {
+                    editingBudgetGoalRef.current = false;
+                    setBudgetGoalDraft((current) => formatIntegerDraft(current));
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void saveBudgetGoal();
+                    }
+                  }}
+                  disabled={savingBudgetGoal}
+                  className="h-10 bg-background pl-12 text-sm font-semibold sm:h-11 sm:text-base"
+                />
               </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Keep the money visible</h1>
-              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Shared and private spend, clearly separated.
+              <Button
+                type="button"
+                size="sm"
+                className="mt-3 w-full"
+                disabled={savingBudgetGoal || !budgetGoalDraft}
+                onClick={() => void saveBudgetGoal()}
+              >
+                {savingBudgetGoal ? 'Saving…' : 'Save and rebalance'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Personal costs</p>
+              <p className="mt-3 text-xl font-bold text-foreground">{formatCurrency(visibleAllocated)}</p>
+              <p className="mt-2 text-xs text-muted-foreground">Private costs are kept separate from the wedding budget.</p>
+            </>
+          )}
+        </div>
+
+        <div className="border-b border-border lg:border-b-0 lg:border-r">
+          <div className="grid grid-cols-2">
+            <div className="border-r border-border p-4 sm:p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Allocated</p>
+              <p className="mt-3 text-base font-bold sm:text-xl">{formatCurrency(visibleAllocated)}</p>
+              <p className={`mt-1 text-xs sm:text-sm ${activeBudgetScope === 'wedding' && weddingAllocationPercentage > 100 ? 'font-semibold text-destructive' : 'text-muted-foreground'}`}>
+                {activeBudgetScope === 'wedding' ? `${weddingAllocationPercentage.toFixed(1)}% of budget` : 'Private plan total'}
               </p>
             </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Budget used</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {visibleCategories.length > 0 ? `${visibleSpentPercentage}%` : 'Not started'}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  KES {visibleSpent.toLocaleString()} spent of KES {visibleAllocated.toLocaleString()}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Payments logged</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {currentScopePayments.length > 0 ? `${paymentCoveragePercentage}%` : 'No payments yet'}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {currentScopePayments.length > 0
-                    ? `${formatCurrency(currentScopePaymentTotal)} recorded so far`
-                    : 'Start a payment trail for this budget scope'}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{budgetPrimaryAction.label}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
-              </div>
-            </div>
-
-            <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
-                <Button
-                  type="button"
-                  variant={activeBudgetScope === 'wedding' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setActiveBudgetScope('wedding')}
-                >
-                  Wedding Budget
-                </Button>
-                {showPersonalBudget && (
-                  <Button
-                    type="button"
-                    variant={activeBudgetScope === 'personal' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setActiveBudgetScope('personal')}
-                  >
-                    Personal Budget
-                  </Button>
-                )}
-              </div>
-              <div className="flex w-full flex-wrap items-center rounded-full border border-border bg-background p-1 sm:w-auto">
-                <Button
-                  type="button"
-                  variant={budgetViewMode === 'payments_made' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setBudgetViewMode('payments_made')}
-                >
-                  Payments Made
-                </Button>
-                <Button
-                  type="button"
-                  variant={budgetViewMode === 'by_category' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setBudgetViewMode('by_category')}
-                >
-                  By Category
-                </Button>
+            <div className="p-4 sm:p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">
+                {activeBudgetScope === 'wedding' ? (weddingRemainingBudget >= 0 ? 'Remaining' : 'Over budget') : 'Paid so far'}
+              </p>
+              <p className={`mt-3 text-base font-bold sm:text-xl ${activeBudgetScope === 'wedding' && weddingRemainingBudget < 0 ? 'text-destructive' : ''}`}>
+                {formatCurrency(activeBudgetScope === 'wedding' ? Math.abs(weddingRemainingBudget) : visibleSpent)}
+              </p>
+              <div
+                className={`mt-2 inline-flex items-center gap-2 text-xs font-semibold ${
+                  activeBudgetScope === 'wedding' && weddingRemainingBudget < 0
+                    ? 'text-destructive'
+                    : activeBudgetScope === 'wedding' && weddingRemainingBudget === 0
+                      ? 'text-success'
+                      : 'text-foreground'
+                }`}
+                aria-live="polite"
+              >
+                <span aria-hidden="true" className="h-px w-4 shrink-0 bg-current opacity-55" />
+                {activeBudgetScope === 'personal'
+                  ? `${formatCurrency(Math.max(visibleAllocated - visibleSpent, 0))} not yet paid`
+                  : weddingRemainingBudget < 0
+                  ? 'Reduce allocations'
+                  : weddingRemainingBudget === 0
+                    ? 'Budget fully allocated'
+                    : 'Left to allocate'}
               </div>
             </div>
           </div>
+        </div>
 
-          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Budget health</p>
-              <InfoTip content="This panel highlights pressure points like overspend, categories nearing the limit, and vendor payments that may need attention soon." />
+        <div className="p-4 sm:p-5">
+          <Label
+            htmlFor="workspace-expected-guests"
+            className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]"
+          >
+            Expected guests
+          </Label>
+          <Input
+            id="workspace-expected-guests"
+            aria-label="Adjust expected guests"
+            type="text"
+            inputMode="numeric"
+            value={expectedGuestCountDraft}
+            onFocus={() => {
+              editingExpectedGuestCountRef.current = true;
+              setExpectedGuestCountDraft((current) => sanitizeIntegerDraft(current));
+            }}
+            onChange={(event) => setExpectedGuestCountDraft(sanitizeIntegerDraft(event.target.value))}
+            onBlur={() => {
+              editingExpectedGuestCountRef.current = false;
+              setExpectedGuestCountDraft((current) => formatIntegerDraft(current));
+              void saveExpectedGuestCount();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
+            }}
+            disabled={savingExpectedGuestCount}
+            className="mt-2 h-10 bg-background text-sm font-semibold sm:h-11 sm:text-base"
+          />
+          <p className="mt-2 text-xs text-muted-foreground sm:text-sm">
+            {formatCurrency(expectedGuestCount > 0 ? guestSensitiveAllocated / expectedGuestCount : 0)} per guest
+          </p>
+        </div>
+      </section>
+
+      {activeBudgetScope === 'wedding' ? (
+        <section className="overflow-hidden rounded-lg border border-border bg-card" aria-labelledby="vendor-payments-title">
+          <div className="border-b border-border px-4 py-3 sm:px-5">
+            <h2 id="vendor-payments-title" className="text-sm font-semibold text-foreground">Vendor payments</h2>
+          </div>
+          <div className="grid grid-cols-3">
+            <div className="border-r border-border p-3 sm:p-4">
+              <p className="text-xs text-muted-foreground">Invoices</p>
+              <p className="mt-1 break-words text-sm font-semibold text-foreground sm:text-lg">{formatCurrency(totalFinalVendorContract)}</p>
             </div>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-sm font-medium text-foreground">
-                  {visibleOverBudgetCategories.length > 0
-                    ? `${visibleOverBudgetCategories.length} category${visibleOverBudgetCategories.length === 1 ? '' : 'ies'} over the limit`
-                    : visibleNearLimitCategories.length > 0
-                      ? `${visibleNearLimitCategories.length} category${visibleNearLimitCategories.length === 1 ? '' : 'ies'} close to the limit`
-                      : 'Budget pressure is under control right now'}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {visibleOverBudgetCategories[0]
-                    ? `${visibleOverBudgetCategories[0].name} is already over plan and should be reviewed first.`
-                    : visibleNearLimitCategories[0]
-                      ? `${visibleNearLimitCategories[0].name} is approaching its cap.`
-                      : 'Keep payments and spent totals current so this picture stays useful.'}
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Remaining budget</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(remainingBudget)}</p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Outstanding balance</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{formatCurrency(totalBalance)}</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                <p className="text-sm font-medium text-foreground">
-                  {paymentsDueSoon.length > 0
-                    ? `${paymentsDueSoon.length} vendor payment${paymentsDueSoon.length === 1 ? '' : 's'} due in 14 days`
-                    : activeBudgetScope === 'wedding'
-                      ? 'No urgent vendor payment deadlines right now'
-                      : 'Private budget lines stay inside the couple workflow'}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {paymentsDueSoon[0]
-                    ? `${paymentsDueSoon[0].name} is the next likely payment to check.`
-                    : activeBudgetScope === 'wedding'
-                      ? 'Use the category workspace below to keep planned and real spend aligned.'
-                      : 'Track honeymoon, rings, dowry, and home setup without mixing them into shared spending.'}
-                </p>
-              </div>
+            <div className="border-r border-border p-3 sm:p-4">
+              <p className="text-xs text-muted-foreground">Paid</p>
+              <p className="mt-1 break-words text-sm font-semibold text-success sm:text-lg">{formatCurrency(totalFinalVendorPaid)}</p>
+            </div>
+            <div className="p-3 sm:p-4">
+              <p className="text-xs text-muted-foreground">Balance</p>
+              <p className="mt-1 break-words text-sm font-semibold text-primary sm:text-lg">{formatCurrency(totalFinalVendorOutstanding)}</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </section>
+      ) : null}
 
-      <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
-          <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="w-full gap-2 sm:w-auto" variant="outline">
-                <Receipt className="h-4 w-4" />
-                Record Payment Made
-              </Button>
-            </DialogTrigger>
+      {activeBudgetScope === 'wedding' && (weddingBudgetSummary.overage > 0 || weddingBudgetSummary.overspentCategories.length > 0) ? (
+        <section className="rounded-xl border border-destructive/30 bg-destructive/[0.045] p-4 sm:p-5" aria-labelledby="budget-fixes-title">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-destructive">Budget needs attention</p>
+              <h2 id="budget-fixes-title" className="mt-1 text-lg font-semibold text-foreground">Here is where to fix the plan</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {weddingBudgetSummary.overage > 0
+                  ? `${formatCurrency(weddingBudgetSummary.overage)} has been allocated beyond the wedding budget. Review a category below to lower its planned amount.`
+                  : 'One or more categories have already spent more than their planned amount.'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => budgetItemsRef.current?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' })}
+            >
+              Review budget items
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-2 lg:grid-cols-3">
+            {(weddingBudgetSummary.overspentCategories.length > 0
+              ? weddingBudgetSummary.overspentCategories
+              : weddingBudgetSummary.reductionCandidates
+            ).slice(0, 3).map((category) => {
+              const amount = category.spent > category.allocated
+                ? category.spent - category.allocated
+                : category.reducibleAmount;
+              const label = category.spent > category.allocated ? 'over its plan' : 'can be reduced before affecting paid spend';
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => openBudgetCategory(category.id)}
+                  className="rounded-lg border border-destructive/20 bg-background px-3 py-3 text-left transition-colors hover:border-destructive/45 hover:bg-destructive/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="block text-sm font-semibold text-foreground">{category.name}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground"><strong className="font-semibold text-destructive">{formatCurrency(amount)}</strong> {label}</span>
+                  <span className="mt-2 inline-flex text-xs font-semibold text-primary">Review allocation →</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      <section
+        className="rounded-lg border border-border bg-card p-2.5 sm:p-3"
+        aria-label="Budget view and actions"
+      >
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <motion.div
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
+            className={`${contextualBudgetMessage.className} min-w-0 rounded-md border px-3 py-2`}
+            aria-live="polite"
+          >
+            <div className="flex min-w-0 flex-col gap-0.5 lg:flex-row lg:items-baseline lg:gap-2">
+              <p className="shrink-0 text-xs font-semibold text-foreground">{contextualBudgetMessage.label}</p>
+              <p className="text-xs text-muted-foreground sm:truncate">{contextualBudgetMessage.message}</p>
+            </div>
+          </motion.div>
+
+          <div className="contents">
+            <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="w-full sm:w-auto" variant="outline">
+                  Record payment
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
               <DialogHeader>
-                <DialogTitle className="font-display">Record Payment Made</DialogTitle>
+                <DialogTitle className="font-display">Record payment</DialogTitle>
+                <DialogDescription>Add a payment to update your budget.</DialogDescription>
               </DialogHeader>
               <form onSubmit={recordPaymentMade} className="space-y-4">
                 <FormSubmitError message={paymentSubmitError} />
                 {showPersonalBudget && (
                   <div className="space-y-2">
-                    <Label>Budget Type</Label>
+                    <Label>Budget type</Label>
                     <div className="flex flex-wrap items-center rounded-full border border-border bg-background p-1">
                       <Button
                         type="button"
@@ -1544,51 +2515,28 @@ export default function Budget() {
                     placeholder="Deposit, second payment, balance, etc."
                   />
                 </div>
-                <Button type="submit" className="w-full gap-2" disabled={recordingPaymentMade}>
-                  {recordingPaymentMade ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
-                  Record Payment
+                <Button
+                  type="submit"
+                  className="w-full gap-2"
+                  disabled={recordingPaymentMade}
+                  status={recordingPaymentMade ? 'loading' : paymentRecorded ? 'success' : 'idle'}
+                  loadingText="Recording payment"
+                  successText={plannerNeedsApproval ? 'Request sent' : 'Payment recorded'}
+                >
+                  Record payment
                 </Button>
               </form>
             </DialogContent>
           </Dialog>
-          <Button
-            type="button"
-            className="w-full gap-2 sm:w-auto"
-            variant="outline"
-            onClick={() => {
-              if (!exportDecision.allowed) {
-                setExportUpgradeOpen(true);
-                return;
-              }
-              exportBudgetData();
-            }}
-          >
-            <Download className="h-4 w-4" />
-            Export Budget
-          </Button>
-          <Button
-            type="button"
-            className="w-full gap-2 sm:w-auto"
-            variant="outline"
-            onClick={() => navigate('/contributions')}
-          >
-            <HandCoins className="h-4 w-4" />
-            Track Contributions
-          </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button type="button" className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add Category
-              </Button>
-            </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle className="font-display">Add Budget Category</DialogTitle>
+                <DialogTitle className="font-display">Add category</DialogTitle>
+                <DialogDescription>Choose a cost and set its budget.</DialogDescription>
               </DialogHeader>
               <form onSubmit={addCategory} className="space-y-4">
                 <FormSubmitError message={categorySubmitError} />
-                {newCategoryScope === 'wedding' ? (
+                {newCategoryScope === 'wedding' && selectedTemplateName ? (
                   <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
                     <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                       {addModalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -1598,20 +2546,17 @@ export default function Budget() {
                       {addModalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(addModalBenchmark)}
                     </p>
                   </div>
-                ) : (
+                ) : newCategoryScope === 'personal' ? (
                   <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                      <Lock className="h-4 w-4 text-primary" />
-                      Private couple spending
-                    </div>
+                    <div className="text-sm font-medium text-foreground">Private couple spending</div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Personal budget lines are hidden from shared planner views and stay tied to the couple or committee workspace.
                     </p>
                   </div>
-                )}
+                ) : null}
                 {showPersonalBudget && (
                   <div className="space-y-2">
-                    <Label>Budget Type</Label>
+                    <Label>Budget type</Label>
                     <div className="flex items-center rounded-full border border-border bg-background p-1">
                       <Button
                         type="button"
@@ -1633,21 +2578,16 @@ export default function Budget() {
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label>Suggested Category</Label>
+                  <Label>Category</Label>
                   <Select
-                    value={selectedTemplateName || 'custom'}
+                    value={selectedTemplateName}
                     onValueChange={(value) => {
-                      if (value === 'custom') {
-                        setSelectedTemplateName('');
-                        setName('');
-                        return;
-                      }
                       setSelectedTemplateName(value);
                       setName(value);
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={`Choose a ${newCategoryScope} budget category`} />
+                      <SelectValue placeholder="Choose category" />
                     </SelectTrigger>
                     <SelectContent>
                       {suggestedTemplates.map((template) => (
@@ -1655,32 +2595,12 @@ export default function Budget() {
                           {template.name}
                         </SelectItem>
                       ))}
-                      <SelectItem value="custom">Custom category</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Suggestions come from the planner spreadsheet templates we mapped into the app.
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>{selectedTemplateName ? 'Selected Category' : 'Category Name'}</Label>
-                  <Input
-                    value={name}
-                    onChange={e => {
-                      setName(e.target.value);
-                      setCategoryFormErrors((current) => ({ ...current, name: undefined }));
-                      setCategorySubmitError(null);
-                      if (selectedTemplateName && e.target.value !== selectedTemplateName) {
-                        setSelectedTemplateName('');
-                      }
-                    }}
-                    placeholder={newCategoryScope === 'personal' ? 'e.g. Honeymoon, Wedding Bands' : 'e.g. Venue, Catering'}
-                    required
-                  />
                   <FormFieldError message={categoryFormErrors.name} />
                 </div>
                 <div className="space-y-2">
-                  <Label>Allocated Amount (KES)</Label>
+                  <Label>Amount (KES)</Label>
                   <Input type="number" value={allocated} onChange={e => {
                     setAllocated(e.target.value);
                     setCategoryFormErrors((current) => ({ ...current, allocated: undefined }));
@@ -1690,7 +2610,7 @@ export default function Budget() {
                 </div>
                 <Button type="submit" className="w-full" disabled={addingCategory}>
                   {addingCategory ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {addingCategory ? 'Saving...' : 'Add Category'}
+                  {addingCategory ? 'Saving…' : 'Add category'}
                 </Button>
               </form>
             </DialogContent>
@@ -1700,302 +2620,30 @@ export default function Budget() {
             onOpenChange={setExportUpgradeOpen}
             decision={exportDecision.allowed ? null : exportDecision}
           />
+          </div>
         </div>
-      </div>
+      </section>
 
-      {!budgetNudgeDismissed && budgetNudge && assistantPanel && (
-        <Card className="border-primary/20 bg-primary/5 shadow-card">
-          <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-foreground">{budgetNudge.title}</p>
-              <p className="text-sm text-muted-foreground">{budgetNudge.body}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                className="gap-2"
-                onClick={() => assistantPanel.openAssistant(budgetNudge.prompt)}
-              >
-                Review with AI
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => setBudgetNudgeDismissed(true)}
-              >
-                Dismiss
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {!budgetAssistant.dismissed && (
-        <InlineAssistantCard
-          title={activeBudgetScope === 'personal' ? 'Personal budget pressure check' : 'Budget pressure check'}
-          description={
-            activeBudgetScope === 'personal'
-              ? 'Get a quick read on private couple spending, near-limit lines, and what to adjust next.'
-              : 'See where the wedding budget is tightening and what to rebalance or pay attention to next.'
-          }
-          badgeLabel="AI Budget"
-          prompts={budgetPrompts}
-          response={budgetAssistant.response}
-          error={budgetAssistant.error}
-          loading={budgetAssistant.loading || budgetAssistant.usageLoading || budgetAssistant.accessLoading}
-          decision={budgetAssistant.decision}
-          canUseAssistant={budgetAssistant.canUseAssistant}
-          emptyStateTitle="Get a quick budget read before you keep editing"
-          emptyStateBody="Ask for a simple budget health check, a rebalance suggestion, or a payment priority review based on the budget you already have here."
-          dismissible
-          onDismiss={() => budgetAssistant.setDismissed(true)}
-          onPromptClick={(prompt) => budgetAssistant.runPrompt(prompt)}
-        />
-      )}
-
-      <Card className="shadow-card">
-        <CardContent className="py-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">Spending summary</p>
-              <p className="text-sm text-muted-foreground">
-                {activeBudgetScope === 'wedding'
-                  ? 'Track budget room, vendor commitments, payments made, and balance still outstanding.'
-                  : 'Track private spending against your personal budget and what is still left to cover.'}
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Remaining budget</p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(remainingBudget)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                {activeBudgetScope === 'wedding' ? 'Total vendor invoices' : 'Total planned costs'}
-              </p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(invoiceTotal)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-primary">Total payments made</p>
-              <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(currentScopePaymentTotal)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-primary">Total balance</p>
-              <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(totalBalance)}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-card">
-        <CardContent className="py-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">
-                {activeBudgetScope === 'personal' ? 'Personal budget board' : 'Budget intelligence is active'}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {activeBudgetScope === 'personal'
-                  ? 'Track private couple costs like rent, dowry, honeymoon, rings, and preparation expenses separately from the public wedding budget.'
-                  : `Record actual paid spend here to improve your planning benchmarks.${selectedClient?.wedding_location ? ` Benchmarks are tuned to ${selectedClient.wedding_location}.` : ''}`}
-              </p>
-            </div>
-            {activeBudgetScope === 'wedding' && benchmarksLoading && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Refreshing benchmarks
-              </div>
-            )}
-          </div>
-          {activeBudgetScope === 'wedding' && highlightedBenchmarks.length > 0 && (
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {highlightedBenchmarks.map(({ category, benchmark }) => (
-                <div key={category} className="rounded-lg border border-border/70 bg-background px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-foreground">{category}</span>
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                      {benchmark?.sample_size ?? 0} obs
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{benchmarkSummary(benchmark)}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {activeBudgetScope === 'wedding' && (
-      <Card className="shadow-card">
-        <CardContent className="py-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">Final vendor payment map</p>
-              <p className="text-sm text-muted-foreground">
-                This summary tracks committed vendor spend from the vendors shortlist and final-selection workflow.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Committed contracts</p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorContract)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid so far</p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorPaid)}</p>
-            </div>
-            <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Outstanding</p>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorOutstanding)}</p>
-            </div>
-          </div>
-
-          {finalVendorPayments.length > 0 ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {finalVendorPayments.map((vendor) => (
-                <div key={vendor.id} className="rounded-lg border border-border/70 bg-background px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{vendor.category}</p>
-                      <p className="text-sm text-muted-foreground">{vendor.name}</p>
-                    </div>
-                    <Badge variant={vendorPaymentStatusTone(vendor.payment_status)} className="text-[10px]">
-                      {vendorPaymentStatusLabel(vendor.payment_status)}
-                    </Badge>
-                  </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Contract</p>
-                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.price)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</p>
-                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.amount_paid)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Outstanding</p>
-                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(Math.max((vendor.price ?? 0) - vendor.amount_paid, 0))}</p>
-                    </div>
-                  </div>
-                  {vendor.payment_due_date && (
-                    <p className="mt-3 text-xs text-muted-foreground">Next payment due {new Date(vendor.payment_due_date).toLocaleDateString()}.</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-muted-foreground">
-              No final vendors selected yet. Finalize vendors in the vendors workflow to see contract and payment tracking here.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-      )}
-
-      {budgetViewMode === 'payments_made' ? (
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-primary" />
-              <p className="text-sm font-medium text-foreground">Payments made</p>
-            </div>
-            {currentScopePayments.length > 0 ? (
-              <div className="mt-4 space-y-3">
-                {currentScopePayments.map((payment) => (
-                  <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{payment.payee_name}</p>
-                      <p className="text-xs text-muted-foreground">{payment.category_name}</p>
-                    </div>
-                    <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
-                    <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
-                    <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-muted-foreground">
-                No payments recorded yet. Use “Record Payment Made” to start building your payment history.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      ) : currentScopePayments.length > 0 ? (
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <div className="flex items-center gap-2">
-              <Receipt className="h-4 w-4 text-primary" />
-              <p className="text-sm font-medium text-foreground">Payments by category</p>
-            </div>
-            <div className="mt-4 space-y-6">
-              {Object.entries(paymentsByCategory).map(([categoryName, payments]) => (
-                <div key={categoryName} className="space-y-3">
-                  <div className="border-b border-border pb-2">
-                    <p className="text-lg font-semibold text-foreground">{categoryName}</p>
-                  </div>
-                  {payments.map((payment) => (
-                    <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
-                      <div className="text-sm font-medium text-foreground">{payment.payee_name}</div>
-                      <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
-                      <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
-                      <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Card className="overflow-hidden shadow-card">
+      <Card ref={budgetItemsRef} className="scroll-mt-6 overflow-hidden border-border bg-card shadow-none">
         <CardContent className="p-0">
-          <div className="grid lg:grid-cols-[360px_minmax(0,1fr)]">
-            <div className="border-b border-border/70 bg-muted/20 lg:border-b-0 lg:border-r">
-              <div className="space-y-4 p-5">
+          <div>
+            <div>
+              <div className="space-y-4 p-4 sm:p-5">
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">Budget lines</p>
-                  <p className="text-sm text-muted-foreground">
-                    Search the categories in this scope, then open one line at a time to update the real spend and ownership details.
-                  </p>
+                  <p className="text-sm font-medium text-foreground">Budget items</p>
+                  <p className="text-sm text-muted-foreground">Choose an item to view its vendor, tasks, and payments.</p>
                 </div>
 
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <div>
                   <Input
                     value={categorySearch}
                     onChange={(e) => setCategorySearch(e.target.value)}
-                    placeholder={
-                      activeBudgetScope === 'personal'
-                        ? 'Search honeymoon, rings, dowry...'
-                        : 'Search venue, catering, decor...'
-                    }
-                    className="pl-9"
+                    placeholder="Search budget items"
                   />
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                  <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Lines in scope</p>
-                    <p className="mt-2 text-xl font-semibold text-foreground">{filteredVisibleCategories.length}</p>
-                  </div>
-                  <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Over the limit</p>
-                    <p className="mt-2 text-xl font-semibold text-foreground">{visibleOverBudgetCategories.length}</p>
-                  </div>
-                  <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Near the edge</p>
-                    <p className="mt-2 text-xl font-semibold text-foreground">{visibleNearLimitCategories.length}</p>
-                  </div>
                 </div>
               </div>
 
-              <div className="max-h-[620px] space-y-2 overflow-y-auto border-t border-border/70 p-3">
+              <div className="space-y-2 border-t border-border bg-muted/20 p-2 sm:p-3">
                 {filteredVisibleCategories.length > 0 ? (
                   filteredVisibleCategories.map((category) => {
                     const isSelected = selectedBudgetCategory?.id === category.id;
@@ -2007,78 +2655,325 @@ export default function Budget() {
                     const categoryProgress = category.allocated
                       ? Math.min((category.spent / category.allocated) * 100, 100)
                       : 0;
+                    const overallShare = visibleBudgetGoal > 0
+                      ? (category.allocated / visibleBudgetGoal) * 100
+                      : 0;
+                    const allRelevantVendors = getRecordedVendorsForBudgetCategory(category.name, vendorOptions);
+                    const categoryInvoicedAmount = allRelevantVendors
+                      .filter((vendor) => vendor.selection_status === 'final')
+                      .reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
+                    const categoryBalance = categoryInvoicedAmount - category.spent;
+                    const relevantVendors = allRelevantVendors
+                      .sort((left, right) => Number(right.selection_status === 'final') - Number(left.selection_status === 'final'))
+                      .slice(0, 2);
+                    const allRelevantTasks = getRelatedTasksForBudgetCategory(category.name, budgetTasks, allRelevantVendors);
+                    const relevantTasks = allRelevantTasks.slice(0, 3);
+                    const openRelevantTaskCount = allRelevantTasks.filter((task) => !task.completed).length;
+                    const confirmedVendor = allRelevantVendors.find((vendor) => vendor.selection_status === 'final') ?? null;
+                    const featuredVendor = confirmedVendor ?? allRelevantVendors[0] ?? null;
+                    const categoryAttentionTone = isOverBudget
+                      ? 'danger'
+                      : isNearLimit
+                        ? 'warning'
+                        : categoryInvoicedAmount > 0 && categoryBalance <= 0
+                          ? 'success'
+                          : allRelevantVendors.length > 0
+                            ? 'warning'
+                            : 'neutral';
+                    const categoryAttentionStatus = isOverBudget
+                      ? 'Over budget'
+                      : isNearLimit
+                        ? 'Near limit'
+                        : categoryInvoicedAmount > 0 && categoryBalance <= 0
+                          ? 'Settled'
+                          : confirmedVendor
+                            ? 'Payment pending'
+                            : allRelevantVendors.length > 0
+                              ? 'Needs confirmation'
+                              : 'Planning';
+                    const linkedDirectoryIds = new Set(
+                      vendorOptions.map((vendor) => vendor.vendor_listing_id).filter(Boolean),
+                    );
+                    const suggestedVendors = directorySuggestions
+                      .filter((vendor) => planningCategoryRelationScore(category.name, vendor.category) > 0)
+                      .filter((vendor) => !linkedDirectoryIds.has(vendor.id))
+                      .slice(0, 3);
+                    const existingTaskTitles = new Set(budgetTasks.map((task) => task.title.trim().toLowerCase()));
+                    const suggestedTasks = getSuggestedTaskTemplates({
+                      category: category.name,
+                      vendorCategories: vendorOptions.map((vendor) => vendor.category),
+                      role: profile?.role,
+                      plannerType: profile?.planner_type,
+                    })
+                      .filter((task) => !existingTaskTitles.has(task.title.trim().toLowerCase()))
+                      .slice(0, 3);
+                    const activeInlineModule = inlineModule?.categoryId === category.id ? inlineModule.type : null;
 
                     return (
-                      <button
+                      <motion.div
+                        layout={!prefersReducedMotion}
                         key={category.id}
-                        type="button"
-                        onClick={() => setSelectedCategoryId(category.id)}
-                        className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
-                          isSelected
-                            ? 'border-primary bg-primary/6 shadow-sm'
-                            : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20'
-                        }`}
+                        animate={prefersReducedMotion ? undefined : isSelected ? { y: -1 } : { y: 0 }}
+                        transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
+                        className="relative w-full min-w-0 max-w-full"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-foreground">{category.name}</p>
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <Badge variant={category.budget_scope === 'personal' ? 'secondary' : 'outline'}>
-                                {category.budget_scope === 'personal' ? 'Personal' : 'Wedding'}
-                              </Badge>
-                              {category.visibility === 'private' && (
-                                <Badge variant="secondary" className="gap-1">
-                                  <Lock className="h-3 w-3" />
-                                  Private
-                                </Badge>
-                              )}
-                              {isOverBudget ? (
-                                <Badge variant="destructive" className="gap-1">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  Over limit
-                                </Badge>
-                              ) : isNearLimit ? (
-                                <Badge variant="secondary">Near limit</Badge>
-                              ) : null}
+                        <HierarchyGroup
+                          compact
+                          eyebrow="Budget category"
+                          title={category.name}
+                          status={categoryAttentionStatus}
+                          tone={categoryAttentionTone}
+                          open={isSelected}
+                          onToggle={() => {
+                            setSelectedCategoryId(isSelected ? null : category.id);
+                            setInlineModule(null);
+                          }}
+                          meta={formatCurrency(category.allocated)}
+                          summary={(
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                                <span className="font-medium text-foreground">
+                                  {featuredVendor?.name ?? 'No vendor linked yet'}
+                                </span>
+                                {featuredVendor ? (
+                                  <span className="text-muted-foreground">
+                                    {featuredVendor.selection_status === 'final'
+                                      ? 'Confirmed vendor'
+                                      : vendorSelectionLabel(featuredVendor.selection_status)}
+                                  </span>
+                                ) : null}
+                                {allRelevantVendors.length > 1 ? (
+                                  <span className="text-muted-foreground">+ {allRelevantVendors.length - 1} more</span>
+                                ) : null}
+                              </div>
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground sm:text-sm">
+                                <span>{openRelevantTaskCount} task{openRelevantTaskCount === 1 ? '' : 's'} remaining</span>
+                                <span>{formatCurrency(categoryInvoicedAmount)} invoiced</span>
+                                <span>{formatCurrency(category.spent)} paid</span>
+                                <span>{formatCurrency(categoryBalance)} balance</span>
+                                {category.visibility === 'private' ? <span>Private</span> : null}
+                              </div>
+                            </div>
+                          )}
+                          footer={<Progress value={categoryProgress} className="mt-3 h-1.5 max-w-2xl" />}
+                        >
+                          <div className="min-w-0 space-y-4 rounded-xl border border-border/80 bg-background/75 p-4 shadow-[0_12px_30px_-28px_hsl(var(--foreground)/0.5)] sm:p-5">
+                            <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 sm:px-4">
+                              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                Tracing Intended Vendor Budget
+                              </p>
+                            </div>
+                            <div className="grid gap-3 rounded-lg border border-border bg-card p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_auto] sm:items-end sm:p-4">
+                              <div className="space-y-2">
+                                <Label htmlFor={`planned-allocation-${category.id}`}>Intended Vendor Budget</Label>
+                                <div className="relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
+                                  <Input
+                                    id={`planned-allocation-${category.id}`}
+                                    type="number"
+                                    min="0"
+                                    inputMode="numeric"
+                                    aria-label={`Edit intended vendor budget for ${category.name}`}
+                                    value={allocationDrafts[category.id]?.amount ?? String(category.allocated)}
+                                    onChange={(event) => updateAllocationDraft(category, overallShare, event.target.value, 'amount')}
+                                    className="pl-12"
+                                  />
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor={`percentage-allocation-${category.id}`}>Allocation Percentage</Label>
+                                <div className="relative">
+                                  <Input
+                                    id={`percentage-allocation-${category.id}`}
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    inputMode="decimal"
+                                    aria-label={`Edit allocation percentage for ${category.name}`}
+                                    value={allocationDrafts[category.id]?.percentage ?? overallShare.toFixed(1)}
+                                    onChange={(event) => updateAllocationDraft(category, overallShare, event.target.value, 'percentage')}
+                                    className="pr-9"
+                                  />
+                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">%</span>
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                className="w-full sm:w-auto"
+                                disabled={savingAllocationId === category.id}
+                                onClick={() => {
+                                  const draft = allocationDrafts[category.id] ?? { amount: String(category.allocated), percentage: overallShare.toFixed(1), lastEditedField: 'amount' as const };
+                                  const rawValue = Number(draft[draft.lastEditedField]);
+                                  if (!Number.isFinite(rawValue) || rawValue < 0) {
+                                    toast({ title: 'Enter a valid allocation', description: 'Use zero or a positive number.', variant: 'destructive' });
+                                    return;
+                                  }
+                                  const nextAmount = draft.lastEditedField === 'percentage'
+                                    ? (rawValue / 100) * visibleBudgetGoal
+                                    : rawValue;
+                                  void persistCategoryAllocation(category, nextAmount, draft.lastEditedField, true);
+                                }}
+                              >
+                                {savingAllocationId === category.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Apply'}
+                              </Button>
+                            </div>
+
+                            <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-card py-3 text-center">
+                              <div className="px-2">
+                                <p className="text-xs text-muted-foreground">Payments Made</p>
+                                <p className="mt-1 text-sm font-semibold">{formatCurrency(category.spent)}</p>
+                              </div>
+                              <div className="px-2">
+                                <p className="text-xs text-muted-foreground">Invoiced Amount</p>
+                                <p className="mt-1 text-sm font-semibold">{formatCurrency(categoryInvoicedAmount)}</p>
+                              </div>
+                              <div className="px-2">
+                                <p className="text-xs text-muted-foreground">Balance</p>
+                                <p className={`mt-1 text-sm font-semibold ${categoryBalance < 0 ? 'text-destructive' : ''}`}>{formatCurrency(categoryBalance)}</p>
+                              </div>
+                            </div>
+
+                            {category.allocation_manually_edited && category.suggested_allocated != null ? (
+                              <Button
+                                type="button"
+                                variant="link"
+                                className="h-auto p-0 text-sm"
+                                disabled={savingAllocationId === category.id}
+                                onClick={() => {
+                                  const suggestedAmount = category.suggested_percentage != null && visibleBudgetGoal > 0
+                                    ? (category.suggested_percentage / 100) * visibleBudgetGoal
+                                    : category.suggested_allocated!;
+                                  void persistCategoryAllocation(category, suggestedAmount, 'amount', false);
+                                }}
+                              >
+                                Reset to suggested
+                              </Button>
+                            ) : null}
+
+                            <div className="grid gap-4 md:grid-cols-2 md:divide-x md:divide-border">
+                              <div className="min-w-0 rounded-lg border border-primary/20 bg-primary/[0.035] p-3 sm:p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-semibold">Vendor Shortlist</p>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">Open a vendor to review or update every detail here.</p>
+                                  </div>
+                                  <div className="shrink-0 border-l border-primary/25 pl-3 text-right">
+                                    <p className="text-lg font-semibold leading-none text-foreground">{allRelevantVendors.length}</p>
+                                    <p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                      options
+                                    </p>
+                                  </div>
+                                </div>
+                                {relevantVendors.length ? relevantVendors.map((vendor) => (
+                                  <button
+                                    key={vendor.id}
+                                    type="button"
+                                    onClick={() => openVendorEditor(category, vendor)}
+                                    className="mt-3 flex w-full min-w-0 flex-col gap-3 rounded-md border border-border/70 bg-background px-3 py-2.5 text-left transition-colors hover:border-primary/35 hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center sm:justify-between"
+                                  >
+                                    <span className="min-w-0">
+                                      <span className="block truncate text-sm font-medium text-foreground">{vendor.name}</span>
+                                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                                        {contractStatusLabel(vendor.contract_status)} · {vendorPaymentStatusLabel(vendor.payment_status)}
+                                      </span>
+                                    </span>
+                                    <span className={`inline-flex shrink-0 items-center gap-2 text-[0.66rem] font-semibold uppercase tracking-[0.14em] ${
+                                      vendor.selection_status === 'final' ? 'text-success' : 'text-muted-foreground'
+                                    }`}>
+                                      <span
+                                        aria-hidden="true"
+                                        className={`h-1.5 w-1.5 rounded-full ${
+                                          vendor.selection_status === 'final' ? 'bg-success' : 'bg-primary/45'
+                                        }`}
+                                      />
+                                      {vendor.selection_status === 'final' ? 'Confirmed' : vendorSelectionLabel(vendor.selection_status)}
+                                    </span>
+                                  </button>
+                                )) : <p className="mt-3 text-sm text-muted-foreground">No vendors shortlisted yet.</p>}
+                                <Button
+                                  type="button"
+                                  variant="link"
+                                  className="mt-2 h-auto p-0"
+                                  onClick={() => openVendorEditor(category)}
+                                >
+                                  {relevantVendors.length ? 'Add another vendor' : 'Add a vendor'}
+                                </Button>
+                              </div>
+
+                              <div className="min-w-0 md:pl-4">
+                                <p className="text-sm font-medium">Related tasks</p>
+                                {relevantTasks.length ? relevantTasks.map((task) => (
+                                  <button
+                                    key={task.id}
+                                    type="button"
+                                    onClick={() => openTaskEditor(category, task)}
+                                    className="mt-2 flex w-full min-w-0 items-start justify-between gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  >
+                                    <span className={task.completed
+                                      ? 'min-w-0 flex-1 break-words text-muted-foreground line-through'
+                                      : 'min-w-0 flex-1 break-words font-medium text-foreground'}
+                                    >
+                                      {task.title}
+                                    </span>
+                                    <span className={`inline-flex shrink-0 items-center gap-2 text-[0.66rem] font-semibold uppercase tracking-[0.14em] ${
+                                      task.completed ? 'text-success' : 'text-muted-foreground'
+                                    }`}>
+                                      <span
+                                        aria-hidden="true"
+                                        className={`h-1.5 w-1.5 rounded-full ${task.completed ? 'bg-success' : 'bg-primary/45'}`}
+                                      />
+                                      {task.completed ? 'Done' : 'Next'}
+                                    </span>
+                                  </button>
+                                )) : <p className="mt-2 text-sm text-muted-foreground">No matching task yet.</p>}
+                                <Button
+                                  type="button"
+                                  variant="link"
+                                  className="mt-2 h-auto p-0"
+                                  onClick={() => openTaskEditor(category)}
+                                >
+                                  {relevantTasks.length ? 'Add another task' : 'Add a task'}
+                                </Button>
+                              </div>
+                            </div>
+
+                            <div className="flex justify-end">
+                              <Button type="button" className="w-full sm:w-auto" onClick={() => openSpendRecorder(category)}>Record Payment</Button>
+                            </div>
+
+                            <div className="flex justify-end">
+                              <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Remove budget item" title="Remove budget item" onClick={() => deleteCategory(category.id)}>
+                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                              </Button>
                             </div>
                           </div>
-                          <ChevronRight className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
-                        </div>
-
-                        <div className="mt-4">
-                          <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{formatCurrency(category.spent)} spent</span>
-                            <span>{formatCurrency(category.allocated)} planned</span>
-                          </div>
-                          <Progress value={categoryProgress} className="h-2" />
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                          <span>
-                            {category.committee_role_in_charge || (category.budget_scope === 'wedding' ? 'No owner yet' : 'Couple managed')}
-                          </span>
-                          <span>{formatCurrency(Math.max(category.allocated - category.spent, 0))} left</span>
-                        </div>
-                      </button>
+                        </HierarchyGroup>
+                      </motion.div>
                     );
                   })
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-border/80 bg-background/80 p-6 text-center">
-                    <CircleDashed className="mx-auto h-8 w-8 text-muted-foreground" />
-                    <p className="mt-3 text-sm font-medium text-foreground">No budget lines match this search</p>
+                  <div className="p-6 text-center">
+                    <p className="text-sm font-medium text-foreground">
+                      {visibleCategories.length === 0 ? 'No budget items yet' : 'No matches'}
+                    </p>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {visibleCategories.length === 0
                         ? activeBudgetScope === 'personal'
-                          ? 'Add the first private budget line to track costs the couple wants to keep separate.'
-                          : 'Add the first wedding budget line to start planning costs properly.'
-                        : 'Try a different category name, role, or status search.'}
+                          ? 'Add a private cost to track it separately.'
+                          : 'Add a category to start your budget.'
+                        : 'Try a different search.'}
                     </p>
+                    {visibleCategories.length === 0 ? (
+                      <Button type="button" className="mt-4" onClick={() => setOpen(true)}>
+                        Add category
+                      </Button>
+                    ) : null}
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="bg-background">
+            <div className="hidden" aria-hidden="true">
               {selectedBudgetCategory ? (
                 <div className="space-y-6 p-5 lg:p-6">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -2088,21 +2983,15 @@ export default function Budget() {
                           {selectedBudgetCategory.budget_scope === 'personal' ? 'Personal budget line' : 'Wedding budget line'}
                         </Badge>
                         {selectedBudgetCategory.visibility === 'private' && (
-                          <Badge variant="secondary" className="gap-1">
-                            <Lock className="h-3 w-3" />
-                            Private
-                          </Badge>
+                          <Badge variant="secondary">Private</Badge>
                         )}
                         {selectedCategoryOverMedian && (
-                          <Badge variant="secondary" className="gap-1">
-                            <AlertTriangle className="h-3 w-3" />
-                            Above benchmark median
-                          </Badge>
+                          <Badge variant="secondary">Above benchmark median</Badge>
                         )}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h2 className="font-display text-2xl font-semibold text-foreground">
+                          <h2 className="workspace-h2">
                             {selectedBudgetCategory.name}
                           </h2>
                           <InfoTip
@@ -2122,11 +3011,13 @@ export default function Budget() {
                     <Button
                       type="button"
                       variant="ghost"
-                      className="gap-2 text-destructive hover:text-destructive"
+                      size="icon"
+                      className="text-destructive hover:text-destructive"
+                      aria-label="Delete budget line"
+                      title="Delete budget line"
                       onClick={() => deleteCategory(selectedBudgetCategory.id)}
                     >
-                      <Trash2 className="h-4 w-4" />
-                      Delete line
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </div>
 
@@ -2176,9 +3067,8 @@ export default function Budget() {
                           </div>
                         </div>
                       ) : (
-                        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                        <div className="semantic-surface-info rounded-2xl border p-4">
                           <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                            <Lock className="h-4 w-4 text-primary" />
                             Couple-only spending
                           </div>
                           <p className="mt-1 text-sm text-muted-foreground">
@@ -2193,7 +3083,7 @@ export default function Budget() {
                             <div className="space-y-1">
                               <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Ownership & contract</p>
                               <p className="text-sm text-muted-foreground">
-                                Match this budget line to the role responsible and track whether the vendor contract is still pending.
+                                Choose who owns this budget line. Contract progress is managed from the vendor's actual document.
                               </p>
                             </div>
                             <Badge variant="outline" className="text-[10px]">
@@ -2234,30 +3124,12 @@ export default function Budget() {
                             </div>
                             <div className="space-y-2">
                               <Label>Contract status</Label>
-                              <Select
-                                value={workflowDrafts[selectedBudgetCategory.id]?.contractStatus ?? selectedBudgetCategory.contract_status}
-                                onValueChange={(value) =>
-                                  setWorkflowDrafts((prev) => ({
-                                    ...prev,
-                                    [selectedBudgetCategory.id]: {
-                                      ...(prev[selectedBudgetCategory.id] ?? {
-                                        committeeRoleInCharge: selectedBudgetCategory.committee_role_in_charge ?? 'unassigned',
-                                        contractStatus: selectedBudgetCategory.contract_status,
-                                      }),
-                                      contractStatus: value,
-                                    },
-                                  }))
-                                }
-                              >
-                                <SelectTrigger className="h-10 text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {contractStatusOptions.map((status) => (
-                                    <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                                <p className="text-sm font-medium text-foreground">
+                                  {contractStatusLabel(selectedBudgetCategory.contract_status)}
+                                </p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">Updates from the vendor document workflow.</p>
+                              </div>
                             </div>
                           </div>
 
@@ -2271,9 +3143,7 @@ export default function Budget() {
                             >
                               {savingWorkflowId === selectedBudgetCategory.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Save className="h-4 w-4" />
-                              )}
+                              ) : null}
                               Save Workflow
                             </Button>
                           </div>
@@ -2308,9 +3178,7 @@ export default function Budget() {
                           >
                             {savingSpentId === selectedBudgetCategory.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Save className="h-4 w-4" />
-                            )}
+                            ) : null}
                             Save Spent
                           </Button>
                         </div>
@@ -2321,7 +3189,6 @@ export default function Budget() {
                             className="mt-4 w-full gap-2"
                             onClick={() => openSpendRecorder(selectedBudgetCategory)}
                           >
-                            <Receipt className="h-4 w-4" />
                             Record Actual Spend
                           </Button>
                         ) : (
@@ -2377,8 +3244,7 @@ export default function Budget() {
               ) : (
                 <div className="flex min-h-[420px] items-center justify-center p-8">
                   <div className="max-w-md text-center">
-                    <CircleDashed className="mx-auto h-10 w-10 text-muted-foreground" />
-                    <h2 className="mt-4 font-display text-2xl font-semibold text-foreground">
+                    <h2 className="workspace-h2">
                       {activeBudgetScope === 'personal' ? 'No private budget lines yet' : 'No wedding budget lines yet'}
                     </h2>
                     <p className="mt-2 text-sm text-muted-foreground">
@@ -2387,7 +3253,6 @@ export default function Budget() {
                         : 'Add the first wedding category so the workspace can start tracking real budget pressure.'}
                     </p>
                     <Button type="button" className="mt-5 gap-2" onClick={() => setOpen(true)}>
-                      <Plus className="h-4 w-4" />
                       Add Category
                     </Button>
                   </div>
@@ -2397,6 +3262,418 @@ export default function Budget() {
           </div>
         </CardContent>
       </Card>
+
+      <details className="hidden">
+        <summary className="flex cursor-pointer list-none flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-info">Budget reports</p>
+              <InfoTip content="Open this when you want the deeper reporting view: summary totals, market signals, vendor commitments, and payment history." />
+            </div>
+            <h2 className="workspace-h2 mt-2">Open the deeper money view</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Keep the main workspace focused on active budget lines, then open the full reports when you need broader financial context.
+            </p>
+          </div>
+          <Badge variant="info" className="w-fit rounded-full px-3 py-1">
+            View reports
+          </Badge>
+        </summary>
+        <div className="space-y-6 border-t border-border/70 p-5 pt-6">
+          <Card className="shadow-card">
+            <CardContent className="py-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Money snapshot</p>
+                  <p className="text-sm text-muted-foreground">
+                    A compact summary of this {budgetScopeLabel}: what is planned, what is paid, and what is still open.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Remaining budget</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(remainingBudget)}</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {activeBudgetScope === 'wedding' ? 'Total vendor invoices' : 'Total planned costs'}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(invoiceTotal)}</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-success">Total payments made</p>
+                  <p className="mt-2 text-2xl font-semibold text-success">{formatCurrency(currentScopePaymentTotal)}</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-primary">Total balance</p>
+                  <p className="mt-2 text-2xl font-semibold text-primary">{formatCurrency(totalBalance)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card">
+            <CardContent className="py-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {activeBudgetScope === 'personal' ? 'Personal budget signals' : 'Budget intelligence'}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {activeBudgetScope === 'personal'
+                      ? 'Keep private couple costs separate and visible without mixing them into the shared wedding budget.'
+                      : `Use real paid spend to sharpen your planning benchmarks.${selectedClient?.wedding_location ? ` Benchmarks are tuned to ${selectedClient.wedding_location}.` : ''}`}
+                  </p>
+                </div>
+                {activeBudgetScope === 'wedding' && benchmarksLoading && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Refreshing benchmarks
+                  </div>
+                )}
+              </div>
+              {activeBudgetScope === 'wedding' && highlightedBenchmarks.length > 0 && (
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {highlightedBenchmarks.map(({ category, benchmark }) => (
+                    <div key={category} className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-foreground">{category}</span>
+                        <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                          {benchmark?.sample_size ?? 0} obs
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">{benchmarkSummary(benchmark)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {activeBudgetScope === 'wedding' && (
+            <Card className="shadow-card">
+              <CardContent className="py-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Final vendor payment map</p>
+                    <p className="text-sm text-muted-foreground">
+                      Committed vendor spend from the vendors workflow, kept separate from the category editor.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Committed contracts</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorContract)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Paid so far</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorPaid)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Outstanding</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(totalFinalVendorOutstanding)}</p>
+                  </div>
+                </div>
+
+                {finalVendorPayments.length > 0 ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {finalVendorPayments.map((vendor) => (
+                      <div key={vendor.id} className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{vendor.category}</p>
+                            <p className="text-sm text-muted-foreground">{vendor.name}</p>
+                          </div>
+                          <Badge variant={vendorPaymentStatusTone(vendor.payment_status)} className="text-[10px]">
+                            {vendorPaymentStatusLabel(vendor.payment_status)}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Contract</p>
+                            <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.price)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</p>
+                            <p className="mt-1 text-sm font-medium text-foreground">
+                              {formatCurrency(totalRecordedVendorPayments(paymentRecords.filter((payment) => payment.vendor_id === vendor.id)))}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Outstanding</p>
+                            <p className="mt-1 text-sm font-medium text-foreground">
+                              {formatCurrency(Math.max(
+                                (vendor.price ?? 0) - totalRecordedVendorPayments(paymentRecords.filter((payment) => payment.vendor_id === vendor.id)),
+                                0,
+                              ))}
+                            </p>
+                          </div>
+                        </div>
+                        {vendor.payment_due_date && (
+                          <p className="mt-3 text-xs text-muted-foreground">Next payment due {new Date(vendor.payment_due_date).toLocaleDateString()}.</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    No final vendors selected yet. Finalize vendors in the vendors workflow to see contract and payment tracking here.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {currentScopePayments.length > 0 ? (
+            <Card className="shadow-card">
+              <CardContent className="py-5">
+                <p className="text-sm font-medium text-foreground">Payments by category</p>
+                <div className="mt-4 space-y-6">
+                  {Object.entries(paymentsByCategory).map(([categoryName, payments]) => (
+                    <div key={categoryName} className="space-y-3">
+                      <div className="border-b border-border pb-2">
+                        <p className="text-lg font-semibold text-foreground">{categoryName}</p>
+                      </div>
+                      {payments.map((payment) => (
+                        <div key={payment.id} className="grid gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.2fr]">
+                          <div className="text-sm font-medium text-foreground">{payment.payee_name}</div>
+                          <div className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</div>
+                          <div className="text-sm text-muted-foreground">{new Date(payment.payment_date).toLocaleDateString()}</div>
+                          <div className="text-sm text-muted-foreground">{payment.reference || 'No payment reference'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      </details>
+
+      <Dialog open={vendorEditorOpen} onOpenChange={setVendorEditorOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {vendorEditorRecord ? 'Vendor Details' : 'Add Vendor'}
+            </DialogTitle>
+          </DialogHeader>
+          {vendorEditorDraft && vendorEditorCategory ? (
+            <form
+              className="space-y-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveVendorEditor();
+              }}
+            >
+              <div className="rounded-lg border border-primary/20 bg-primary/[0.04] px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Category</p>
+                <p className="mt-1 font-medium text-foreground">{vendorEditorCategory.name}</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="vendor-editor-name">Vendor name</Label>
+                  <Input id="vendor-editor-name" value={vendorEditorDraft.name} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, name: event.target.value } : current)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-editor-phone">Phone</Label>
+                  <Input id="vendor-editor-phone" value={vendorEditorDraft.phone} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, phone: event.target.value } : current)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-editor-email">Email</Label>
+                  <Input id="vendor-editor-email" type="email" value={vendorEditorDraft.email} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, email: event.target.value } : current)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Vendor decision</Label>
+                  <Select value={vendorEditorDraft.selectionStatus} onValueChange={(value) => setVendorEditorDraft((current) => current ? { ...current, selectionStatus: value as VendorSelectionStatus } : current)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {vendorSelectionStatuses.map((status) => <SelectItem key={status} value={status}>{vendorSelectionLabel(status)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Contract</Label>
+                  <div className="min-h-10 rounded-md border border-border bg-muted/30 px-3 py-2.5">
+                    {vendorEditorContractQuery.isLoading ? (
+                      <p className="text-sm text-muted-foreground">Checking contract...</p>
+                    ) : vendorEditorContractQuery.data ? (
+                      <div className="space-y-1.5">
+                        <p className="font-medium text-foreground">
+                          {coupleVendorContractStatusLabel(vendorEditorContractQuery.data)}
+                        </p>
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          {coupleVendorContractMessage(vendorEditorContractQuery.data)}
+                        </p>
+                        {coupleVendorContractShareUrl(vendorEditorContractQuery.data, window.location.origin) ? (
+                          <Button asChild type="button" variant="link" className="h-auto p-0 text-xs">
+                            <a
+                              href={coupleVendorContractShareUrl(vendorEditorContractQuery.data, window.location.origin)!}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {vendorEditorContractQuery.data.status === 'completed' ? 'Open signed contract' : 'Review contract'}
+                              <ExternalLink className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                            </a>
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-medium text-foreground">No contract shared yet</p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                          The vendor or planner prepares and sends the contract. You only need to review and sign it when it arrives.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-editor-price">Total vendor cost (KES)</Label>
+                  <Input id="vendor-editor-price" type="number" min="0" value={vendorEditorDraft.price} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, price: event.target.value } : current)} />
+                  <p className="text-xs text-muted-foreground">The full price agreed with this vendor. Zania uses it to calculate what remains unpaid.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="vendor-editor-deposit">Booking deposit required (KES) · Optional</Label>
+                  <Input id="vendor-editor-deposit" type="number" min="0" value={vendorEditorDraft.depositAmount} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, depositAmount: event.target.value } : current)} />
+                  <p className="text-xs text-muted-foreground">The upfront amount the vendor asks for to reserve the date. It is not counted as paid until a payment is recorded.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Payments recorded</Label>
+                  <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5" aria-live="polite">
+                    <p className="font-medium text-foreground">
+                      {formatCurrency(
+                        vendorEditorRecord
+                          ? totalRecordedVendorPayments(paymentRecords.filter((payment) => payment.vendor_id === vendorEditorRecord.id))
+                          : 0,
+                      )}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">Calculated from recorded payment entries.</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Payment stage</Label>
+                  <div className="min-h-10 rounded-md border border-border bg-muted/30 px-3 py-2.5" aria-live="polite">
+                    <p className="font-medium text-foreground">
+                      {vendorPaymentStatusLabel(deriveVendorPaymentStatus({
+                        totalCost: vendorEditorDraft.price,
+                        depositRequired: vendorEditorDraft.depositAmount,
+                        totalPaid: vendorEditorRecord
+                          ? totalRecordedVendorPayments(paymentRecords.filter((payment) => payment.vendor_id === vendorEditorRecord.id))
+                          : 0,
+                      }))}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">Updates automatically when a payment is recorded.</p>
+                  </div>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label>Payment history</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {vendorEditorRecord
+                        ? paymentRecords.filter((payment) => payment.vendor_id === vendorEditorRecord.id).length
+                        : 0} recorded
+                    </span>
+                  </div>
+                  <div className="divide-y divide-border overflow-hidden rounded-md border border-border bg-background">
+                    {vendorEditorRecord && paymentRecords.some((payment) => payment.vendor_id === vendorEditorRecord.id) ? (
+                      paymentRecords
+                        .filter((payment) => payment.vendor_id === vendorEditorRecord.id)
+                        .sort((a, b) => b.payment_date.localeCompare(a.payment_date))
+                        .map((payment) => (
+                          <div key={payment.id} className="flex items-start justify-between gap-4 px-3 py-2.5">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground">{formatCurrency(payment.amount)}</p>
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {payment.reference || 'No payment reference'}
+                              </p>
+                            </div>
+                            <time className="shrink-0 text-xs text-muted-foreground" dateTime={payment.payment_date}>
+                              {new Date(`${payment.payment_date}T00:00:00`).toLocaleDateString('en-KE', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </time>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="px-3 py-4 text-sm text-muted-foreground">
+                        No payments recorded yet. Use Record payment when money changes hands.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="vendor-editor-due">Next payment due</Label>
+                  <Input id="vendor-editor-due" type="date" value={vendorEditorDraft.paymentDueDate} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, paymentDueDate: event.target.value } : current)} />
+                  <PaymentReminderStatus
+                    dueDate={vendorEditorDraft.paymentDueDate}
+                    vendorName={vendorEditorDraft.name}
+                    saved={(vendorEditorDraft.paymentDueDate || null) === (vendorEditorRecord?.payment_due_date || null)}
+                    inputId="vendor-editor-due"
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="vendor-editor-notes">Notes</Label>
+                  <Textarea id="vendor-editor-notes" rows={4} value={vendorEditorDraft.notes} onChange={(event) => setVendorEditorDraft((current) => current ? { ...current, notes: event.target.value } : current)} placeholder="Scope, contact notes, contract details, or payment context" />
+                </div>
+              </div>
+              <Button type="submit" className="w-full" disabled={savingVendorEditor}>
+                {savingVendorEditor ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {vendorEditorRecord ? 'Save Vendor Details' : 'Add Vendor'}
+              </Button>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={taskEditorOpen} onOpenChange={setTaskEditorOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">{taskEditorRecord ? 'Task Details' : 'Add Task'}</DialogTitle>
+          </DialogHeader>
+          {taskEditorDraft && taskEditorCategory ? (
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveTaskEditor();
+              }}
+            >
+              <div className="rounded-lg border border-border/70 bg-muted/30 px-4 py-3 text-sm">
+                <span className="text-muted-foreground">Category: </span>
+                <span className="font-medium text-foreground">{taskEditorCategory.name}</span>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="task-editor-title">Task</Label>
+                <Input id="task-editor-title" value={taskEditorDraft.title} onChange={(event) => setTaskEditorDraft((current) => current ? { ...current, title: event.target.value } : current)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="task-editor-description">Details</Label>
+                <Textarea id="task-editor-description" rows={4} value={taskEditorDraft.description} onChange={(event) => setTaskEditorDraft((current) => current ? { ...current, description: event.target.value } : current)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="task-editor-due">Due date</Label>
+                <Input id="task-editor-due" type="date" value={taskEditorDraft.dueDate} onChange={(event) => setTaskEditorDraft((current) => current ? { ...current, dueDate: event.target.value } : current)} />
+              </div>
+              {taskEditorRecord ? (
+                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+                  <Checkbox id="task-editor-completed" checked={taskEditorDraft.completed} onCheckedChange={(checked) => setTaskEditorDraft((current) => current ? { ...current, completed: checked === true } : current)} />
+                  <Label htmlFor="task-editor-completed" className="cursor-pointer">Task completed</Label>
+                </div>
+              ) : null}
+              <Button type="submit" className="w-full" disabled={savingTaskEditor}>
+                {savingTaskEditor ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {taskEditorRecord ? 'Save Task' : 'Add Task'}
+              </Button>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(recordingCategory)} onOpenChange={(nextOpen) => { if (!nextOpen) setRecordingCategory(null); }}>
         <DialogContent>
@@ -2458,7 +3735,7 @@ export default function Budget() {
               </div>
             </div>
             <Button type="submit" className="w-full gap-2" disabled={recordingSpend}>
-              {recordingSpend ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+              {recordingSpend ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Record Spend
             </Button>
           </form>

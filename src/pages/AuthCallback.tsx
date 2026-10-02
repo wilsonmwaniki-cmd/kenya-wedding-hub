@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { getSafeAuthRouteTarget } from '@/lib/authRouting';
+import { consumeOAuthConsentReturn } from '@/lib/oauthConsent';
 import { getHomeRouteForRole, isProfessionalSetupPending, type AppRole, type PlannerType } from '@/lib/roles';
 import { hasPendingEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 import {
@@ -234,6 +235,24 @@ export default function AuthCallback() {
       }
 
       if (!desiredRole) {
+        if (authMode === 'signin' && requestedAudience === 'admin') {
+          const { data: existingRoles, error: rolesError } = await supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', user.id);
+
+          if (rolesError) throw rolesError;
+
+          const hasAdminRole = (existingRoles ?? []).some((entry) => entry.role === 'admin');
+          if (!hasAdminRole) {
+            await rejectUnexpectedOAuthSignIn(null, null);
+            throw new Error('OAuth sign-in rejected because this email does not hold the admin role.');
+          }
+
+          clearPendingOAuthSignupState();
+          return user;
+        }
+
         if (authMode === 'signin' && requestedAudience === 'professional') {
           const { data: existingRoles, error: rolesError } = await supabase
             .from('user_roles')
@@ -483,9 +502,12 @@ export default function AuthCallback() {
         }
 
         const resolvedFromSession = getAuthTargetFromMetadata(user?.user_metadata);
-      const resolvedTarget = matchesOAuthTarget(user?.user_metadata, callbackUrlTarget ?? pendingOAuthTarget ?? null)
+        const requestedOAuthTarget = callbackUrlTarget ?? pendingOAuthTarget ?? null;
+        const resolvedTarget = requestedOAuthTarget?.audience === 'admin'
+          ? { role: 'admin' as const, plannerType: null }
+          : matchesOAuthTarget(user?.user_metadata, requestedOAuthTarget)
           ? resolvedFromSession
-          : callbackUrlTarget ?? pendingOAuthTarget ?? resolvedFromSession;
+          : requestedOAuthTarget ?? resolvedFromSession;
         const { role, plannerType } = getSafeAuthRouteTarget(
           resolvedTarget
           ?? fallbackTarget,
@@ -503,12 +525,12 @@ export default function AuthCallback() {
           return;
         }
 
-        if (hasPendingEstimatorPlanDraft()) {
+        if (hasPendingEstimatorPlanDraft(user?.user_metadata)) {
           navigate('/auth', { replace: true });
           return;
         }
 
-        navigate(getHomeRouteForRole(role, plannerType), { replace: true });
+        navigate(consumeOAuthConsentReturn() || getHomeRouteForRole(role, plannerType), { replace: true });
       } catch (error) {
         console.error('Failed to complete auth callback:', error);
         if (active) setStatus('failed');

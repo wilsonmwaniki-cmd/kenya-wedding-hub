@@ -1,35 +1,42 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Calendar, CalendarPlus, UserCircle, BriefcaseBusiness, Link2, Download, Search, ChevronRight, CircleDashed, PanelsTopLeft } from 'lucide-react';
+import { ChevronDown, Download, Link2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
 import { createVendorTask } from '@/lib/vendorTasks';
 import { vendorPaymentStatusLabel } from '@/lib/vendorPayments';
 import { cn } from '@/lib/utils';
-import { getSuggestedTaskCategories, getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
+import { getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 import { getEntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
 import { useInlineAssistant } from '@/hooks/useInlineAssistant';
-import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { buildConciergeContext } from '@/lib/conciergeContext';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { ToastAction } from '@/components/ui/toast';
+import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
+import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
+import { HierarchyGroup } from '@/components/HierarchyGroup';
+import { getConfirmedVendorForTask, getRelatedBudgetCategoryForTask } from '@/lib/budgetRelations';
+import { canonicalizeVendorCategory, vendorCategoriesMatch, vendorCategoryCatalog } from '@/lib/vendorCategories';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
 
 interface Task {
   id: string;
@@ -45,6 +52,8 @@ interface Task {
   delegatable: boolean;
   recommended_role: string | null;
   priority_level: number | null;
+  wedding_id: string | null;
+  template_key: string | null;
 }
 
 interface VendorOption {
@@ -187,6 +196,7 @@ async function loadTasksWorkspace(dataOrFilter: string): Promise<TasksWorkspaceD
     tasks: (tasksResult.data ?? []) as Task[],
     vendorOptions: ((vendorsResult.data ?? []) as any[]).map((vendor) => ({
       ...vendor,
+      category: canonicalizeVendorCategory(vendor.category),
       price: vendor.price != null ? Number(vendor.price) : null,
       amount_paid: Number(vendor.amount_paid ?? 0),
     })) as VendorOption[],
@@ -203,9 +213,10 @@ export default function Tasks() {
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const assistantPanel = useAssistantPanel();
+  const prefersReducedMotion = useReducedMotion();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -214,32 +225,80 @@ export default function Tasks() {
   const [assignedTo, setAssignedTo] = useState('');
   const [taskCategory, setTaskCategory] = useState('none');
   const [taskTemplateKey, setTaskTemplateKey] = useState('none');
-  const [taskPickerMode, setTaskPickerMode] = useState<TaskPickerMode>('suggested');
+  const [taskPickerMode, setTaskPickerMode] = useState<TaskPickerMode>('custom');
   const [sourceVendorId, setSourceVendorId] = useState<string>('none');
   const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('by_date');
   const [taskScopeFilter, setTaskScopeFilter] = useState<TaskScopeFilter>('all');
   const [taskSearch, setTaskSearch] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [expandedTaskGroups, setExpandedTaskGroups] = useState<Record<string, boolean>>({});
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [submittingTask, setSubmittingTask] = useState(false);
+  const [taskAdded, setTaskAdded] = useState(false);
+  const taskSuccessTimerRef = useRef<number | null>(null);
   const [taskFormErrors, setTaskFormErrors] = useState<{ title?: string }>({});
   const [taskSubmitError, setTaskSubmitError] = useState<string | null>(null);
+  const reconciledWeddingDateTasksRef = useRef(new Set<string>());
+  const requestedTaskId = searchParams.get('task');
 
-  const tasksQueryKey = ['tasks', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+  const tasksQueryKey = useMemo(
+    () => ['tasks', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null],
+    [dataOrFilter, selectedClient?.id, user?.id],
+  );
   const tasksQuery = useQuery({
     queryKey: tasksQueryKey,
     queryFn: () => loadTasksWorkspace(dataOrFilter!),
     enabled: Boolean(dataOrFilter),
     staleTime: 30_000,
   });
-  const tasks = tasksQuery.data?.tasks ?? [];
-  const vendorOptions = tasksQuery.data?.vendorOptions ?? [];
-  const budgetCategories = tasksQuery.data?.budgetCategories ?? [];
+
+  useEffect(() => () => {
+    if (taskSuccessTimerRef.current != null) window.clearTimeout(taskSuccessTimerRef.current);
+  }, []);
+  const tasks = useMemo(() => tasksQuery.data?.tasks ?? [], [tasksQuery.data?.tasks]);
+  const vendorOptions = useMemo(() => tasksQuery.data?.vendorOptions ?? [], [tasksQuery.data?.vendorOptions]);
+  const budgetCategories = useMemo(
+    () => tasksQuery.data?.budgetCategories ?? [],
+    [tasksQuery.data?.budgetCategories],
+  );
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
   }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
+
+  useEffect(() => {
+    const weddingDate = selectedClient?.wedding_date ?? profile?.wedding_date;
+    if (!weddingDate || plannerNeedsApproval) return;
+
+    const redundantTasks = tasks.filter((task) => (
+      !task.completed
+      && (
+        task.template_key === 'couples-tasks-decide-on-a-wedding-date'
+        || task.title.trim().toLowerCase() === 'decide on a wedding date'
+      )
+      && !reconciledWeddingDateTasksRef.current.has(task.id)
+    ));
+    if (!redundantTasks.length) return;
+
+    redundantTasks.forEach((task) => reconciledWeddingDateTasksRef.current.add(task.id));
+    queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
+      ...current,
+      tasks: current.tasks.map((task) => (
+        redundantTasks.some((redundantTask) => redundantTask.id === task.id)
+          ? { ...task, completed: true }
+          : task
+      )),
+    } : current);
+
+    void Promise.all(redundantTasks.map(async (task) => {
+      const { error } = await supabase.from('tasks').update({ completed: true }).eq('id', task.id);
+      if (error) throw error;
+    })).catch(async () => {
+      redundantTasks.forEach((task) => reconciledWeddingDateTasksRef.current.delete(task.id));
+      await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+    });
+  }, [plannerNeedsApproval, profile?.wedding_date, queryClient, selectedClient?.wedding_date, tasks, tasksQueryKey]);
 
   const vendorLookup = useMemo(
     () => Object.fromEntries(vendorOptions.map((vendor) => [vendor.id, vendor])),
@@ -251,16 +310,22 @@ export default function Tasks() {
     [budgetCategories],
   );
 
+  const resolveTaskVendor = (task: Task) => getConfirmedVendorForTask(task, vendorOptions);
+  const resolveTaskBudget = (task: Task) => {
+    const exactCategory = task.category ? budgetLookup[normalizeCategory(task.category)] : null;
+    return exactCategory ?? getRelatedBudgetCategoryForTask(task, budgetCategories);
+  };
+
   const categoryOptions = useMemo(() => {
     const set = new Map<string, string>();
-    getSuggestedTaskCategories({
-      vendorCategories: vendorOptions.map((vendor) => vendor.category),
-      role: profile?.role,
-      plannerType: profile?.planner_type,
-    }).forEach((category) => set.set(normalizeCategory(category), category));
-    budgetCategories.forEach((category) => set.set(normalizeCategory(category.name), category.name));
+    vendorCategoryCatalog.forEach((category) => set.set(normalizeCategory(category.name), category.name));
+    budgetCategories.forEach((category) => {
+      const canonical = canonicalizeVendorCategory(category.name);
+      if (!set.has(normalizeCategory(canonical))) set.set(normalizeCategory(category.name), category.name);
+    });
     vendorOptions.forEach((vendor) => {
-      if (!set.has(normalizeCategory(vendor.category))) {
+      const canonical = canonicalizeVendorCategory(vendor.category);
+      if (!set.has(normalizeCategory(canonical))) {
         set.set(normalizeCategory(vendor.category), vendor.category);
       }
     });
@@ -268,7 +333,7 @@ export default function Tasks() {
     return [...set.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((left, right) => left.label.localeCompare(right.label));
-  }, [budgetCategories, vendorOptions, profile?.role, profile?.planner_type]);
+  }, [budgetCategories, vendorOptions]);
 
   const selectedCategoryName = useMemo(() => {
     if (sourceVendorId !== 'none') {
@@ -397,16 +462,21 @@ export default function Tasks() {
         templateSource: selectedTaskTemplate?.key ? 'planner_spreadsheet_picker_v1' : selectedCategoryDefaults ? 'manual_category_template_v1' : null,
       });
       }
-      setTitle('');
-      setDescription('');
-      setDueDate('');
-      setAssignedTo('');
-      setTaskCategory('none');
-      setTaskTemplateKey('none');
-      setTaskPickerMode('suggested');
-      setSourceVendorId('none');
-      setOpen(false);
       await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+      setTaskAdded(true);
+      if (taskSuccessTimerRef.current != null) window.clearTimeout(taskSuccessTimerRef.current);
+      taskSuccessTimerRef.current = window.setTimeout(() => {
+        setTitle('');
+        setDescription('');
+        setDueDate('');
+        setAssignedTo('');
+        setTaskCategory('none');
+        setTaskTemplateKey('none');
+        setTaskPickerMode('custom');
+        setSourceVendorId('none');
+        setTaskAdded(false);
+        setOpen(false);
+      }, 700);
     } catch (error: any) {
       setTaskSubmitError(error.message || 'Could not save this task right now.');
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -435,14 +505,65 @@ export default function Tasks() {
       });
       return;
     }
-    await supabase.from('tasks').update({ completed: !completed }).eq('id', id);
+    const task = tasks.find((row) => row.id === id);
+    if (!task) return;
+    const nextCompleted = !completed;
+    const { error } = await supabase.from('tasks').update({ completed: nextCompleted }).eq('id', id);
+    if (error) {
+      toast({ title: 'Could not update task', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    if (task.wedding_id) {
+      try {
+        await recalculatePlanningExperiment(task.wedding_id);
+      } catch (recalculationError) {
+        toast({
+          title: 'Task saved; plan refresh delayed',
+          description: recalculationError instanceof Error ? recalculationError.message : 'Open Wedding Home to refresh your next steps.',
+          variant: 'destructive',
+        });
+      }
+    }
+
+    queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
+      ...current,
+      tasks: current.tasks.map((row) => row.id === id ? { ...row, completed: nextCompleted } : row),
+    } : current);
+
+    if (nextCompleted) {
+      toast({
+        title: 'Task completed',
+        description: task.title,
+        variant: 'success',
+        action: (
+          <ToastAction
+            altText={`Reopen ${task.title}`}
+            onClick={async () => {
+              const { error: undoError } = await supabase.from('tasks').update({ completed: false }).eq('id', id);
+              if (undoError) {
+                toast({ title: 'Could not reopen task', description: undoError.message, variant: 'destructive' });
+                return;
+              }
+              if (task.wedding_id) await recalculatePlanningExperiment(task.wedding_id);
+              await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+              toast({ title: 'Task reopened', description: task.title, variant: 'info' });
+            }}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
+    }
+
     await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
   };
 
   const deleteTask = async (id: string) => {
+    const task = tasks.find((row) => row.id === id);
+    if (!task) return;
+
     if (plannerNeedsApproval && selectedClient?.linked_user_id) {
-      const task = tasks.find((row) => row.id === id);
-      if (!task) return;
       await submitPlannerChangeRequest({
         clientId: selectedClient.id,
         coupleUserId: selectedClient.linked_user_id,
@@ -459,8 +580,40 @@ export default function Tasks() {
       });
       return;
     }
-    await supabase.from('tasks').delete().eq('id', id);
-    await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+    queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
+      ...current,
+      tasks: current.tasks.filter((row) => row.id !== id),
+    } : current);
+    const deletionTimer = window.setTimeout(async () => {
+      const { error } = await supabase.from('tasks').delete().eq('id', id);
+      if (error) {
+        await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+        toast({ title: 'Could not remove task', description: error.message, variant: 'destructive' });
+      }
+    }, 5_500);
+
+    toast({
+      title: 'Task removed',
+      description: task.title,
+      variant: 'info',
+      duration: 6_000,
+      action: (
+        <ToastAction
+          altText={`Restore ${task.title}`}
+          onClick={() => {
+            window.clearTimeout(deletionTimer);
+            queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
+              ...current,
+              tasks: [...current.tasks, task],
+            } : current);
+            setSelectedTaskId(task.id);
+            toast({ title: 'Task restored', description: task.title, variant: 'success' });
+          }}
+        >
+          Undo
+        </ToastAction>
+      ),
+    });
   };
 
   const pending = tasks.filter((task) => !task.completed);
@@ -469,7 +622,7 @@ export default function Tasks() {
     .sort((left, right) => sortTasksByDateAndPriority(left, right));
   const urgentPending = pending.filter(isUrgentTask).sort(sortTasksByDateAndPriority);
   const scheduledPending = pending.filter((task) => !isUrgentTask(task)).sort(sortTasksByDateAndPriority);
-  const vendorLinkedTasks = tasks.filter((task) => task.source_vendor_id);
+  const vendorLinkedTasks = tasks.filter((task) => resolveTaskVendor(task));
   const openVendorTaskCount = vendorLinkedTasks.filter((task) => !task.completed).length;
   const privateTaskCount = pending.filter((task) => task.visibility === 'private').length;
   const calendarFeature = profile?.role === 'planner'
@@ -486,7 +639,10 @@ export default function Tasks() {
   const exportDecision = getEntitlementDecision(exportFeature, { profile, weddingEntitlements, couplePlanTier });
   const delegatedTaskCount = pending.filter((task) => task.delegatable).length;
   const vendorsWithOpenTasks = new Set(
-    vendorLinkedTasks.filter((task) => !task.completed && task.source_vendor_id).map((task) => task.source_vendor_id as string),
+    vendorLinkedTasks
+      .filter((task) => !task.completed)
+      .map((task) => resolveTaskVendor(task)?.id)
+      .filter((vendorId): vendorId is string => Boolean(vendorId)),
   ).size;
   const dueSoonVendorTasks = vendorLinkedTasks.filter((task) => {
     if (task.completed || !task.due_date) return false;
@@ -521,7 +677,7 @@ export default function Tasks() {
 
   const taskMatchesWorkspaceFilters = (task: Task) => {
     if (searchTerm) {
-      const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+      const linkedVendor = resolveTaskVendor(task);
       const searchBlob = [
         task.title,
         task.description,
@@ -541,7 +697,7 @@ export default function Tasks() {
       case 'urgent':
         return isUrgentTask(task);
       case 'vendor':
-        return Boolean(task.source_vendor_id);
+        return Boolean(resolveTaskVendor(task));
       case 'private':
         return task.visibility === 'private';
       case 'shared':
@@ -561,7 +717,7 @@ export default function Tasks() {
     if (nextPendingTask?.category) {
       prompts.push(`Tell me what to do first for the next ${nextPendingTask.category} task on our list.`);
     } else if (nextPendingTask) {
-      prompts.push('Tell me which pending task should be tackled first and why.');
+      prompts.push('Tell me which open task should be tackled first and why.');
     }
 
     if (openVendorTaskCount > 0 || dueSoonVendorTasks > 0) {
@@ -579,51 +735,48 @@ export default function Tasks() {
     return prompts.slice(0, 3);
   }, [dueSoonVendorTasks, nextPendingTask, openVendorTaskCount, overduePending.length, privateTaskCount]);
 
+  const tasksConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Tasks',
+    role: profile?.role,
+    primaryGoal: 'Help the user decide what to do first and turn the task queue into a calm action plan.',
+    nextBestAction: nextPendingTask?.title ?? 'Create or choose the first planning task',
+    facts: [
+      ['Open tasks', pending.length],
+      ['Urgent tasks', urgentPending.length],
+      ['Overdue tasks', overduePending.length],
+      ['Completed tasks', done.length],
+      ['Private tasks', privateTaskCount],
+      ['Vendor-linked open tasks', openVendorTaskCount],
+      ['Vendor tasks due soon', dueSoonVendorTasks],
+      ['Next pending task', nextPendingTask?.title],
+      ['Current view mode', taskViewMode],
+    ],
+    risks: [
+      overduePending.length > 0 ? `${overduePending.length} task(s) are overdue.` : null,
+      urgentPending.length > 0 ? `${urgentPending.length} task(s) are critical or due soon.` : null,
+      dueSoonVendorTasks > 0 ? `${dueSoonVendorTasks} vendor-linked task(s) are due soon.` : null,
+      pending.length === 0 ? 'No active task queue exists.' : null,
+    ].filter(Boolean) as string[],
+  }), [
+    done.length,
+    dueSoonVendorTasks,
+    nextPendingTask?.title,
+    openVendorTaskCount,
+    overduePending.length,
+    pending.length,
+    privateTaskCount,
+    profile?.role,
+    taskViewMode,
+    urgentPending.length,
+  ]);
+
   const tasksAssistant = useInlineAssistant({
     feature: tasksAssistantFeature,
     page: 'tasks',
     surface: 'task_focus_card',
     contextSource: taskViewMode === 'completed' ? 'completed_tasks_summary' : 'pending_tasks_summary',
+    conciergeContext: tasksConciergeContext,
   });
-  const [tasksNudgeDismissed, setTasksNudgeDismissed] = useState(false);
-
-  const tasksNudge = useMemo(() => {
-    if (overduePending.length > 0) {
-      return {
-        title: `${overduePending.length} overdue task${overduePending.length === 1 ? '' : 's'} need attention`,
-        body: 'Get a quick catch-up plan before these tasks start blocking the rest of the wedding.',
-        prompt: 'Turn the overdue tasks into a simple catch-up plan for this week.',
-      };
-    }
-
-    if (dueSoonVendorTasks > 0 || openVendorTaskCount > 0) {
-      return {
-        title: 'Vendor-linked tasks are still open',
-        body: 'Use the assistant to decide what vendor follow-up should happen next.',
-        prompt: 'Review the vendor-linked tasks and tell me what needs attention first.',
-      };
-    }
-
-    if (privateTaskCount > 0 && nextPendingTask) {
-      return {
-        title: 'Private couple tasks still need a plan',
-        body: 'Sort out what the two of you should handle directly before delegating the rest.',
-        prompt: 'Separate the private couple tasks from the shared ones and tell me what we should handle ourselves first.',
-      };
-    }
-
-    if (nextPendingTask) {
-      return {
-        title: 'Start with the next right task',
-        body: 'A quick AI pass can help you decide what to tackle before you get lost in the list.',
-        prompt: nextPendingTask.category
-          ? `Tell me what to do first for the next ${nextPendingTask.category} task on our list.`
-          : 'Tell me which pending task should be tackled first and why.',
-      };
-    }
-
-    return null;
-  }, [dueSoonVendorTasks, nextPendingTask, openVendorTaskCount, overduePending.length, privateTaskCount]);
 
   const filteredPending = useMemo(
     () => pending.filter(taskMatchesWorkspaceFilters).sort(sortTasksByDateAndPriority),
@@ -659,13 +812,13 @@ export default function Tasks() {
       .slice()
       .sort(sortTasksByDateAndPriority)
       .reduce<Record<string, Task[]>>((groups, task) => {
-        const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+        const linkedVendor = getConfirmedVendorForTask(task, vendorOptions);
         const key = task.category || linkedVendor?.category || 'Uncategorized';
         if (!groups[key]) groups[key] = [];
         groups[key].push(task);
         return groups;
       }, {});
-  }, [filteredPending, vendorLookup]);
+  }, [filteredPending, vendorOptions]);
 
   const sortedCategoryGroups = useMemo(
     () =>
@@ -682,13 +835,13 @@ export default function Tasks() {
 
   const completedByCategory = useMemo(() => {
     return filteredDone.reduce<Record<string, Task[]>>((groups, task) => {
-      const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+      const linkedVendor = getConfirmedVendorForTask(task, vendorOptions);
       const key = task.category || linkedVendor?.category || 'Uncategorized';
       if (!groups[key]) groups[key] = [];
       groups[key].push(task);
       return groups;
     }, {});
-  }, [filteredDone, vendorLookup]);
+  }, [filteredDone, vendorOptions]);
 
   const taskGroups = useMemo(() => {
     if (taskViewMode === 'by_date') {
@@ -722,17 +875,38 @@ export default function Tasks() {
   );
 
   useEffect(() => {
-    if (visibleTasks.length === 0) {
-      if (selectedTaskId !== null) {
-        setSelectedTaskId(null);
-      }
-      return;
-    }
-
-    if (!selectedTaskId || !visibleTasks.some((task) => task.id === selectedTaskId)) {
-      setSelectedTaskId(visibleTasks[0].id);
+    if (selectedTaskId && !visibleTasks.some((task) => task.id === selectedTaskId)) {
+      setSelectedTaskId(null);
     }
   }, [visibleTasks, selectedTaskId]);
+
+  useEffect(() => {
+    if (!requestedTaskId || tasksQuery.isLoading) return;
+    const requestedTask = tasksQuery.data?.tasks.find((task) => task.id === requestedTaskId);
+    if (!requestedTask) return;
+
+    setTaskSearch('');
+    setTaskScopeFilter('all');
+    setTaskViewMode(requestedTask.completed ? 'completed' : 'by_date');
+    setSelectedTaskId(requestedTask.id);
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        document.getElementById(`task-${requestedTask.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  }, [requestedTaskId, tasksQuery.data?.tasks, tasksQuery.isLoading]);
+
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    const selectedGroup = taskGroups.find((group) => group.tasks.some((task) => task.id === selectedTaskId));
+    if (!selectedGroup) return;
+    setExpandedTaskGroups((current) => (
+      current[selectedGroup.label]
+        ? current
+        : { ...current, [selectedGroup.label]: true }
+    ));
+  }, [selectedTaskId, taskGroups]);
 
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
   if (tasksQuery.isLoading) return <WorkspacePageSkeleton compact />;
@@ -741,9 +915,9 @@ export default function Tasks() {
     downloadCsv(
       `zania-tasks-${new Date().toISOString().slice(0, 10)}.csv`,
       tasks.map((task) => {
-        const linkedVendor = task.source_vendor_id ? vendorLookup[task.source_vendor_id] : null;
+        const linkedVendor = resolveTaskVendor(task);
         const resolvedCategory = task.category || linkedVendor?.category || '';
-        const linkedBudget = resolvedCategory ? budgetLookup[normalizeCategory(resolvedCategory)] : null;
+        const linkedBudget = resolveTaskBudget(task);
 
         return {
           title: task.title,
@@ -765,199 +939,187 @@ export default function Tasks() {
     );
   };
 
-  const TaskRow = ({ t, isDone }: { t: Task; isDone: boolean }) => {
-    const linkedVendor = t.source_vendor_id ? vendorLookup[t.source_vendor_id] : null;
+  const renderTaskRow = (t: Task, isDone: boolean) => {
+    const linkedVendor = resolveTaskVendor(t);
     const resolvedCategory = t.category || linkedVendor?.category || null;
     const active = selectedTaskId === t.id;
     const isUrgent = isUrgentTask(t);
 
+    const linkedBudget = resolveTaskBudget(t);
+
     return (
-      <button
-        type="button"
-        onClick={() => setSelectedTaskId(t.id)}
+      <motion.div
+        key={t.id}
+        id={`task-${t.id}`}
+        layout={!prefersReducedMotion}
+        animate={prefersReducedMotion ? undefined : active ? { y: -1 } : { y: 0 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
         className={cn(
-          'w-full rounded-2xl border p-4 text-left transition-all',
+          'relative w-full min-w-0 max-w-full scroll-mt-24 overflow-hidden rounded-lg border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200',
           active
-            ? 'border-primary bg-primary/5 shadow-sm'
-            : 'border-border/70 bg-background hover:border-primary/40 hover:bg-muted/20',
+            ? 'z-10 border-primary/70 bg-primary/[0.075] shadow-[0_14px_34px_-24px_hsl(var(--foreground)/0.55)] ring-1 ring-primary/15'
+            : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card',
           isDone && 'opacity-70',
         )}
       >
-        <div className="flex items-start gap-3">
+        <span aria-hidden="true" className={cn('absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-primary transition-opacity', active ? 'opacity-100' : 'opacity-0')} />
+        <div className="flex items-start gap-3 p-4">
           <Checkbox
             checked={isDone}
             onCheckedChange={() => toggleTask(t.id, t.completed)}
             className="mt-1"
             onClick={(event) => event.stopPropagation()}
           />
-          <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => setSelectedTaskId(active ? null : t.id)}
+            aria-expanded={active}
+            className="min-w-0 flex-1 text-left"
+          >
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className={cn('font-medium text-card-foreground', isDone && 'line-through text-muted-foreground')}>
-                  {t.title}
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {resolvedCategory && (
-                    <Badge variant="secondary" className="rounded-full text-[11px]">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className={cn('break-words font-medium text-card-foreground', isDone && 'line-through text-muted-foreground')}>{t.title}</p>
+                  {active ? <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-primary">Open</span> : null}
+                </div>
+                <div className="mt-3 border-l-2 border-primary/30 pl-3">
+                  {resolvedCategory ? (
+                    <p className="break-words text-[0.66rem] font-semibold uppercase leading-4 tracking-[0.14em] text-muted-foreground">
                       {resolvedCategory}
-                    </Badge>
-                  )}
-                  <Badge variant={t.visibility === 'private' ? 'destructive' : 'outline'} className="rounded-full text-[11px]">
-                    {t.visibility === 'private' ? 'Private' : 'Shared'}
-                  </Badge>
-                  {t.priority_level != null && (
-                    <Badge variant="outline" className="rounded-full text-[11px]">
-                      P{t.priority_level} · {priorityLabel(t.priority_level)}
-                    </Badge>
-                  )}
-                  {isUrgent && !isDone && (
-                    <Badge className="rounded-full bg-destructive/10 text-destructive hover:bg-destructive/10">
-                      Urgent
-                    </Badge>
-                  )}
+                    </p>
+                  ) : null}
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
+                    <span className={t.visibility === 'private' ? 'text-destructive' : 'text-muted-foreground'}>
+                      {t.visibility === 'private' ? 'Private' : 'Shared'}
+                    </span>
+                    {isUrgent && !isDone ? (
+                      <span className="inline-flex items-center gap-1.5 text-destructive">
+                        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                        Urgent
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-              <ChevronRight className={cn('mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform', active && 'translate-x-0.5 text-primary')} />
+              <span className={cn('mt-0.5 hidden shrink-0 items-center gap-1 text-xs font-semibold sm:inline-flex', active ? 'text-primary' : 'text-muted-foreground')}>
+                {active ? 'Hide details' : 'View details'}
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200 motion-reduce:transition-none', active && 'rotate-180')} aria-hidden="true" />
+              </span>
             </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               {t.due_date && (
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {new Date(t.due_date).toLocaleDateString()}
-                </span>
+                <span>Due {new Date(t.due_date).toLocaleDateString()}</span>
               )}
               {t.assigned_to && (
-                <span className="flex items-center gap-1">
-                  <UserCircle className="h-3 w-3" />
-                  {t.assigned_to}
-                </span>
-              )}
-              {linkedVendor && (
-                <span className="flex items-center gap-1">
-                  <BriefcaseBusiness className="h-3 w-3" />
-                  {linkedVendor.name}
-                </span>
+                <span>Assigned to {t.assigned_to}</span>
               )}
             </div>
-          </div>
+          </button>
         </div>
-      </button>
+
+        <AnimatedCardDetails open={active}>
+              <div className="space-y-4 border-t border-primary/15 px-4 pb-4 pt-4 sm:px-6">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
+                  <div><p className="text-xs text-muted-foreground">Due</p><p className="mt-1 font-medium">{t.due_date ? new Date(t.due_date).toLocaleDateString() : 'No date'}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Who</p><p className="mt-1 font-medium">{t.assigned_to || 'Not assigned'}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Vendor</p><p className="mt-1 font-medium">{linkedVendor?.name || 'None'}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Budget</p><p className="mt-1 font-medium">{linkedBudget ? `KES ${(linkedBudget.allocated - linkedBudget.spent).toLocaleString()} left` : 'None'}</p></div>
+                </div>
+                {t.description && t.description.trim() !== t.title.trim() ? (
+                  <p className="text-sm leading-6 text-muted-foreground">{t.description}</p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" onClick={() => toggleTask(t.id, t.completed)}>{t.completed ? 'Mark as open' : 'Mark complete'}</Button>
+                  {t.due_date ? (
+                    calendarDecision.allowed ? (
+                      <a href={buildGoogleCalendarUrl({ title: t.title, date: t.due_date, description: t.description ?? '' })} target="_blank" rel="noopener noreferrer">
+                        <Button type="button" variant="outline">Add to calendar</Button>
+                      </a>
+                    ) : <Button type="button" variant="outline" onClick={() => setUpgradeOpen(true)}>Add to calendar</Button>
+                  ) : null}
+                  <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Delete task" title="Delete task" onClick={() => deleteTask(t.id)}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
+                </div>
+              </div>
+        </AnimatedCardDetails>
+      </motion.div>
     );
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
-        <CardContent className="grid gap-5 p-6 lg:grid-cols-[1.35fr_0.95fr] lg:p-8">
-          <div className="space-y-5">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Task Workspace</p>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Keep the wedding moving</h1>
-              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                Use this space to decide what happens next, what stays private, and what needs vendor follow-up before the week gets away from you.
-              </p>
-            </div>
+    <div className="space-y-4 sm:space-y-5">
+      <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Tasks</h1>
+        </div>
+        <Button type="button" onClick={() => setOpen(true)}>Add task</Button>
+      </header>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Open tasks</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{pending.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Still active in the wedding queue</p>
+      <Card className="overflow-hidden rounded-lg border-primary/25 bg-card shadow-none">
+        <CardContent className="grid p-0 md:grid-cols-[minmax(0,1fr)_18rem] md:divide-x md:divide-border">
+          <button
+            type="button"
+            className="group min-w-0 bg-primary/5 px-4 py-3 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset sm:px-5"
+            onClick={() => {
+              if (nextPendingTask) {
+                setTaskSearch('');
+                setTaskScopeFilter('all');
+                setTaskViewMode('by_date');
+                setSelectedTaskId(nextPendingTask.id);
+                navigate(`/tasks?task=${encodeURIComponent(nextPendingTask.id)}`);
+                return;
+              }
+              setOpen(true);
+            }}
+          >
+            <div className="flex min-w-0 items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">Next task</p>
+                <p className="mt-1 line-clamp-2 text-sm font-semibold text-foreground transition-colors group-hover:text-primary sm:text-base">
+                  {nextPendingTask?.title ?? 'Add your first task'}
+                </p>
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Urgent now</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{urgentPending.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Critical or due in the next three days</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Completed</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{done.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Already moved out of the active queue</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
-            <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Focus snapshot</p>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-sm font-medium text-foreground">{nextPendingTask?.title ?? 'No pending task selected yet'}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
+              <div className="shrink-0 text-right">
+                <p className="text-xs text-muted-foreground">
                   {nextPendingTask?.due_date
-                    ? `Due ${new Date(nextPendingTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`
-                    : 'The next visible task will appear here once the queue starts filling up.'}
+                    ? `Due ${new Date(nextPendingTask.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                    : nextPendingTask ? 'No due date' : 'Get started'}
                 </p>
+                <p className="mt-1 text-xs font-semibold text-primary">{nextPendingTask ? 'Open task' : 'Add task'}</p>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Private queue</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{privateTaskCount}</p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Vendor linked</p>
-                  <p className="mt-2 text-xl font-semibold text-foreground">{openVendorTaskCount}</p>
-                </div>
-              </div>
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                <p className="text-sm font-medium text-foreground">
-                  {overduePending.length > 0
-                    ? `${overduePending.length} overdue task${overduePending.length === 1 ? '' : 's'} need recovery`
-                    : dueSoonVendorTasks > 0
-                      ? `${dueSoonVendorTasks} vendor task${dueSoonVendorTasks === 1 ? '' : 's'} are due soon`
-                      : 'The queue is under control right now'}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {overduePending.length > 0
-                    ? 'Start with the overdue queue, then move into vendor-linked work.'
-                    : 'Use the list filters below to focus on the work that matters most.'}
-                </p>
-              </div>
+            </div>
+          </button>
+
+          <div className="grid grid-cols-3 border-t border-border md:border-t-0">
+            <div className="border-r border-border px-3 py-2.5">
+              <p className="text-[11px] text-muted-foreground">Open</p>
+              <p className="mt-0.5 text-base font-semibold text-foreground">{pending.length}</p>
+            </div>
+            <div className="border-r border-border px-3 py-2.5">
+              <p className="text-[11px] text-muted-foreground">Urgent</p>
+              <p className="mt-0.5 text-base font-semibold text-foreground">{urgentPending.length}</p>
+            </div>
+            <div className="px-3 py-2.5">
+              <p className="text-[11px] text-muted-foreground">Done</p>
+              <p className="mt-0.5 text-base font-semibold text-foreground">{done.length}</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Workspace Controls</p>
-          <div className="flex w-full items-center rounded-full border border-border bg-background p-1 shadow-sm sm:w-auto">
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setTaskViewMode('by_date')}
-              className={cn(
-                'flex-1 rounded-full px-4 sm:flex-none sm:px-7',
-                taskViewMode === 'by_date' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-transparent text-foreground hover:bg-muted',
-              )}
-            >
-              By Date
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setTaskViewMode('by_category')}
-              className={cn(
-                'flex-1 rounded-full px-4 sm:flex-none sm:px-7',
-                taskViewMode === 'by_category' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-transparent text-foreground hover:bg-muted',
-              )}
-            >
-              By Category
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setTaskViewMode('completed')}
-              className={cn(
-                'flex-1 rounded-full px-4 sm:flex-none sm:px-7',
-                taskViewMode === 'completed' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-transparent text-foreground hover:bg-muted',
-              )}
-            >
-              Completed
-            </Button>
-          </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-border bg-card p-2">
+        <div className="min-w-0">
+          <SlidingSegmentedControl
+            label="Task view"
+            layoutId="task-view-selection"
+            value={taskViewMode}
+            options={[{ value: 'by_date', label: 'By date' }, { value: 'by_category', label: 'Categories' }, { value: 'completed', label: 'Completed' }]}
+            onChange={setTaskViewMode}
+            reducedMotion={Boolean(prefersReducedMotion)}
+            minWidthClassName="w-full min-w-0"
+          />
         </div>
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
+        <div className="contents">
           <UpgradePromptDialog
             open={upgradeOpen}
             onOpenChange={setUpgradeOpen}
@@ -970,8 +1132,10 @@ export default function Tasks() {
           />
           <Button
             type="button"
-            variant="outline"
-            className="w-full gap-2 sm:w-auto"
+            variant="ghost"
+            size="sm"
+            aria-label="Export tasks"
+            className="shrink-0 px-2 text-muted-foreground hover:text-foreground sm:px-3"
             onClick={() => {
               if (!exportDecision.allowed) {
                 setExportUpgradeOpen(true);
@@ -980,20 +1144,19 @@ export default function Tasks() {
               exportTasks();
             }}
           >
-            <Download className="h-4 w-4" />
-            Export Tasks
+            <Download className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+            <span className="hidden sm:inline">Export</span>
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-            <Button type="button" className="w-full gap-2 sm:w-auto" onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add Task
-            </Button>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-              <DialogHeader><DialogTitle className="font-display">Add Task</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle className="font-display">Add task</DialogTitle>
+                <DialogDescription>Choose a checklist task or enter your own.</DialogDescription>
+              </DialogHeader>
               <form onSubmit={addTask} className="space-y-4">
                 <FormSubmitError message={taskSubmitError} />
                 <div className="space-y-2">
-                  <Label>Checklist Category</Label>
+                  <Label>Category</Label>
                   <Select
                     value={taskCategory}
                     onValueChange={(value) => {
@@ -1044,35 +1207,10 @@ export default function Tasks() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {resolvedTaskDefaults && (
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <Badge variant="outline" className="rounded-full text-[11px]">
-                        {resolvedTaskDefaults.visibility === 'private' ? 'Private' : 'Public'}
-                      </Badge>
-                      <Badge variant="outline" className="rounded-full text-[11px]">
-                        P{resolvedTaskDefaults.priorityLevel} · {priorityLabel(resolvedTaskDefaults.priorityLevel)}
-                      </Badge>
-                      {resolvedTaskDefaults.delegatable && resolvedTaskDefaults.recommendedRole && (
-                        <Badge variant="outline" className="rounded-full text-[11px]">
-                          Delegate to {resolvedTaskDefaults.recommendedRole}
-                        </Badge>
-                      )}
-                      {selectedTaskTemplate?.timelineLabel && (
-                        <Badge variant="outline" className="rounded-full text-[11px]">
-                          {selectedTaskTemplate.timelineLabel}
-                        </Badge>
-                      )}
-                      {selectedTaskTemplate?.phase && (
-                        <Badge variant="outline" className="rounded-full text-[11px]">
-                          {phaseLabel(selectedTaskTemplate.phase)}
-                        </Badge>
-                      )}
-                    </div>
-                  )}
                 </div>
                 {selectedCategoryName && (
                   <div className="space-y-2">
-                    <Label>Checklist Task</Label>
+                    <Label>Task</Label>
                     <Select
                       value={taskPickerMode === 'custom' ? 'custom' : taskTemplateKey}
                       onValueChange={(value) => {
@@ -1100,15 +1238,14 @@ export default function Tasks() {
                     </Select>
                     {selectedTaskTemplate && (
                       <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">
-                        <p className="text-sm font-medium text-foreground">{selectedTaskTemplate.title}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{selectedTaskTemplate.description}</p>
+                        <p className="text-xs text-muted-foreground">{selectedTaskTemplate.description}</p>
                       </div>
                     )}
                   </div>
                 )}
                 {taskPickerMode === 'custom' && (
                   <div className="space-y-2">
-                    <Label>Custom Task Title</Label>
+                    <Label>Task name</Label>
                     <Input
                       value={title}
                       onChange={(e) => { setTitle(e.target.value); setTaskFormErrors((current) => ({ ...current, title: undefined })); setTaskSubmitError(null); }}
@@ -1117,71 +1254,93 @@ export default function Tasks() {
                       aria-invalid={!!taskFormErrors.title}
                     />
                     <FormFieldError message={taskFormErrors.title} />
-                    <p className="text-xs text-muted-foreground">
-                      Use this only if the checklist task you want is not in the suggested list above.
-                    </p>
                   </div>
                 )}
-                <div className="space-y-2">
-                  <Label>Linked vendor (optional)</Label>
-                  <Select
-                    value={sourceVendorId}
-                    onValueChange={(value) => {
-                      setSourceVendorId(value);
-                      if (value === 'none') return;
-                      const vendor = vendorLookup[value];
-                      if (!vendor) return;
-                      const matchedCategory = categoryOptions.find((category) => category.label.toLowerCase() === vendor.category.toLowerCase());
-                      if (matchedCategory) {
-                        setTaskCategory(matchedCategory.value);
-                        const nextTemplates = getSuggestedTaskTemplates({
-                          category: matchedCategory.label,
-                          vendorCategories: vendorOptions.map((option) => option.category),
-                          role: profile?.role,
-                          plannerType: profile?.planner_type,
-                        });
-                        if (nextTemplates.length) {
-                          setTaskPickerMode('suggested');
-                          setTaskTemplateKey(nextTemplates[0].key);
-                          setTitle(nextTemplates[0].title);
-                          setDescription(nextTemplates[0].description);
-                          if (!assignedTo && nextTemplates[0].recommendedRole) {
-                            setAssignedTo(nextTemplates[0].recommendedRole);
+                <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                  <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+                  <div className="mt-4 space-y-4 border-t border-border/70 pt-4">
+                    {resolvedTaskDefaults ? (
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        {[
+                          resolvedTaskDefaults.visibility === 'private' ? 'Private' : 'Shared',
+                          priorityLabel(resolvedTaskDefaults.priorityLevel),
+                          resolvedTaskDefaults.delegatable && resolvedTaskDefaults.recommendedRole
+                            ? `Suggested owner: ${resolvedTaskDefaults.recommendedRole}`
+                            : null,
+                        ].filter(Boolean).join(' · ')}
+                      </p>
+                    ) : null}
+                    <div className="space-y-2">
+                      <Label>Vendor</Label>
+                      <Select
+                        value={sourceVendorId}
+                        onValueChange={(value) => {
+                          setSourceVendorId(value);
+                          if (value === 'none') return;
+                          const vendor = vendorLookup[value];
+                          if (!vendor) return;
+                          const matchedCategory = categoryOptions.find((category) => (
+                            vendorCategoriesMatch(category.label, vendor.category)
+                          ));
+                          if (matchedCategory) {
+                            setTaskCategory(matchedCategory.value);
+                            const nextTemplates = getSuggestedTaskTemplates({
+                              category: matchedCategory.label,
+                              vendorCategories: vendorOptions.map((option) => option.category),
+                              role: profile?.role,
+                              plannerType: profile?.planner_type,
+                            });
+                            if (nextTemplates.length) {
+                              setTaskPickerMode('suggested');
+                              setTaskTemplateKey(nextTemplates[0].key);
+                              setTitle(nextTemplates[0].title);
+                              setDescription(nextTemplates[0].description);
+                              if (!assignedTo && nextTemplates[0].recommendedRole) {
+                                setAssignedTo(nextTemplates[0].recommendedRole);
+                              }
+                            } else {
+                              setTaskTemplateKey('none');
+                              setTaskPickerMode('custom');
+                            }
                           }
-                        } else {
-                          setTaskTemplateKey('none');
-                          setTaskPickerMode('custom');
-                        }
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="No linked vendor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No linked vendor</SelectItem>
-                      {vendorOptions.map((vendor) => (
-                        <SelectItem key={vendor.id} value={vendor.id}>
-                          {vendor.name} · {vendor.category} · {selectionLabel(vendor.selection_status)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Due Date (optional)</Label>
-                  <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Assign To (optional)</Label>
-                  <Input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="e.g. Couple, committee lead, MC" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description (optional)</Label>
-                  <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add contract, deposit, or logistics notes..." rows={3} />
-                </div>
-                <Button type="submit" className="w-full" disabled={submittingTask}>
-                  {submittingTask ? 'Saving...' : 'Add Task'}
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="No vendor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No vendor</SelectItem>
+                          {vendorOptions.map((vendor) => (
+                            <SelectItem key={vendor.id} value={vendor.id}>
+                              {vendor.name} · {vendor.category} · {selectionLabel(vendor.selection_status)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Due date</Label>
+                      <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Assigned to</Label>
+                      <Input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Couple, committee lead, MC" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Notes</Label>
+                      <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add useful details" rows={3} />
+                    </div>
+                  </div>
+                </details>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={submittingTask}
+                  status={submittingTask ? 'loading' : taskAdded ? 'success' : 'idle'}
+                  loadingText="Adding task"
+                  successText={plannerNeedsApproval ? 'Request sent' : 'Task added'}
+                >
+                  Add task
                 </Button>
               </form>
             </DialogContent>
@@ -1189,103 +1348,89 @@ export default function Tasks() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Link2 className="h-4 w-4" />
-              <p className="text-sm font-medium text-foreground">Vendor-linked tasks</p>
-            </div>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{openVendorTaskCount}</p>
-            <p className="text-sm text-muted-foreground">Open tasks tied directly to a vendor choice or shortlist.</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <p className="text-sm font-medium text-foreground">Private couple tasks</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{privateTaskCount}</p>
-            <p className="text-sm text-muted-foreground">Tasks reserved for the private couple workspace.</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="py-5">
-            <p className="text-sm font-medium text-foreground">Delegatable actions</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{delegatedTaskCount}</p>
-            <p className="text-sm text-muted-foreground">{vendorsWithOpenTasks} vendors and {dueSoonVendorTasks} due vendor actions are still active this week.</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {!tasksNudgeDismissed && tasksNudge && assistantPanel && (
-        <Card className="border-primary/20 bg-primary/5 shadow-card">
-          <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <details className="hidden rounded-3xl border border-border/70 bg-background p-5 shadow-card">
+        <summary className="cursor-pointer list-none">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-foreground">{tasksNudge.title}</p>
-              <p className="text-sm text-muted-foreground">{tasksNudge.body}</p>
+              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">AI guidance and reports</p>
+              <h3 className="workspace-h3 mt-2">Open deeper task help only when you need it</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Keep the checklist in focus by default. Open this for AI recovery help and secondary workload signals.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                className="gap-2"
-                onClick={() => assistantPanel.openAssistant(tasksNudge.prompt)}
-              >
-                <CalendarPlus className="h-4 w-4" />
-                Review with AI
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => setTasksNudgeDismissed(true)}
-              >
-                Dismiss
-              </Button>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Link2 className="h-4 w-4" />
+              Hidden by default
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </summary>
+        <div className="mt-5 space-y-4">
+          {!tasksAssistant.dismissed && (
+            <InlineAssistantCard
+              title="What should we tackle first?"
+              description="Get a quick task recovery plan based on overdue items, vendor-linked work, and what is due next."
+              badgeLabel="AI Tasks"
+              prompts={tasksPrompts}
+              response={tasksAssistant.response}
+              error={tasksAssistant.error}
+              loading={tasksAssistant.loading || tasksAssistant.usageLoading || tasksAssistant.accessLoading}
+              decision={tasksAssistant.decision}
+              canUseAssistant={tasksAssistant.canUseAssistant}
+              emptyStateTitle="Get a simple task plan before you start checking things off"
+              emptyStateBody="Ask for a catch-up plan, a vendor-task review, or the next best task to focus on from the list already on this page."
+              dismissible
+              onDismiss={() => tasksAssistant.setDismissed(true)}
+              onPromptClick={(prompt) => tasksAssistant.runPrompt(prompt)}
+            />
+          )}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="shadow-none">
+              <CardContent className="py-5">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Link2 className="h-4 w-4" />
+                  <p className="text-sm font-medium text-foreground">Vendor-linked tasks</p>
+                </div>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{openVendorTaskCount}</p>
+                <p className="text-sm text-muted-foreground">Open tasks tied directly to a vendor choice or shortlist.</p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-none">
+              <CardContent className="py-5">
+                <p className="text-sm font-medium text-foreground">Private couple tasks</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{privateTaskCount}</p>
+                <p className="text-sm text-muted-foreground">Tasks reserved for the private couple workspace.</p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-none">
+              <CardContent className="py-5">
+                <p className="text-sm font-medium text-foreground">Delegatable actions</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{delegatedTaskCount}</p>
+                <p className="text-sm text-muted-foreground">{vendorsWithOpenTasks} vendors and {dueSoonVendorTasks} due vendor actions are still active this week.</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </details>
 
-      {!tasksAssistant.dismissed && (
-        <InlineAssistantCard
-          title="What should we tackle first?"
-          description="Get a quick task recovery plan based on overdue items, vendor-linked work, and what is due next."
-          badgeLabel="AI Tasks"
-          prompts={tasksPrompts}
-          response={tasksAssistant.response}
-          error={tasksAssistant.error}
-          loading={tasksAssistant.loading || tasksAssistant.usageLoading || tasksAssistant.accessLoading}
-          decision={tasksAssistant.decision}
-          canUseAssistant={tasksAssistant.canUseAssistant}
-          emptyStateTitle="Get a simple task plan before you start checking things off"
-          emptyStateBody="Ask for a catch-up plan, a vendor-task review, or the next best task to focus on from the list already on this page."
-          dismissible
-          onDismiss={() => tasksAssistant.setDismissed(true)}
-          onPromptClick={(prompt) => tasksAssistant.runPrompt(prompt)}
-        />
-      )}
-
-      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-        <Card className="border-primary/15 shadow-card">
+      <div className="w-full min-w-0 max-w-full">
+        <Card className="w-full min-w-0 max-w-full border-primary/15 shadow-card">
           <CardContent className="space-y-5 p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Task Queue</p>
-                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Browse the live checklist</h2>
+                <h2 className="workspace-h2">Task list</h2>
               </div>
-              <Badge variant="outline" className="rounded-full px-3 py-1">
-                {visibleTasks.length} visible
-              </Badge>
+              <div className="shrink-0 border-l border-primary/25 pl-3 text-right" aria-live="polite">
+                <p className="text-lg font-semibold leading-none text-foreground">{visibleTasks.length}</p>
+                <p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">visible</p>
+              </div>
             </div>
 
             <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <div>
                 <Input
                   value={taskSearch}
                   onChange={(event) => setTaskSearch(event.target.value)}
-                  placeholder="Search tasks, categories, vendors, or assignees"
-                  className="pl-10"
+                  placeholder="Search tasks"
                 />
               </div>
               <Select value={taskScopeFilter} onValueChange={(value) => setTaskScopeFilter(value as TaskScopeFilter)}>
@@ -1293,105 +1438,145 @@ export default function Tasks() {
                   <SelectValue placeholder="Filter queue" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All visible work</SelectItem>
-                  <SelectItem value="urgent">Urgent only</SelectItem>
-                  <SelectItem value="vendor">Vendor linked</SelectItem>
-                  <SelectItem value="private">Private only</SelectItem>
-                  <SelectItem value="shared">Shared only</SelectItem>
+                  <SelectItem value="all">All tasks</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                  <SelectItem value="vendor">Vendor tasks</SelectItem>
+                  <SelectItem value="private">Private</SelectItem>
+                  <SelectItem value="shared">Shared</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="rounded-full px-3 py-1">Overdue {overduePending.length}</Badge>
-              <Badge variant="outline" className="rounded-full px-3 py-1">Urgent {urgentPending.length}</Badge>
-              <Badge variant="outline" className="rounded-full px-3 py-1">Vendor linked {openVendorTaskCount}</Badge>
-              <Badge variant="outline" className="rounded-full px-3 py-1">Private {privateTaskCount}</Badge>
             </div>
 
             {((taskViewMode === 'completed' && filteredDone.length === 0) ||
               (taskViewMode !== 'completed' && filteredPending.length === 0)) ? (
               <div className="rounded-3xl border border-dashed border-border/70 bg-muted/15 p-8 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
-                  <PanelsTopLeft className="h-5 w-5 text-primary" />
-                </div>
-                <p className="mt-4 text-lg font-semibold text-foreground">
-                  {taskViewMode === 'completed' ? 'No completed tasks yet' : 'No tasks match this view yet'}
+                <p className="text-lg font-semibold text-foreground">
+                  {taskViewMode === 'completed' ? 'No completed tasks yet' : 'No tasks found'}
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {taskViewMode === 'completed'
-                    ? 'Completed work will gather here once the checklist starts moving.'
-                    : 'Try another filter or add the first planning task to start the workspace.'}
+                    ? 'Completed tasks will appear here.'
+                    : 'Try another filter or add a task.'}
                 </p>
+                {taskViewMode !== 'completed' && pending.length === 0 ? (
+                  <Button type="button" className="mt-4" onClick={() => setOpen(true)}>Add task</Button>
+                ) : null}
               </div>
             ) : (
-              <div className="space-y-5">
-                {taskGroups.map((group) => (
-                  <div key={group.label} className="space-y-3">
-                    <div className="flex items-center justify-between gap-3 border-t border-border pt-5 first:border-t-0 first:pt-0">
-                      <h3 className={cn('text-lg font-semibold', group.tone === 'urgent' ? 'text-destructive' : 'text-foreground')}>
-                        {group.label}
-                      </h3>
-                      <Badge variant="outline" className="rounded-full">{group.tasks.length}</Badge>
-                    </div>
-                    <div className="space-y-3">
-                      {group.tasks.map((task) => (
-                        <TaskRow key={task.id} t={task} isDone={task.completed} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              <div className="space-y-6">
+                {taskGroups.map((group) => {
+                  const completedCount = group.tasks.filter((task) => task.completed).length;
+                  const openCount = group.tasks.length - completedCount;
+                  const urgentCount = group.tasks.filter((task) => isUrgentTask(task)).length;
+                  const vendorLinkedCount = group.tasks.filter((task) => resolveTaskVendor(task)).length;
+                  const nextDueTask = group.tasks
+                    .filter((task) => !task.completed && task.due_date)
+                    .sort(sortTasksByDateAndPriority)[0] ?? null;
+                  const allComplete = completedCount === group.tasks.length;
+                  const groupOpen = expandedTaskGroups[group.label] ?? false;
+                  const groupTone = allComplete
+                    ? 'success'
+                    : urgentCount > 0
+                      ? 'danger'
+                      : vendorLinkedCount > 0
+                        ? 'warning'
+                        : 'neutral';
+                  const groupStatus = allComplete
+                    ? 'Complete'
+                    : urgentCount > 0
+                      ? `${urgentCount} urgent`
+                      : `${openCount} open`;
+                  const groupEyebrow = taskViewMode === 'by_date'
+                    ? 'Task date'
+                    : taskViewMode === 'completed'
+                      ? 'Completed category'
+                      : 'Task category';
+
+                  return (
+                    <HierarchyGroup
+                      key={group.label}
+                      eyebrow={groupEyebrow}
+                      title={group.label}
+                      status={groupStatus}
+                      tone={groupTone}
+                      open={groupOpen}
+                      onToggle={() => {
+                        setExpandedTaskGroups((current) => ({
+                          ...current,
+                          [group.label]: !(current[group.label] ?? false),
+                        }));
+                      }}
+                      meta={`${group.tasks.length} task${group.tasks.length === 1 ? '' : 's'}`}
+                      summary={(
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                          <span>{completedCount} complete</span>
+                          <span>{openCount} remaining</span>
+                          {vendorLinkedCount > 0 ? (
+                            <span>{vendorLinkedCount} vendor-linked</span>
+                          ) : null}
+                          {nextDueTask?.due_date ? (
+                            <span>Next due {new Date(nextDueTask.due_date).toLocaleDateString()}</span>
+                          ) : null}
+                        </div>
+                      )}
+                    >
+                      <div className="space-y-3">
+                        <AnimatePresence initial={false} mode="popLayout">
+                          {group.tasks.map((task) => renderTaskRow(task, task.completed))}
+                        </AnimatePresence>
+                      </div>
+                    </HierarchyGroup>
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Card className="border-primary/15 shadow-card">
+        <Card className="hidden border-primary/15 shadow-card">
           <CardContent className="space-y-5 p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Selected Task</p>
-                <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">
+                <h2 className="workspace-h2 mt-2">
                   {selectedTask?.title ?? 'Pick a task from the queue'}
                 </h2>
               </div>
-              {selectedTask?.completed ? (
-                <Badge className="rounded-full border border-primary/20 bg-primary/10 text-primary hover:bg-primary/10">
-                  Done
-                </Badge>
-              ) : selectedTask ? (
-                <Badge variant="outline" className="rounded-full">
-                  Active
-                </Badge>
+              {selectedTask ? (
+                <span className={`inline-flex shrink-0 items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] ${
+                  selectedTask.completed ? 'text-success' : 'text-muted-foreground'
+                }`}>
+                  <span
+                    aria-hidden="true"
+                    className={`h-1.5 w-1.5 rounded-full ${selectedTask.completed ? 'bg-success' : 'bg-primary/45'}`}
+                  />
+                  {selectedTask.completed ? 'Done' : 'Active'}
+                </span>
               ) : null}
             </div>
 
             {selectedTask ? (() => {
-              const linkedVendor = selectedTask.source_vendor_id ? vendorLookup[selectedTask.source_vendor_id] : null;
+              const linkedVendor = resolveTaskVendor(selectedTask);
               const resolvedCategory = selectedTask.category || linkedVendor?.category || null;
-              const linkedBudget = resolvedCategory ? budgetLookup[normalizeCategory(resolvedCategory)] : null;
+              const linkedBudget = resolveTaskBudget(selectedTask);
               const outstandingAmount =
                 linkedVendor && linkedVendor.price != null ? Math.max(linkedVendor.price - linkedVendor.amount_paid, 0) : null;
 
               return (
                 <div className="space-y-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {resolvedCategory && (
-                      <Badge variant="secondary" className="rounded-full">{resolvedCategory}</Badge>
-                    )}
-                    <Badge variant={selectedTask.visibility === 'private' ? 'destructive' : 'outline'} className="rounded-full">
-                      {selectedTask.visibility === 'private' ? 'Private' : 'Shared'}
-                    </Badge>
-                    {selectedTask.priority_level != null && (
-                      <Badge variant="outline" className="rounded-full">
-                        P{selectedTask.priority_level} · {priorityLabel(selectedTask.priority_level)}
-                      </Badge>
-                    )}
-                    {phaseLabel(selectedTask.phase) && (
-                      <Badge variant="outline" className="rounded-full">
-                        {phaseLabel(selectedTask.phase)}
-                      </Badge>
-                    )}
+                  <div className="border-l-2 border-primary/25 pl-3">
+                    {resolvedCategory ? (
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{resolvedCategory}</p>
+                    ) : null}
+                    <p className="mt-1 text-sm text-foreground">
+                      {[
+                        selectedTask.visibility === 'private' ? 'Private' : 'Shared',
+                        selectedTask.priority_level != null
+                          ? `P${selectedTask.priority_level} · ${priorityLabel(selectedTask.priority_level)}`
+                          : null,
+                        phaseLabel(selectedTask.phase),
+                      ].filter(Boolean).join(' · ')}
+                    </p>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1409,9 +1594,18 @@ export default function Tasks() {
                     </div>
                     <div className="rounded-2xl border border-border/70 bg-muted/10 p-4">
                       <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Vendor link</p>
-                      <p className="mt-2 text-sm font-medium text-foreground">{linkedVendor?.name || 'No linked vendor'}</p>
+                      {linkedVendor ? (
+                        <button
+                          type="button"
+                          className="mt-2 text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
+                          onClick={() => navigate(`/vendors?vendor=${encodeURIComponent(linkedVendor.id)}`)}
+                        >
+                          {linkedVendor.name}
+                        </button>
+                      ) : <p className="mt-2 text-sm font-medium text-foreground">No linked vendor</p>}
                       {linkedVendor && (
                         <p className="mt-1 text-xs text-muted-foreground">
+                          {linkedVendor.selection_status === 'final' ? 'Confirmed · ' : ''}
                           {vendorPaymentStatusLabel(linkedVendor.payment_status)}
                           {outstandingAmount != null ? ` · KES ${outstandingAmount.toLocaleString()} outstanding` : ''}
                         </p>
@@ -1439,12 +1633,12 @@ export default function Tasks() {
                     </p>
                   </div>
 
-                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                  <div className="semantic-surface-info rounded-2xl border p-4">
                     <p className="text-sm font-medium text-foreground">Recommended next move</p>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {selectedTask.completed
                         ? 'This one is already complete. Move to the next item in the queue or review the completed history.'
-                        : selectedTask.source_vendor_id
+                        : linkedVendor
                           ? 'Open the vendor workspace if this task depends on quote, payment, or booking follow-up.'
                           : selectedTask.visibility === 'private'
                             ? 'Keep this inside the couple workflow unless you intentionally want to delegate it.'
@@ -1472,37 +1666,30 @@ export default function Tasks() {
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          <Button type="button" variant="outline" className="gap-2">
-                            <CalendarPlus className="h-4 w-4" />
+                          <Button type="button" variant="outline">
                             Add to Calendar
                           </Button>
                         </a>
                       ) : (
-                        <Button type="button" variant="outline" className="gap-2" onClick={() => setUpgradeOpen(true)}>
-                          <CalendarPlus className="h-4 w-4" />
+                        <Button type="button" variant="outline" onClick={() => setUpgradeOpen(true)}>
                           Add to Calendar
                         </Button>
                       )
                     )}
                     {linkedVendor && (
-                      <Button type="button" variant="outline" className="gap-2" onClick={() => navigate('/vendors')}>
-                        <BriefcaseBusiness className="h-4 w-4" />
+                      <Button type="button" variant="outline" onClick={() => navigate('/vendors')}>
                         Open vendor workspace
                       </Button>
                     )}
-                    <Button type="button" variant="ghost" className="gap-2 text-destructive hover:text-destructive" onClick={() => deleteTask(selectedTask.id)}>
-                      <Trash2 className="h-4 w-4" />
-                      Delete
+                    <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Delete task" title="Delete task" onClick={() => deleteTask(selectedTask.id)}>
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </div>
                 </div>
               );
             })() : (
               <div className="rounded-3xl border border-dashed border-border/70 bg-muted/15 p-10 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
-                  <CircleDashed className="h-5 w-5 text-primary" />
-                </div>
-                <p className="mt-4 text-lg font-semibold text-foreground">Select a task to focus the workspace</p>
+                <p className="text-lg font-semibold text-foreground">Select a task to focus the workspace</p>
                 <p className="mt-2 text-sm text-muted-foreground">
                   Pick any task from the queue to see its details, vendor link, budget context, and the next recommended move.
                 </p>

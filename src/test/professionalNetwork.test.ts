@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildProfessionalNetworkChecklist } from '@/lib/professionalNetwork';
+import {
+  buildProfessionalNetworkChecklist,
+  professionalExchangeCategories,
+  professionalExchangeUrgencies,
+} from '@/lib/professionalNetwork';
 
 describe('buildProfessionalNetworkChecklist', () => {
   it('scores planner readiness from profile signals', () => {
@@ -38,5 +42,11 @@ describe('buildProfessionalNetworkChecklist', () => {
 
     expect(checklist.completeCount).toBe(1);
     expect(checklist.score).toBeLessThan(30);
+  });
+
+  it('exposes a stable exchange taxonomy for the professionals forum', () => {
+    expect(professionalExchangeCategories).toContain('sourcing');
+    expect(professionalExchangeCategories).toContain('emergency');
+    expect(professionalExchangeUrgencies).toEqual(['planning', 'this_week', 'event_day']);
   });
 });

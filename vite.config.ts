@@ -2,7 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import path from "path";
-import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -38,7 +37,7 @@ export default defineConfig(({ mode }) => {
         overlay: false,
       },
     },
-    plugins: [react(), mode === "development" && componentTagger(), sentryPlugin].filter(Boolean),
+    plugins: [react(), sentryPlugin].filter(Boolean),
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
@@ -48,11 +47,24 @@ export default defineConfig(({ mode }) => {
       sourcemap: productionSourceMapSetting,
       rollupOptions: {
         output: {
-          manualChunks: {
-            "react-core": ["react", "react-dom", "react-router-dom"],
-            "supabase-data": ["@supabase/supabase-js", "@tanstack/react-query"],
-            "motion-icons": ["framer-motion", "lucide-react"],
-            charts: ["recharts"],
+          manualChunks(id) {
+            if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/") || id.includes("node_modules/react-router-dom/") || id.includes("node_modules/react-router/")) {
+              return "react-core";
+            }
+
+            if (id.includes("node_modules/@supabase/supabase-js/") || id.includes("node_modules/@tanstack/react-query/")) {
+              return "supabase-data";
+            }
+
+            if (id.includes("node_modules/framer-motion/") || id.includes("node_modules/lucide-react/")) {
+              return "motion-icons";
+            }
+
+            if (id.includes("node_modules/recharts/")) {
+              return "charts";
+            }
+
+            return undefined;
           },
         },
       },

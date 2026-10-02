@@ -1,20 +1,16 @@
 import {
   buildPricingHref,
   getAudiencePlan,
-  getCoupleAddonDefinition,
   getCouplePlanDefinition,
-  getProfessionalAddonDefinition,
-  type CoupleAddonCode,
   type CoupleEntitlementKey,
   type CouplePlanTier,
-  type ProfessionalAddonCode,
   type ProfessionalEntitlementKey,
   type ProfessionalAudience,
   type PricingAudience,
 } from '@/lib/pricingPlans';
 import { hasActiveBetaTrial } from '@/lib/betaTrial';
 import { isCommitteePlanner, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
-import { vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
+import { vendorCanCollaborate, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 
 const ENTITLEMENT_TEST_MODE_STORAGE_KEY = 'zania-unlock-all-features';
 const TEMPORARILY_UNLOCK_ALL_FEATURES_FOR_TESTING = false;
@@ -29,6 +25,7 @@ export type EntitlementFeature =
   | 'couple.export_progress'
   | 'couple.gift_registry'
   | 'couple.guest_rsvp_management'
+  | 'couple.payments_send'
   | 'committee.ai_assistant'
   | 'committee.connect_vendors'
   | 'committee.connect_couples'
@@ -43,12 +40,14 @@ export type EntitlementFeature =
   | 'planner.media_portfolio'
   | 'planner.advertising'
   | 'planner.team_workspace'
+  | 'planner.payments_accept'
   | 'vendor.ai_assistant'
   | 'vendor.direct_leads'
   | 'vendor.analytics'
   | 'vendor.media_portfolio'
   | 'vendor.advertising'
-  | 'vendor.team_workspace';
+  | 'vendor.team_workspace'
+  | 'vendor.payments_accept';
 
 export interface EntitlementProfileLike {
   role?: string | null;
@@ -82,10 +81,10 @@ export interface EntitlementDecision {
   planName: string;
   entitlementCode: string;
   billingCadence: 'one_time' | 'monthly' | 'annual' | 'monthly_or_annual';
-  stripeProductKey: string;
-  stripeMonthlyLookupKey: string | null;
-  stripeAnnualLookupKey: string | null;
-  stripeOneTimeLookupKey: string | null;
+  billingProductKey: string;
+  checkoutMonthlyLookupKey: string | null;
+  checkoutAnnualLookupKey: string | null;
+  checkoutOneTimeLookupKey: string | null;
   pricingHref: string;
   title: string;
   description: string;
@@ -97,6 +96,8 @@ interface EntitlementContext {
   profile?: EntitlementProfileLike | null;
   vendorListing?: EntitlementVendorLike | null;
   activeWeddingCount?: number;
+  plannerFreeWeddingEligible?: boolean | null;
+  plannerFreeWeddingReason?: string | null;
   weddingEntitlements?: Partial<Record<CoupleEntitlementKey, boolean>> | null;
   couplePlanTier?: CouplePlanTier | null;
   professionalAudience?: ProfessionalAudience | null;
@@ -149,7 +150,7 @@ function plannerReasons(profile?: EntitlementProfileLike | null) {
     return reasons;
   }
   if (!plannerHasActiveSubscription(profile)) {
-    reasons.push(isCommitteePlanner(profile) ? 'Your committee subscription is not active yet.' : 'Your Planner Pro subscription is not active yet.');
+    reasons.push(isCommitteePlanner(profile) ? 'Your committee subscription is not active yet.' : 'Your Professional subscription is not active yet.');
   }
   if (profile?.planner_verification_requested && !profile?.planner_verified) {
     reasons.push('Your verification request is still under review.');
@@ -165,7 +166,18 @@ function vendorReasons(vendorListing?: EntitlementVendorLike | null, profile?: E
     return reasons;
   }
   if (!vendorListing?.is_approved) reasons.push('Your vendor listing still needs approval.');
-  if (!vendorHasActiveSubscription(vendorListing)) reasons.push('Your Vendor Pro subscription is not active yet.');
+  if (!vendorHasActiveSubscription(vendorListing)) reasons.push('Your Professional subscription is not active yet.');
+  if (vendorListing?.verification_requested && !vendorListing?.is_verified) {
+    reasons.push('Your verification request is still under review.');
+  } else if (!vendorListing?.is_verified) {
+    reasons.push('Vendor verification is still required.');
+  }
+  return reasons;
+}
+
+function vendorCollaborationReasons(vendorListing?: EntitlementVendorLike | null) {
+  const reasons: string[] = [];
+  if (!vendorListing?.is_approved) reasons.push('Your vendor listing still needs approval.');
   if (vendorListing?.verification_requested && !vendorListing?.is_verified) {
     reasons.push('Your verification request is still under review.');
   } else if (!vendorListing?.is_verified) {
@@ -190,13 +202,11 @@ function hasProfessionalEntitlement(context: EntitlementContext, entitlementKey:
 }
 
 function getEffectiveCouplePlanTier(context: EntitlementContext, requiredTier: Exclude<CouplePlanTier, 'free'>) {
-  if (context.couplePlanTier) {
-    return requiredTier === 'basic' || context.couplePlanTier === 'premium'
-      ? context.couplePlanTier
-      : requiredTier;
-  }
-
-  return hasActiveBetaTrial(context.profile) || hasActivePlanningPass(context.profile) ? 'premium' : requiredTier;
+  return context.couplePlanTier === 'collaborative'
+    || hasActiveBetaTrial(context.profile)
+    || hasActivePlanningPass(context.profile)
+    ? 'collaborative'
+    : requiredTier;
 }
 
 function buildCouplePricingHref(tier: Exclude<CouplePlanTier, 'free'>, feature?: string) {
@@ -209,37 +219,8 @@ function buildCouplePricingHref(tier: Exclude<CouplePlanTier, 'free'>, feature?:
   });
 
   if (feature) params.set('feature', feature);
-  if (plan.stripeMonthlyLookupKey) params.set('monthlyLookupKey', plan.stripeMonthlyLookupKey);
-  if (plan.stripeAnnualLookupKey) params.set('annualLookupKey', plan.stripeAnnualLookupKey);
-
-  return `/pricing?${params.toString()}`;
-}
-
-function buildCoupleAddonPricingHref(code: CoupleAddonCode, feature?: string) {
-  const addon = getCoupleAddonDefinition(code);
-  const params = new URLSearchParams({
-    intent: 'upgrade',
-  });
-
-  if (feature) params.set('feature', feature);
-
-  return addon.code === 'guest_rsvp_management_addon'
-    ? `/guests?${params.toString()}`
-    : `/gift-registry?${params.toString()}`;
-}
-
-function buildProfessionalAddonPricingHref(
-  audience: ProfessionalAudience,
-  code: ProfessionalAddonCode,
-  feature?: string,
-) {
-  const addon = getProfessionalAddonDefinition(code);
-  const params = new URLSearchParams({
-    audience,
-    professionalAddon: addon.code,
-  });
-
-  if (feature) params.set('feature', feature);
+  if (plan.checkoutMonthlyLookupKey) params.set('monthlyLookupKey', plan.checkoutMonthlyLookupKey);
+  if (plan.checkoutAnnualLookupKey) params.set('annualLookupKey', plan.checkoutAnnualLookupKey);
 
   return `/pricing?${params.toString()}`;
 }
@@ -258,10 +239,10 @@ function buildDecision(
     planName: plan.paidTierName,
     entitlementCode: plan.entitlementCode,
     billingCadence: plan.billingCadence,
-    stripeProductKey: plan.stripeProductKey,
-    stripeMonthlyLookupKey: plan.stripeMonthlyLookupKey,
-    stripeAnnualLookupKey: plan.stripeAnnualLookupKey,
-    stripeOneTimeLookupKey: plan.stripeOneTimeLookupKey,
+    billingProductKey: plan.billingProductKey,
+    checkoutMonthlyLookupKey: plan.checkoutMonthlyLookupKey,
+    checkoutAnnualLookupKey: plan.checkoutAnnualLookupKey,
+    checkoutOneTimeLookupKey: plan.checkoutOneTimeLookupKey,
     pricingHref: buildPricingHref(audience, feature),
     title: overrides?.title ?? `Upgrade to ${plan.paidTierName}`,
     description: overrides?.description ?? `Unlock ${plan.paidTierName} to continue.`,
@@ -284,10 +265,10 @@ function buildCoupleDecision(
     planName: plan.title,
     entitlementCode: `couple_${tier}`,
     billingCadence: 'monthly_or_annual',
-    stripeProductKey: `couple_${tier}`,
-    stripeMonthlyLookupKey: plan.stripeMonthlyLookupKey,
-    stripeAnnualLookupKey: plan.stripeAnnualLookupKey,
-    stripeOneTimeLookupKey: null,
+    billingProductKey: `couple_${tier}`,
+    checkoutMonthlyLookupKey: plan.checkoutMonthlyLookupKey,
+    checkoutAnnualLookupKey: plan.checkoutAnnualLookupKey,
+    checkoutOneTimeLookupKey: null,
     pricingHref: buildCouplePricingHref(tier, feature),
     title: overrides?.title ?? `Upgrade to ${plan.title}`,
     description: overrides?.description ?? `Unlock ${plan.title} to continue.`,
@@ -296,141 +277,57 @@ function buildCoupleDecision(
   };
 }
 
-function buildCoupleAddonDecision(
-  feature: EntitlementFeature,
-  code: CoupleAddonCode,
-  allowed: boolean,
-  overrides?: Partial<Pick<EntitlementDecision, 'title' | 'description' | 'ctaLabel' | 'reasons'>>,
-): EntitlementDecision {
-  const addon = getCoupleAddonDefinition(code);
-  return {
-    allowed,
-    audience: 'couple',
-    feature,
-    planName: addon.title,
-    entitlementCode: code,
-    billingCadence: addon.stripeAnnualLookupKey ? 'monthly_or_annual' : 'monthly',
-    stripeProductKey: code,
-    stripeMonthlyLookupKey: addon.stripeMonthlyLookupKey,
-    stripeAnnualLookupKey: addon.stripeAnnualLookupKey,
-    stripeOneTimeLookupKey: null,
-    pricingHref: buildCoupleAddonPricingHref(code, feature),
-    title: overrides?.title ?? `Add ${addon.title}`,
-    description: overrides?.description ?? `Unlock ${addon.title} for this wedding.`,
-    ctaLabel: overrides?.ctaLabel ?? 'View add-on',
-    reasons: overrides?.reasons ?? [],
-  };
-}
-
-function buildProfessionalAddonDecision(
-  feature: EntitlementFeature,
-  audience: ProfessionalAudience,
-  code: ProfessionalAddonCode,
-  allowed: boolean,
-  overrides?: Partial<Pick<EntitlementDecision, 'title' | 'description' | 'ctaLabel' | 'reasons'>>,
-): EntitlementDecision {
-  const addon = getProfessionalAddonDefinition(code);
-  return {
-    allowed,
-    audience,
-    feature,
-    planName: addon.title,
-    entitlementCode: code,
-    billingCadence: 'monthly',
-    stripeProductKey: code,
-    stripeMonthlyLookupKey: addon.stripeMonthlyLookupKey,
-    stripeAnnualLookupKey: addon.stripeAnnualLookupKey,
-    stripeOneTimeLookupKey: null,
-    pricingHref: buildProfessionalAddonPricingHref(audience, code, feature),
-    title: overrides?.title ?? `Add ${addon.title}`,
-    description: overrides?.description ?? `Unlock ${addon.title} for your ${audience} workspace.`,
-    ctaLabel: overrides?.ctaLabel ?? 'View add-on',
-    reasons: overrides?.reasons ?? [],
-  };
-}
-
 export function getEntitlementDecision(feature: EntitlementFeature, context: EntitlementContext): EntitlementDecision {
   if (context.bypass || isGlobalEntitlementBypassEnabled()) {
-    switch (feature) {
-      case 'planner.media_portfolio':
-        return buildProfessionalAddonDecision(feature, 'planner', 'media_addon', true);
-      case 'planner.advertising':
-        return buildProfessionalAddonDecision(feature, 'planner', 'advertising_addon', true);
-      case 'planner.team_workspace':
-        return buildProfessionalAddonDecision(feature, 'planner', 'team_workspace_bundle_5', true);
-      case 'vendor.media_portfolio':
-        return buildProfessionalAddonDecision(feature, 'vendor', 'media_addon', true);
-      case 'vendor.advertising':
-        return buildProfessionalAddonDecision(feature, 'vendor', 'advertising_addon', true);
-      case 'vendor.team_workspace':
-        return buildProfessionalAddonDecision(feature, 'vendor', 'team_workspace_bundle_5', true);
-      default: {
-        const audience = getPricingAudience(context.profile);
-        return buildDecision(feature, audience, true);
-      }
-    }
+    const audience = feature.startsWith('planner.') ? 'planner' : feature.startsWith('vendor.') ? 'vendor' : getPricingAudience(context.profile);
+    return buildDecision(feature, audience, true);
   }
 
   const audience = getPricingAudience(context.profile);
   const activeWeddingCount = context.activeWeddingCount ?? 0;
+  const plannerFreeWeddingEligible = context.plannerFreeWeddingEligible ?? activeWeddingCount < 1;
 
   switch (feature) {
     case 'couple.ai_assistant':
-      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'premium'), hasWeddingEntitlement(context, 'ai_wedding_assistant'), {
-        title: 'Upgrade to unlock the AI Wedding Assistant',
-        description: 'Premium unlocks an AI planning copilot that can read your workspace, answer planning questions, and help manage tasks, vendors, guests, budget, and timelines for your wedding.',
-        reasons: hasWeddingEntitlement(context, 'ai_wedding_assistant')
-          ? []
-          : ['AI Wedding Assistant is part of Premium.'],
-      });
+      return buildCoupleDecision(
+        feature,
+        getEffectiveCouplePlanTier(context, 'collaborative'),
+        hasWeddingEntitlement(context, 'ai_wedding_assistant'),
+        {
+          title: 'Upgrade to unlock Ask Zania',
+          description: 'Collaborative includes the persistent wedding planning assistant and its workspace-aware guidance.',
+          reasons: hasWeddingEntitlement(context, 'ai_wedding_assistant')
+            ? []
+            : ['Ask Zania is part of the Collaborative plan.'],
+        },
+      );
     case 'couple.connect_vendors':
-      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'basic'), hasWeddingEntitlement(context, 'vendor_collaboration'), {
-        title: 'Upgrade to collaborate with vendors',
-        description: 'You can shortlist and compare vendors for free. Upgrade to Basic to share briefs, coordinate updates, and manage vendor collaboration in one workspace.',
+      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'collaborative'), hasWeddingEntitlement(context, 'vendor_collaboration'), {
+        title: 'Upgrade to Collaborative',
+        description: 'Your wedding now involves more people and moving parts. Upgrade to Collaborative to invite your planner, committee, family or vendors.',
         reasons: hasWeddingEntitlement(context, 'vendor_collaboration')
           ? []
-          : ['Vendor collaboration is part of Basic.'],
+          : ['Vendor collaboration needs Collaborative access.'],
       });
     case 'couple.connect_planners':
-      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'basic'), hasWeddingEntitlement(context, 'planner_collaboration'), {
-        title: 'Upgrade to work with a planner',
-        description: 'Upgrade to Basic to invite a planner, share your progress, and keep your wedding workspace collaborative.',
+      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'collaborative'), hasWeddingEntitlement(context, 'planner_collaboration'), {
+        title: 'Upgrade to Collaborative',
+        description: 'Your wedding now involves more people and moving parts. Upgrade to Collaborative to invite your planner, committee, family or vendors.',
         reasons: hasWeddingEntitlement(context, 'planner_collaboration')
           ? []
-          : ['Planner collaboration is part of Basic.'],
+          : ['Planner collaboration needs Collaborative access.'],
       });
     case 'couple.calendar_sync':
-      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'premium'), hasWeddingEntitlement(context, 'timeline_management'), {
-        title: 'Upgrade to sync your wedding timeline',
-        description: 'Premium unlocks collaborative timeline management, calendar syncing, and execution tools once your wedding moves into active coordination.',
-        reasons: hasWeddingEntitlement(context, 'timeline_management')
-          ? []
-          : ['Timeline management and calendar sync are part of Premium.'],
-      });
+      return buildDecision(feature, 'couple', true);
     case 'couple.export_progress':
-      return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'premium'), hasWeddingEntitlement(context, 'timeline_management'), {
-        title: 'Upgrade to export wedding progress',
-        description: 'Premium unlocks budget exports, task exports, and shareable planning reports once you are actively coordinating the wedding.',
-        reasons: hasWeddingEntitlement(context, 'timeline_management')
-          ? []
-          : ['Advanced exports are part of Premium.'],
-      });
+      return buildDecision(feature, 'couple', true);
     case 'couple.gift_registry':
-      return buildCoupleAddonDecision(feature, 'gift_registry_addon', hasWeddingEntitlement(context, 'gift_registry'), {
-        title: 'Add Gift Registry to this wedding',
-        description: 'Publish a wedding wishlist, track purchased items automatically, and give guests one clear place to buy gifts without duplicates.',
-        reasons: hasWeddingEntitlement(context, 'gift_registry')
-          ? []
-          : ['Gift Registry is a paid add-on.'],
-      });
+      return buildDecision(feature, 'couple', true);
     case 'couple.guest_rsvp_management':
-      return buildCoupleAddonDecision(feature, 'guest_rsvp_management_addon', hasWeddingEntitlement(context, 'guest_rsvp_management'), {
-        title: 'Add RSVP & guest management',
-        description: 'Unlock RSVP links, invite sending, guest insights, and check-in tools for this wedding while keeping the basic guest list free.',
-        reasons: hasWeddingEntitlement(context, 'guest_rsvp_management')
-          ? []
-          : ['Guest RSVP & Management is a paid add-on.'],
-      });
+      return buildDecision(feature, 'couple', true);
+    case 'couple.payments_send':
+      // Invoice authorization and live-pilot eligibility are checked server-side.
+      return buildDecision(feature, 'couple', true);
     case 'committee.connect_vendors':
     case 'committee.connect_couples':
     case 'committee.calendar_sync':
@@ -459,138 +356,110 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
     case 'planner.ai_assistant':
       return buildDecision(feature, 'planner', plannerHasActiveSubscription(context.profile), {
         title: 'Upgrade to unlock the AI planner assistant',
-        description: 'Planner Pro unlocks an AI assistant that can reason across client tasks, vendors, timelines, budgets, and payment workflows while helping you operate faster.',
-        reasons: plannerHasActiveSubscription(context.profile) ? [] : ['AI planning support is part of Planner Pro.'],
+        description: 'Professional unlocks an AI assistant that can reason across client tasks, vendors, timelines, budgets, and payment workflows while helping you operate faster.',
+        reasons: plannerHasActiveSubscription(context.profile) ? [] : ['AI planning support is part of Professional.'],
       });
     case 'planner.additional_weddings':
-      return buildDecision(feature, 'planner', activeWeddingCount < 1 || plannerHasActiveSubscription(context.profile), {
+      return buildDecision(feature, 'planner', plannerFreeWeddingEligible || plannerHasActiveSubscription(context.profile), {
         title: 'You’ve reached your free planner limit',
-        description: 'Your free planner account includes 1 active wedding. Upgrade to Planner Pro to manage more weddings without closing your current work.',
-        reasons: activeWeddingCount >= 1 && !plannerHasActiveSubscription(context.profile)
-          ? ['Your free planner tier includes only 1 active wedding.']
+        description: 'Your free planner account includes 1 active wedding. Upgrade to Professional to manage more weddings without closing your current work.',
+        reasons: !plannerFreeWeddingEligible && !plannerHasActiveSubscription(context.profile)
+          ? [context.plannerFreeWeddingReason || 'Your free planner tier includes only 1 active wedding.']
           : [],
       });
     case 'planner.vendor_outreach':
     case 'planner.full_workspace':
       return buildDecision(feature, 'planner', plannerHasFullAccess(context.profile), {
         title: 'Upgrade to unlock the full planner workspace',
-        description: 'Planner Pro unlocks couple links, vendor outreach, and the shared planner workspace once your verification and subscription are active.',
+        description: 'Professional unlocks multi-wedding operations and vendor outreach once your verification and subscription are active.',
         reasons: plannerReasons(context.profile),
       });
     case 'planner.calendar_sync':
       return buildDecision(feature, 'planner', plannerHasActiveSubscription(context.profile), {
         title: 'Upgrade to sync planner schedules',
-        description: 'Planner Pro unlocks Google Calendar syncing, exports, and the scheduling tools that matter once you are operating at scale.',
-        reasons: plannerHasActiveSubscription(context.profile) ? [] : ['Planner calendar sync is part of Planner Pro.'],
+        description: 'Professional unlocks Google Calendar syncing, exports, and the scheduling tools that matter once you are operating at scale.',
+        reasons: plannerHasActiveSubscription(context.profile) ? [] : ['Planner calendar sync is part of Professional.'],
       });
     case 'planner.export_progress':
       return buildDecision(feature, 'planner', plannerHasActiveSubscription(context.profile), {
         title: 'Upgrade to export client progress',
-        description: 'Planner Pro unlocks client exports, handoff reports, and the shareable planning documents that matter once you manage weddings professionally.',
-        reasons: plannerHasActiveSubscription(context.profile) ? [] : ['Planner exports are part of Planner Pro.'],
+        description: 'Professional unlocks client exports, handoff reports, and the shareable planning documents that matter once you manage weddings professionally.',
+        reasons: plannerHasActiveSubscription(context.profile) ? [] : ['Planner exports are part of Professional.'],
       });
-    case 'vendor.ai_assistant':
-      return buildDecision(feature, 'vendor', vendorHasActiveSubscription(context.vendorListing), {
+    case 'vendor.ai_assistant': {
+      const allowed = vendorHasActiveSubscription(context.vendorListing) || hasActiveBetaTrial(context.profile);
+      return buildDecision(feature, 'vendor', allowed, {
         title: 'Upgrade to unlock the AI vendor assistant',
-        description: 'Vendor Pro unlocks an AI assistant that can help you improve your listing, understand bookings, review tasks, and manage client-facing work more efficiently.',
-        reasons: vendorHasActiveSubscription(context.vendorListing) ? [] : ['AI vendor support is part of Vendor Pro.'],
+        description: 'Professional unlocks an AI assistant that can help you improve your listing, understand bookings, review tasks, and manage client-facing work more efficiently.',
+        reasons: allowed ? [] : ['AI vendor support is part of Professional.'],
       });
+    }
     case 'vendor.direct_leads':
-      return buildDecision(feature, 'vendor', vendorHasFullAccess(context.vendorListing), {
-        title: 'Upgrade to start receiving direct leads',
-        description: 'Vendor Pro unlocks direct connection requests and lead handling once your listing is approved, verified, and subscribed.',
-        reasons: vendorReasons(context.vendorListing, context.profile),
+      return buildDecision(feature, 'vendor', vendorCanCollaborate(context.vendorListing), {
+        title: 'Complete verification to receive inquiries',
+        description: 'Free includes direct inquiries after your listing is approved and verified.',
+        reasons: vendorCollaborationReasons(context.vendorListing),
       });
     case 'vendor.analytics':
       return buildDecision(feature, 'vendor', vendorHasFullAccess(context.vendorListing), {
         title: 'Upgrade to unlock vendor analytics',
-        description: 'Vendor Pro unlocks analytics, performance insights, and the premium business tools behind your listing.',
+        description: 'Professional unlocks analytics, performance insights, and the business tools behind your listing.',
         reasons: vendorReasons(context.vendorListing, context.profile),
       });
     case 'planner.media_portfolio':
-      return buildProfessionalAddonDecision(
-        feature,
-        context.professionalAudience ?? 'planner',
-        'media_addon',
-        hasProfessionalEntitlement(context, 'media_portfolio'),
-        {
-          title: 'Add richer media tools to your planner profile',
-          description:
-            'Unlock richer portfolio media for your planner workspace, including stronger visual storytelling and premium portfolio presentation.',
-          reasons: hasProfessionalEntitlement(context, 'media_portfolio') ? [] : ['Media is a paid professional add-on.'],
-        },
-      );
+      return buildDecision(feature, 'planner', plannerHasActiveSubscription(context.profile) || hasProfessionalEntitlement(context, 'media_portfolio'), {
+        title: 'Upgrade to Professional for an advanced portfolio',
+        description: 'Professional includes richer portfolio media and advanced business presentation.',
+        reasons: plannerHasActiveSubscription(context.profile) || hasProfessionalEntitlement(context, 'media_portfolio') ? [] : ['Advanced portfolio tools are part of Professional.'],
+      });
     case 'planner.advertising':
-      return buildProfessionalAddonDecision(
-        feature,
-        context.professionalAudience ?? 'planner',
-        'advertising_addon',
-        hasProfessionalEntitlement(context, 'advertising'),
-        {
-          title: 'Add advertising to your planner profile',
-          description:
-            'Unlock promoted visibility, featured placement, and directory marketing support for your planner business.',
-          reasons: hasProfessionalEntitlement(context, 'advertising') ? [] : ['Advertising is a paid professional add-on.'],
-        },
-      );
+      return buildDecision(feature, 'planner', false, {
+        title: 'Advertising is not part of subscriptions',
+        description: 'Zania will introduce clearly labelled advertising separately when the product is ready.',
+        ctaLabel: 'View Professional',
+        reasons: ['Advertising is not currently available.'],
+      });
     case 'planner.team_workspace':
-      return buildProfessionalAddonDecision(
-        feature,
-        context.professionalAudience ?? 'planner',
-        'team_workspace_bundle_5',
-        hasProfessionalEntitlement(context, 'team_workspace'),
-        {
-          title: 'Add a team workspace for your planner business',
-          description:
-            'Unlock bundled colleague seats so your planning team can collaborate inside the same professional workspace.',
-          reasons:
-            hasProfessionalEntitlement(context, 'team_workspace') || (context.professionalTeamSeatLimit ?? 0) > 0
-              ? []
-              : ['Team Workspace is a paid professional add-on.'],
-        },
-      );
+      return buildDecision(feature, 'planner', hasProfessionalEntitlement(context, 'team_workspace'), {
+        title: 'Team workspace is coming soon',
+        description: 'Team roles will be released as part of Professional rather than as a separate add-on.',
+        ctaLabel: 'View Professional',
+        reasons: hasProfessionalEntitlement(context, 'team_workspace') ? [] : ['Team workspace is still in development.'],
+      });
+    case 'planner.payments_accept':
+      return buildDecision(feature, 'planner', hasProfessionalEntitlement(context, 'payments_accept'), {
+        title: 'Upgrade to activate Zania Pay',
+        description: 'Professional lets verified planners receive invoice payments through Zania.',
+        ctaLabel: 'Upgrade to Professional',
+        reasons: hasProfessionalEntitlement(context, 'payments_accept') ? [] : ['Receiving payments needs Professional access.'],
+      });
     case 'vendor.media_portfolio':
-      return buildProfessionalAddonDecision(
-        feature,
-        context.professionalAudience ?? 'vendor',
-        'media_addon',
-        hasProfessionalEntitlement(context, 'media_portfolio'),
-        {
-          title: 'Add richer media tools to your vendor listing',
-          description:
-            'Unlock richer photo and video presentation so couples can see your work more clearly before they inquire.',
-          reasons: hasProfessionalEntitlement(context, 'media_portfolio') ? [] : ['Media is a paid professional add-on.'],
-        },
-      );
+      return buildDecision(feature, 'vendor', vendorHasActiveSubscription(context.vendorListing) || hasProfessionalEntitlement(context, 'media_portfolio'), {
+        title: 'Upgrade to Professional for an advanced portfolio',
+        description: 'Professional includes richer portfolio media and advanced business presentation.',
+        reasons: vendorHasActiveSubscription(context.vendorListing) || hasProfessionalEntitlement(context, 'media_portfolio') ? [] : ['Advanced portfolio tools are part of Professional.'],
+      });
     case 'vendor.advertising':
-      return buildProfessionalAddonDecision(
-        feature,
-        context.professionalAudience ?? 'vendor',
-        'advertising_addon',
-        hasProfessionalEntitlement(context, 'advertising'),
-        {
-          title: 'Add advertising to your vendor business',
-          description:
-            'Unlock promoted placement, boosted visibility, and directory marketing opportunities for your listing.',
-          reasons: hasProfessionalEntitlement(context, 'advertising') ? [] : ['Advertising is a paid professional add-on.'],
-        },
-      );
+      return buildDecision(feature, 'vendor', false, {
+        title: 'Advertising is not part of subscriptions',
+        description: 'Zania will introduce clearly labelled advertising separately when the product is ready.',
+        ctaLabel: 'View Professional',
+        reasons: ['Advertising is not currently available.'],
+      });
     case 'vendor.team_workspace':
-      return buildProfessionalAddonDecision(
-        feature,
-        context.professionalAudience ?? 'vendor',
-        'team_workspace_bundle_5',
-        hasProfessionalEntitlement(context, 'team_workspace'),
-        {
-          title: 'Add a team workspace for your vendor business',
-          description:
-            'Unlock bundled colleague seats so your team can coordinate bookings, follow-ups, and delivery in one workspace.',
-          reasons:
-            hasProfessionalEntitlement(context, 'team_workspace') || (context.professionalTeamSeatLimit ?? 0) > 0
-              ? []
-              : ['Team Workspace is a paid professional add-on.'],
-        },
-      );
+      return buildDecision(feature, 'vendor', hasProfessionalEntitlement(context, 'team_workspace'), {
+        title: 'Team workspace is coming soon',
+        description: 'Team roles will be released as part of Professional rather than as a separate add-on.',
+        ctaLabel: 'View Professional',
+        reasons: hasProfessionalEntitlement(context, 'team_workspace') ? [] : ['Team workspace is still in development.'],
+      });
+    case 'vendor.payments_accept':
+      return buildDecision(feature, 'vendor', hasProfessionalEntitlement(context, 'payments_accept'), {
+        title: 'Upgrade to activate Zania Pay',
+        description: 'Professional lets verified vendors receive invoice payments through Zania.',
+        ctaLabel: 'Upgrade to Professional',
+        reasons: hasProfessionalEntitlement(context, 'payments_accept') ? [] : ['Receiving payments needs Professional access.'],
+      });
     default:
       return buildDecision(feature, audience, false);
   }

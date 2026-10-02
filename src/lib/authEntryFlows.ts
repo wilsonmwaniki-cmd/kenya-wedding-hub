@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { isAppleAuthEnabled } from '@/lib/featureFlags';
 import { normalizeHumanName } from '@/lib/names';
 import type { PlannerType, SignupRole } from '@/lib/roles';
+import type { EstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 import type {
   WeddingOwnerRole,
   WeddingPlanningMode,
@@ -11,7 +12,9 @@ import type {
 } from '@/lib/pendingWeddingSetup';
 
 export interface AuthEntrySignUpOptions {
+  captchaToken?: string | null;
   signupIntent?: WeddingSignupIntent | null;
+  accountPurpose?: 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other' | null;
   weddingOwnerRole?: WeddingOwnerRole | null;
   partnerEmail?: string | null;
   weddingName?: string | null;
@@ -27,12 +30,52 @@ export interface AuthEntrySignUpOptions {
   referenceCurrency?: WeddingReferenceCurrency | null;
   ownerTimezone?: string | null;
   professionalRoleLocked?: boolean | null;
+  estimatorPlanDraft?: EstimatorPlanDraft | null;
 }
 
 export interface AuthEntrySignUpResult {
   session: Session | null;
   requiresEmailConfirmation: boolean;
   confirmationEmailResent: boolean;
+}
+
+export function isEstimatorCoupleSignupEntry(input: {
+  mode?: string | null;
+  flow?: string | null;
+  audience?: string | null;
+  role?: string | null;
+}) {
+  return input.mode === 'signup'
+    && input.flow === 'estimator'
+    && input.audience === 'couple'
+    && input.role === 'couple';
+}
+
+export function isLockedSignupEntry(input: {
+  mode?: string | null;
+  flow?: string | null;
+  audience?: string | null;
+  role?: string | null;
+}) {
+  if (input.mode !== 'signup') return false;
+
+  return input.flow === 'join_wedding'
+    || input.flow === 'vendor_claim'
+    || isEstimatorCoupleSignupEntry(input)
+    || (input.audience === 'professional' && (input.role === 'planner' || input.role === 'vendor'));
+}
+
+export function resolveSignupEntryStep(input: {
+  mode?: string | null;
+  flow?: string | null;
+  audience?: string | null;
+  role?: string | null;
+}) {
+  return isLockedSignupEntry(input) ? 'account' : 'method';
+}
+
+export function resolveAuthSignInAudience(value?: string | null) {
+  return value === 'couple' || value === 'professional' ? value : null;
 }
 
 export async function performAuthEntrySignUp(input: {
@@ -51,6 +94,7 @@ export async function performAuthEntrySignUp(input: {
   const primaryCounty = input.options?.primaryCounty?.trim() || null;
   const primaryTown = input.options?.primaryTown?.trim() || null;
   const professionalRoleLocked = input.options?.professionalRoleLocked ?? null;
+  const accountPurpose = input.options?.accountPurpose ?? null;
   const partnerEmail = input.options?.partnerEmail?.trim().toLowerCase() || null;
   const weddingName = input.options?.weddingName?.trim() || null;
   const weddingCode = input.options?.weddingCode?.trim().toUpperCase() || null;
@@ -65,9 +109,11 @@ export async function performAuthEntrySignUp(input: {
     email: normalizedEmail,
     password: input.password,
     options: {
+      captchaToken: input.options?.captchaToken ?? undefined,
       data: {
         full_name: normalizedFullName,
         role: isCommittee ? 'planner' : input.role,
+        account_purpose: accountPurpose,
         signup_target_role: isCommittee ? 'committee' : input.role,
         professional_signup_role: signupIntent === 'professional' ? (isCommittee ? 'planner' : input.role) : null,
         planner_type: isCommittee ? 'committee' : input.role === 'planner' ? 'professional' : null,
@@ -89,11 +135,20 @@ export async function performAuthEntrySignUp(input: {
         owner_timezone: signupIntent === 'create_wedding' ? ownerTimezone : null,
         primary_county: primaryCounty,
         primary_town: primaryTown,
+        estimator_plan_draft:
+          signupIntent === 'create_wedding'
+            ? input.options?.estimatorPlanDraft ?? null
+            : null,
       },
       emailRedirectTo: input.emailRedirectTo,
     },
   });
-  if (error) throw error;
+  if (error) {
+    if (error.message.toLowerCase().includes('confirmation email')) {
+      throw new Error('We could not send your confirmation email. Your details are safe—please try again in a moment.');
+    }
+    throw error;
+  }
 
   const isExistingAccountAttempt =
     Array.isArray(data.user?.identities)
@@ -139,6 +194,7 @@ export async function performOAuthEntrySignIn(input: {
   mode?: 'signup' | 'signin';
   targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
   plannerType?: PlannerType | null;
+  captchaToken?: string | null;
 }) {
   if (input.provider === 'apple' && !isAppleAuthEnabled()) {
     throw new Error('Apple sign-in is not available yet. Please continue with Google or email for now.');
@@ -168,6 +224,7 @@ export async function performOAuthEntrySignIn(input: {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: input.provider,
     options: {
+      captchaToken: input.captchaToken ?? undefined,
       redirectTo: redirectUrl.toString(),
       queryParams: input.provider === 'google' ? { prompt: 'select_account' } : undefined,
     },

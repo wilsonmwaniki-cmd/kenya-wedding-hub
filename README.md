@@ -44,6 +44,8 @@ The frontend depends on Supabase schema and edge functions from this repo.
 Core function groups:
 
 - Billing: `create-stripe-checkout`, `sync-couple-checkout`, `sync-professional-checkout`
+- Migration scaffolding: `create-pesapal-checkout`, `sync-pesapal-couple-checkout`, `sync-pesapal-professional-checkout`
+- Pesapal webhook endpoint: `pesapal-ipn`
 - Messaging: `send-wedding-invite`, `send-guest-invite`, `send-connection-notification`, `send-timeline-reminders`
 - AI: `wedding-ai-chat`
 
@@ -52,9 +54,20 @@ Required server-side secrets live in Supabase, not the frontend `.env`:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `STRIPE_SECRET_KEY`
 - `RESEND_API_KEY`
-- `RESEND_FROM_EMAIL` such as `Zania Weddings <invites@zaniaweddings.com>`
+- `RESEND_FROM_EMAIL` such as `Zania Weddings <invites@planwithzania.com>`
 - `OPENAI_API_KEY`
-- `OPENAI_MODEL` (optional override)
+
+The AI assistant routes requests by complexity with these defaults:
+
+- Routine actions and lookups: `OPENAI_ROUTINE_MODEL=gpt-5.6-luna`
+- Standard planning assistance: `OPENAI_BALANCED_MODEL=gpt-5.6-terra`
+- Complex strategy and multi-constraint analysis: `OPENAI_COMPLEX_MODEL=gpt-5.6-sol`
+
+Each model can be overridden with the corresponding secret above. Routed requests use a stable explicit prompt-cache prefix and record cache reads, cache writes, token usage, the selected model, and estimated cost. If a custom model has different pricing, set `OPENAI_<TIER>_INPUT_COST_PER_MILLION_USD`, `OPENAI_<TIER>_CACHED_INPUT_COST_PER_MILLION_USD`, `OPENAI_<TIER>_CACHE_WRITE_COST_PER_MILLION_USD`, and `OPENAI_<TIER>_OUTPUT_COST_PER_MILLION_USD`, where `<TIER>` is `ROUTINE`, `BALANCED`, or `COMPLEX`.
+
+New billing checkouts use Paystack exclusively. The legacy Pesapal callback and
+sync functions remain available only to reconcile historical transactions; the
+Pesapal checkout function rejects new payment initiation.
 
 ## Production launch
 
@@ -64,6 +77,7 @@ Use the controlled-production path rather than the locked prototype backend.
 - [CI/CD and preview workflow](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/docs/CI_CD_AND_PREVIEW_WORKFLOW.md)
 - [Preview feature workflow](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/docs/preview-feature-workflow.md)
 - [Pricing configuration](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/docs/PRICING_CONFIGURATION.md)
+- [Pesapal cutover runbook](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/docs/PESAPAL_CUTOVER_RUNBOOK.md)
 - [Admin bootstrap SQL](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/supabase/sql/bootstrap_admin.sql)
 - [Supabase setup script](/Users/Mwaniki1/Documents/Projects/weddingplan-kenya/kenya-wedding-hub/scripts/supabase_prod_setup.sh)
 

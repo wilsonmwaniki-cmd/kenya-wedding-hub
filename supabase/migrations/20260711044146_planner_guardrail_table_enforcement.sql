@@ -1,0 +1,2 @@
+-- Placeholder to align local migration history with the remote Supabase project.
+-- The remote database already contains this migration version.

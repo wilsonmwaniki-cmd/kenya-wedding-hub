@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -30,7 +30,9 @@ export interface InlineAssistantOptions {
   surface: string;
   entityId?: string | null;
   contextSource?: string | null;
+  conciergeContext?: string | null;
   initialMessages?: AiAssistantMessage[];
+  conversationId?: string | null;
 }
 
 export interface InlineAssistantRunOptions {
@@ -38,9 +40,11 @@ export interface InlineAssistantRunOptions {
   entityId?: string | null;
   surface?: string | null;
   contextSource?: string | null;
+  conciergeContext?: string | null;
 }
 
 export interface InlineAssistantState {
+  workspaceKey: string;
   decision: EntitlementDecision | null;
   canUseAssistant: boolean;
   loading: boolean;
@@ -50,6 +54,7 @@ export interface InlineAssistantState {
   response: string | null;
   usage: AiUsageStatus | null;
   dismissed: boolean;
+  conversationId: string | null;
   setDismissed: (value: boolean) => void;
   clearResponse: () => void;
   runPrompt: (prompt: string, options?: InlineAssistantRunOptions) => Promise<string | null>;
@@ -67,6 +72,24 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(options.conversationId ?? null);
+  const workspaceKey = `${user?.id ?? ''}:${profile?.role ?? ''}:${profile?.planner_type ?? ''}:${isPlanner ? selectedClient?.id ?? '' : ''}`;
+  const workspaceKeyRef = useRef(workspaceKey);
+  const requestVersionRef = useRef(0);
+  if (workspaceKeyRef.current !== workspaceKey) {
+    workspaceKeyRef.current = workspaceKey;
+    requestVersionRef.current += 1;
+  }
+
+  useEffect(() => {
+    setResponse(null);
+    setError(null);
+    setLoading(false);
+  }, [workspaceKey]);
+
+  useEffect(() => {
+    setConversationId(options.conversationId ?? null);
+  }, [options.conversationId, workspaceKey]);
 
   const decision = useMemo<EntitlementDecision | null>(() => {
     if (!profile) return null;
@@ -171,12 +194,29 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
         return null;
       }
 
+      if (usage && usage.remaining_cost_usd <= 0) {
+        setError('This account has used its included Zania Assistant allowance for the current month.');
+        return null;
+      }
+
       setLoading(true);
       setError(null);
+      const requestVersion = ++requestVersionRef.current;
 
       try {
+        const conciergeContext = runOptions?.conciergeContext ?? options.conciergeContext ?? null;
+        const contextMessages: AiAssistantMessage[] = conciergeContext?.trim()
+          ? [{
+              role: 'assistant',
+              content: `${conciergeContext.trim()}\n\nUse this brief silently to make your answer contextual and concierge-like.`,
+            }]
+          : [];
         const result = await invokeWeddingAiChat({
-          messages: [...(options.initialMessages ?? []), { role: 'user', content: trimmedPrompt }],
+          messages: [
+            ...contextMessages,
+            ...(options.initialMessages ?? []),
+            { role: 'user', content: trimmedPrompt },
+          ],
           selectedClientId: isPlanner ? selectedClient?.id ?? null : null,
           allowWriteActions: runOptions?.allowWriteActions ?? false,
           confirmedActions: [],
@@ -185,14 +225,18 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
           contextSource: runOptions?.contextSource ?? options.contextSource ?? 'inline_card',
           entityId: runOptions?.entityId ?? options.entityId ?? null,
           starterPrompt: trimmedPrompt,
+          conversationId,
         });
 
+        if (requestVersionRef.current !== requestVersion) return null;
         if (result.usage) {
           setUsage(result.usage);
         }
+        if (result.conversationId) setConversationId(result.conversationId);
         setResponse(result.content);
         return result.content;
       } catch (err) {
+        if (requestVersionRef.current !== requestVersion) return null;
         console.error('Inline assistant error:', err);
         if (err instanceof WeddingAiInvokeError) {
           if (err.usage) {
@@ -205,7 +249,7 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
         setError('Could not reach the AI assistant.');
         return null;
       } finally {
-        setLoading(false);
+        if (requestVersionRef.current === requestVersion) setLoading(false);
       }
     },
     [
@@ -213,6 +257,8 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
       decision?.description,
       isPlanner,
       options.contextSource,
+      conversationId,
+      options.conciergeContext,
       options.entityId,
       options.initialMessages,
       options.page,
@@ -221,6 +267,7 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
       session,
       usage,
       user,
+      workspaceKey,
     ],
   );
 
@@ -230,6 +277,7 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
   }, []);
 
   return {
+    workspaceKey,
     decision,
     canUseAssistant: Boolean(decision?.allowed),
     loading,
@@ -239,6 +287,7 @@ export function useInlineAssistant(options: InlineAssistantOptions): InlineAssis
     response,
     usage,
     dismissed,
+    conversationId,
     setDismissed,
     clearResponse,
     runPrompt,

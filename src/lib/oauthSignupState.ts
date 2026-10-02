@@ -1,4 +1,5 @@
 import type { AppRole, PlannerType, SignupRole } from '@/lib/roles';
+import { getCookieDomainForHostname } from '@/lib/appDomain';
 
 const PENDING_OAUTH_SIGNUP_STORAGE_KEY = 'zania-pending-oauth-signup';
 const PENDING_OAUTH_SIGNUP_COOKIE_KEY = 'zania_pending_oauth_signup';
@@ -14,12 +15,7 @@ export type PendingOAuthSignupState = {
 function getSharedCookieDomain() {
   if (typeof window === 'undefined') return null;
 
-  const { hostname } = window.location;
-  if (hostname === 'zaniaweddings.com' || hostname === 'www.zaniaweddings.com') {
-    return '.zaniaweddings.com';
-  }
-
-  return null;
+  return getCookieDomainForHostname(window.location.hostname);
 }
 
 function serializePendingOAuthSignupState(payload: PendingOAuthSignupState) {

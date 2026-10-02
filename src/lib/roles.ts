@@ -21,7 +21,7 @@ export function isProfessionalSetupPending(
 
 export function getHomeRouteForRole(role: AppRole | null | undefined, plannerType?: PlannerType | null): string {
   if (role === "planner") return plannerType === "committee" ? "/dashboard" : "/clients";
-  if (role === "vendor") return "/vendor-settings";
+  if (role === "vendor") return "/vendor-dashboard";
   if (role === "admin") return "/admin";
   return "/dashboard";
 }

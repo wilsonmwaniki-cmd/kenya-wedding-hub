@@ -6,12 +6,9 @@ import {
   getRetryAfterSeconds,
 } from '../_shared/abuseProtection.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { createCorsHeaders } from '../_shared/cors.ts';
+import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from '../_shared/demoGuard.ts';
 
 type InviteRow = {
   id: string;
@@ -95,6 +92,8 @@ const formatWeddingDate = (dateValue: string | null) => {
 };
 
 serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -115,8 +114,8 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
     const RESEND_FROM_EMAIL =
-      Deno.env.get('RESEND_FROM_EMAIL') || 'Zania Weddings <invites@zaniaweddings.com>';
-    const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') || req.headers.get('origin') || 'https://kenya-wedding-hub.vercel.app';
+      Deno.env.get('RESEND_FROM_EMAIL') || 'Zania <hello@planwithzania.com>';
+    const PUBLIC_APP_URL = Deno.env.get('PUBLIC_APP_URL') || req.headers.get('origin') || 'https://www.planwithzania.com';
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
       return new Response(JSON.stringify({ error: 'Supabase environment is not fully configured.' }), {
@@ -156,6 +155,14 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    if (isTemporaryDemoUser(user)) {
+      return new Response(JSON.stringify({ error: DEMO_EXTERNAL_ACTION_MESSAGE, code: 'demo_action_blocked' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    await assertActiveAuthSession(serviceClient, authHeader, user.id);
 
     const { data: inviteData, error: inviteError } = await authClient
       .from('wedding_invites')
@@ -444,6 +451,13 @@ serve(async (req) => {
           'Content-Type': 'application/json',
           ...(error.retryAfterSeconds ? { 'Retry-After': String(error.retryAfterSeconds) } : {}),
         },
+      });
+    }
+
+    if (isAuthSessionError(error)) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 

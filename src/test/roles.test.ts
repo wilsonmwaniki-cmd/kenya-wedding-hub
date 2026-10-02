@@ -19,7 +19,7 @@ describe("getHomeRouteForRole", () => {
   });
 
   it("routes vendors and admins to their dedicated homes", () => {
-    expect(getHomeRouteForRole("vendor", null)).toBe("/vendor-settings");
+    expect(getHomeRouteForRole("vendor", null)).toBe("/vendor-dashboard");
     expect(getHomeRouteForRole("admin", null)).toBe("/admin");
   });
 

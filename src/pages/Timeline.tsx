@@ -8,11 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
-import InfoTip from '@/components/InfoTip';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Clock, Trash2, Edit2, Copy, Link2, Users, ArrowLeft,
@@ -21,6 +19,7 @@ import {
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { normalizeInvokeError } from '@/lib/invokeErrors';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 
 const VENDOR_ROLES = [
   { value: 'photographer', label: 'Photographer', icon: '📸' },
@@ -112,6 +111,7 @@ export default function Timeline() {
   const { user } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const { toast } = useToast();
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const assistantPanel = useAssistantPanel();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
 
@@ -158,7 +158,9 @@ export default function Timeline() {
   const selectedTimelineShareActive = selectedTimeline
     ? isTokenActive(selectedTimeline.share_expires_at, selectedTimeline.share_revoked_at)
     : false;
-
+  const templates = timelines.filter(t => t.is_template && !pendingDeleteIds.has(t.id));
+  const instances = timelines.filter(t => !t.is_template && !pendingDeleteIds.has(t.id));
+  const visibleEvents = events.filter((event) => !pendingDeleteIds.has(event.id));
   // Load timelines
   const loadTimelines = async () => {
     if (!user || !dataOrFilter) return;
@@ -380,10 +382,23 @@ export default function Timeline() {
       });
       return;
     }
-    await supabase.from('timelines').delete().eq('id', id);
-    if (selectedTimeline?.id === id) { setSelectedTimeline(null); setEvents([]); }
-    loadTimelines();
-    toast({ title: 'Deleted' });
+    const timeline = timelines.find((row) => row.id === id);
+    if (!timeline) return;
+    const wasSelected = selectedTimeline?.id === id;
+    if (wasSelected) { setSelectedTimeline(null); setEvents([]); }
+    scheduleDelete({
+      id,
+      title: 'Timeline removed',
+      description: `${timeline.title} was removed.`,
+      commit: async () => {
+        const { error } = await supabase.from('timelines').delete().eq('id', id);
+        if (error) throw error;
+      },
+      onCommit: loadTimelines,
+      onUndo: () => {
+        if (wasSelected) selectTimeline(timeline);
+      },
+    });
   };
 
   // Event CRUD
@@ -488,20 +503,24 @@ export default function Timeline() {
       });
       return;
     }
-    const idempotencyKey = window.crypto?.randomUUID?.() ?? `${id}-${Date.now()}`;
-    try {
-      await invokeTimelineOperation({
-        action: 'delete_event',
-        timelineId: selectedTimeline.id,
-        timelineEventId: id,
-        idempotencyKey,
-      });
-    } catch (error) {
-      const normalized = await normalizeInvokeError(error, 'Could not remove this timeline event.');
-      toast({ title: 'Timeline update failed', description: normalized.message, variant: 'destructive' });
-      return;
-    }
-    loadEvents(selectedTimeline.id);
+    const event = events.find((row) => row.id === id);
+    if (!event) return;
+    const timelineId = selectedTimeline.id;
+    scheduleDelete({
+      id,
+      title: 'Timeline event removed',
+      description: `${event.title} was removed from the timeline.`,
+      commit: async () => {
+        const idempotencyKey = window.crypto?.randomUUID?.() ?? `${id}-${Date.now()}`;
+        await invokeTimelineOperation({
+          action: 'delete_event',
+          timelineId,
+          timelineEventId: id,
+          idempotencyKey,
+        });
+      },
+      onCommit: () => loadEvents(timelineId),
+    });
   };
 
   const copyToClipboard = (text: string) => {
@@ -637,7 +656,7 @@ export default function Timeline() {
     toast({ title: `Shifted all events ${shiftMinutes} min ${direction}` });
   };
 
-  const handleDrop = async (fromIdx: number, toIdx: number) => {
+  const handleDrop = async (fromId: string, toId: string) => {
     if (plannerNeedsApproval) {
       toast({
         title: 'Timeline reordering stays with the couple',
@@ -646,8 +665,11 @@ export default function Timeline() {
       });
       return;
     }
-    if (fromIdx === toIdx || !selectedTimeline) return;
+    if (fromId === toId || !selectedTimeline || pendingDeleteIds.size > 0) return;
     const reordered = [...events];
+    const fromIdx = reordered.findIndex((event) => event.id === fromId);
+    const toIdx = reordered.findIndex((event) => event.id === toId);
+    if (fromIdx === -1 || toIdx === -1) return;
     const [moved] = reordered.splice(fromIdx, 1);
     reordered.splice(toIdx, 0, moved);
     // Optimistic update
@@ -669,14 +691,6 @@ export default function Timeline() {
     loadEvents(selectedTimeline.id);
   };
 
-  const templates = timelines.filter(t => t.is_template);
-  const instances = timelines.filter(t => !t.is_template);
-  const timelineHeroAction = instances.length === 0
-    ? 'Build the first timeline'
-    : instances.length === 1
-      ? 'Refine the current wedding flow'
-      : 'Keep every timeline version in sync';
-
   const formatTime = (t: string) => {
     const [h, m] = t.split(':');
     const hour = parseInt(h);
@@ -694,9 +708,9 @@ export default function Timeline() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="font-display text-2xl font-bold text-foreground flex items-center gap-2">
+            <h1 className="workspace-h1 flex items-center gap-2">
               {selectedTimeline.title}
-              {selectedTimeline.is_template && <Badge variant="secondary" className="text-xs">Template</Badge>}
+              {selectedTimeline.is_template && <Badge variant="info" className="text-xs">Template</Badge>}
             </h1>
             {selectedTimeline.timeline_date && (
               <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
@@ -705,7 +719,7 @@ export default function Timeline() {
               </p>
             )}
           </div>
-          {events.length > 0 && (
+          {visibleEvents.length > 0 && (
             <>
               <Button variant="outline" size="sm" className="gap-1.5 print:hidden" onClick={() => window.print()}>
                 <Printer className="h-4 w-4" /> Print
@@ -724,7 +738,7 @@ export default function Timeline() {
         </div>
 
         {/* Category filter bar */}
-        {events.length > 0 && (
+        {visibleEvents.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 print:hidden">
             <span className="text-xs text-muted-foreground font-medium">Filter:</span>
             <button
@@ -733,7 +747,7 @@ export default function Timeline() {
             >
               All
             </button>
-            {EVENT_CATEGORIES.filter(c => events.some(e => e.category === c.value)).map(c => (
+            {EVENT_CATEGORIES.filter(c => visibleEvents.some(e => e.category === c.value)).map(c => (
               <button
                 key={c.value}
                 onClick={() => setFilterCategory(filterCategory === c.value ? null : c.value)}
@@ -747,7 +761,7 @@ export default function Timeline() {
 
         {/* Visual timeline */}
         <div className="relative">
-          {events.length === 0 ? (
+          {visibleEvents.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Clock className="h-10 w-10 text-muted-foreground/40 mb-3" />
@@ -776,13 +790,21 @@ export default function Timeline() {
             </Card>
           ) : (
             <div className="relative ml-4 border-l-2 border-primary/20 pl-6 space-y-1">
-                {events.filter(ev => !filterCategory || ev.category === filterCategory).map((ev, i) => (
+                {visibleEvents.filter(ev => !filterCategory || ev.category === filterCategory).map((ev, i, filteredEvents) => (
                   <div
                     key={ev.id}
-                    draggable
+                    draggable={pendingDeleteIds.size === 0}
                     onDragStart={() => setDragIndex(i)}
                     onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
-                    onDragEnd={() => { if (dragIndex !== null && dragOverIndex !== null) handleDrop(dragIndex, dragOverIndex); setDragIndex(null); setDragOverIndex(null); }}
+                    onDragEnd={() => {
+                      if (dragIndex !== null && dragOverIndex !== null) {
+                        const fromEvent = filteredEvents[dragIndex];
+                        const toEvent = filteredEvents[dragOverIndex];
+                        if (fromEvent && toEvent) void handleDrop(fromEvent.id, toEvent.id);
+                      }
+                      setDragIndex(null);
+                      setDragOverIndex(null);
+                    }}
                     className={`relative group transition-all ${dragIndex === i ? 'opacity-40 scale-[0.98]' : ''} ${dragOverIndex === i && dragIndex !== null && dragIndex !== i ? 'border-t-2 border-primary pt-1' : ''}`}
                   >
                     {/* Dot on the timeline */}
@@ -917,7 +939,7 @@ export default function Timeline() {
                   </Button>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <Badge variant={selectedTimelineShareActive ? 'default' : 'secondary'}>
+                  <Badge variant={selectedTimelineShareActive ? 'success' : 'outline'}>
                     {selectedTimelineShareActive ? 'Link active' : 'Link inactive'}
                   </Badge>
                   {selectedTimeline.share_expires_at && (
@@ -970,7 +992,7 @@ export default function Timeline() {
                               <span className="text-xs text-muted-foreground">{roleMeta.label}</span>
                             )}
                             <div className="flex-1" />
-                            <Badge variant={shareIsActive ? 'default' : 'secondary'} className="shrink-0">
+                            <Badge variant={shareIsActive ? 'success' : 'outline'} className="shrink-0">
                               {shareIsActive ? 'Active' : 'Inactive'}
                             </Badge>
                             <select
@@ -1089,56 +1111,29 @@ export default function Timeline() {
   // List view
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
-        <CardContent className="grid gap-6 p-6 lg:grid-cols-[1.25fr_0.95fr] lg:p-8">
-          <div className="space-y-5">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Timeline Workspace</p>
-                <InfoTip content="Build the wedding-day flow, keep timings clear, and share either the full schedule or role-specific views with the right people." />
-              </div>
-              <h1 className="mt-2 font-display text-3xl font-bold text-foreground">Plan the wedding day clearly</h1>
-              <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
-                A clear wedding-day flow everyone can follow.
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Live timelines</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{instances.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {instances.length === 0 ? 'No wedding schedule built yet' : 'Working versions ready to open'}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Templates</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{templates.length}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {templates.length === 0 ? 'No reusable wedding flow yet' : 'Reusable starting points available'}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
-                <p className="mt-2 text-sm font-medium text-foreground">{timelineHeroAction}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Best next move right now.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-border/70 bg-background/85 p-5 backdrop-blur-sm">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">Start the schedule</p>
-              <InfoTip content="Start blank, use a saved template, or ask the assistant for a first draft. You can refine timings later." />
-            </div>
-            <div className="mt-4 space-y-3">
-              <Button
-                className="w-full justify-start gap-2"
-                onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}
-              >
-                <Plus className="h-4 w-4" />
-                Create manually
-              </Button>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="workspace-h1">Timeline</h1>
+          <p className="mt-2 text-sm text-muted-foreground sm:text-base">Plan the wedding day in order.</p>
+          {(instances.length > 0 || templates.length > 0) ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {instances.length} timeline{instances.length === 1 ? '' : 's'} · {templates.length} template{templates.length === 1 ? '' : 's'}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {instances.length > 0 ? (
+            <Button
+              className="gap-2"
+              onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}
+            >
+              <Plus className="h-4 w-4" />
+              Create timeline
+            </Button>
+          ) : null}
+          <details className="relative rounded-xl border border-border/70 bg-background px-3 py-2">
+            <summary className="cursor-pointer list-none text-sm font-medium text-muted-foreground">More options</summary>
+            <div className="mt-3 min-w-52 space-y-2">
               <Button
                 variant="outline"
                 className="w-full justify-start gap-2"
@@ -1155,7 +1150,7 @@ export default function Timeline() {
                 }}
               >
                 <FileText className="h-4 w-4" />
-                {templates.length > 0 ? 'Start from template' : 'Create your first template'}
+                  {templates.length > 0 ? 'Start from template' : 'Create your first template'}
               </Button>
               {assistantPanel && (
                 <Button
@@ -1170,192 +1165,147 @@ export default function Timeline() {
                   Plan with AI
                 </Button>
               )}
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                <p className="text-sm font-medium text-foreground">
-                  {templates.length > 0 ? 'Templates make repeat planning faster' : 'A clean first draft is enough to get moving'}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {templates.length > 0
-                    ? 'Copy a reusable flow, then adjust the timings.'
-                    : 'Start simple, then refine later.'}
-                </p>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <Card className="border-border/70 shadow-card">
+          <CardContent className="space-y-5 p-5">
+            {instances.length > 0 ? (
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="workspace-h2">Wedding-day timelines</h2>
+                <Badge variant="outline" className="rounded-full px-3 py-1">{instances.length}</Badge>
+              </div>
+            ) : null}
+
+            {instances.length === 0 ? (
+              <Card className="border-dashed shadow-none">
+                <CardContent className="flex flex-col items-start gap-5 p-6">
+                  <p className="text-lg font-semibold text-foreground">No timeline yet.</p>
+                  <Button className="gap-1.5" onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}>
+                    <Plus className="h-4 w-4" /> Create timeline
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {instances.map((t, i) => (
+                  <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+                    <Card
+                      interactive
+                      className="group relative"
+                    >
+                      <button
+                        type="button"
+                        className="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        onClick={() => selectTimeline(t)}
+                      >
+                        <span className="sr-only">Open {t.title}</span>
+                      </button>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                          <CardTitle className="text-base">{t.title}</CardTitle>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                        {t.timeline_date && (
+                          <CardDescription className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(t.timeline_date).toLocaleDateString()}
+                          </CardDescription>
+                        )}
+                      </CardHeader>
+                      <CardContent className="relative z-10 pb-4 pointer-events-none [&_button]:pointer-events-auto">
+                        <div className="flex items-center justify-between">
+                          <Button variant="ghost" size="sm" className="text-xs gap-1 text-muted-foreground p-0 h-auto" onClick={e => { e.stopPropagation(); copyToClipboard(`${baseUrl}/timeline/share/${t.share_token}`); }}>
+                            <Link2 className="h-3 w-3" /> Copy link
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); deleteTimeline(t.id); }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {templates.length > 0 ? (
+        <details className="rounded-3xl border border-border/70 bg-background p-5 shadow-card">
+          <summary className="cursor-pointer list-none">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="workspace-h3">Timeline templates</h3>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <FileText className="h-4 w-4" />
+                {templates.length} template{templates.length === 1 ? '' : 's'}
               </div>
             </div>
+          </summary>
+          <div className="mt-5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {templates.map((t, i) => (
+                  <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+                    <Card
+                      interactive
+                      className="group relative"
+                    >
+                      <button
+                        type="button"
+                        className="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        onClick={() => selectTimeline(t)}
+                      >
+                        <span className="sr-only">Open {t.title} template</span>
+                      </button>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-start justify-between">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            {t.title}
+                            <Badge variant="secondary" className="text-[10px]">Template</Badge>
+                          </CardTitle>
+                          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </CardHeader>
+                      <CardContent className="relative z-10 pb-4 pointer-events-none [&_button]:pointer-events-auto">
+                        <div className="flex items-center justify-between">
+                          <Button
+                            variant="outline" size="sm" className="text-xs gap-1"
+                            onClick={e => {
+                              e.stopPropagation();
+                              openApplyTemplate(t);
+                            }}
+                          >
+                            <Copy className="h-3 w-3" /> Apply Template
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); deleteTimeline(t.id); }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
           </div>
-        </CardContent>
-      </Card>
-
-      <Tabs defaultValue="timelines">
-        <TabsList className="h-auto w-full flex-wrap justify-start">
-          <TabsTrigger value="timelines">Timelines ({instances.length})</TabsTrigger>
-          <TabsTrigger value="templates">Templates ({templates.length})</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="timelines" className="mt-4">
-          {instances.length === 0 ? (
-            <div className="grid gap-4 lg:grid-cols-3">
-              <Card className="border-dashed shadow-card">
-                <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
-                  <div>
-                    <Calendar className="mb-3 h-10 w-10 text-primary/60" />
-                    <p className="text-lg font-semibold text-foreground">Start from scratch</p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Build the day step by step.
-                    </p>
-                  </div>
-                  <Button className="gap-1.5" onClick={() => { setNewIsTemplate(false); setFromTemplateId(null); setCreateOpen(true); }}>
-                    <Plus className="h-4 w-4" /> Create Blank Timeline
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="border-dashed shadow-card">
-                <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
-                  <div>
-                    <FileText className="mb-3 h-10 w-10 text-primary/60" />
-                    <p className="text-lg font-semibold text-foreground">
-                      {templates.length > 0 ? 'Use a template' : 'Create a reusable template'}
-                    </p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {templates.length > 0
-                        ? 'Start from a saved flow, then adjust the timings.'
-                        : 'Save a structure now so future setups start faster.'}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={() => {
-                      if (templates.length > 0) {
-                        setNewIsTemplate(false);
-                        setFromTemplateId(templates[0].id);
-                        setCreateOpen(true);
-                        return;
-                      }
-                      setNewIsTemplate(true);
-                      setFromTemplateId(null);
-                      setCreateOpen(true);
-                    }}
-                  >
-                    <FileText className="h-4 w-4" />
-                    {templates.length > 0 ? 'Start from Template' : 'Create Template'}
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="border-dashed shadow-card">
-                <CardContent className="flex h-full flex-col items-start justify-between gap-5 p-6">
-                  <div>
-                    <p className="text-lg font-semibold text-foreground">Plan with AI</p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Get a practical first draft.
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={() =>
-                      assistantPanel?.openAssistant(
-                        'Build me a full wedding-day timeline with getting ready, ceremony, couple photos, reception, speeches, dinner, and closing.',
-                      )
-                    }
-                  >
-                    Create with AI
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {instances.map((t, i) => (
-                <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                  <Card className="cursor-pointer hover:shadow-md transition-shadow group" onClick={() => selectTimeline(t)}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <CardTitle className="text-base">{t.title}</CardTitle>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                      {t.timeline_date && (
-                        <CardDescription className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(t.timeline_date).toLocaleDateString()}
-                        </CardDescription>
-                      )}
-                    </CardHeader>
-                    <CardContent className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <Button variant="ghost" size="sm" className="text-xs gap-1 text-muted-foreground p-0 h-auto" onClick={e => { e.stopPropagation(); copyToClipboard(`${baseUrl}/timeline/share/${t.share_token}`); }}>
-                          <Link2 className="h-3 w-3" /> Copy link
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); deleteTimeline(t.id); }}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="templates" className="mt-4">
-          {templates.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <FileText className="h-10 w-10 text-muted-foreground/40 mb-3" />
-                <p className="text-muted-foreground font-medium">No templates yet</p>
-                <p className="text-sm text-muted-foreground/70 mt-1">Create a reusable timeline structure.</p>
-                <Button size="sm" className="mt-4 gap-1.5" onClick={() => { setNewIsTemplate(true); setFromTemplateId(null); setCreateOpen(true); }}>
-                  <Plus className="h-4 w-4" /> Create Template
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {templates.map((t, i) => (
-                <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                  <Card className="cursor-pointer hover:shadow-md transition-shadow group" onClick={() => selectTimeline(t)}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-start justify-between">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          {t.title}
-                          <Badge variant="secondary" className="text-[10px]">Template</Badge>
-                        </CardTitle>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <Button
-                          variant="outline" size="sm" className="text-xs gap-1"
-                          onClick={e => {
-                            e.stopPropagation();
-                            openApplyTemplate(t);
-                          }}
-                        >
-                          <Copy className="h-3 w-3" /> Apply Template
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100" onClick={e => { e.stopPropagation(); deleteTimeline(t.id); }}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+        </details>
+        ) : null}
+      </div>
 
       {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {newIsTemplate ? 'Create Template' : fromTemplateId ? 'Create from Template' : 'Create Timeline'}
+              {newIsTemplate ? 'Create template' : fromTemplateId ? 'Create from template' : 'Create timeline'}
             </DialogTitle>
+            <DialogDescription>
+              {newIsTemplate ? 'Save a schedule you can reuse.' : 'Name the schedule and choose its date.'}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>
@@ -1382,7 +1332,7 @@ export default function Timeline() {
               </div>
             )}
             <Button className="w-full" onClick={handleCreate} disabled={!newTitle.trim()}>
-              <Check className="h-4 w-4 mr-1.5" /> Create
+              <Check className="h-4 w-4 mr-1.5" /> {newIsTemplate ? 'Create template' : 'Create timeline'}
             </Button>
           </div>
         </DialogContent>

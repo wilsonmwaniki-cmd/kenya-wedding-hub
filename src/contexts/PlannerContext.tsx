@@ -9,6 +9,8 @@ export interface PlannerClient {
   partner_name: string | null;
   wedding_date: string | null;
   wedding_location: string | null;
+  wedding_budget_goal: number | null;
+  expected_guest_count: number | null;
   email: string | null;
   phone: string | null;
   notes: string | null;
@@ -49,23 +51,24 @@ function getSelectedPlannerClientStorageKey(userId: string) {
 
 export function PlannerProvider({ children }: { children: ReactNode }) {
   const { user, profile } = useAuth();
-  const [clients, setClients] = useState<PlannerClient[]>([]);
-  const [selectedClient, setSelectedClient] = useState<PlannerClient | null>(null);
-  const [linkedPlanner, setLinkedPlanner] = useState<LinkedPlannerInfo | null>(null);
-  const [plannerClientHydrating, setPlannerClientHydrating] = useState(false);
-
   const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
   const isPlanner = profile?.role === 'planner' && !isCommittee;
   const isCouple = profile?.role === 'couple';
+  const [clients, setClients] = useState<PlannerClient[]>([]);
+  const [selectedClient, setSelectedClient] = useState<PlannerClient | null>(null);
+  const [linkedPlanner, setLinkedPlanner] = useState<LinkedPlannerInfo | null>(null);
+  const [plannerClientHydrating, setPlannerClientHydrating] = useState(isPlanner);
 
   const loadClients = async () => {
     if (!user || !isPlanner) return;
     setPlannerClientHydrating(true);
     try {
-      const { data } = await supabase
+      const db = supabase as any;
+      const { data } = await db
         .from('planner_clients')
         .select('*')
         .eq('planner_user_id', user.id)
+        .eq('is_archived', false)
         .order('created_at', { ascending: false });
 
       const nextClients = (data as PlannerClient[] | null) ?? [];
@@ -90,10 +93,12 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
 
   const loadLinkedPlanner = async () => {
     if (!user || !isCouple) { setLinkedPlanner(null); return; }
-    const { data } = await supabase
+    const db = supabase as any;
+    const { data } = await db
       .from('planner_clients')
       .select('id, planner_user_id')
       .eq('linked_user_id', user.id)
+      .eq('is_archived', false)
       .limit(1)
       .maybeSingle();
     if (data) {
@@ -202,4 +207,8 @@ export function usePlanner() {
   const context = useContext(PlannerContext);
   if (!context) throw new Error('usePlanner must be used within PlannerProvider');
   return context;
+}
+
+export function useOptionalPlanner() {
+  return useContext(PlannerContext);
 }

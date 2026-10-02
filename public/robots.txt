@@ -12,3 +12,16 @@ Allow: /
 
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /auth
+Disallow: /dashboard
+Disallow: /settings
+Disallow: /budget
+Disallow: /tasks
+Disallow: /guests
+Disallow: /contributions
+Disallow: /gift-registry
+Disallow: /timeline
+Disallow: /portfolio
+
+Sitemap: https://www.planwithzania.com/sitemap.xml

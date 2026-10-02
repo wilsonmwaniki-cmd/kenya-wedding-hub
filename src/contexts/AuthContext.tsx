@@ -19,15 +19,34 @@ import {
   type WeddingOwnerRole,
   type WeddingSignupIntent,
 } from '@/lib/pendingWeddingSetup';
+import { inactiveBetaTrialState, type BetaTrialStatus } from '@/lib/betaTrial';
 import {
-  buildBetaTrialWindow,
-  shouldStartBetaTrial,
-  type BetaTrialStatus,
-} from '@/lib/betaTrial';
+  isCanonicalProductionHostname,
+  isProductionHostname,
+  PRIMARY_PRODUCTION_HOST,
+  PRIMARY_PRODUCTION_ORIGIN,
+} from '@/lib/appDomain';
+import {
+  getCurrentDeviceProfile,
+  listMyDeviceSessions,
+  registerCurrentDeviceSession,
+  sendDeviceVerificationOtp,
+  signOutOtherDeviceSessions,
+  verifyDeviceVerificationOtp,
+  type DeviceSessionRow,
+} from '@/lib/deviceSessions';
+import type { EstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 
 interface Profile {
   id: string;
   user_id: string;
+  account_purpose: 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other' | null;
+  verified_couple: boolean;
+  professional_use_risk_score: number;
+  professional_use_risk_level: 'low' | 'medium' | 'high';
+  last_risk_calculated_at: string | null;
+  support_review_status: 'none' | 'pending' | 'approved' | 'restricted';
+  support_review_notes: string | null;
   collaboration_code: string | null;
   full_name: string | null;
   partner_name: string | null;
@@ -35,12 +54,13 @@ interface Profile {
   wedding_location: string | null;
   wedding_county: string | null;
   wedding_town: string | null;
+  wedding_budget_goal: number | null;
+  expected_guest_count: number | null;
   role: AppRole;
   company_name: string | null;
   company_email: string | null;
   company_phone: string | null;
   company_website: string | null;
-  stripe_customer_id: string | null;
   bio: string | null;
   specialties: string[] | null;
   avatar_url: string | null;
@@ -79,6 +99,16 @@ interface AuthContextType {
   baseProfile: Profile | null;
   availableRoles: AppRole[];
   loading: boolean;
+  deviceSessions: DeviceSessionRow[];
+  deviceVerificationRequired: boolean;
+  deviceVerificationMessage: string | null;
+  deviceVerificationEmailHint: string | null;
+  deviceVerificationChallengeId: string | null;
+  deviceVerificationSubmitting: boolean;
+  refreshDeviceSessions: () => Promise<void>;
+  sendCurrentDeviceVerificationCode: () => Promise<void>;
+  verifyCurrentDeviceVerificationCode: (otpCode: string) => Promise<void>;
+  signOutOtherDevices: () => Promise<number>;
   isSuperAdmin: boolean;
   rolePreview: RolePreview;
   signUp: (
@@ -88,6 +118,7 @@ interface AuthContextType {
     role?: SignupRole,
     options?: {
       signupIntent?: WeddingSignupIntent | null;
+      accountPurpose?: 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other' | null;
       weddingOwnerRole?: WeddingOwnerRole | null;
       partnerEmail?: string | null;
       weddingName?: string | null;
@@ -103,6 +134,8 @@ interface AuthContextType {
       referenceCurrency?: WeddingReferenceCurrency | null;
       ownerTimezone?: string | null;
       professionalRoleLocked?: boolean | null;
+      estimatorPlanDraft?: EstimatorPlanDraft | null;
+      captchaToken?: string | null;
     }
   ) => Promise<{ requiresEmailConfirmation: boolean; confirmationEmailResent: boolean }>;
   signIn: (
@@ -112,6 +145,7 @@ interface AuthContextType {
       audience?: 'couple' | 'professional' | null;
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
+      captchaToken?: string | null;
     }
   ) => Promise<void>;
   signInWithGoogle: (options?: {
@@ -119,12 +153,14 @@ interface AuthContextType {
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
+    captchaToken?: string | null;
   }) => Promise<void>;
   signInWithApple: (options?: {
     audience?: 'couple' | 'professional' | null;
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
+    captchaToken?: string | null;
   }) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
@@ -243,12 +279,8 @@ const getCanonicalAppOrigin = (): string => {
   if (typeof window === 'undefined') return '';
 
   const currentUrl = new URL(window.location.href);
-  const isProductionHost =
-    currentUrl.hostname === 'zaniaweddings.com'
-    || currentUrl.hostname === 'www.zaniaweddings.com';
-
-  if (isProductionHost) {
-    return 'https://www.zaniaweddings.com';
+  if (isProductionHostname(currentUrl.hostname)) {
+    return PRIMARY_PRODUCTION_ORIGIN;
   }
 
   return window.location.origin;
@@ -259,9 +291,7 @@ const normalizeProductionAuthEntry = (): boolean => {
 
   const currentUrl = new URL(window.location.href);
   const hashParams = new URLSearchParams(currentUrl.hash.replace(/^#/, ''));
-  const isProductionHost =
-    currentUrl.hostname === 'zaniaweddings.com'
-    || currentUrl.hostname === 'www.zaniaweddings.com';
+  const isProductionHost = isProductionHostname(currentUrl.hostname);
 
   if (!isProductionHost) return false;
 
@@ -271,7 +301,7 @@ const normalizeProductionAuthEntry = (): boolean => {
     currentUrl.pathname === '/reset-password'
     || currentUrl.searchParams.get('type') === 'recovery'
     || isRecoveryHash;
-  const needsWwwHost = currentUrl.hostname !== 'www.zaniaweddings.com';
+  const needsWwwHost = !isCanonicalProductionHostname(currentUrl.hostname);
   const needsCallbackPath =
     hasAuthHash
     && !isRecoveryResetRoute
@@ -280,7 +310,7 @@ const normalizeProductionAuthEntry = (): boolean => {
   if (!needsWwwHost && !needsCallbackPath) return false;
 
   const targetUrl = new URL(currentUrl.toString());
-  targetUrl.hostname = 'www.zaniaweddings.com';
+  targetUrl.hostname = PRIMARY_PRODUCTION_HOST;
 
   if (hasAuthHash && !isRecoveryResetRoute) {
     const pendingOAuthTarget = getPendingOAuthSignupTarget();
@@ -376,9 +406,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [baseProfile, setBaseProfile] = useState<Profile | null>(null);
   const [availableRoles, setAvailableRoles] = useState<AppRole[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deviceSessions, setDeviceSessions] = useState<DeviceSessionRow[]>([]);
+  const [deviceVerificationRequired, setDeviceVerificationRequired] = useState(false);
+  const [deviceVerificationMessage, setDeviceVerificationMessage] = useState<string | null>(null);
+  const [deviceVerificationEmailHint, setDeviceVerificationEmailHint] = useState<string | null>(null);
+  const [deviceVerificationChallengeId, setDeviceVerificationChallengeId] = useState<string | null>(null);
+  const [deviceVerificationSubmitting, setDeviceVerificationSubmitting] = useState(false);
   const [rolePreview, setRolePreviewState] = useState<RolePreview>('admin');
   const pendingWeddingRecoveryRef = useRef<string | null>(null);
   const authHydrationRequestRef = useRef(0);
+  const verifiedSessionKeysRef = useRef(new Set<string>());
 
   const getFallbackFullName = (authUser: User) => {
     const fullName = authUser.user_metadata?.full_name;
@@ -616,6 +653,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const buildFallbackProfile = (authUser: User, role: AppRole): Profile => ({
     id: authUser.id,
     user_id: authUser.id,
+    account_purpose: role === 'vendor'
+      ? 'vendor'
+      : role === 'planner'
+        ? 'professional_planner'
+        : 'planning_my_own_wedding',
+    verified_couple: false,
+    professional_use_risk_score: 0,
+    professional_use_risk_level: 'low',
+    last_risk_calculated_at: null,
+    support_review_status: 'none',
+    support_review_notes: null,
     collaboration_code: null,
     full_name: getFallbackFullName(authUser) || null,
     partner_name: null,
@@ -623,12 +671,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     wedding_location: null,
     wedding_county: null,
     wedding_town: null,
+    wedding_budget_goal: null,
+    expected_guest_count: null,
     role,
     company_name: null,
     company_email: authUser.email ?? null,
     company_phone: null,
     company_website: null,
-    stripe_customer_id: null,
     bio: null,
     specialties: null,
     avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null,
@@ -725,38 +774,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return fallbackProfile;
   };
 
-  const initializeBetaTrialIfNeeded = async (
-    authUser: User,
-    existingProfile: Profile,
-  ): Promise<Profile> => {
-    if (!shouldStartBetaTrial(existingProfile)) {
-      return existingProfile;
-    }
-
-    const trialWindow = buildBetaTrialWindow();
-
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update(trialWindow)
-        .eq('user_id', authUser.id);
-
-      if (error) throw error;
-
-      const refreshedProfile = await fetchProfile(authUser.id);
-      if (refreshedProfile) return refreshedProfile;
-    } catch (error) {
-      console.error('Failed to initialize beta trial for profile:', error);
-    }
-
-    const fallbackProfile: Profile = {
-      ...existingProfile,
-      ...trialWindow,
-    };
-    setBaseProfile(fallbackProfile);
-    return fallbackProfile;
-  };
-
   const reconcileRequestedSignupState = async (
     authUser: User,
     existingProfile: Profile,
@@ -827,18 +844,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (existingProfile) {
       const reconciledProfile = await reconcileRequestedSignupState(authUser, existingProfile);
       const profileWithIdentity = await syncMissingProfileIdentity(authUser, reconciledProfile);
-      const profileWithTrial = await initializeBetaTrialIfNeeded(authUser, profileWithIdentity);
 
       const pendingOAuthTarget = getPendingOAuthSignupTarget();
       if (
         pendingOAuthTarget?.role &&
-        profileWithTrial.role === pendingOAuthTarget.role &&
-        (profileWithTrial.planner_type ?? null) === pendingOAuthTarget.plannerType
+        profileWithIdentity.role === pendingOAuthTarget.role &&
+        (profileWithIdentity.planner_type ?? null) === pendingOAuthTarget.plannerType
       ) {
         clearPendingOAuthSignupState();
       }
 
-      return profileWithTrial;
+      return profileWithIdentity;
     }
 
     const role = await getFallbackRole(authUser);
@@ -860,7 +876,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role,
         planner_type: plannerType,
         committee_name: committeeName,
-        ...buildBetaTrialWindow(),
+        ...inactiveBetaTrialState,
       });
 
     if (error && error.code !== '23505') {
@@ -886,6 +902,108 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const fallbackProfile = buildFallbackProfile(authUser, role);
     setBaseProfile(fallbackProfile);
     return fallbackProfile;
+  };
+
+  const refreshDeviceSessions = async (userId = user?.id) => {
+    if (!userId) {
+      setDeviceSessions([]);
+      return;
+    }
+
+    try {
+      const rows = await listMyDeviceSessions();
+      setDeviceSessions(rows);
+    } catch (error) {
+      console.error('Could not load device sessions:', error);
+    }
+  };
+
+  const registerDeviceForSession = async (nextSession: Session) => {
+    if (nextSession.user.is_anonymous || nextSession.user.app_metadata?.provider === 'anonymous') {
+      setDeviceSessions([]);
+      setDeviceVerificationRequired(false);
+      setDeviceVerificationMessage(null);
+      setDeviceVerificationEmailHint(null);
+      setDeviceVerificationChallengeId(null);
+      return;
+    }
+
+    const device = getCurrentDeviceProfile();
+    const sessionKey = `${nextSession.user.id}:${device.deviceId}:${nextSession.access_token.slice(-12)}`;
+    if (verifiedSessionKeysRef.current.has(sessionKey)) {
+      await refreshDeviceSessions(nextSession.user.id);
+      return;
+    }
+
+    const registration = await registerCurrentDeviceSession(nextSession.user.email ?? null);
+    verifiedSessionKeysRef.current.add(sessionKey);
+
+    if (registration.status === 'verification_required') {
+      setDeviceVerificationRequired(true);
+      setDeviceVerificationMessage('We noticed a sign-in from a new device. Enter the code sent to your email to continue.');
+      setDeviceVerificationEmailHint(registration.emailHint ?? nextSession.user.email ?? null);
+      try {
+        const otpResult = await sendDeviceVerificationOtp();
+        setDeviceVerificationChallengeId(otpResult.challengeId);
+        if (otpResult.emailHint) {
+          setDeviceVerificationEmailHint(otpResult.emailHint);
+        }
+      } catch (error) {
+        console.error('Could not send device verification OTP:', error);
+        setDeviceVerificationMessage('Request a verification code to continue.');
+      }
+    } else {
+      setDeviceVerificationRequired(false);
+      setDeviceVerificationMessage(null);
+      setDeviceVerificationEmailHint(null);
+      setDeviceVerificationChallengeId(null);
+    }
+
+    await refreshDeviceSessions(nextSession.user.id);
+  };
+
+  const sendCurrentDeviceVerificationCode = async () => {
+    setDeviceVerificationSubmitting(true);
+    try {
+      const result = await sendDeviceVerificationOtp();
+      setDeviceVerificationChallengeId(result.challengeId);
+      setDeviceVerificationEmailHint(result.emailHint ?? deviceVerificationEmailHint);
+      setDeviceVerificationMessage(
+        result.deliveryStatus === 'already_sent'
+          ? 'A code was recently sent. Check your email, or wait a moment before requesting another one.'
+          : 'We noticed a sign-in from a new device. Enter the code sent to your email to continue.',
+      );
+    } finally {
+      setDeviceVerificationSubmitting(false);
+    }
+  };
+
+  const verifyCurrentDeviceVerificationCode = async (otpCode: string) => {
+    if (!deviceVerificationChallengeId) {
+      throw new Error('Request a verification code first.');
+    }
+
+    setDeviceVerificationSubmitting(true);
+    try {
+      const result = await verifyDeviceVerificationOtp(deviceVerificationChallengeId, otpCode);
+      if (!result.verified) {
+        throw new Error(result.message);
+      }
+
+      setDeviceVerificationRequired(false);
+      setDeviceVerificationMessage(null);
+      setDeviceVerificationEmailHint(null);
+      setDeviceVerificationChallengeId(null);
+      await refreshDeviceSessions();
+    } finally {
+      setDeviceVerificationSubmitting(false);
+    }
+  };
+
+  const signOutOtherDevices = async () => {
+    const signedOutCount = await signOutOtherDeviceSessions();
+    await refreshDeviceSessions();
+    return signedOutCount;
   };
 
   const syncAuthState = async (
@@ -925,12 +1043,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         immediateFallbackProfile,
         'Auth profile hydration',
       );
+      await registerDeviceForSession(nextSession);
       return;
     }
 
     pendingWeddingRecoveryRef.current = null;
     setBaseProfile(null);
     setAvailableRoles([]);
+    setDeviceSessions([]);
+    setDeviceVerificationRequired(false);
+    setDeviceVerificationMessage(null);
+    setDeviceVerificationEmailHint(null);
+    setDeviceVerificationChallengeId(null);
   };
 
   useEffect(() => {
@@ -1248,15 +1372,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    const pendingAuthSyncs = new Set<ReturnType<typeof setTimeout>>();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        try {
+      (_event, session) => {
+        // Supabase can deadlock when its client is called from inside this callback.
+        // Defer profile, role, and device hydration until the auth lock is released.
+        const timeoutId = setTimeout(() => {
+          pendingAuthSyncs.delete(timeoutId);
           if (!active) return;
-          await syncAuthState(session);
-        } finally {
-          if (active) setLoading(false);
-        }
+
+          void syncAuthState(session)
+            .catch((error) => {
+              console.error('Deferred auth state synchronization failed:', error);
+            })
+            .finally(() => {
+              if (active) setLoading(false);
+            });
+        }, 0);
+
+        pendingAuthSyncs.add(timeoutId);
       }
     );
 
@@ -1315,6 +1450,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       active = false;
+      pendingAuthSyncs.forEach((timeoutId) => clearTimeout(timeoutId));
+      pendingAuthSyncs.clear();
       subscription.unsubscribe();
     };
   }, []);
@@ -1326,6 +1463,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     role: SignupRole = 'couple',
     options?: {
       signupIntent?: WeddingSignupIntent | null;
+      accountPurpose?: 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other' | null;
       weddingOwnerRole?: WeddingOwnerRole | null;
       partnerEmail?: string | null;
       weddingName?: string | null;
@@ -1341,6 +1479,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       referenceCurrency?: WeddingReferenceCurrency | null;
       ownerTimezone?: string | null;
       professionalRoleLocked?: boolean | null;
+      estimatorPlanDraft?: EstimatorPlanDraft | null;
     },
   ) => {
     const emailRedirectTo = `${getCanonicalAppOrigin()}/auth/callback`;
@@ -1376,9 +1515,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       audience?: 'couple' | 'professional' | 'admin' | null;
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
+      captchaToken?: string | null;
     },
   ) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken: options?.captchaToken ?? undefined },
+    });
     if (error) throw error;
 
     if (data.session) {
@@ -1446,6 +1590,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mode?: 'signup' | 'signin';
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
+      captchaToken?: string | null;
     },
   ) => {
     const { performOAuthEntrySignIn } = await import('@/lib/authEntryFlows');
@@ -1456,6 +1601,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mode: options?.mode,
       targetRole: options?.targetRole,
       plannerType: options?.plannerType,
+      captchaToken: options?.captchaToken,
     });
   };
 
@@ -1464,6 +1610,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
+    captchaToken?: string | null;
   }) => {
     await signInWithOAuthProvider('google', options);
   };
@@ -1473,6 +1620,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
+    captchaToken?: string | null;
   }) => {
     await signInWithOAuthProvider('apple', options);
   };
@@ -1480,49 +1628,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     setRolePreviewState('admin');
     authHydrationRequestRef.current += 1;
+    verifiedSessionKeysRef.current.clear();
     clearPendingOAuthSignupState();
     clearPendingProfessionalSetup();
-    let globalSignOutError: Error | null = null;
 
     try {
-      const globalResult = await withTimeout(
-        supabase.auth.signOut({ scope: 'global' }),
-        2500,
-        { error: null as Error | null },
-        'Supabase global sign out',
-      );
-      const { error } = globalResult;
-      if (error && !/session/i.test(error.message)) {
-        globalSignOutError = error;
-      }
-    } catch (error: any) {
-      if (!/session/i.test(error?.message ?? '')) {
-        globalSignOutError = error;
-      }
-    }
-
-    try {
-      const localResult = await withTimeout(
+      await withTimeout(
         supabase.auth.signOut({ scope: 'local' }),
         1500,
         { error: null as Error | null },
         'Supabase local sign out',
       );
-      if (localResult.error && !/session/i.test(localResult.error.message) && !globalSignOutError) {
-        globalSignOutError = localResult.error;
-      }
     } catch (error: any) {
-      if (!/session/i.test(error?.message ?? '') && !globalSignOutError) {
-        globalSignOutError = error;
-      }
+      // The local storage clear below still signs this browser out when the
+      // network request is interrupted. Other devices are intentionally left
+      // alone; Profile settings has a separate "sign out other devices" action.
+      console.warn('Supabase local sign out did not fully complete; clearing this browser session.', error);
     } finally {
       clearStoredSupabaseAuthState();
       await syncAuthState(null);
       setLoading(false);
-    }
-
-    if (globalSignOutError) {
-      console.warn('Supabase global sign out did not fully complete, but local session was cleared.', globalSignOutError);
     }
   };
 
@@ -1553,6 +1678,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         baseProfile,
         availableRoles,
         loading,
+        deviceSessions,
+        deviceVerificationRequired,
+        deviceVerificationMessage,
+        deviceVerificationEmailHint,
+        deviceVerificationChallengeId,
+        deviceVerificationSubmitting,
+        refreshDeviceSessions,
+        sendCurrentDeviceVerificationCode,
+        verifyCurrentDeviceVerificationCode,
+        signOutOtherDevices,
         isSuperAdmin,
         rolePreview,
         signUp,

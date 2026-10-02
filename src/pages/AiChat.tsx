@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import ReactMarkdown from 'react-markdown';
-import { Loader2, Send, Wand2, Wallet, CalendarClock, Users, Store, BriefcaseBusiness, CheckSquare2, BellRing, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Loader2, Send, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import SafeMarkdown from '@/components/SafeMarkdown';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
+import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 import { getEntitlementDecision, type EntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { InlineUpgradePrompt, UpgradePromptDialog } from '@/components/UpgradePrompt';
@@ -22,6 +23,8 @@ import {
   type AiUsageStatus,
   type PendingWriteAction,
 } from '@/lib/aiAssistant';
+import { listAttentionItems } from '@/lib/attention';
+import { getAssistantAudience, loadLatestAssistantConversation } from '@/lib/assistantConversations';
 
 interface VendorListingAccess {
   id: string;
@@ -39,13 +42,15 @@ interface AssistantExperience {
   inputPlaceholder: string;
   starterActions: string[];
   capabilityCards: Array<{
-    icon: typeof Wand2;
     title: string;
     description: string;
   }>;
 }
 
 interface WorkspaceSnapshot {
+  openAttentionItems: number;
+  urgentAttentionItems: number;
+  nextAttentionTitle: string | null;
   overdueTasks: number;
   pendingTasks: number;
   pendingGuests: number;
@@ -99,6 +104,9 @@ function getSmartStarterActions(
 
   if (role === 'vendor') {
     const actions: string[] = [];
+    if (snapshot.openAttentionItems > 0 && snapshot.nextAttentionTitle) {
+      actions.push(`Brief me on "${snapshot.nextAttentionTitle}" and tell me the fastest safe next step.`);
+    }
     if (snapshot.openVendorFollowUps > 0) actions.push('Summarize my open follow-up reminders and tell me who I should contact first.');
     if (snapshot.vendorBookings > 0) actions.push('Review my current bookings and tell me which booking status updates I should make next.');
     actions.push('Draft a short sales plan for my most active bookings this week.');
@@ -107,6 +115,7 @@ function getSmartStarterActions(
 
   if (role === 'planner' && plannerType === 'committee') {
     const actions: string[] = [];
+    if (snapshot.openAttentionItems > 0) actions.push('Brief the committee on new Zania attention items and assign the next actions.');
     if (snapshot.overdueTasks > 0) actions.push('Turn my overdue committee tasks into a delegation plan for this week.');
     if (snapshot.trackedVendors > snapshot.finalVendors && snapshot.mostUrgentVendorCategory) {
       actions.push(`Tell me how the committee should close the remaining ${snapshot.mostUrgentVendorCategory} vendor decisions.`);
@@ -117,6 +126,9 @@ function getSmartStarterActions(
 
   if (role === 'planner') {
     const actions: string[] = [];
+    if (snapshot.openAttentionItems > 0) {
+      actions.push('Brief me on the verified Zania attention items across my weddings and tell me what to handle first.');
+    }
     if (snapshot.overdueTasks > 0) {
       actions.push(
         selectedClientName
@@ -134,6 +146,7 @@ function getSmartStarterActions(
   }
 
   const actions: string[] = [];
+  if (snapshot.openAttentionItems > 0) actions.push('Explain our new Zania attention items and give us the simplest next steps.');
   if (snapshot.overdueTasks > 0) actions.push('What overdue tasks should we tackle first this week?');
   if (snapshot.trackedVendors > snapshot.finalVendors && snapshot.mostUrgentVendorCategory) {
     actions.push(`Turn our ${snapshot.mostUrgentVendorCategory} vendor decision into concrete next steps.`);
@@ -167,17 +180,14 @@ function getAssistantExperience(
       starterActions,
       capabilityCards: [
         {
-          icon: Store,
           title: 'Listing and positioning guidance',
           description: 'Spot weak profile details, missing trust signals, and listing improvements that help more couples convert.',
         },
         {
-          icon: BellRing,
           title: 'Follow-up reminders',
           description: 'Create private reminders so booking follow-ups, callbacks, and delivery prep do not get lost.',
         },
         {
-          icon: Wallet,
           title: 'Booking and payment clarity',
           description: 'Summarize booking value, payment history, balances, and next commercial actions at a glance.',
         },
@@ -200,17 +210,14 @@ function getAssistantExperience(
       starterActions,
       capabilityCards: [
         {
-          icon: Users,
           title: 'Delegation support',
           description: 'Recommend who should own the next actions and where the committee should focus first.',
         },
         {
-          icon: CheckSquare2,
           title: 'Execution coordination',
           description: 'Turn next steps into practical, delegated work across tasks, vendors, and budget decisions.',
         },
         {
-          icon: CalendarClock,
           title: 'Timeline awareness',
           description: 'See what is overdue, what is coming up next, and where the wedding could slip.',
         },
@@ -238,17 +245,14 @@ function getAssistantExperience(
       starterActions,
       capabilityCards: [
         {
-          icon: BriefcaseBusiness,
           title: 'Client operations view',
           description: 'See blockers, priorities, vendor pressure points, and execution risk in one assistant flow.',
         },
         {
-          icon: Wallet,
           title: 'Budget and payment actions',
           description: 'Record payments, update budget lines, and keep the client workspace commercially accurate.',
         },
         {
-          icon: CalendarClock,
           title: 'Execution pacing',
           description: 'Plan the next week clearly, spot overdue work, and keep the wedding moving on schedule.',
         },
@@ -270,17 +274,14 @@ function getAssistantExperience(
     starterActions,
     capabilityCards: [
       {
-        icon: Wand2,
         title: 'Advice tied to your real wedding workspace',
         description: 'Answer based on your tasks, vendors, budget, payments, guests, and timelines instead of generic wedding advice.',
       },
       {
-        icon: Wallet,
         title: 'Hands-on planning actions',
         description: 'Create tasks, add vendors, update budgets, and record payment activity when you ask for concrete help.',
       },
       {
-        icon: CalendarClock,
         title: 'Execution support',
         description: 'Help you understand what comes next, what is overdue, and what needs attention before the wedding day.',
       },
@@ -313,7 +314,7 @@ async function loadWorkspaceSnapshot(args: {
   const { profileRole, dataOrFilter, vendorListingId } = args;
 
   if (profileRole === 'vendor' && vendorListingId) {
-    const [bookingsRes, followUpsRes] = await Promise.all([
+    const [bookingsRes, followUpsRes, attentionItems] = await Promise.all([
       supabase
         .from('vendors')
         .select('id, category, status')
@@ -324,6 +325,7 @@ async function loadWorkspaceSnapshot(args: {
         .select('id, status')
         .eq('vendor_listing_id', vendorListingId)
         .limit(100),
+      listAttentionItems(),
     ]);
 
     if (bookingsRes.error) throw bookingsRes.error;
@@ -332,13 +334,16 @@ async function loadWorkspaceSnapshot(args: {
     const bookings = bookingsRes.data ?? [];
     const followUps = followUpsRes.data ?? [];
     const categoryCounts = bookings.reduce<Record<string, number>>((acc, booking: any) => {
-      const key = booking.category || 'booking';
+      const key = canonicalizeVendorCategory(booking.category) || 'booking';
       acc[key] = (acc[key] ?? 0) + 1;
       return acc;
     }, {});
     const mostUrgentVendorCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
     return {
+      openAttentionItems: attentionItems.length,
+      urgentAttentionItems: attentionItems.filter((item) => item.priority === 'urgent').length,
+      nextAttentionTitle: attentionItems[0]?.title ?? null,
       overdueTasks: 0,
       pendingTasks: 0,
       pendingGuests: 0,
@@ -358,7 +363,7 @@ async function loadWorkspaceSnapshot(args: {
 
   if (!dataOrFilter) return null;
 
-  const [tasksRes, budgetRes, paymentsRes, guestsRes, vendorsRes] = await Promise.all([
+  const [tasksRes, budgetRes, paymentsRes, guestsRes, vendorsRes, attentionItems] = await Promise.all([
     supabase
       .from('tasks')
       .select('title, due_date, completed, category')
@@ -385,6 +390,7 @@ async function loadWorkspaceSnapshot(args: {
       .select('category, selection_status')
       .or(dataOrFilter)
       .limit(100),
+    listAttentionItems(),
   ]);
 
   if (tasksRes.error) throw tasksRes.error;
@@ -405,12 +411,15 @@ async function loadWorkspaceSnapshot(args: {
     .sort((a, b) => b.ratio - a.ratio);
   const vendorCounts = vendors.reduce<Record<string, number>>((acc, vendor: any) => {
     if (vendor.selection_status === 'final') return acc;
-    const key = vendor.category || 'vendor';
+    const key = canonicalizeVendorCategory(vendor.category) || 'vendor';
     acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, {});
 
   return {
+    openAttentionItems: attentionItems.length,
+    urgentAttentionItems: attentionItems.filter((item) => item.priority === 'urgent').length,
+    nextAttentionTitle: attentionItems[0]?.title ?? null,
     overdueTasks: tasks.filter((task: any) => !task.completed && task.due_date && task.due_date < new Date().toISOString().slice(0, 10)).length,
     pendingTasks: tasks.filter((task: any) => !task.completed).length,
     pendingGuests: guests.filter((guest: any) => guest.rsvp_status === 'pending').length,
@@ -435,6 +444,8 @@ export default function AiChat() {
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
@@ -460,6 +471,10 @@ export default function AiChat() {
 
   const feature = useMemo(
     () => getAssistantFeature(profile?.role, profile?.planner_type),
+    [profile?.planner_type, profile?.role],
+  );
+  const assistantAudience = useMemo(
+    () => getAssistantAudience(profile?.role, profile?.planner_type),
     [profile?.planner_type, profile?.role],
   );
 
@@ -508,10 +523,31 @@ export default function AiChat() {
   );
 
   useEffect(() => {
-    if (profile && messages.length === 0 && experience.intro) {
+    if (!session?.user?.id || !decision?.allowed) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    void loadLatestAssistantConversation(assistantAudience)
+      .then((history) => {
+        if (cancelled) return;
+        setConversationId(history.conversationId);
+        setMessages(history.messages);
+      })
+      .catch((error) => {
+        if (!cancelled) console.error('Could not load Ask Zania history:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assistantAudience, decision?.allowed, session?.user?.id]);
+
+  useEffect(() => {
+    if (!historyLoading && profile && messages.length === 0 && experience.intro) {
       setMessages([{ role: 'assistant', content: experience.intro }]);
     }
-  }, [experience.intro, messages.length, profile]);
+  }, [experience.intro, historyLoading, messages.length, profile]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -544,7 +580,12 @@ export default function AiChat() {
 
   const sendMessage = async (
     nextInput: string,
-    options?: { allowWriteActions?: boolean; confirmedActions?: PendingWriteAction[]; skipUserEcho?: boolean },
+    options?: {
+      allowWriteActions?: boolean;
+      confirmedActions?: PendingWriteAction[];
+      revokedActions?: PendingWriteAction[];
+      skipUserEcho?: boolean;
+    },
   ) => {
     if (!nextInput.trim() || loading) return;
     setInputError(null);
@@ -575,6 +616,16 @@ export default function AiChat() {
       return;
     }
 
+    if (usage && usage.remaining_cost_usd <= 0) {
+      setSubmitError('This account has used its included Zania Assistant allowance for the current month.');
+      toast({
+        title: 'Assistant allowance used',
+        description: 'The included Zania Assistant allowance refreshes next month.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const shouldEchoUser = !options?.skipUserEcho;
     const userMsg: Message = { role: 'user', content: nextInput.trim() };
     const updatedMessages = shouldEchoUser ? [...messages, userMsg] : messages;
@@ -594,16 +645,23 @@ export default function AiChat() {
         selectedClientId: isPlanner ? selectedClient?.id ?? null : null,
         allowWriteActions: options?.allowWriteActions ?? false,
         confirmedActions: options?.confirmedActions ?? [],
+        revokedActions: options?.revokedActions ?? [],
         page: 'ai-chat',
-        surface: options?.allowWriteActions ? 'full_chat_with_writes' : 'full_chat',
+        surface: options?.revokedActions?.length
+          ? 'full_chat_write_cancelled'
+          : options?.allowWriteActions
+            ? 'full_chat_with_writes'
+            : 'full_chat',
         contextSource: 'full_chat',
         starterPrompt: shouldEchoUser ? null : nextInput.trim(),
+        conversationId,
       });
 
       if (result.usage) {
         setUsage(result.usage);
         queryClient.setQueryData(usageQueryKey, result.usage);
       }
+      if (result.conversationId) setConversationId(result.conversationId);
       setPendingActions(result.pendingActions);
       setMessages((prev) => [...prev, { role: 'assistant', content: result.content }]);
       if (options?.allowWriteActions && options.confirmedActions?.length) {
@@ -681,15 +739,18 @@ export default function AiChat() {
     }
   };
 
-  const cancelPendingActions = () => {
-    setPendingActions([]);
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: '## No changes made\n\nI held off on those write actions. If you want, I can revise the plan first or prepare a smaller action set.',
-      },
-    ]);
+  const cancelPendingActions = async () => {
+    if (!pendingActions.length || loading) return;
+
+    setConfirmingWriteActions(true);
+    try {
+      await sendMessage(
+        'Cancel the pending write actions.',
+        { revokedActions: pendingActions, skipUserEcho: true },
+      );
+    } finally {
+      setConfirmingWriteActions(false);
+    }
   };
 
   const aiDisabledByAdmin = decision?.allowed && usage?.ai_enabled === false;
@@ -717,7 +778,7 @@ export default function AiChat() {
           </div>
 
           {profile?.role === 'planner' && selectedClient && (
-            <Card className="rounded-2xl border-primary/15 bg-primary/5 px-4 py-3 text-sm">
+            <Card className="semantic-surface-info rounded-2xl border px-4 py-3 text-sm">
               <p className="font-medium text-foreground">Active wedding</p>
               <p className="text-muted-foreground">
                 AI actions will apply to {selectedClient.client_name}
@@ -737,7 +798,7 @@ export default function AiChat() {
         )}
 
         {decision?.allowed && (
-          <Card className="rounded-3xl border-border/70 p-5 shadow-card">
+          <Card className="semantic-surface-info rounded-3xl border p-5 shadow-card">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">Workspace signal</p>
@@ -751,13 +812,27 @@ export default function AiChat() {
               </div>
               {workspaceSnapshot && (
                 <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-                  <div className="rounded-2xl bg-muted/30 px-3 py-2">
+                  <div className={`rounded-2xl border px-3 py-2 ${
+                    workspaceSnapshot.overdueTasks > 0 ? 'semantic-surface-danger' : 'semantic-surface-success'
+                  }`}>
                     <p className="text-xs uppercase tracking-[0.16em]">Overdue</p>
-                    <p className="mt-1 font-medium text-foreground">{workspaceSnapshot.overdueTasks} tasks</p>
+                    <p className={`mt-1 font-medium ${
+                      workspaceSnapshot.overdueTasks > 0 ? 'text-destructive' : 'text-success'
+                    }`}>
+                      {workspaceSnapshot.overdueTasks} tasks
+                    </p>
                   </div>
-                  <div className="rounded-2xl bg-muted/30 px-3 py-2">
+                  <div className={`rounded-2xl border px-3 py-2 ${
+                    workspaceSnapshot.trackedVendors - workspaceSnapshot.finalVendors > 0
+                      ? 'semantic-surface-warning'
+                      : 'semantic-surface-success'
+                  }`}>
                     <p className="text-xs uppercase tracking-[0.16em]">Vendor gap</p>
-                    <p className="mt-1 font-medium text-foreground">
+                    <p className={`mt-1 font-medium ${
+                      workspaceSnapshot.trackedVendors - workspaceSnapshot.finalVendors > 0
+                        ? 'text-warning'
+                        : 'text-success'
+                    }`}>
                       {Math.max(workspaceSnapshot.trackedVendors - workspaceSnapshot.finalVendors, 0)} unresolved
                     </p>
                   </div>
@@ -769,13 +844,9 @@ export default function AiChat() {
 
         <div className="grid gap-4 md:grid-cols-3">
           {experience.capabilityCards.map((card) => {
-            const Icon = card.icon;
             return (
               <Card key={card.title} className="rounded-3xl border-border/70 p-5 shadow-card">
-                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h2 className="font-display text-xl font-semibold text-foreground">{card.title}</h2>
+                <h2 className="text-xl font-semibold text-foreground">{card.title}</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{card.description}</p>
               </Card>
             );
@@ -789,14 +860,14 @@ export default function AiChat() {
             {decision && <InlineUpgradePrompt decision={decision} />}
           </Card>
         ) : aiDisabledByAdmin ? (
-          <Card className="rounded-3xl border-amber-300/70 bg-amber-50/80 p-5 shadow-card">
-            <p className="font-medium text-amber-950">AI assistant is currently disabled for this plan</p>
-            <p className="mt-2 text-sm text-amber-900/80">
+          <Card className="semantic-surface-warning rounded-3xl border p-5 shadow-card">
+            <p className="font-medium text-warning">AI assistant is currently disabled for this plan</p>
+            <p className="mt-2 text-sm text-foreground/75">
               An admin has temporarily switched off AI access for this audience. You can still use the rest of your Zania workspace normally.
             </p>
           </Card>
         ) : (
-          <Card className="flex h-[calc(100vh-theme(spacing.36))] min-h-[28rem] flex-col overflow-hidden rounded-3xl shadow-card">
+          <Card className="flex min-h-[28rem] flex-col overflow-hidden rounded-3xl shadow-card md:h-[calc(100vh-theme(spacing.36))]">
             <div className="space-y-4 border-b border-border px-5 py-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
@@ -805,9 +876,9 @@ export default function AiChat() {
                     Ask for guidance, summaries, or actions across the real parts of your Zania workspace.
                   </p>
                 </div>
-                <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm lg:min-w-72">
+                <div className="w-full rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm lg:min-w-72 lg:max-w-[22rem]">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="font-medium text-foreground">Monthly AI usage</span>
+                    <span className="font-medium text-foreground">Monthly Assistant usage</span>
                     <span className="text-muted-foreground">
                       {usageQuery.isLoading
                         ? 'Loading...'
@@ -829,8 +900,10 @@ export default function AiChat() {
                   <p className="mt-2 text-xs text-muted-foreground">
                     {usage
                       ? usage.remaining_messages > 0
-                        ? `${usage.remaining_messages} messages remaining this month`
-                        : 'This month’s AI allowance is fully used'
+                        ? usage.remaining_cost_usd > 0
+                          ? `${usage.remaining_messages} assisted requests remaining this month`
+                          : 'This month’s included Assistant allowance is fully used'
+                        : 'This month’s included Assistant allowance is fully used'
                       : 'Usage resets monthly based on your active plan'}
                   </p>
                 </div>
@@ -862,12 +935,12 @@ export default function AiChat() {
                     className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm ${
                       message.role === 'user'
                         ? 'rounded-br-sm bg-primary text-primary-foreground'
-                        : 'rounded-bl-sm bg-secondary text-secondary-foreground'
+                        : 'semantic-surface-info rounded-bl-sm border text-foreground'
                     }`}
                   >
                     {message.role === 'assistant' ? (
                       <div className="max-w-none text-inherit">
-                        <ReactMarkdown
+                        <SafeMarkdown
                           components={{
                             h1: ({ children }) => <h1 className="mb-3 text-lg font-semibold">{children}</h1>,
                             h2: ({ children }) => <h2 className="mb-2 text-base font-semibold">{children}</h2>,
@@ -881,7 +954,7 @@ export default function AiChat() {
                           }}
                         >
                           {formatAssistantContent(message.content)}
-                        </ReactMarkdown>
+                        </SafeMarkdown>
                       </div>
                     ) : (
                       message.content
@@ -892,19 +965,19 @@ export default function AiChat() {
 
               {pendingActions.length > 0 && (
                 <div className="flex justify-start">
-                  <Card className="max-w-[88%] rounded-3xl border-amber-300/70 bg-amber-50/80 p-4 shadow-card">
+                  <Card className="semantic-surface-warning max-w-[88%] rounded-3xl border p-4 shadow-card">
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 rounded-full bg-amber-100 p-2 text-amber-700">
+                      <div className="mt-0.5 rounded-full border border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] p-2 text-warning">
                         <AlertTriangle className="h-4 w-4" />
                       </div>
                       <div className="flex-1">
-                        <p className="font-medium text-amber-950">Review these write actions before we run them</p>
-                        <p className="mt-1 text-sm text-amber-900/80">
+                        <p className="font-medium text-warning">Review these write actions before we run them</p>
+                        <p className="mt-1 text-sm text-foreground/75">
                           Nothing has been changed yet. Confirm once this looks right.
                         </p>
                         <div className="mt-3 space-y-2">
                           {pendingActions.map((action, index) => (
-                            <div key={`${action.toolName}-${index}`} className="rounded-2xl border border-amber-200/80 bg-white/70 px-3 py-2">
+                            <div key={`${action.toolName}-${index}`} className="rounded-2xl border border-[hsl(var(--warning-soft-border))] bg-background/80 px-3 py-2">
                               <div className="flex items-start justify-between gap-3">
                                 <div>
                                   <p className="text-sm font-medium text-foreground">{action.summary}</p>
@@ -941,8 +1014,8 @@ export default function AiChat() {
 
               {loading && (
                 <div className="flex justify-start">
-                  <div className="rounded-2xl rounded-bl-sm bg-secondary px-4 py-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <div className="semantic-surface-info rounded-2xl rounded-bl-sm border px-4 py-3">
+                    <Loader2 className="h-4 w-4 animate-spin text-info" />
                   </div>
                 </div>
               )}

@@ -1,6 +1,6 @@
-type CouplePlanTier = 'basic' | 'premium';
+type CouplePlanTier = 'collaborative';
 type CoupleBundleType = 'wedding_pass' | 'registry_addon' | 'guest_rsvp_addon';
-type ProfessionalFeatureKey = 'media_portfolio' | 'advertising' | 'team_workspace';
+type ProfessionalFeatureKey = 'booking_management' | 'document_collaboration' | 'invoicing' | 'contract_management' | 'media_portfolio';
 
 export type CoupleCheckoutMapping = {
   bundleCode: string;
@@ -28,143 +28,117 @@ export type PricingCatalogCheckoutConfig = {
   professionalCheckoutMap: Record<string, ProfessionalCheckoutMapping>;
 };
 
+export type PricingPaymentCatalogItem = {
+  title: string;
+  amountKes: number | null;
+  audience: 'couple' | 'planner' | 'vendor';
+  cadence: 'one_time' | 'monthly' | 'annual';
+  feature: string | null;
+};
+
+const defaultPaymentCatalog: Record<string, PricingPaymentCatalogItem> = {
+  planning_pass_one_time: {
+    title: 'Planning Pass',
+    amountKes: null,
+    audience: 'couple',
+    cadence: 'one_time',
+    feature: null,
+  },
+  couple_collaborative_monthly: {
+    title: 'Couple Collaborative',
+    amountKes: 1999,
+    audience: 'couple',
+    cadence: 'monthly',
+    feature: null,
+  },
+  couple_collaborative_annual: {
+    title: 'Couple Collaborative',
+    amountKes: 15000,
+    audience: 'couple',
+    cadence: 'annual',
+    feature: null,
+  },
+  planner_premium_monthly: {
+    title: 'Planner Professional',
+    amountKes: 1500,
+    audience: 'planner',
+    cadence: 'monthly',
+    feature: 'booking_management',
+  },
+  planner_premium_annual: {
+    title: 'Planner Professional',
+    amountKes: 15000,
+    audience: 'planner',
+    cadence: 'annual',
+    feature: 'booking_management',
+  },
+  vendor_premium_monthly: {
+    title: 'Vendor Professional',
+    amountKes: 850,
+    audience: 'vendor',
+    cadence: 'monthly',
+    feature: 'booking_management',
+  },
+  vendor_premium_annual: {
+    title: 'Vendor Professional',
+    amountKes: 9000,
+    audience: 'vendor',
+    cadence: 'annual',
+    feature: 'booking_management',
+  },
+};
+
 const defaultAllowedLookupKeys = [
-  'planning_pass_one_time',
   'committee_pass_one_time',
-  'planner_pro_monthly',
-  'planner_pro_annual',
   'planner_premium_monthly',
   'planner_premium_annual',
-  'vendor_pro_monthly',
-  'vendor_pro_annual',
   'vendor_premium_monthly',
   'vendor_premium_annual',
-  'couple_basic_monthly',
-  'couple_basic_annual',
-  'couple_premium_monthly',
-  'couple_premium_annual',
-  'gift_registry_addon',
-  'guest_rsvp_management_addon',
-  'media_addon',
-  'advertising_addon',
-  'team_workspace_bundle_3',
-  'team_workspace_bundle_5',
-  'team_workspace_bundle_10',
+  'couple_collaborative_monthly',
+  'couple_collaborative_annual',
 ];
 
 const defaultCoupleCheckoutMap: Record<string, CoupleCheckoutMapping> = {
-  planning_pass_one_time: {
-    bundleCode: 'planning_pass_one_time',
+  couple_collaborative_monthly: {
+    bundleCode: 'couple_collaborative_monthly',
     bundleType: 'wedding_pass',
     features: [
       'wedding_collaboration',
       'planner_collaboration',
       'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-      'timeline_management',
       'ai_wedding_assistant',
     ],
-    couplePlanTier: 'premium',
-    seatLimits: { committee: 20, family: 20 },
-    syncLegacyPlanningPass: true,
-  },
-  couple_basic_monthly: {
-    bundleCode: 'couple_basic_monthly',
-    bundleType: 'wedding_pass',
-    features: [
-      'wedding_collaboration',
-      'planner_collaboration',
-      'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-    ],
-    couplePlanTier: 'basic',
-    seatLimits: { committee: 10, family: 10 },
-    syncLegacyPlanningPass: false,
-  },
-  couple_basic_annual: {
-    bundleCode: 'couple_basic_annual',
-    bundleType: 'wedding_pass',
-    features: [
-      'wedding_collaboration',
-      'planner_collaboration',
-      'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-    ],
-    couplePlanTier: 'basic',
-    seatLimits: { committee: 10, family: 10 },
-    syncLegacyPlanningPass: false,
-  },
-  couple_premium_monthly: {
-    bundleCode: 'couple_premium_monthly',
-    bundleType: 'wedding_pass',
-    features: [
-      'wedding_collaboration',
-      'planner_collaboration',
-      'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-      'timeline_management',
-      'ai_wedding_assistant',
-    ],
-    couplePlanTier: 'premium',
-    seatLimits: { committee: 20, family: 20 },
-    syncLegacyPlanningPass: true,
-  },
-  couple_premium_annual: {
-    bundleCode: 'couple_premium_annual',
-    bundleType: 'wedding_pass',
-    features: [
-      'wedding_collaboration',
-      'planner_collaboration',
-      'vendor_collaboration',
-      'committee_collaboration',
-      'family_collaboration',
-      'timeline_management',
-      'ai_wedding_assistant',
-    ],
-    couplePlanTier: 'premium',
-    seatLimits: { committee: 20, family: 20 },
-    syncLegacyPlanningPass: true,
-  },
-  gift_registry_addon: {
-    bundleCode: 'gift_registry_addon',
-    bundleType: 'registry_addon',
-    features: ['gift_registry'],
-    couplePlanTier: null,
+    couplePlanTier: 'collaborative',
     seatLimits: null,
     syncLegacyPlanningPass: false,
   },
-  guest_rsvp_management_addon: {
-    bundleCode: 'guest_rsvp_management_addon',
-    bundleType: 'guest_rsvp_addon',
-    features: ['guest_rsvp_management'],
-    couplePlanTier: null,
+  couple_collaborative_annual: {
+    bundleCode: 'couple_collaborative_annual',
+    bundleType: 'wedding_pass',
+    features: [
+      'wedding_collaboration',
+      'planner_collaboration',
+      'vendor_collaboration',
+      'ai_wedding_assistant',
+    ],
+    couplePlanTier: 'collaborative',
     seatLimits: null,
     syncLegacyPlanningPass: false,
   },
 };
 
 const defaultProfessionalCheckoutMap: Record<string, ProfessionalCheckoutMapping> = {
-  media_addon: {
-    features: ['media_portfolio'],
+  planner_premium_monthly: {
+    features: ['booking_management', 'document_collaboration', 'media_portfolio'],
   },
-  advertising_addon: {
-    features: ['advertising'],
+  planner_premium_annual: {
+    features: ['booking_management', 'document_collaboration', 'media_portfolio'],
   },
-  team_workspace_bundle_3: {
-    features: ['team_workspace'],
-    seatLimit: 3,
+  vendor_premium_monthly: {
+    features: ['booking_management', 'document_collaboration', 'media_portfolio'],
   },
-  team_workspace_bundle_5: {
-    features: ['team_workspace'],
-    seatLimit: 5,
-  },
-  team_workspace_bundle_10: {
-    features: ['team_workspace'],
-    seatLimit: 10,
+  vendor_premium_annual: {
+    features: ['booking_management', 'document_collaboration', 'media_portfolio'],
   },
 };
 
@@ -196,28 +170,6 @@ function mergeCoupleCheckoutMap(
     };
   }
 
-  if (!overrides) return merged;
-
-  for (const [lookupKey, override] of Object.entries(overrides)) {
-    if (merged[lookupKey] || !override.bundleCode || !override.bundleType) continue;
-    merged[lookupKey] = {
-      bundleCode: override.bundleCode,
-      bundleType: override.bundleType,
-      features: Array.isArray(override.features) ? override.features : [],
-      couplePlanTier: override.couplePlanTier ?? null,
-      seatLimits:
-        isObject(override.seatLimits)
-          && typeof override.seatLimits.committee === 'number'
-          && typeof override.seatLimits.family === 'number'
-          ? {
-              committee: override.seatLimits.committee,
-              family: override.seatLimits.family,
-            }
-          : null,
-      syncLegacyPlanningPass: override.syncLegacyPlanningPass === true,
-    };
-  }
-
   return merged;
 }
 
@@ -236,16 +188,6 @@ function mergeProfessionalCheckoutMap(
     };
   }
 
-  if (!overrides) return merged;
-
-  for (const [lookupKey, override] of Object.entries(overrides)) {
-    if (merged[lookupKey] || !Array.isArray(override.features)) continue;
-    merged[lookupKey] = {
-      features: override.features as ProfessionalFeatureKey[],
-      seatLimit: typeof override.seatLimit === 'number' ? override.seatLimit : undefined,
-    };
-  }
-
   return merged;
 }
 
@@ -255,8 +197,11 @@ function getCheckoutOverrides(config: unknown): PricingCatalogCheckoutOverrides 
 }
 
 function buildConfigFromOverrides(overrides?: PricingCatalogCheckoutOverrides | null): PricingCatalogCheckoutConfig {
-  const allowedLookupKeys = Array.isArray(overrides?.allowedLookupKeys)
-    ? [...new Set([...defaultAllowedLookupKeys, ...overrides.allowedLookupKeys.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)])]
+  const configuredKeys = Array.isArray(overrides?.allowedLookupKeys)
+    ? new Set(overrides.allowedLookupKeys.filter((value): value is string => typeof value === 'string'))
+    : null;
+  const allowedLookupKeys = configuredKeys
+    ? defaultAllowedLookupKeys.filter((lookupKey) => configuredKeys.has(lookupKey))
     : defaultAllowedLookupKeys;
 
   return {
@@ -297,5 +242,122 @@ export async function loadPricingCheckoutConfig(serviceClient: {
   } catch (error) {
     console.warn('Unexpected pricing checkout config error. Falling back to defaults.', error);
     return buildConfigFromOverrides(null);
+  }
+}
+
+function getObject(value: unknown) {
+  return isObject(value) ? value : null;
+}
+
+function getNullableNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function getNullableString(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function getLookupKey(
+  value: Record<string, unknown>,
+  primaryKey: string,
+  legacyKey: string,
+) {
+  return getNullableString(value[primaryKey]) ?? getNullableString(value[legacyKey]);
+}
+
+function upsertPaymentCatalogItem(
+  catalog: Record<string, PricingPaymentCatalogItem>,
+  lookupKey: string | null,
+  item: PricingPaymentCatalogItem,
+) {
+  if (!lookupKey) return;
+  catalog[lookupKey] = item;
+}
+
+export async function loadPricingPaymentCatalog(serviceClient: {
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: unknown) => {
+        order: (column: string, options: { ascending: boolean }) => {
+          limit: (count: number) => {
+            maybeSingle: () => Promise<{ data: { config?: unknown } | null; error: { message?: string } | null }>;
+          };
+        };
+      };
+    };
+  };
+}) {
+  const catalog: Record<string, PricingPaymentCatalogItem> = { ...defaultPaymentCatalog };
+
+  try {
+    const { data, error } = await serviceClient
+      .from('pricing_catalog')
+      .select('config')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Could not load pricing payment catalog from Supabase. Falling back to defaults.', error.message ?? error);
+      return catalog;
+    }
+
+    const config = getObject(data?.config);
+    const couplePlans = getObject(config?.couplePlans);
+    const professionalPlans = getObject(config?.professionalPlans);
+
+    for (const [tier, value] of Object.entries(couplePlans ?? {})) {
+      if (tier !== 'collaborative') continue;
+      const plan = getObject(value);
+      if (!plan) continue;
+
+      upsertPaymentCatalogItem(catalog, getLookupKey(plan, 'checkoutMonthlyLookupKey', 'stripeMonthlyLookupKey'), {
+        title: getNullableString(plan.title) ?? `Couple ${tier}`,
+        amountKes: getNullableNumber(plan.monthlyPriceKes),
+        audience: 'couple',
+        cadence: 'monthly',
+        feature: null,
+      });
+
+      upsertPaymentCatalogItem(catalog, getLookupKey(plan, 'checkoutAnnualLookupKey', 'stripeAnnualLookupKey'), {
+        title: getNullableString(plan.title) ?? `Couple ${tier}`,
+        amountKes: getNullableNumber(plan.annualPriceKes),
+        audience: 'couple',
+        cadence: 'annual',
+        feature: null,
+      });
+    }
+
+    for (const [audience, value] of Object.entries(professionalPlans ?? {})) {
+      const plans = getObject(value);
+      if (!plans || (audience !== 'planner' && audience !== 'vendor')) continue;
+
+      for (const [tier, planValue] of Object.entries(plans)) {
+        const plan = getObject(planValue);
+        if (!plan) continue;
+
+        upsertPaymentCatalogItem(catalog, getLookupKey(plan, 'checkoutMonthlyLookupKey', 'stripeMonthlyLookupKey'), {
+          title: getNullableString(plan.title) ?? `${audience} ${tier}`,
+          amountKes: getNullableNumber(plan.monthlyPriceKes),
+          audience,
+          cadence: 'monthly',
+          feature: null,
+        });
+
+        upsertPaymentCatalogItem(catalog, getLookupKey(plan, 'checkoutAnnualLookupKey', 'stripeAnnualLookupKey'), {
+          title: getNullableString(plan.title) ?? `${audience} ${tier}`,
+          amountKes: getNullableNumber(plan.annualPriceKes),
+          audience,
+          cadence: 'annual',
+          feature: null,
+        });
+      }
+    }
+
+    return catalog;
+  } catch (error) {
+    console.warn('Unexpected pricing payment catalog error. Falling back to defaults.', error);
+    return catalog;
   }
 }

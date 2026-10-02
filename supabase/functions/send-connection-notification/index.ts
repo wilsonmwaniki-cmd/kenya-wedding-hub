@@ -7,11 +7,9 @@ import {
   assertRecentFunctionEventLimit,
 } from "../_shared/abuseProtection.ts";
 import { logFunctionEvent } from "../_shared/runtimeLogger.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { createCorsHeaders } from "../_shared/cors.ts";
+import { assertActiveAuthSession, isAuthSessionError } from "../_shared/sessionGuard.ts";
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from "../_shared/demoGuard.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -36,17 +34,6 @@ interface VendorConnectionRequestRow {
   status: string;
 }
 
-function jsonResponse(status: number, payload: Record<string, unknown>, headers?: HeadersInit) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      ...corsHeaders,
-      'Content-Type': 'application/json',
-      ...(headers ?? {}),
-    },
-  });
-}
-
 function htmlEscape(value: string) {
   return value
     .replaceAll('&', '&amp;')
@@ -57,6 +44,17 @@ function htmlEscape(value: string) {
 }
 
 serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
+  const jsonResponse = (status: number, payload: Record<string, unknown>, headers?: HeadersInit) =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        ...(headers ?? {}),
+      },
+    });
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -86,8 +84,21 @@ serve(async (req) => {
   }
 
   const user = authData.user;
+  if (isTemporaryDemoUser(user)) {
+    return jsonResponse(403, { error: DEMO_EXTERNAL_ACTION_MESSAGE, code: 'demo_action_blocked' });
+  }
+
+  try {
+    await assertActiveAuthSession(serviceClient, authHeader, user.id);
+  } catch (error) {
+    if (isAuthSessionError(error)) {
+      return jsonResponse(error.status, { error: error.message });
+    }
+    throw error;
+  }
+
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-  const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Kenya Bliss Planner <onboarding@resend.dev>';
+  const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Zania <hello@planwithzania.com>';
 
   if (!RESEND_API_KEY) {
     return jsonResponse(500, { error: 'RESEND_API_KEY not configured' });
@@ -270,7 +281,7 @@ serve(async (req) => {
           <p style="margin-top: 24px; color: #999; font-size: 14px;">Don&apos;t keep them waiting. Great connections start with a quick reply.</p>
         </div>
         <div style="background: #f9f6f2; padding: 16px 30px; text-align: center; font-size: 12px; color: #999;">
-          Sent via Kenya Bliss Planner
+          Sent via Zania
         </div>
       </div>
     `;

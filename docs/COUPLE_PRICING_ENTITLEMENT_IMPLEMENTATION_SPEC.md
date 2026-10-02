@@ -1,5 +1,7 @@
 # Couple Pricing And Entitlement Implementation Spec
 
+> Superseded for couple-facing pricing by [COUPLE_PRICING_MODEL.md](./COUPLE_PRICING_MODEL.md). This file remains as historical implementation context for the former Free / Basic / Premium model.
+
 ## Purpose
 
 This document translates the agreed couple pricing strategy into:

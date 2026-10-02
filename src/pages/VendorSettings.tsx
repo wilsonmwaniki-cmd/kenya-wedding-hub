@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -11,15 +12,18 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle2, Clock, Store, X, Instagram, Facebook, ShieldCheck, TrendingUp, AlertTriangle, CreditCard, LockKeyhole, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2, Building2, Ruler, Users2 } from 'lucide-react';
-import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
+import { Loader2, CheckCircle2, Clock, CreditCard, X, Instagram, Facebook, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { vendorAccessMessage, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
-
-const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
+import { displaySafeUrl, normalizeExternalUrl as normalizeSafeExternalUrl } from '@/lib/security';
+import {
+  canonicalizeVendorCategory,
+  getVendorCategoryOptions,
+  vendorCategoriesMatch,
+} from '@/lib/vendorCategories';
 
 interface VendorListing {
   id: string;
@@ -103,12 +107,11 @@ function createVenueSpaceDraft(overrides: Partial<VenueSpaceDraft> = {}): VenueS
 }
 
 function normalizeExternalUrl(value: string) {
-  if (!value.trim()) return '';
-  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  return normalizeSafeExternalUrl(value) ?? '';
 }
 
 function displayUrl(value: string) {
-  return value.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  return displaySafeUrl(value);
 }
 
 function XSocialIcon({ className }: { className?: string }) {
@@ -128,6 +131,7 @@ function TikTokSocialIcon({ className }: { className?: string }) {
 }
 
 export default function VendorSettings() {
+  const navigate = useNavigate();
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
   const db = supabase as any;
@@ -148,7 +152,7 @@ export default function VendorSettings() {
   const [listing, setListing] = useState<VendorListing | null>(null);
   const [form, setForm] = useState({
     business_name: '',
-    category: 'Photography',
+    category: 'Photographer',
     description: '',
     phone: '',
     email: '',
@@ -168,15 +172,15 @@ export default function VendorSettings() {
   });
   const [newService, setNewService] = useState('');
   const [serviceAreaDraft, setServiceAreaDraft] = useState('');
-  const [reputationLoading, setReputationLoading] = useState(false);
-  const [reputationOverview, setReputationOverview] = useState<VendorReputationOverview | null>(null);
   const [requestingVerification, setRequestingVerification] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [submissionSuccessOpen, setSubmissionSuccessOpen] = useState(false);
+  const [dashboardRedirectCountdown, setDashboardRedirectCountdown] = useState(3);
   const [venueSpaces, setVenueSpaces] = useState<VenueSpaceDraft[]>([]);
   const [venueSpacesLoading, setVenueSpacesLoading] = useState(false);
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
-  const isVenueCategory = form.category === 'Venue';
+  const isVenueCategory = vendorCategoriesMatch(form.category, 'Wedding Venue');
   const effectiveListing = listing
     ? {
         ...listing,
@@ -200,7 +204,7 @@ export default function VendorSettings() {
         setListing(data as any);
         setForm({
           business_name: data.business_name || '',
-          category: data.category || 'Photography',
+          category: canonicalizeVendorCategory(data.category || 'Photographer'),
           description: data.description || '',
           phone: data.phone || '',
           email: data.email || '',
@@ -255,29 +259,24 @@ export default function VendorSettings() {
   }, [profile?.primary_county, profile?.primary_town]);
 
   useEffect(() => {
-    if (!listing?.id || !vendorHasFullAccess(listing)) {
-      setReputationOverview(null);
+    if (!submissionSuccessOpen) {
+      setDashboardRedirectCountdown(3);
       return;
     }
 
-    let active = true;
-    const loadReputationOverview = async () => {
-      setReputationLoading(true);
-      try {
-        const data = await getVendorReputationOverview(listing.id, 3);
-        if (active) setReputationOverview(data);
-      } catch {
-        if (active) setReputationOverview(null);
-      } finally {
-        if (active) setReputationLoading(false);
-      }
-    };
+    const countdownInterval = window.setInterval(() => {
+      setDashboardRedirectCountdown((current) => (current > 1 ? current - 1 : current));
+    }, 1000);
 
-    void loadReputationOverview();
+    const redirectTimeout = window.setTimeout(() => {
+      navigate('/vendor-dashboard');
+    }, 3000);
+
     return () => {
-      active = false;
+      window.clearInterval(countdownInterval);
+      window.clearTimeout(redirectTimeout);
     };
-  }, [listing?.id]);
+  }, [navigate, submissionSuccessOpen]);
 
   useEffect(() => {
     if (!listing?.id) {
@@ -382,15 +381,15 @@ export default function VendorSettings() {
       description: form.description || null,
       phone: form.phone || null,
       email: form.email || null,
-      website: form.website || null,
+      website: normalizeSafeExternalUrl(form.website),
       location: buildKenyaLocationLabel(form.location_county, form.location_town),
       location_county: form.location_county || null,
       location_town: form.location_town || null,
       services: form.services,
-      social_instagram: form.social_instagram || null,
-      social_facebook: form.social_facebook || null,
-      social_tiktok: form.social_tiktok || null,
-      social_twitter: form.social_twitter || null,
+      social_instagram: normalizeSafeExternalUrl(form.social_instagram),
+      social_facebook: normalizeSafeExternalUrl(form.social_facebook),
+      social_tiktok: normalizeSafeExternalUrl(form.social_tiktok),
+      social_twitter: normalizeSafeExternalUrl(form.social_twitter),
       service_areas: form.service_areas,
       travel_scope: form.travel_scope,
       minimum_budget_kes: minimumBudget,
@@ -500,10 +499,17 @@ export default function VendorSettings() {
         }
       }
 
-      toast({ title: 'Saved!', description: listing ? 'Listing updated.' : 'Listing submitted for review.' });
+      toast({
+        title: listing ? 'Listing updated' : 'Listing submitted',
+        description: listing
+          ? 'Your latest business details are now saved to your vendor listing.'
+          : 'Your listing is saved and has entered the approval queue.',
+        variant: 'success',
+      });
       // Reload
       const { data } = await supabase.from('vendor_listings').select('*').eq('user_id', user.id).maybeSingle();
       if (data) setListing(data as any);
+      setSubmissionSuccessOpen(true);
     }
     setSaving(false);
   };
@@ -576,6 +582,7 @@ export default function VendorSettings() {
       toast({
         title: 'Verification requested',
         description: 'Your verification request has been sent to the admin review queue.',
+        variant: 'success',
       });
 
       if (!user) return;
@@ -619,14 +626,13 @@ export default function VendorSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div>
-        <h1 className="font-display text-3xl font-bold text-foreground">My Vendor Listing</h1>
-        <p className="text-muted-foreground">Manage your business listing on the vendor directory.</p>
+        <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">Listing</h1>
       </div>
 
       {vendorPreviewMode && !listing && (
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className="semantic-surface-info">
           <CardContent className="py-4 text-sm text-muted-foreground">
             Admin preview is giving this account full vendor access for testing. Saving this form will create a real vendor
             listing tied to your email so you can test the full vendor journey with live data.
@@ -636,24 +642,22 @@ export default function VendorSettings() {
 
       {/* Status banner */}
       {listing && (
-        <Card className={listing.is_approved ? 'border-primary/30 bg-primary/5' : 'border-yellow-500/30 bg-yellow-500/5'}>
-          <CardContent className="flex items-center gap-3 py-4">
+        <Card className={listing.is_approved ? 'semantic-surface-success' : 'semantic-surface-warning'}>
+          <CardContent className="flex items-center gap-3 py-3 sm:py-4">
             {listing.is_approved ? (
               <>
-                <CheckCircle2 className="h-5 w-5 text-primary" />
+                <CheckCircle2 aria-hidden="true" className="h-5 w-5 text-success" strokeWidth={1.8} />
                 <div>
                   <p className="text-sm font-medium text-foreground">
-                    Your listing is live {listing.is_verified && '& verified ✓'}
+                    Listing is live{listing.is_verified ? ' and verified' : ''}
                   </p>
-                  <p className="text-xs text-muted-foreground">Visible in the vendor directory.</p>
                 </div>
               </>
             ) : (
               <>
-                <Clock className="h-5 w-5 text-yellow-600" />
+                <Clock aria-hidden="true" className="h-5 w-5 text-warning" strokeWidth={1.8} />
                 <div>
-                  <p className="text-sm font-medium text-foreground">Pending Approval</p>
-                  <p className="text-xs text-muted-foreground">Your listing is under review. You'll be notified once approved.</p>
+                  <p className="text-sm font-medium text-foreground">Listing awaiting approval</p>
                 </div>
               </>
             )}
@@ -662,28 +666,33 @@ export default function VendorSettings() {
       )}
 
       {listing && (
-        <Card className={fullAccess ? 'border-primary/30 bg-primary/5' : 'border-border/70 bg-muted/20'}>
+        <details className="rounded-2xl border border-border/70 bg-card">
+          <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">Access status</summary>
+        <Card className={fullAccess ? 'semantic-surface-success' : 'semantic-surface-warning'}>
           <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              {fullAccess ? <ShieldCheck className="h-5 w-5 text-primary" /> : <LockKeyhole className="h-5 w-5 text-primary" />}
-              Vendor Access
-            </CardTitle>
-            <CardDescription>
-              Full planner connections and vendor analytics unlock only after approval, active subscription, and verification.
-            </CardDescription>
+            <CardTitle>Access status</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={listing.is_approved ? 'secondary' : 'outline'}>
-                {listing.is_approved ? 'Approved' : 'Approval pending'}
-              </Badge>
-              <Badge variant={subscriptionActive ? 'secondary' : 'outline'}>
-                Subscription: {subscriptionActive && listing.subscription_status === 'inactive' ? 'trial' : listing.subscription_status}
-              </Badge>
-              <Badge variant={listing.is_verified ? 'secondary' : 'outline'}>
-                {listing.is_verified ? 'Verified' : verificationRequestOpen ? 'Verification requested' : 'Unverified'}
-              </Badge>
-            </div>
+            <dl className="grid border-y border-border/70 sm:grid-cols-3">
+              <div className="py-3 sm:pr-4">
+                <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Listing</dt>
+                <dd className={`mt-1 font-medium ${listing.is_approved ? 'text-success' : 'text-warning'}`}>
+                  {listing.is_approved ? 'Approved' : 'Approval pending'}
+                </dd>
+              </div>
+              <div className="border-t border-border/70 py-3 sm:border-l sm:border-t-0 sm:px-4">
+                <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Subscription</dt>
+                <dd className={`mt-1 font-medium ${subscriptionActive ? 'text-success' : 'text-warning'}`}>
+                  {subscriptionActive && listing.subscription_status === 'inactive' ? 'Trial active' : listing.subscription_status.replace('_', ' ')}
+                </dd>
+              </div>
+              <div className="border-t border-border/70 py-3 sm:border-l sm:border-t-0 sm:pl-4">
+                <dt className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Verification</dt>
+                <dd className={`mt-1 font-medium ${listing.is_verified ? 'text-success' : verificationRequestOpen ? 'text-info' : 'text-warning'}`}>
+                  {listing.is_verified ? 'Verified' : verificationRequestOpen ? 'Requested' : 'Not verified'}
+                </dd>
+              </div>
+            </dl>
 
             <div className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">Current access status</p>
@@ -693,6 +702,9 @@ export default function VendorSettings() {
                   Subscription expiry: {new Date(listing.subscription_expires_at).toLocaleDateString()}
                 </p>
               )}
+              {listing.subscription_status === 'active' && !listing.subscription_expires_at && (
+                <p className="mt-1 text-xs">No renewal date has been set for this legacy subscription.</p>
+              )}
               {listing.verification_requested_at && !listing.is_verified && (
                 <p className="mt-1 text-xs">
                   Verification requested on {new Date(listing.verification_requested_at).toLocaleDateString()}
@@ -700,129 +712,48 @@ export default function VendorSettings() {
               )}
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
               <Button
                 type="button"
                 onClick={handleRequestVerification}
                 disabled={!listing.is_approved || !subscriptionActive || listing.is_verified || verificationRequestOpen || requestingVerification}
               >
-                {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {listing.is_verified ? 'Already Verified' : verificationRequestOpen ? 'Verification Requested' : 'Request Verification'}
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate('/pricing?audience=vendor&plan=vendor_premium&feature=booking_management')}
+              >
+                <CreditCard className="mr-2 h-4 w-4" aria-hidden="true" />
+                Renew with Paystack
+              </Button>
               {!subscriptionActive && (
-                <div className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  <CreditCard className="h-4 w-4" />
+                <div className="semantic-surface-warning flex w-full items-start rounded-md border px-3 py-2 text-sm leading-5 text-warning sm:w-auto">
                   Subscription must be activated by admin before verification can be requested.
                 </div>
               )}
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {listing && (
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              Vendor Trust Overview
-            </CardTitle>
-            <CardDescription>
-              Planner reputation data from structured post-event scorecards. Only aggregate, threshold-safe data is shown here.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!fullAccess ? (
-              <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-                <div className="flex items-center gap-2 font-medium">
-                  <AlertTriangle className="h-4 w-4" />
-                  Trust metrics are locked
-                </div>
-                <p className="mt-2">
-                  Planner connection requests, backend statistics, and trust benchmarks unlock only after active subscription and verification.
-                </p>
-              </div>
-            ) : reputationLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading trust overview
-              </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Planner Score</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">
-                    {reputationOverview?.benchmark_visible && reputationOverview.average_overall_rating != null
-                      ? `${reputationOverview.average_overall_rating.toFixed(1)}/5`
-                      : 'Locked'}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {reputationOverview?.sample_size ?? 0} scorecards captured
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Hire Again</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">
-                    {reputationOverview?.benchmark_visible && reputationOverview.hire_again_rate != null
-                      ? `${Math.round(reputationOverview.hire_again_rate * 100)}%`
-                      : 'Locked'}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">Share of planners who would book you again</p>
-                </div>
-                <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">On-Time Rate</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">
-                    {reputationOverview?.benchmark_visible && reputationOverview.on_time_rate != null
-                      ? `${Math.round(reputationOverview.on_time_rate * 100)}%`
-                      : 'Locked'}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">Based on scorecards that rated delivery timing</p>
-                </div>
-                <div className="rounded-lg border border-border/70 bg-muted/40 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Issue Rate</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">
-                    {reputationOverview?.benchmark_visible && reputationOverview.flagged_review_count != null
-                      ? `${reputationOverview.flagged_review_count}`
-                      : 'Locked'}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">Scorecards with flagged delivery or coordination issues</p>
-                </div>
-              </div>
-            )}
-
-            <div className="mt-4 rounded-lg border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2 text-foreground">
-                <TrendingUp className="h-4 w-4 text-primary" />
-                Market position signal
-              </div>
-              <p className="mt-1">
-                {reputationOverview?.benchmark_visible
-                  ? 'Your planner trust metrics are visible because the minimum review threshold has been met.'
-                  : 'Trust metrics unlock after at least 3 planner scorecards. Encourage excellent execution and repeat planner relationships to strengthen this score.'}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        </details>
       )}
 
       <Card className="shadow-card">
-        <CardHeader>
-          <CardTitle className="font-display flex items-center gap-2">
-            <Store className="h-5 w-5 text-primary" />
-            Business Details
-          </CardTitle>
-          <CardDescription>Fill in your business information. This will be shown in the public directory.</CardDescription>
+        <CardHeader className="px-4 py-4 sm:p-6">
+          <CardTitle>Business details</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSave} className="space-y-4">
+        <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
+          <form onSubmit={handleSave} className="space-y-3 sm:space-y-4">
             <FormSubmitError message={submitError} />
-            <div className="space-y-2">
-              <Label>Sign-in Email</Label>
-              <Input type="email" value={user?.email || ''} readOnly />
-              <p className="text-xs text-muted-foreground">
-                This is the email tied to this vendor account. It is separate from your public business email below.
-              </p>
-            </div>
+            <details className="rounded-2xl border border-border/70">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Account email</summary>
+              <div className="space-y-2 border-t border-border/70 p-4">
+                <Label>Sign-in email</Label>
+                <Input type="email" value={user?.email || ''} readOnly />
+              </div>
+            </details>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -849,7 +780,11 @@ export default function VendorSettings() {
                 }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {vendorCategories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    {getVendorCategoryOptions(form.category).map((category) => (
+                      <SelectItem key={category.name} value={category.name}>
+                        {category.name} · {category.scope === 'personal' ? 'Personal' : 'Wedding'}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormFieldError message={formErrors.category} />
@@ -872,7 +807,9 @@ export default function VendorSettings() {
               <FormFieldError message={formErrors.description} />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <details className="rounded-2xl border border-border/70">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Contact details</summary>
+              <div className="grid gap-4 border-t border-border/70 p-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Phone</Label>
                 <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+254..." />
@@ -886,19 +823,16 @@ export default function VendorSettings() {
                 }} placeholder="business@example.com" />
                 <FormFieldError message={formErrors.email} />
               </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Website</Label>
                 <Input value={form.website} onChange={(e) => setForm((f) => ({ ...f, website: e.target.value }))} placeholder="https://..." />
               </div>
-              <div className="space-y-2">
-                <Label>Displayed location</Label>
-                <Input value={buildKenyaLocationLabel(form.location_county, form.location_town) || ''} readOnly placeholder="Choose county and town below" />
               </div>
-            </div>
+            </details>
 
+            <details className="rounded-2xl border border-border/70">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Location</summary>
+              <div className="space-y-2 border-t border-border/70 p-4">
             <KenyaLocationFields
               county={form.location_county}
               town={form.location_town}
@@ -915,8 +849,12 @@ export default function VendorSettings() {
               townLabel="Town / area"
             />
             <FormFieldError message={formErrors.location_county} />
+              </div>
+            </details>
 
-            <div className="space-y-2">
+            <details className="rounded-2xl border border-border/70">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Services</summary>
+            <div className="space-y-2 border-t border-border/70 p-4">
               <Label>Services / Tags</Label>
               <div className="flex gap-2">
                 <Input
@@ -928,26 +866,28 @@ export default function VendorSettings() {
                 <Button type="button" variant="outline" onClick={addService}>Add</Button>
               </div>
               {form.services.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {form.services.map((s) => (
-                    <Badge key={s} variant="secondary" className="gap-1">
-                      {s}
-                      <button type="button" onClick={() => removeService(s)}>
-                        <X className="h-3 w-3" />
+                <div className="mt-3 divide-y divide-border/70 border-y border-border/70">
+                  {form.services.map((service) => (
+                    <div key={service} className="flex min-h-11 items-center justify-between gap-3 py-2 text-sm">
+                      <span className="text-foreground">{service}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeService(service)}
+                        className="inline-flex min-h-9 items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        aria-label={`Remove ${service}`}
+                      >
+                        Remove <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
-                    </Badge>
+                    </div>
                   ))}
                 </div>
               )}
             </div>
+            </details>
 
-            <div className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-4">
-              <div className="space-y-1">
-                <Label>Service Areas & Budget Fit</Label>
-                <p className="text-xs text-muted-foreground">
-                  This helps couples find vendors near their wedding location and within budget.
-                </p>
-              </div>
+            <details className="rounded-2xl border border-border/70">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Service areas and budget</summary>
+              <div className="space-y-4 border-t border-border/70 p-4">
               <div className="flex gap-2">
                 <select
                   value={serviceAreaDraft}
@@ -973,14 +913,22 @@ export default function VendorSettings() {
               </div>
               <FormFieldError message={formErrors.service_areas} />
               {form.service_areas.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {form.service_areas.map((county) => (
-                    <Badge key={county} variant="secondary" className="gap-1">
-                      {county}
-                      <button type="button" onClick={() => removeServiceArea(county)}>
-                        <X className="h-3 w-3" />
+                <div className="grid divide-y divide-border/70 border-y border-border/70 sm:grid-cols-2 sm:divide-y-0">
+                  {form.service_areas.map((county, index) => (
+                    <div
+                      key={county}
+                      className={`flex min-h-11 items-center justify-between gap-3 py-2 text-sm ${index % 2 === 1 ? 'sm:border-l sm:border-border/70 sm:pl-4' : 'sm:pr-4'} ${index > 1 ? 'sm:border-t sm:border-border/70' : ''}`}
+                    >
+                      <span className="text-foreground">{county}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeServiceArea(county)}
+                        className="inline-flex min-h-9 items-center gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        aria-label={`Remove ${county}`}
+                      >
+                        Remove <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
-                    </Badge>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1040,19 +988,16 @@ export default function VendorSettings() {
                   )}
                 </p>
               )}
-            </div>
+              </div>
+            </details>
 
             {isVenueCategory && (
-              <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4 space-y-4">
+              <details className="rounded-2xl border border-border/70">
+                <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Venue spaces</summary>
+              <div className="space-y-4 border-t border-border/70 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-1">
-                    <Label className="flex items-center gap-2 text-base text-foreground">
-                      <Building2 className="h-4 w-4 text-primary" />
-                      Venue spaces
-                    </Label>
-                    <p className="text-xs leading-6 text-muted-foreground">
-                      Add each wedding-ready space you want couples and planners to plan against. These presets will appear inside Space Plan so users can pick a real venue footprint instead of starting from a blank room.
-                    </p>
+                    <Label className="text-base text-foreground">Venue spaces</Label>
                   </div>
                   <Button type="button" variant="outline" onClick={addVenueSpace}>
                     <Plus className="mr-2 h-4 w-4" />
@@ -1064,7 +1009,7 @@ export default function VendorSettings() {
 
                 {!listing && venueSpaces.length === 0 && (
                   <div className="rounded-xl border border-dashed border-border/70 bg-background/80 p-4 text-sm text-muted-foreground">
-                    Save the vendor listing once, then add your spaces here. After that, every hall, lawn, ballroom, or chapel can have its own real dimensions and planning notes.
+                    Save the listing before adding spaces.
                   </div>
                 )}
 
@@ -1074,7 +1019,7 @@ export default function VendorSettings() {
                   </div>
                 ) : venueSpaces.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-border/70 bg-background/80 p-4 text-sm text-muted-foreground">
-                    No spaces added yet. Start with the main reception hall or garden so planners can immediately use a realistic venue preset.
+                    No spaces yet.
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -1084,9 +1029,6 @@ export default function VendorSettings() {
                           <div>
                             <p className="text-sm font-semibold text-foreground">
                               {space.space_name || `Venue space ${index + 1}`}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Give this space a clear identity, dimensions, and planner notes so the preset is genuinely useful on event day.
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1128,15 +1070,15 @@ export default function VendorSettings() {
 
                         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                           <div className="space-y-2">
-                            <Label className="flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5" /> Width (m)</Label>
+                            <Label>Width (m)</Label>
                             <Input type="number" min="1" step="0.1" value={space.width_meters} onChange={(e) => updateVenueSpace(space.id, { width_meters: e.target.value })} />
                           </div>
                           <div className="space-y-2">
-                            <Label className="flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5" /> Length (m)</Label>
+                            <Label>Length (m)</Label>
                             <Input type="number" min="1" step="0.1" value={space.length_meters} onChange={(e) => updateVenueSpace(space.id, { length_meters: e.target.value })} />
                           </div>
                           <div className="space-y-2">
-                            <Label className="flex items-center gap-1.5"><Users2 className="h-3.5 w-3.5" /> Seated cap</Label>
+                            <Label>Seated capacity</Label>
                             <Input type="number" min="1" value={space.max_seated_capacity} onChange={(e) => updateVenueSpace(space.id, { max_seated_capacity: e.target.value })} />
                           </div>
                           <div className="space-y-2">
@@ -1174,14 +1116,12 @@ export default function VendorSettings() {
                   </div>
                 )}
               </div>
+              </details>
             )}
 
-            {/* Social Media */}
-            <div className="border-t border-border pt-4 space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold text-foreground mb-1">Social Media</h3>
-                <p className="text-xs text-muted-foreground">Link your accounts so clients can find you online.</p>
-              </div>
+            <details className="rounded-2xl border border-border/70">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Social links</summary>
+              <div className="space-y-4 border-t border-border/70 p-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1.5"><Instagram className="h-3.5 w-3.5" /> Instagram</Label>
@@ -1200,32 +1140,30 @@ export default function VendorSettings() {
                   <Input value={form.social_twitter} onChange={(e) => setForm((f) => ({ ...f, social_twitter: e.target.value }))} placeholder="https://x.com/yourbusiness" />
                 </div>
               </div>
-            </div>
+              </div>
+            </details>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
                 <DialogTrigger asChild>
                   <Button type="button" variant="outline" className="w-full sm:w-auto">
                     <Eye className="mr-2 h-4 w-4" />
-                    Preview Listing
+                    Preview listing
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-                  <DialogHeader>
-                    <DialogTitle className="font-display flex items-center gap-2">
-                      <Eye className="h-5 w-5 text-primary" />
-                      Directory Listing Preview
-                    </DialogTitle>
-                    <DialogDescription>
+                <DialogContent className="max-h-[calc(100dvh-1rem)] min-w-0 overflow-y-auto px-3 pb-4 pt-5 sm:max-h-[90vh] sm:max-w-3xl sm:p-6">
+                  <DialogHeader className="min-w-0 pr-8 text-left">
+                    <DialogTitle className="break-words font-display leading-tight">Directory Listing Preview</DialogTitle>
+                    <DialogDescription className="break-words leading-5">
                       This preview uses your current draft so you can see how couples will experience your listing before you save it.
                     </DialogDescription>
                   </DialogHeader>
 
-                  <div className="space-y-6">
-                    <div>
+                  <div className="min-w-0 space-y-6">
+                    <div className="min-w-0">
                       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Directory card</p>
-                      <Card className="shadow-card">
-                        <CardContent className="flex flex-col items-center p-6 text-center">
+                      <Card className="min-w-0 overflow-hidden shadow-card">
+                        <CardContent className="flex min-w-0 flex-col items-center px-4 py-6 text-center sm:p-6">
                           <div className="relative">
                             <Avatar className="h-16 w-16 border-2 border-border">
                               <AvatarImage src={listing?.logo_url ?? undefined} alt={form.business_name || 'Vendor preview'} />
@@ -1234,38 +1172,34 @@ export default function VendorSettings() {
                               </AvatarFallback>
                             </Avatar>
                             {(listing?.is_verified || vendorPreviewMode) && (
-                              <CheckCircle2 className="absolute -bottom-1 -right-1 h-5 w-5 text-primary fill-background" />
+                              <CheckCircle2 className="absolute -bottom-1 -right-1 h-5 w-5 fill-background text-success" />
                             )}
                           </div>
-                          <h3 className="mt-4 font-display text-lg font-semibold text-card-foreground">
+                          <h3 className="mt-4 max-w-full break-words font-display text-lg font-semibold text-card-foreground">
                             {form.business_name || 'Your business name'}
                           </h3>
-                          <Badge variant="outline" className="mt-1 text-xs">{form.category}</Badge>
+                          <p className="mt-1 text-xs font-medium text-muted-foreground">{form.category}</p>
                           {previewLocation && (
-                            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                              <MapPin className="h-3 w-3" /> {previewLocation}
+                            <p className="mt-1 flex max-w-full items-start justify-center gap-1 break-words text-xs text-muted-foreground">
+                              <MapPin className="mt-0.5 h-3 w-3 shrink-0" /> <span className="min-w-0">{previewLocation}</span>
                             </p>
                           )}
                           {previewBudgetBand && (
-                            <p className="mt-2 text-xs text-muted-foreground">
+                            <p className="mt-2 max-w-full break-words text-xs text-muted-foreground">
                               Typical budget: {previewBudgetBand}
                             </p>
                           )}
                           {form.description && (
-                            <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{form.description}</p>
+                            <p className="mt-2 line-clamp-3 max-w-full break-words text-sm text-muted-foreground">{form.description}</p>
                           )}
                           {form.services.length > 0 && (
-                            <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                              {form.services.slice(0, 3).map((service) => (
-                                <Badge key={service} variant="secondary" className="text-xs">{service}</Badge>
-                              ))}
-                              {form.services.length > 3 && (
-                                <Badge variant="secondary" className="text-xs">+{form.services.length - 3}</Badge>
-                              )}
-                            </div>
+                            <p className="mt-3 max-w-full break-words text-xs leading-5 text-muted-foreground">
+                              {form.services.slice(0, 3).join(' · ')}
+                              {form.services.length > 3 ? ` · +${form.services.length - 3} more` : ''}
+                            </p>
                           )}
                           {(listing?.is_verified || vendorPreviewMode) && (
-                            <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary">
+                            <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-success">
                               <CheckCircle2 className="h-3 w-3" /> Verified Vendor
                             </span>
                           )}
@@ -1273,16 +1207,16 @@ export default function VendorSettings() {
                       </Card>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Expanded details</p>
-                      <Card className="shadow-card">
-                        <CardHeader>
-                          <CardTitle className="font-display text-2xl">{form.business_name || 'Your business name'}</CardTitle>
-                          <CardDescription>
+                      <Card className="min-w-0 overflow-hidden shadow-card">
+                        <CardHeader className="min-w-0 px-4 sm:p-6">
+                          <CardTitle className="break-words font-display text-2xl leading-tight">{form.business_name || 'Your business name'}</CardTitle>
+                          <CardDescription className="break-words">
                             {form.category} {previewLocation ? `· ${previewLocation}` : ''}
                           </CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-5">
+                        <CardContent className="min-w-0 space-y-5 px-4 sm:p-6 sm:pt-0">
                           <div className="grid gap-3 sm:grid-cols-2">
                             {form.phone && (
                               <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
@@ -1325,7 +1259,7 @@ export default function VendorSettings() {
                           </div>
 
                           {form.description && (
-                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                            <div className="min-w-0 rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">About this vendor</p>
                               <p className="mt-2 text-sm leading-7 text-foreground/85">{form.description}</p>
                             </div>
@@ -1334,15 +1268,9 @@ export default function VendorSettings() {
                           <div className="grid gap-4 md:grid-cols-2">
                             <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Service Areas</p>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {form.service_areas.length > 0 ? (
-                                  form.service_areas.map((county) => (
-                                    <Badge key={county} variant="secondary">{county}</Badge>
-                                  ))
-                                ) : (
-                                  <p className="text-sm text-muted-foreground">No service areas added yet.</p>
-                                )}
-                              </div>
+                              <p className="mt-3 text-sm leading-6 text-foreground">
+                                {form.service_areas.length > 0 ? form.service_areas.join(', ') : 'No service areas added yet.'}
+                              </p>
                               <p className="mt-3 text-sm text-muted-foreground">Travel scope: {travelScopeOptions.find((option) => option.value === form.travel_scope)?.label || form.travel_scope}</p>
                             </div>
 
@@ -1358,11 +1286,7 @@ export default function VendorSettings() {
                           {form.services.length > 0 && (
                             <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Services & tags</p>
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {form.services.map((service) => (
-                                  <Badge key={service} variant="secondary">{service}</Badge>
-                                ))}
-                              </div>
+                              <p className="mt-3 text-sm leading-6 text-foreground">{form.services.join(', ')}</p>
                             </div>
                           )}
 
@@ -1392,18 +1316,18 @@ export default function VendorSettings() {
                           )}
 
                           {previewSocialLinks.length > 0 && (
-                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                            <div className="min-w-0 rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Social media</p>
-                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
                                 {previewSocialLinks.map((link) => (
                                   <a
                                     key={link.label}
                                     href={link.href}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className={`group flex items-center gap-3 rounded-xl border border-border/70 bg-gradient-to-r ${link.theme} p-3 text-sm text-foreground transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm`}
+                                    className={`group flex min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-xl border border-border/70 bg-gradient-to-r ${link.theme} p-3 text-sm text-foreground transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm`}
                                   >
-                                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-background/90 text-primary shadow-sm">
+                                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-background/90 text-primary shadow-sm">
                                       {link.icon === 'instagram' && <Instagram className="h-4 w-4" />}
                                       {link.icon === 'facebook' && <Facebook className="h-4 w-4" />}
                                       {link.icon === 'tiktok' && <TikTokSocialIcon className="h-4 w-4" />}
@@ -1415,7 +1339,7 @@ export default function VendorSettings() {
                                         {displayUrl(link.href)}
                                       </span>
                                     </span>
-                                    <ExternalLink className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+                                    <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
                                   </a>
                                 ))}
                               </div>
@@ -1428,14 +1352,45 @@ export default function VendorSettings() {
                 </DialogContent>
               </Dialog>
 
-              <Button type="submit" className="w-full sm:w-auto" disabled={saving}>
-                {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                {listing ? 'Update Listing' : 'Submit for Review'}
+              <Button
+                type="submit"
+                className="w-full sm:w-auto"
+                disabled={saving}
+                status={saving ? 'loading' : submissionSuccessOpen ? 'success' : 'idle'}
+                loadingText="Saving listing"
+                successText="Listing saved"
+              >
+                {listing ? 'Save listing' : 'Submit for review'}
               </Button>
             </div>
           </form>
         </CardContent>
       </Card>
+
+      <Dialog open={submissionSuccessOpen} onOpenChange={setSubmissionSuccessOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="items-center text-center">
+            <CheckCircle2 className="h-9 w-9 text-success" aria-hidden="true" strokeWidth={1.8} />
+            <DialogTitle className="font-display text-2xl">Review Request Sent</DialogTitle>
+            <DialogDescription className="max-w-sm">
+              Your vendor listing has been submitted successfully. We&apos;re taking you back to your dashboard now.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="semantic-surface-success rounded-xl border px-4 py-4 text-center">
+            <p className="text-sm font-medium text-foreground">Redirecting to dashboard</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              In {dashboardRedirectCountdown} second{dashboardRedirectCountdown === 1 ? '' : 's'}.
+            </p>
+          </div>
+
+          <div className="flex justify-center">
+            <Button type="button" onClick={() => navigate('/vendor-dashboard')}>
+              Go to dashboard now
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

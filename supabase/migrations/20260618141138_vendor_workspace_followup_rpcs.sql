@@ -1,0 +1,4 @@
+-- This migration was applied directly to the live Supabase project as
+-- vendor_workspace_followup_rpcs. The RPC definitions now live in the
+-- consolidated workspace vendor invite migration, so this file preserves
+-- migration-history parity for future `supabase db push` runs.

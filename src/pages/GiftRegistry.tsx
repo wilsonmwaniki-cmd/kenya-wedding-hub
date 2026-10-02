@@ -1,22 +1,20 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ExternalLink, Gift, Loader2, ShoppingBag, Trash2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-react';
 import { WorkspacePageSkeleton, ListRowsSkeleton } from '@/components/AppLoadingSkeletons';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
-import { getEntitlementDecision } from '@/lib/entitlements';
-import { getCoupleAddonDefinition } from '@/lib/pricingPlans';
-import { startStripeCheckout, syncCoupleCheckout, withCheckoutSessionId } from '@/lib/billing';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { normalizeExternalUrl } from '@/lib/security';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 
 type RegistryItem = {
   id: string;
@@ -39,12 +37,6 @@ type RegistryFormState = {
   purchaseUrl: string;
 };
 
-const registryHighlights = [
-  'Add the gifts you actually want in one list.',
-  'Mark items as bought so they are clearly struck off.',
-  'Keep useful links and pricing notes next to each gift.',
-] as const;
-
 const emptyForm: RegistryFormState = {
   title: '',
   description: '',
@@ -54,10 +46,7 @@ const emptyForm: RegistryFormState = {
 };
 
 function normalizePurchaseUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
+  return normalizeExternalUrl(value);
 }
 
 function sortRegistryItems(items: RegistryItem[]) {
@@ -81,13 +70,10 @@ function formatKes(value: number | null) {
 }
 
 export default function GiftRegistry() {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const { toast } = useToast();
-  const { profile, isSuperAdmin, rolePreview } = useAuth();
-  const { weddingId, entitlements, couplePlanTier, loading, refresh } = useWeddingEntitlements();
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
+  const { profile } = useAuth();
+  const { weddingId, loading } = useWeddingEntitlements();
   const [items, setItems] = useState<RegistryItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [itemsError, setItemsError] = useState<string | null>(null);
@@ -96,82 +82,9 @@ export default function GiftRegistry() {
   const [form, setForm] = useState<RegistryFormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof RegistryFormState, string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [addGiftOpen, setAddGiftOpen] = useState(false);
 
-  const decision = getEntitlementDecision('couple.gift_registry', {
-    profile,
-    bypass: isSuperAdmin && rolePreview === 'couple',
-    weddingEntitlements: entitlements,
-    couplePlanTier,
-  });
-
-  const canAccessRegistry = decision.allowed && Boolean(weddingId);
-  const addon = getCoupleAddonDefinition('gift_registry_addon');
-  const isFocusedUpgradeFlow = searchParams.get('intent') === 'upgrade';
-  const upgradeState = searchParams.get('upgrade');
-  const checkoutSessionId = searchParams.get('checkout_session_id');
-
-  const statusMessage = useMemo(() => {
-    if (upgradeState === 'success') {
-      return {
-        title: 'Gift Registry unlocked',
-        body: 'Your registry is now active. Start adding gifts and mark them off as they get claimed.',
-        tone: 'success',
-      } as const;
-    }
-
-    if (upgradeState === 'cancelled') {
-      return {
-        title: 'Checkout cancelled',
-        body: 'No problem. Your registry add-on was not purchased yet, and you can come back to it anytime.',
-        tone: 'warning',
-      } as const;
-    }
-
-    return null;
-  }, [upgradeState]);
-
-  useEffect(() => {
-    if (
-      upgradeState !== 'success'
-      || !checkoutSessionId
-      || processedCheckoutSessionId === checkoutSessionId
-      || !profile
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    setProcessedCheckoutSessionId(checkoutSessionId);
-
-    const runSync = async () => {
-      try {
-        await syncCoupleCheckout(checkoutSessionId);
-        if (cancelled) return;
-
-        await refresh();
-        if (cancelled) return;
-
-        toast({
-          title: 'Gift Registry unlocked',
-          description: 'Your registry add-on is now active for this wedding workspace.',
-        });
-        navigate('/gift-registry?upgrade=success', { replace: true });
-      } catch (error: any) {
-        if (cancelled) return;
-        toast({
-          title: 'Payment completed but activation is still pending',
-          description: error?.message || 'The checkout succeeded, but we could not sync your Gift Registry access yet.',
-          variant: 'destructive',
-        });
-      }
-    };
-
-    void runSync();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [checkoutSessionId, navigate, processedCheckoutSessionId, profile, refresh, toast, upgradeState]);
+  const canAccessRegistry = Boolean(weddingId);
 
   useEffect(() => {
     if (!canAccessRegistry || !weddingId) {
@@ -226,58 +139,6 @@ export default function GiftRegistry() {
       totalEstimatedValue,
     };
   }, [items]);
-
-  const handleCheckout = async () => {
-    if (!profile) return;
-
-    if (profile.role !== 'couple' && !(isSuperAdmin && rolePreview === 'couple')) {
-      toast({
-        title: 'Couple owners purchase wedding add-ons',
-        description: 'Open this page as the couple workspace owner to add Gift Registry to the wedding.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!weddingId) {
-      toast({
-        title: 'Create or join a wedding first',
-        description: 'Gift Registry attaches to a specific wedding workspace.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!addon.stripeMonthlyLookupKey) {
-      toast({
-        title: 'Checkout is not configured',
-        description: 'This add-on does not have a Stripe price configured yet.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setCheckoutLoading(true);
-    try {
-      await startStripeCheckout({
-        audience: 'couple',
-        feature: 'gift_registry',
-        lookupKey: addon.stripeMonthlyLookupKey,
-        cadence: 'monthly',
-        weddingId,
-        successPath: withCheckoutSessionId('/gift-registry?upgrade=success'),
-        cancelPath: '/gift-registry?intent=upgrade&upgrade=cancelled',
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Could not start checkout',
-        description: error?.message || 'There was a problem creating your Stripe checkout session.',
-        variant: 'destructive',
-      });
-      setCheckoutLoading(false);
-    }
-  };
-
   const handleCreateItem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitError(null);
@@ -337,6 +198,7 @@ export default function GiftRegistry() {
 
     setItems((current) => sortRegistryItems([normalizeRegistryItem(data), ...current]));
     setForm(emptyForm);
+    setAddGiftOpen(false);
     setSavingItem(false);
     toast({
       title: 'Gift added',
@@ -375,31 +237,19 @@ export default function GiftRegistry() {
     setActiveItemId(null);
   };
 
-  const handleDeleteItem = async (item: RegistryItem) => {
-    if (!window.confirm(`Remove "${item.title}" from the registry?`)) return;
-
-    setActiveItemId(item.id);
-    const db = supabase as any;
-    const { error } = await db
-      .from('wedding_registry_items')
-      .delete()
-      .eq('id', item.id);
-
-    if (error) {
-      toast({
-        title: 'Could not remove gift',
-        description: error.message || 'There was a problem deleting this registry item.',
-        variant: 'destructive',
-      });
-      setActiveItemId(null);
-      return;
-    }
-
-    setItems((current) => current.filter((entry) => entry.id !== item.id));
-    setActiveItemId(null);
-    toast({
+  const handleDeleteItem = (item: RegistryItem) => {
+    scheduleDelete({
+      id: item.id,
       title: 'Gift removed',
-      description: 'The item was removed from the registry.',
+      description: `${item.title} was removed from the registry.`,
+      commit: async () => {
+        const { error } = await (supabase as any)
+          .from('wedding_registry_items')
+          .delete()
+          .eq('id', item.id);
+        if (error) throw error;
+      },
+      onCommit: () => setItems((current) => current.filter((entry) => entry.id !== item.id)),
     });
   };
 
@@ -416,105 +266,46 @@ export default function GiftRegistry() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <Gift className="h-5 w-5 text-primary" />
-            <Badge variant="secondary">Add-on</Badge>
-          </div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Gift Registry</h1>
-          <p className="max-w-2xl text-muted-foreground">
-            Keep one clear list of gifts you want, with links, price notes, and a simple bought or still-needed status.
-          </p>
-        </div>
-      </div>
-
-      {statusMessage && (
-        <Card className={`border ${statusMessage.tone === 'success' ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/70'}`}>
-          <CardContent className="px-6 py-5">
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Registry status</p>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">{statusMessage.title}</h2>
-            <p className="mt-2 text-sm leading-7 text-muted-foreground">{statusMessage.body}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {!canAccessRegistry && !loading && !isFocusedUpgradeFlow && (
-        <InlineUpgradePrompt decision={decision} />
-      )}
-
       {!canAccessRegistry ? (
         <div className="max-w-4xl">
           <Card className="border-primary/10 shadow-card">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 font-display text-2xl">
-                <ShoppingBag className="h-5 w-5 text-primary" />
-                Add Gift Registry to this wedding
-              </CardTitle>
-              <CardDescription>
-                This add-on unlocks a dedicated registry space for gifts, tracking, and guest sharing.
-              </CardDescription>
+              <CardTitle className="workspace-h2">Create your wedding workspace first</CardTitle>
+              <CardDescription>Gift registry becomes available when your wedding workspace is ready.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="rounded-2xl border border-border/70 bg-muted/20 p-5">
-                <p className="text-sm font-medium text-foreground">What this add-on gives you</p>
-                <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                  {registryHighlights.map((item) => (
-                    <li key={item} className="flex gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button className="gap-2" onClick={() => void handleCheckout()} disabled={checkoutLoading}>
-                  {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Add Gift Registry to this wedding
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
-                </Button>
-              </div>
-            </CardContent>
           </Card>
         </div>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card className="border-border/70 shadow-card">
-              <CardContent className="px-5 py-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Registry items</p>
-                <p className="mt-2 font-display text-3xl font-semibold">{stats.totalItems}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70 shadow-card">
-              <CardContent className="px-5 py-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Still needed</p>
-                <p className="mt-2 font-display text-3xl font-semibold">{stats.activeItems}</p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/70 shadow-card">
-              <CardContent className="px-5 py-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Estimated value</p>
-                <p className="mt-2 font-display text-3xl font-semibold">{formatKes(stats.totalEstimatedValue) ?? 'KES 0'}</p>
-              </CardContent>
-            </Card>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="workspace-h1">Gift registry</h1>
+              <p className="mt-2 text-sm text-muted-foreground sm:text-base">Keep a private list of gifts you would like.</p>
+            </div>
+            {items.length > 0 ? (
+              <Button onClick={() => setAddGiftOpen(true)} className="gap-2">
+                <Plus className="h-4 w-4" /> Add gift
+              </Button>
+            ) : null}
           </div>
 
-          <Card className="border-border/70 shadow-card">
-            <CardHeader>
-              <CardTitle className="font-display text-2xl">Add a gift</CardTitle>
-              <CardDescription>
-                Add each item once, then mark it as bought when it gets claimed or purchased.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          {items.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-4"><p className="text-xs text-muted-foreground">Gifts</p><p className="mt-1 text-2xl font-semibold">{stats.totalItems}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-4"><p className="text-xs text-muted-foreground">Needed</p><p className="mt-1 text-2xl font-semibold">{stats.activeItems}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-background px-4 py-4"><p className="text-xs text-muted-foreground">Estimated value</p><p className="mt-1 text-2xl font-semibold">{formatKes(stats.totalEstimatedValue) ?? 'KES 0'}</p></div>
+            </div>
+          ) : null}
+
+          <Dialog open={addGiftOpen} onOpenChange={setAddGiftOpen}>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Add gift</DialogTitle>
+                <DialogDescription>Add a gift to your private list.</DialogDescription>
+              </DialogHeader>
               <form onSubmit={handleCreateItem} className="space-y-4">
                 <FormSubmitError message={submitError} />
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
+                <div className="space-y-2">
                     <Label htmlFor="registry-title">Gift name</Label>
                     <Input
                       id="registry-title"
@@ -529,8 +320,11 @@ export default function GiftRegistry() {
                       aria-invalid={!!formErrors.title}
                     />
                     <FormFieldError message={formErrors.title} />
-                  </div>
-                  <div className="space-y-2">
+                </div>
+                <details className="rounded-2xl border border-border/70 p-4">
+                  <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+                  <div className="mt-4 space-y-4">
+                    <div className="space-y-2">
                     <Label htmlFor="registry-category">Category</Label>
                     <Input
                       id="registry-category"
@@ -538,8 +332,8 @@ export default function GiftRegistry() {
                       onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
                       placeholder="e.g. Kitchen, Home, Travel"
                     />
-                  </div>
-                  <div className="space-y-2">
+                    </div>
+                    <div className="space-y-2">
                     <Label htmlFor="registry-price">Estimated price (KES)</Label>
                     <Input
                       id="registry-price"
@@ -556,8 +350,8 @@ export default function GiftRegistry() {
                       aria-invalid={!!formErrors.estimatedPriceKes}
                     />
                     <FormFieldError message={formErrors.estimatedPriceKes} />
-                  </div>
-                  <div className="space-y-2">
+                    </div>
+                    <div className="space-y-2">
                     <Label htmlFor="registry-link">Purchase link</Label>
                     <Input
                       id="registry-link"
@@ -565,32 +359,30 @@ export default function GiftRegistry() {
                       onChange={(event) => setForm((current) => ({ ...current, purchaseUrl: event.target.value }))}
                       placeholder="https://..."
                     />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="registry-description">Notes</Label>
+                      <Textarea
+                        id="registry-description"
+                        value={form.description}
+                        onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                        placeholder="Add a note"
+                        rows={3}
+                      />
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="registry-description">Notes</Label>
-                  <Textarea
-                    id="registry-description"
-                    value={form.description}
-                    onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                    placeholder="Color, preferred brand, or any useful note for whoever is buying this."
-                    rows={3}
-                  />
-                </div>
-                <Button type="submit" className="gap-2" disabled={savingItem}>
+                </details>
+                <Button type="submit" className="w-full gap-2" disabled={savingItem}>
                   {savingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Add to registry
+                  Add gift
                 </Button>
               </form>
-            </CardContent>
-          </Card>
+            </DialogContent>
+          </Dialog>
 
           <Card className="border-border/70 shadow-card">
             <CardHeader>
-              <CardTitle className="font-display text-2xl">Registry items</CardTitle>
-              <CardDescription>
-                Keep this list current so guests and collaborators can see what is still needed.
-              </CardDescription>
+              <CardTitle className="workspace-h2">Gifts</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {itemsError ? (
@@ -603,15 +395,15 @@ export default function GiftRegistry() {
                 <div className="flex min-h-[14rem] items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-primary" />
                 </div>
-              ) : items.length === 0 ? (
+              ) : items.filter((item) => !pendingDeleteIds.has(item.id)).length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center">
-                  <p className="font-medium text-foreground">No gifts added yet.</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Start with a few clear items so your registry feels useful immediately.
-                  </p>
+                  <p className="font-medium text-foreground">No gifts yet.</p>
+                  <Button className="mt-4 gap-2" onClick={() => setAddGiftOpen(true)}>
+                    <Plus className="h-4 w-4" /> Add gift
+                  </Button>
                 </div>
               ) : (
-                items.map((item) => {
+                items.filter((item) => !pendingDeleteIds.has(item.id)).map((item) => {
                   const isActiveItem = activeItemId === item.id;
 
                   return (
@@ -626,10 +418,10 @@ export default function GiftRegistry() {
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className={`font-display text-2xl font-semibold ${item.is_purchased ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                            <h3 className={`workspace-h2 ${item.is_purchased ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                               {item.title}
                             </h3>
-                            <Badge variant={item.is_purchased ? 'secondary' : 'outline'}>
+                            <Badge variant={item.is_purchased ? 'success' : 'outline'}>
                               {item.is_purchased ? 'Bought' : 'Needed'}
                             </Badge>
                             {item.category ? (
@@ -647,11 +439,11 @@ export default function GiftRegistry() {
                             {item.estimated_price_kes != null ? (
                               <span>{formatKes(item.estimated_price_kes)}</span>
                             ) : null}
-                            {item.purchase_url ? (
+                            {normalizeExternalUrl(item.purchase_url) ? (
                               <a
-                                href={item.purchase_url}
+                                href={normalizeExternalUrl(item.purchase_url) ?? undefined}
                                 target="_blank"
-                                rel="noreferrer"
+                                rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-primary hover:underline"
                               >
                                 Open link
@@ -677,8 +469,8 @@ export default function GiftRegistry() {
                           </Button>
                           <Button
                             type="button"
-                            variant="outline"
-                            className="gap-2"
+                            variant="ghost"
+                            className="gap-2 text-muted-foreground hover:text-destructive"
                             disabled={isActiveItem}
                             onClick={() => void handleDeleteItem(item)}
                           >

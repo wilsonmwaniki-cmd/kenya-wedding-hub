@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getHomeRouteForRole, isProfessionalSetupPending, type AppRole } from '@/lib/roles';
 import { hasPendingWeddingSetup } from '@/lib/pendingWeddingSetup';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
+import { DeviceVerificationGate } from '@/components/DeviceVerificationGate';
 
 export default function ProtectedRoute({
   children,
@@ -11,7 +12,7 @@ export default function ProtectedRoute({
   children: React.ReactNode;
   allowedRoles?: AppRole[];
 }) {
-  const { user, profile, baseProfile, availableRoles, loading } = useAuth();
+  const { user, profile, baseProfile, availableRoles, loading, deviceVerificationRequired } = useAuth();
   const location = useLocation();
   const hasAdminMembership =
     baseProfile?.role === 'admin'
@@ -56,6 +57,10 @@ export default function ProtectedRoute({
     }
 
     return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
+  }
+
+  if (deviceVerificationRequired) {
+    return <DeviceVerificationGate />;
   }
 
   if (hasPendingWeddingSetup(user.user_metadata, user.email ?? null) && location.pathname !== '/wedding-setup') {

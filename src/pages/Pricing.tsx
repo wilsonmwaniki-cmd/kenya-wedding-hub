@@ -2,8 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { EditorialEyebrow } from '@/components/ui/editorial-eyebrow';
+import {
+  StatusLine,
+  TonalCard,
+  TonalCardBody,
+  TonalCardDescription,
+  TonalCardFooter,
+  TonalCardHeader,
+  TonalCardTitle,
+  TonalSection,
+} from '@/components/ui/tonal-card';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
@@ -14,11 +24,8 @@ import {
   getAvailableCheckoutCadences,
   getDisplayPriceForCadence,
   getLookupKeyForCadence,
-  getProfessionalAddonDefinition,
-  professionalAddonEntitlementMap,
-  type CoupleAddonCode,
+  type CouplePlanTier,
   type CouplePlanCadence,
-  type ProfessionalAddonCode,
   type ProfessionalAudience,
   type ProfessionalPlanCadence,
   type PricingAudience,
@@ -26,13 +33,13 @@ import {
 } from '@/lib/pricingPlans';
 import {
   getAudiencePlanDefinition,
-  getCoupleAddonDefinitionWithContent,
   getCouplePlanDefinitionWithContent,
   getProfessionalPlanDefinitionWithContent,
   listCouplePlanDefinitions,
 } from '@/lib/pricingContent';
-import { startStripeCheckout, withCheckoutSessionId } from '@/lib/billing';
+import { getCheckoutProviderFromSearchParams, getCheckoutReferenceFromSearchParams, startCheckout, syncProfessionalCheckout, withCheckoutSessionId } from '@/lib/billing';
 import BrandWordmark from '@/components/BrandWordmark';
+import PublicSiteFooter from '@/components/PublicSiteFooter';
 
 const roleLabels = {
   couple: 'Couple',
@@ -52,35 +59,6 @@ const coupleCadenceLabels: Record<CouplePlanCadence, string> = {
   annual: 'Annual',
 };
 
-const coupleTierUpgradeCopy: Record<'free' | 'basic' | 'premium', string> = {
-  free: 'Perfect for smaller weddings, early planning, and couples who want one calm place to begin.',
-  basic: 'Best for weddings with more moving parts, more people involved, and a guest list that is growing quickly.',
-  premium: 'Built for large, multi-event, or high-coordination weddings that need sharper logistics and premium support.',
-};
-
-const professionalPlanCopy: Record<ProfessionalAudience, {
-  sectionTitle: string;
-  sectionDescription: string;
-  freeSummary: string;
-  premiumSummary: string;
-  premiumValue: string;
-}> = {
-  planner: {
-    sectionTitle: 'For planners turning coordination into a repeatable system',
-    sectionDescription: 'Join free, prove the workflow, then upgrade when Zania becomes part of how your business runs.',
-    freeSummary: 'A clean entry into the Zania workflow for testing one live client workspace.',
-    premiumSummary: 'For serious planners who want reusable systems, stronger reporting, and smoother client operations.',
-    premiumValue: 'Run multiple weddings with more rhythm, tighter client delivery, and less manual follow-up.',
-  },
-  vendor: {
-    sectionTitle: 'For vendors who want to be discovered and booked professionally',
-    sectionDescription: 'Start with a free listing, then upgrade for business tools, stronger visibility, and faster deal flow.',
-    freeSummary: 'A strong first step for getting visible inside Zania without friction.',
-    premiumSummary: 'For vendors who want both better operations and stronger high-intent discovery.',
-    premiumValue: 'This is where Zania becomes your booking, quoting, invoicing, and contract workspace, not just your listing.',
-  },
-};
-
 function isPricingAudience(value: string | null): value is PricingAudience {
   return value === 'couple' || value === 'committee' || value === 'planner' || value === 'vendor';
 }
@@ -89,7 +67,7 @@ export default function Pricing() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const { weddingId } = useWeddingEntitlements();
   const requestedAudience = searchParams.get('audience');
   const requestedPlanCode = searchParams.get('plan');
@@ -97,9 +75,10 @@ export default function Pricing() {
   const successPath = searchParams.get('successPath');
   const cancelPath = searchParams.get('cancelPath');
   const upgradeState = searchParams.get('upgrade');
-  const professionalAddon = searchParams.get('professionalAddon');
   const professionalAudienceParam = searchParams.get('professionalAudience');
-  const checkoutSessionId = searchParams.get('checkout_session_id');
+  const professionalPlanParam = searchParams.get('professionalPlan');
+  const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
+  const checkoutProvider = getCheckoutProviderFromSearchParams(searchParams);
   const [checkoutTarget, setCheckoutTarget] = useState<string | null>(null);
   const [processedProfessionalCheckout, setProcessedProfessionalCheckout] = useState<string | null>(null);
   const [selectedCadence, setSelectedCadence] = useState<Record<PricingAudience, PricingCheckoutCadence>>({
@@ -108,42 +87,31 @@ export default function Pricing() {
     planner: 'monthly',
     vendor: 'monthly',
   });
-  const [selectedCoupleCadence, setSelectedCoupleCadence] = useState<Record<'basic' | 'premium', CouplePlanCadence>>({
-    basic: 'annual',
-    premium: 'annual',
+  const [selectedCoupleCadence, setSelectedCoupleCadence] = useState<Record<'collaborative', CouplePlanCadence>>({
+    collaborative: 'annual',
   });
   const [selectedProfessionalCadence, setSelectedProfessionalCadence] = useState<Record<ProfessionalAudience, ProfessionalPlanCadence>>({
     planner: 'annual',
     vendor: 'annual',
   });
-  const [selectedProfessionalAddonAudience, setSelectedProfessionalAddonAudience] = useState<ProfessionalAudience>('planner');
   const couplePlanDefinitions = listCouplePlanDefinitions();
 
   const targetAudience = isPricingAudience(requestedAudience) ? requestedAudience : null;
   const targetPlan = targetAudience ? getAudiencePlanDefinition(targetAudience) : null;
   const highlightedFeature = formatEntitlementFeatureLabel(requestedFeature);
   const focusedCoupleTier =
-    requestedPlanCode === 'couple_basic' ? 'basic'
-      : requestedPlanCode === 'couple_premium' ? 'premium'
+    requestedPlanCode === 'couple_collaborative'
+      || requestedPlanCode === 'couple_basic'
+      || requestedPlanCode === 'couple_premium' ? 'collaborative'
         : null;
   const inferredCoupleTier =
     requestedFeature === 'couple.connect_vendors' || requestedFeature === 'couple.connect_planners'
-      ? 'basic'
-      : requestedFeature === 'couple.ai_assistant'
-        || requestedFeature === 'couple.calendar_sync'
-        || requestedFeature === 'couple.export_progress'
-        ? 'premium'
-        : null;
-  const focusedCoupleAddon =
-    requestedFeature === 'couple.gift_registry'
-      ? 'gift_registry_addon'
-      : requestedFeature === 'couple.guest_rsvp_management'
-        ? 'guest_rsvp_management_addon'
-        : null;
+      ? 'collaborative'
+      : null;
   const resolvedCoupleTier = focusedCoupleTier ?? inferredCoupleTier;
   const isFocusedUpgradeView =
     Boolean(targetAudience)
-    && Boolean(requestedPlanCode || requestedFeature || professionalAddon)
+    && Boolean(requestedPlanCode || requestedFeature)
     && upgradeState !== 'success'
     && upgradeState !== 'cancelled';
 
@@ -157,74 +125,42 @@ export default function Pricing() {
   }, [targetPlan?.audience]);
 
   useEffect(() => {
-    if (profile?.role === 'planner' && profile?.planner_type !== 'committee') {
-      setSelectedProfessionalAddonAudience('planner');
-      return;
-    }
-
-    if (profile?.role === 'vendor') {
-      setSelectedProfessionalAddonAudience('vendor');
-    }
-  }, [profile?.planner_type, profile?.role]);
-
-  useEffect(() => {
     const professionalAudience =
       professionalAudienceParam === 'planner' || professionalAudienceParam === 'vendor'
         ? professionalAudienceParam
         : null;
-    const supportedAddon = professionalAddon && (
-      professionalAddon === 'media_addon'
-      || professionalAddon === 'advertising_addon'
-      || professionalAddon === 'team_workspace_bundle_3'
-      || professionalAddon === 'team_workspace_bundle_5'
-      || professionalAddon === 'team_workspace_bundle_10'
-    )
-      ? professionalAddon
-      : null;
-
     if (
       upgradeState !== 'success'
-      || !checkoutSessionId
+      || !checkoutReference
       || !professionalAudience
-      || !supportedAddon
-      || processedProfessionalCheckout === checkoutSessionId
+      || professionalPlanParam !== 'premium'
+      || processedProfessionalCheckout === checkoutReference
       || !user
     ) {
       return;
     }
 
     let cancelled = false;
-    setProcessedProfessionalCheckout(checkoutSessionId);
+    setProcessedProfessionalCheckout(checkoutReference);
 
     const syncCheckout = async () => {
-      const { data, error } = await supabase.functions.invoke<{
-        activatedFeatures: string[];
-        seatLimit: number | null;
-      }>('sync-professional-checkout', {
-        body: {
-          sessionId: checkoutSessionId,
-          audience: professionalAudience,
-        },
-      });
-
-      if (cancelled) return;
-
-      if (error) {
+      try {
+        await syncProfessionalCheckout(checkoutReference, professionalAudience, checkoutProvider);
+      } catch (error: any) {
+        if (cancelled) return;
         toast({
           title: 'Payment completed but activation is still pending',
-          description: error.message || 'The checkout succeeded, but we could not sync your professional add-on yet.',
+          description: error?.message || 'The checkout succeeded, but we could not sync your Professional plan yet.',
           variant: 'destructive',
         });
         return;
       }
 
-      const addonDefinition = getProfessionalAddonDefinition(supportedAddon as ProfessionalAddonCode);
-      const extraSeatMessage = data?.seatLimit ? ` Your team workspace now allows up to ${data.seatLimit} seats.` : '';
       toast({
-        title: `${addonDefinition.title} activated`,
-        description: `Your ${professionalAudience} workspace add-on is now active.${extraSeatMessage}`,
+        title: 'Professional activated',
+        description: `Your ${professionalAudience} Professional workspace is now active.`,
       });
-      navigate(`/pricing?upgrade=success&audience=${professionalAudience}`, { replace: true });
+      navigate(professionalAudience === 'planner' ? '/clients?upgrade=success' : '/vendor-dashboard?upgrade=success', { replace: true });
     };
 
     void syncCheckout();
@@ -233,11 +169,12 @@ export default function Pricing() {
       cancelled = true;
     };
   }, [
-    checkoutSessionId,
+    checkoutProvider,
+    checkoutReference,
     navigate,
     processedProfessionalCheckout,
-    professionalAddon,
     professionalAudienceParam,
+    professionalPlanParam,
     toast,
     upgradeState,
     user,
@@ -286,7 +223,7 @@ export default function Pricing() {
     if (!lookupKey) {
       toast({
         title: 'Checkout is not configured',
-        description: 'This plan is missing its Stripe price mapping. Add the lookup key and try again.',
+        description: 'This plan is missing its checkout mapping. Add the lookup key and try again.',
         variant: 'destructive',
       });
       return;
@@ -304,7 +241,7 @@ export default function Pricing() {
 
     setCheckoutTarget(`audience-${audience}`);
     try {
-      await startStripeCheckout({
+      await startCheckout({
         audience,
         feature: audience === targetAudience ? requestedFeature : null,
         lookupKey,
@@ -315,23 +252,23 @@ export default function Pricing() {
     } catch (error: any) {
       toast({
         title: 'Could not start checkout',
-        description: error?.message || 'There was a problem creating your Stripe checkout session.',
+        description: error?.message || 'There was a problem starting your payment session.',
         variant: 'destructive',
       });
       setCheckoutTarget(null);
     }
   };
 
-  const handleCouplePlanCheckout = async (tier: 'basic' | 'premium') => {
+  const handleCouplePlanCheckout = async (tier: 'collaborative') => {
     const plan = getCouplePlanDefinitionWithContent(tier);
     if (!plan) return;
 
     const cadence = selectedCoupleCadence[tier];
-    const lookupKey = cadence === 'monthly' ? plan.stripeMonthlyLookupKey : plan.stripeAnnualLookupKey;
+    const lookupKey = cadence === 'monthly' ? plan.checkoutMonthlyLookupKey : plan.checkoutAnnualLookupKey;
     if (!lookupKey) {
       toast({
         title: 'Checkout is not configured',
-        description: 'This couple plan is missing its Stripe price mapping. Add the lookup key and try again.',
+        description: 'This couple plan is missing its checkout mapping. Add the lookup key and try again.',
         variant: 'destructive',
       });
       return;
@@ -357,9 +294,9 @@ export default function Pricing() {
 
     setCheckoutTarget(`couple-${tier}`);
     try {
-      await startStripeCheckout({
+      await startCheckout({
         audience: 'couple',
-        feature: tier === 'premium' ? 'ai_wedding_assistant' : 'wedding_collaboration',
+        feature: 'wedding_collaboration',
         lookupKey,
         cadence,
         weddingId,
@@ -369,55 +306,7 @@ export default function Pricing() {
     } catch (error: any) {
       toast({
         title: 'Could not start checkout',
-        description: error?.message || 'There was a problem creating your Stripe checkout session.',
-        variant: 'destructive',
-      });
-      setCheckoutTarget(null);
-    }
-  };
-
-  const handleCoupleAddonCheckout = async (code: CoupleAddonCode) => {
-    const addon = getCoupleAddonDefinitionWithContent(code);
-    if (!addon || !addon.stripeMonthlyLookupKey) return;
-
-    if (!user) {
-      navigate('/auth?mode=signup');
-      toast({
-        title: 'Sign in to continue',
-        description: 'We need your account before we can attach this add-on to your wedding workspace.',
-      });
-      return;
-    }
-
-    if (!weddingId) {
-      toast({
-        title: 'Create or join a wedding first',
-        description: 'Wedding add-ons attach to a specific wedding workspace. Create or join your wedding before checkout.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setCheckoutTarget(`addon-${code}`);
-    try {
-      await startStripeCheckout({
-        audience: 'couple',
-        feature: code === 'guest_rsvp_management_addon' ? 'guest_rsvp_management' : 'gift_registry',
-        lookupKey: addon.stripeMonthlyLookupKey,
-        cadence: 'monthly',
-        weddingId,
-        successPath: withCheckoutSessionId(
-          code === 'guest_rsvp_management_addon' ? '/guests?upgrade=success' : '/gift-registry?upgrade=success',
-        ),
-        cancelPath:
-          code === 'guest_rsvp_management_addon'
-            ? '/guests?intent=upgrade&upgrade=cancelled'
-            : '/gift-registry?intent=upgrade&upgrade=cancelled',
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Could not start checkout',
-        description: error?.message || 'There was a problem creating your Stripe checkout session.',
+        description: error?.message || 'There was a problem starting your payment session.',
         variant: 'destructive',
       });
       setCheckoutTarget(null);
@@ -426,40 +315,33 @@ export default function Pricing() {
 
   const handleProfessionalPlanCheckout = async (audience: ProfessionalAudience) => {
     const cadence = selectedProfessionalCadence[audience];
-    setSelectedCadence((prev) => ({ ...prev, [audience]: cadence }));
-    await handleCheckout(audience);
-  };
-
-  const handleProfessionalAddonCheckout = async (
-    audience: ProfessionalAudience,
-    code: ProfessionalAddonCode,
-  ) => {
-    const addon = getProfessionalAddonDefinition(code);
-    if (!addon.stripeMonthlyLookupKey) return;
+    const plan = getAudiencePlan(audience);
+    const lookupKey = getLookupKeyForCadence(plan, cadence);
+    if (!lookupKey) return;
 
     if (!user) {
       navigate('/auth?mode=signup');
       toast({
         title: 'Sign in to continue',
-        description: 'We need your account before we can attach this professional add-on to your workspace.',
+        description: 'We need your account before we can attach Professional access to your workspace.',
       });
       return;
     }
 
-    setCheckoutTarget(`professional-addon-${audience}-${code}`);
+    setCheckoutTarget(`audience-${audience}`);
     try {
-      await startStripeCheckout({
+      await startCheckout({
         audience,
-        feature: professionalAddonEntitlementMap[code],
-        lookupKey: addon.stripeMonthlyLookupKey,
-        cadence: 'monthly',
-        successPath: `/pricing?upgrade=success&professionalAddon=${code}&professionalAudience=${audience}&checkout_session_id={CHECKOUT_SESSION_ID}`,
-        cancelPath: `/pricing?upgrade=cancelled&professionalAddon=${code}&professionalAudience=${audience}`,
+        feature: 'booking_management',
+        lookupKey,
+        cadence,
+        successPath: `/pricing?upgrade=success&professionalAudience=${audience}&professionalPlan=premium`,
+        cancelPath: `/pricing?upgrade=cancelled&audience=${audience}`,
       });
     } catch (error: any) {
       toast({
         title: 'Could not start checkout',
-        description: error?.message || 'There was a problem creating your Stripe checkout session.',
+        description: error?.message || 'There was a problem starting your Professional payment session.',
         variant: 'destructive',
       });
       setCheckoutTarget(null);
@@ -470,57 +352,6 @@ export default function Pricing() {
     if (amount == null) return 'Free';
     return `KES ${amount.toLocaleString()}`;
   };
-
-  const compactComparisonRows = [
-    {
-      feature: 'Core planning workspace',
-      coupleFree: 'Tasks, budget, guests, vendor discovery',
-      coupleBasic: 'Everything in Free',
-      couplePremium: 'Everything in Basic',
-      professionalFree: 'Directory listing and profile',
-      professionalPremium: 'Operational workspace tools',
-    },
-    {
-      feature: 'Shared collaboration',
-      coupleFree: 'Not included',
-      coupleBasic: 'Planner, vendor, family, and committee access',
-      couplePremium: 'More seats and deeper coordination',
-      professionalFree: 'Solo profile only',
-      professionalPremium: 'Manage client work in one place',
-    },
-    {
-      feature: 'AI support',
-      coupleFree: 'Not included',
-      coupleBasic: 'Not included',
-      couplePremium: 'AI Wedding Assistant',
-      professionalFree: 'Not included',
-      professionalPremium: 'Not included',
-    },
-    {
-      feature: 'Vendor and planner coordination',
-      coupleFree: 'Vendor management only',
-      coupleBasic: 'Included',
-      couplePremium: 'Included',
-      professionalFree: 'Discovery only',
-      professionalPremium: 'Bookings and follow-through',
-    },
-    {
-      feature: 'Bookings, invoices, contracts',
-      coupleFree: 'Not included',
-      coupleBasic: 'Not included',
-      couplePremium: 'Not included',
-      professionalFree: 'Not included',
-      professionalPremium: 'Included',
-    },
-    {
-      feature: 'Public trust and growth',
-      coupleFree: 'Not included',
-      coupleBasic: 'Not included',
-      couplePremium: 'Not included',
-      professionalFree: 'Verified listing eligibility',
-      professionalPremium: 'Visible ratings and stronger profile',
-    },
-  ];
 
   const renderFocusedUpgrade = () => {
     if (!targetAudience) return null;
@@ -538,29 +369,25 @@ export default function Pricing() {
 
       return (
         <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
-          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
-            <CardHeader className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="rounded-full px-3 py-1">{plan.title}</Badge>
-                {highlightedFeature ? (
-                  <Badge variant="outline" className="rounded-full px-3 py-1">
-                    For {highlightedFeature}
-                  </Badge>
-                ) : null}
+          <TonalCard tone="porcelain">
+            <TonalCardHeader className="space-y-6">
+              <div className="border-l-2 border-primary pl-4">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-primary">{plan.title}</p>
+                {highlightedFeature ? <p className="mt-2 text-sm font-medium text-current/60">For {highlightedFeature}</p> : null}
               </div>
               <div>
-                <CardTitle className="font-display text-4xl">Upgrade to {plan.title}</CardTitle>
-                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
+                <TonalCardTitle className="marketing-h2">Upgrade to {plan.title}</TonalCardTitle>
+                <TonalCardDescription className="mt-3 text-base leading-8">
                   {highlightedFeature
                     ? `${plan.title} unlocks ${highlightedFeature.toLowerCase()} and keeps the rest of your wedding planning in the same workspace.`
                     : plan.supportCopy}
-                </CardDescription>
+                </TonalCardDescription>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
+            </TonalCardHeader>
+            <TonalCardBody className="space-y-6">
+              <TonalSection className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <p className="font-display text-3xl font-semibold">{priceLabel}</p>
+                  <p className="marketing-h3">{priceLabel}</p>
                   <p className="mt-2 text-sm text-muted-foreground">Choose how you want to pay, then continue straight to checkout.</p>
                 </div>
                 <div className="inline-flex rounded-full border border-border bg-background p-1">
@@ -577,9 +404,9 @@ export default function Pricing() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </TonalSection>
 
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-5">
+              <TonalSection>
                 <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Included</p>
                 <ul className="mt-3 space-y-2 text-sm leading-7 text-foreground/85">
                   {plan.includedFeatures.map((item) => (
@@ -589,81 +416,23 @@ export default function Pricing() {
                     </li>
                   ))}
                 </ul>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  onClick={() => void handleCouplePlanCheckout(plan.tier)}
-                  className="gap-2"
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
-                  {!isLoading && <ArrowRight className="h-4 w-4" />}
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-      );
-    }
-
-    if (targetAudience === 'couple' && focusedCoupleAddon) {
-      const addon = getCoupleAddonDefinitionWithContent(focusedCoupleAddon);
-      if (!addon) return null;
-
-      const isLoading = checkoutTarget === `addon-${addon.code}`;
-
-      return (
-        <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
-          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
-            <CardHeader className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="rounded-full px-3 py-1">{addon.title}</Badge>
-                {highlightedFeature ? (
-                  <Badge variant="outline" className="rounded-full px-3 py-1">
-                    For {highlightedFeature}
-                  </Badge>
-                ) : null}
-              </div>
-              <div>
-                <CardTitle className="font-display text-4xl">Add {addon.title}</CardTitle>
-                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
-                  {addon.supportCopy}
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
-                <div>
-                  <p className="font-display text-3xl font-semibold">
-                    {addon.stripeMonthlyLookupKey ? 'Paid add-on' : 'Contact sales'}
-                  </p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Add this only when you are ready to use it in a live wedding workflow.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  onClick={() => void handleCoupleAddonCheckout(addon.code)}
-                  className="gap-2"
-                  disabled={isLoading || !addon.stripeMonthlyLookupKey}
-                >
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {user ? `Continue with ${addon.title}` : 'Sign in to continue'}
-                  {!isLoading && addon.stripeMonthlyLookupKey ? <ArrowRight className="h-4 w-4" /> : null}
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to="/pricing?audience=couple">See all wedding pricing</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </TonalSection>
+            </TonalCardBody>
+            <TonalCardFooter tone="ink">
+              <Button
+                onClick={() => void handleCouplePlanCheckout(plan.tier)}
+                className="gap-2 border-[#ead8b8] bg-[#ead8b8] text-[#2b211a] shadow-none hover:bg-[#f3e4ca]"
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
+                {!isLoading && <ArrowRight className="h-4 w-4" />}
+              </Button>
+              <Button asChild variant="ghost" className="text-[#f8f0e6]/72 hover:bg-white/[0.08] hover:text-[#f8f0e6]">
+                <Link to="/pricing?audience=couple">See all wedding pricing</Link>
+              </Button>
+            </TonalCardFooter>
+          </TonalCard>
         </section>
       );
     }
@@ -679,29 +448,25 @@ export default function Pricing() {
 
       return (
         <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
-          <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
-            <CardHeader className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="rounded-full px-3 py-1">{plan.title}</Badge>
-                {highlightedFeature ? (
-                  <Badge variant="outline" className="rounded-full px-3 py-1">
-                    For {highlightedFeature}
-                  </Badge>
-                ) : null}
+          <TonalCard tone="porcelain">
+            <TonalCardHeader className="space-y-6">
+              <div className="border-l-2 border-primary pl-4">
+                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-primary">{plan.title}</p>
+                {highlightedFeature ? <p className="mt-2 text-sm font-medium text-current/60">For {highlightedFeature}</p> : null}
               </div>
               <div>
-                <CardTitle className="font-display text-4xl">Upgrade to {plan.title}</CardTitle>
-                <CardDescription className="mt-3 max-w-2xl text-base leading-8">
+                <TonalCardTitle className="marketing-h2">Upgrade to {plan.title}</TonalCardTitle>
+                <TonalCardDescription className="mt-3 text-base leading-8">
                   {highlightedFeature
                     ? `${plan.title} unlocks ${highlightedFeature.toLowerCase()} and the rest of the operational tools for your ${targetAudience} workspace.`
                     : plan.supportCopy}
-                </CardDescription>
+                </TonalCardDescription>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
+            </TonalCardHeader>
+            <TonalCardBody className="space-y-6">
+              <TonalSection className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <p className="font-display text-3xl font-semibold">{priceLabel}</p>
+                  <p className="marketing-h3">{priceLabel}</p>
                   <p className="mt-2 text-sm text-muted-foreground">One focused upgrade, then straight into checkout.</p>
                 </div>
                 <div className="inline-flex rounded-full border border-border bg-background p-1">
@@ -718,9 +483,9 @@ export default function Pricing() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </TonalSection>
 
-              <div className="rounded-2xl border border-border/60 bg-background/60 p-5">
+              <TonalSection>
                 <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Included</p>
                 <ul className="mt-3 space-y-2 text-sm leading-7 text-foreground/85">
                   {plan.includedFeatures.map((item) => (
@@ -730,24 +495,23 @@ export default function Pricing() {
                     </li>
                   ))}
                 </ul>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  onClick={() => void handleProfessionalPlanCheckout(targetAudience)}
-                  className="gap-2"
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
-                  {!isLoading && <ArrowRight className="h-4 w-4" />}
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to={`/pricing?audience=${targetAudience}`}>See all {targetAudience} pricing</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </TonalSection>
+            </TonalCardBody>
+            <TonalCardFooter tone="ink">
+              <Button
+                onClick={() => void handleProfessionalPlanCheckout(targetAudience)}
+                className="gap-2 border-[#ead8b8] bg-[#ead8b8] text-[#2b211a] shadow-none hover:bg-[#f3e4ca]"
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {user ? `Continue with ${plan.title}` : 'Sign in to continue'}
+                {!isLoading && <ArrowRight className="h-4 w-4" />}
+              </Button>
+              <Button asChild variant="ghost" className="text-[#f8f0e6]/72 hover:bg-white/[0.08] hover:text-[#f8f0e6]">
+                <Link to={`/pricing?audience=${targetAudience}`}>See all {targetAudience} pricing</Link>
+              </Button>
+            </TonalCardFooter>
+          </TonalCard>
         </section>
       );
     }
@@ -762,12 +526,12 @@ export default function Pricing() {
         <section className="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
           <Card className="rounded-[28px] border-primary/20 bg-card/95 shadow-card">
             <CardHeader className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="rounded-full px-3 py-1">{targetPlan.paidTierName}</Badge>
-                {highlightedFeature ? <Badge variant="outline" className="rounded-full px-3 py-1">For {highlightedFeature}</Badge> : null}
-              </div>
+              <EditorialEyebrow>{targetPlan.paidTierName}</EditorialEyebrow>
+              {highlightedFeature ? (
+                <StatusLine label="Unlocks" value={highlightedFeature} tone="info" className="max-w-md" />
+              ) : null}
               <div>
-                <CardTitle className="font-display text-4xl">{targetPlan.paidTierName}</CardTitle>
+                <CardTitle className="marketing-h2">{targetPlan.paidTierName}</CardTitle>
                 <CardDescription className="mt-3 max-w-2xl text-base leading-8">
                   {highlightedFeature
                     ? `${targetPlan.paidTierName} unlocks ${highlightedFeature.toLowerCase()} for committee-led weddings.`
@@ -778,7 +542,7 @@ export default function Pricing() {
             <CardContent className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/60 bg-background/60 p-5">
                 <div>
-                  <p className="font-display text-3xl font-semibold">{priceLabel}</p>
+                  <p className="marketing-h3">{priceLabel}</p>
                   <p className="mt-2 text-sm text-muted-foreground">Choose the billing cadence and continue to checkout.</p>
                 </div>
                 {availableCadences.length > 1 && (
@@ -836,535 +600,204 @@ export default function Pricing() {
 
   const focusedUpgradeContent = isFocusedUpgradeView ? renderFocusedUpgrade() : null;
   const authSignupHref = '/auth?mode=signup';
+  const activeAudience: 'couple' | ProfessionalAudience =
+    targetAudience === 'planner' || targetAudience === 'vendor' ? targetAudience : 'couple';
+  const audienceHeading = activeAudience === 'couple'
+    ? 'Plan privately or bring your team in'
+    : `Choose how you run your ${activeAudience} business`;
+  const audienceDescription = activeAudience === 'couple'
+    ? 'Planning stays free. Pay only when a planner or vendor needs to work inside your wedding workspace.'
+    : 'Your listing and document tools are free. Pay only when you want them connected to Zania clients and bookings.';
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#fcf8f3_0%,#fffdfa_24%,#ffffff_100%)] text-foreground">
+    <div className="min-h-screen bg-[linear-gradient(180deg,#fbf4ec_0%,#fffdfa_48%,#ffffff_100%)] text-foreground">
       <nav className="sticky top-0 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <Link to="/" className="inline-flex items-center">
-            <BrandWordmark size="md" />
-          </Link>
+          <Link to="/" className="inline-flex items-center"><BrandWordmark size="md" /></Link>
           <div className="hidden items-center gap-8 md:flex">
-            <Link to="/vendors-directory" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Vendors</Link>
-            <Link to="/planners" className="text-sm text-muted-foreground transition-colors hover:text-foreground">Planners</Link>
+            <Link to="/vendors-directory" className="text-sm text-muted-foreground hover:text-foreground">Vendors</Link>
+            <Link to="/planners" className="text-sm text-muted-foreground hover:text-foreground">Planners</Link>
             <Link to="/pricing" className="text-sm font-medium text-foreground">Pricing</Link>
-            <Link to="/sign-in" className="inline-flex h-10 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
-              Sign In
-            </Link>
+            <Link to="/sign-in" className="inline-flex h-10 items-center bg-primary px-6 text-sm font-medium text-primary-foreground hover:opacity-90">Sign in</Link>
           </div>
-          <Link to="/sign-in" className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 md:hidden">
-            Sign In
-          </Link>
+          <Link to="/sign-in" className="inline-flex h-10 items-center bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 md:hidden">Sign in</Link>
         </div>
       </nav>
 
-      {focusedUpgradeContent ? (
-        focusedUpgradeContent
-      ) : (
-        <>
-          <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
-            <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-              <div>
-                <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                  Free to start
-                </Badge>
-                <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-900">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Every new account starts with a 14-day full-access beta trial
-                </div>
-                <h1 className="mt-6 max-w-4xl font-display text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
-                  Start free. Upgrade when the wedding gets serious.
-                </h1>
-                <p className="mt-6 max-w-3xl text-lg leading-8 text-muted-foreground">
-                  Zania gives couples, planners, and vendors one elegant workspace for weddings in Kenya and beyond.
-                  Begin free, build real momentum, and unlock advanced tools only when you need scale, visibility,
-                  or deeper automation.
-                </p>
-                <p className="mt-4 max-w-2xl text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  No clutter. No forced upgrade on day one. Just a better way to run weddings.
-                </p>
-                <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                  <Link to={authSignupHref}>
-                    <Button className="w-full gap-2 sm:w-auto">
-                      Start free
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  <Link to="/sign-in">
-                    <Button variant="outline" className="w-full sm:w-auto">
-                      Sign in
-                    </Button>
-                  </Link>
-                </div>
-                <div className="mt-8 flex flex-wrap gap-3">
-                  <Link to="/pricing?audience=couple">
-                    <Button variant="outline" className="rounded-full">Couples</Button>
-                  </Link>
-                  <Link to="/pricing?audience=planner">
-                    <Button variant="outline" className="rounded-full">Planners</Button>
-                  </Link>
-                  <Link to="/pricing?audience=vendor">
-                    <Button variant="outline" className="rounded-full">Vendors</Button>
-                  </Link>
-                </div>
-              </div>
-
-              <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-                <CardHeader>
-                  <div>
-                    <CardTitle className="font-display text-3xl">How Zania grows with you</CardTitle>
-                    <CardDescription className="mt-2 text-base leading-7">
-                      You do not pay to understand Zania. You pay when the wedding, the workload, or the business value becomes meaningfully bigger.
-                    </CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="rounded-2xl border border-border/60 bg-background/70 p-5">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Couples</p>
-                    <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                      Free gets you a real planning workspace. Paid unlocks bigger guest counts, richer coordination, and deeper automation.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-border/60 bg-background/70 p-5">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Planners</p>
-                    <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                      Free gets you in. Pro plans unlock multi-wedding operations, reusable systems, and sharper client delivery.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">Vendors</p>
-                    <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                      Free gets you listed. Premium unlocks quoting, contracts, invoices, receipts, analytics, and stronger visibility.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-
-          {contextMessage && (
-            <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
-              <Card className={`rounded-[28px] border ${
-                contextMessage.tone === 'success'
-                  ? 'border-emerald-200 bg-emerald-50/80'
-                  : contextMessage.tone === 'warning'
-                    ? 'border-amber-200 bg-amber-50/80'
-                    : 'border-primary/20 bg-primary/5'
-              }`}>
-                <CardContent className="flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Upgrade context</p>
-                    <h2 className="mt-2 font-display text-2xl font-semibold">{contextMessage.title}</h2>
-                    <p className="mt-2 max-w-3xl text-sm leading-7 text-muted-foreground">{contextMessage.body}</p>
-                  </div>
-                  {targetPlan && (
-                    <Badge variant="secondary" className="w-fit rounded-full px-3 py-1 text-sm">
-                      {targetPlan.paidTierName}
-                    </Badge>
-                  )}
-                </CardContent>
-              </Card>
-            </section>
-          )}
-
-          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
-            <div className="mb-6 max-w-3xl">
-              <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                Couples
-              </Badge>
-              <h2 className="mt-4 font-display text-4xl font-semibold">For couples who want one calm place to run the whole wedding</h2>
-              <p className="mt-4 text-base leading-8 text-muted-foreground">
-                Start planning for free, then upgrade only when your guest count, events, or coordination needs grow.
+      {focusedUpgradeContent ? focusedUpgradeContent : (
+        <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
+          <section className="grid gap-10 border-b border-border/60 pb-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-end lg:pb-16">
+            <div className="max-w-3xl">
+              <EditorialEyebrow tone="info">Simple pricing</EditorialEyebrow>
+              <h1 className="marketing-h1 mt-6 max-w-[13ch]">Start free. Pay when you need teamwork.</h1>
+              <p className="mt-6 max-w-2xl text-base leading-8 text-muted-foreground sm:text-lg">
+                Pick who you are. We will show you only the plans that matter.
               </p>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-3">
-              {couplePlanDefinitions.map((plan) => {
-                const isPaidTier = plan.tier !== 'free';
-                const isLoading = checkoutTarget === `couple-${plan.tier}`;
-                const cadence = isPaidTier ? selectedCoupleCadence[plan.tier] : null;
-                const priceLabel = !isPaidTier
-                  ? 'Free'
-                  : cadence === 'monthly'
-                    ? `${formatKesPrice(plan.monthlyPriceKes)} / month`
-                    : `${formatKesPrice(plan.annualPriceKes)} / year`;
-
-                return (
-                  <Card
-                    key={plan.tier}
-                    className={`h-full rounded-[28px] border bg-card/95 shadow-card ${
-                      plan.tier === 'premium' ? 'border-primary/30 ring-2 ring-primary/10' : 'border-border/60'
+            <div>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">I am a...</p>
+              <div className="grid grid-cols-3 border border-border/70 bg-background" aria-label="Choose your role">
+                {(['couple', 'planner', 'vendor'] as const).map((audience) => (
+                  <Link
+                    key={audience}
+                    to={`/pricing?audience=${audience}`}
+                    aria-current={activeAudience === audience ? 'page' : undefined}
+                    className={`border-r border-border/70 px-3 py-4 text-center text-sm font-semibold transition-colors last:border-r-0 sm:px-5 ${
+                      activeAudience === audience ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                     }`}
                   >
-                    <CardHeader className="space-y-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <CardTitle className="font-display text-3xl">{plan.title}</CardTitle>
-                          <CardDescription className="mt-2 text-base leading-7">{plan.tagline}</CardDescription>
-                        </div>
-                        {plan.tier === 'premium' ? (
-                          <Badge className="rounded-full px-3 py-1">Most complete</Badge>
-                        ) : null}
-                      </div>
-                      <div>
-                        <p className="font-display text-3xl font-semibold">{priceLabel}</p>
-                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{plan.supportCopy}</p>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      {isPaidTier ? (
-                        <div className="inline-flex rounded-full border border-border bg-background p-1">
-                          {(['annual', 'monthly'] as const).map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              onClick={() => setSelectedCoupleCadence((prev) => ({ ...prev, [plan.tier]: option }))}
-                              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                              }`}
-                            >
-                              {coupleCadenceLabels[option]}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      <ul className="space-y-2 text-sm leading-7 text-foreground/85">
-                        {plan.includedFeatures.slice(0, 5).map((item) => (
-                          <li key={item} className="flex items-start gap-2">
-                            <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      <p className="text-sm leading-7 text-muted-foreground">
-                        {coupleTierUpgradeCopy[plan.tier]}
-                      </p>
-
-                      {plan.tier === 'free' ? (
-                        <Link to={authSignupHref} className="block">
-                          <Button className="w-full gap-2">
-                            {plan.ctaLabel}
-                            <ArrowRight className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                      ) : (
-                        <Button
-                          onClick={() => void handleCouplePlanCheckout(plan.tier)}
-                          className="w-full gap-2"
-                          disabled={isLoading}
-                        >
-                          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                          {user ? plan.ctaLabel : 'Sign in to continue'}
-                          {!isLoading && <ArrowRight className="h-4 w-4" />}
-                        </Button>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                    {audience === 'couple' ? 'Couple' : `${roleLabels[audience]}`}
+                  </Link>
+                ))}
+              </div>
             </div>
-
-            <p className="mt-5 text-sm text-muted-foreground">
-              Committee members and family members access Zania inside the couple&apos;s wedding plan, not through a separate public subscription.
-            </p>
           </section>
 
-          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
-            <div className="mb-6 max-w-3xl">
-              <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                Professional plans
-              </Badge>
-              <h2 className="mt-4 font-display text-4xl font-semibold">For planners and vendors building real wedding businesses</h2>
-              <p className="mt-4 text-base leading-8 text-muted-foreground">
-                Both roles begin free. The upgrade path is simple: planners pay for operational depth, and vendors pay for both business tools and stronger visibility.
-              </p>
+          {contextMessage ? (
+            <section className={`mt-8 border-l-2 px-5 py-4 ${
+              contextMessage.tone === 'success' ? 'border-emerald-500 bg-emerald-50/70' : 'border-amber-500 bg-amber-50/70'
+            }`}>
+              <p className="font-semibold">{contextMessage.title}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{contextMessage.body}</p>
+            </section>
+          ) : null}
+
+          <section className="py-12 lg:py-16">
+            <div className="mb-8 max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{activeAudience === 'couple' ? 'For couples' : `For ${activeAudience}s`}</p>
+              <h2 className="marketing-h2 mt-3">{audienceHeading}</h2>
+              <p className="mt-3 text-base leading-7 text-muted-foreground">{audienceDescription}</p>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-2">
-              {(['planner', 'vendor'] as const).map((audience) => {
-                const freePlan = getProfessionalPlanDefinitionWithContent(audience, 'free');
-                const premiumPlan = getProfessionalPlanDefinitionWithContent(audience, 'premium');
-                const isLoading = checkoutTarget === `audience-${audience}`;
-                const cadence = selectedProfessionalCadence[audience];
-                const priceLabel =
-                  cadence === 'monthly'
-                    ? `${formatKesPrice(premiumPlan.monthlyPriceKes)} / month`
-                    : `${formatKesPrice(premiumPlan.annualPriceKes)} / year`;
+            {activeAudience === 'couple' ? (
+              <div className="grid gap-5 lg:grid-cols-2">
+                {couplePlanDefinitions.map((plan) => {
+                  const isPaid = plan.tier === 'collaborative';
+                  const cadence = isPaid ? selectedCoupleCadence.collaborative : null;
+                  const isLoading = checkoutTarget === `couple-${plan.tier}`;
+                  const price = !isPaid
+                    ? 'Free'
+                    : cadence === 'monthly'
+                      ? `${formatKesPrice(plan.monthlyPriceKes)} / month`
+                      : `${formatKesPrice(plan.annualPriceKes)} / year`;
 
-                return (
-                  <Card key={audience} className="rounded-[28px] border border-border/60 bg-card/95 shadow-card">
-                    <CardHeader className="space-y-4">
-                      <div>
-                        <CardTitle className="font-display text-3xl">{roleLabels[audience]}s</CardTitle>
-                        <CardDescription className="mt-2 text-base leading-7">
-                          {professionalPlanCopy[audience].sectionDescription}
-                        </CardDescription>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-5">
-                      <div className="rounded-2xl border border-border/60 bg-background/60 p-4">
-                        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{freePlan.title}</p>
-                        <p className="mt-2 font-display text-2xl font-semibold">Free</p>
-                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{professionalPlanCopy[audience].freeSummary}</p>
-                        <ul className="mt-4 space-y-2 text-sm leading-7 text-muted-foreground">
-                          {freePlan.includedFeatures.map((item) => (
-                            <li key={item} className="flex items-start gap-2">
-                              <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                              <span>{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">{premiumPlan.title}</p>
-                          <div className="inline-flex rounded-full border border-border bg-background p-1">
+                  return (
+                    <Card key={plan.tier} className={`flex h-full flex-col rounded-[22px] shadow-card ${isPaid ? 'border-primary/35 bg-primary/[0.04]' : 'border-border/60 bg-card/95'}`}>
+                      <CardHeader className="px-6 pb-3 pt-6 sm:px-8 sm:pt-8">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{isPaid ? 'Work together' : 'Plan privately'}</p>
+                        <CardTitle className="marketing-h3 mt-2">{plan.title}</CardTitle>
+                        <p className="mt-3 text-3xl font-semibold tracking-tight">{price}</p>
+                        <CardDescription className="mt-3 text-sm leading-7">{plan.tagline}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-1 flex-col px-6 pb-6 sm:px-8 sm:pb-8">
+                        {isPaid ? (
+                          <div className="mb-5 flex border-b border-border/70" aria-label="Choose billing period">
                             {(['annual', 'monthly'] as const).map((option) => (
                               <button
                                 key={option}
                                 type="button"
-                                onClick={() => setSelectedProfessionalCadence((prev) => ({ ...prev, [audience]: option }))}
-                                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                  cadence === option ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                                }`}
+                                onClick={() => setSelectedCoupleCadence({ collaborative: option })}
+                                className={`border-b-2 px-4 py-2 text-sm font-medium ${cadence === option ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'}`}
                               >
                                 {coupleCadenceLabels[option]}
                               </button>
                             ))}
                           </div>
-                        </div>
-                        <p className="mt-2 font-display text-2xl font-semibold">{priceLabel}</p>
-                        <p className="mt-2 text-sm leading-7 text-foreground/80">{professionalPlanCopy[audience].premiumSummary}</p>
-                        <ul className="mt-4 space-y-2 text-sm leading-7 text-foreground/85">
-                          {premiumPlan.includedFeatures.slice(0, 5).map((item) => (
-                            <li key={item} className="flex items-start gap-2">
-                              <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                              <span>{item}</span>
-                            </li>
+                        ) : null}
+                        <ul className="mb-7 space-y-3 text-sm leading-6">
+                          {plan.includedFeatures.slice(0, 4).map((item) => (
+                            <li key={item} className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{item}</span></li>
                           ))}
                         </ul>
-                        <p className="mt-4 text-sm leading-7 text-muted-foreground">{professionalPlanCopy[audience].premiumValue}</p>
-                      </div>
+                        {isPaid ? (
+                          <Button onClick={() => void handleCouplePlanCheckout('collaborative')} className="mt-auto w-full gap-2" disabled={isLoading}>
+                            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                            {user ? 'Choose Collaborative' : 'Sign in to upgrade'}
+                            {!isLoading ? <ArrowRight className="h-4 w-4" /> : null}
+                          </Button>
+                        ) : (
+                          <Button asChild className="mt-auto w-full gap-2"><Link to={authSignupHref}>Start free <ArrowRight className="h-4 w-4" /></Link></Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (() => {
+              const freePlan = getProfessionalPlanDefinitionWithContent(activeAudience, 'free');
+              const premiumPlan = getProfessionalPlanDefinitionWithContent(activeAudience, 'premium');
+              const cadence = selectedProfessionalCadence[activeAudience];
+              const isLoading = checkoutTarget === `audience-${activeAudience}`;
+              const premiumPrice = cadence === 'monthly'
+                ? `${formatKesPrice(premiumPlan.monthlyPriceKes)} / month`
+                : `${formatKesPrice(premiumPlan.annualPriceKes)} / year`;
+              const plans = [freePlan, premiumPlan];
 
-                      <Button
-                        onClick={() => void handleProfessionalPlanCheckout(audience)}
-                        className="w-full gap-2"
-                        disabled={isLoading}
-                      >
-                        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        {user ? premiumPlan.ctaLabel : 'Sign in to continue'}
-                        {!isLoading && <ArrowRight className="h-4 w-4" />}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
-            <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-              <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-                <CardHeader>
-                  <CardTitle className="font-display text-3xl">Vendor Pro operations</CardTitle>
-                  <CardDescription className="text-base leading-7">
-                    This is the layer that turns Zania from a listing into a working revenue system for vendors.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm leading-7 text-muted-foreground">
-                  <p>Use Zania to move from inquiry to booking without leaving the workspace.</p>
-                  <ul className="space-y-2 text-foreground/85">
-                    {[
-                      'Turn inquiries into quotes',
-                      'Generate contracts, invoices, and receipts',
-                      'Track deposits, balances, and payment status',
-                      'Save reusable document templates',
-                      'Keep client records and wedding deliverables together',
-                    ].map((item) => (
-                      <li key={item} className="flex items-start gap-2">
-                        <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-
-              <Card className="rounded-[28px] border-primary/20 bg-primary/5 shadow-card">
-                <CardHeader>
-                  <CardTitle className="font-display text-3xl">Visibility that feels useful, not noisy</CardTitle>
-                  <CardDescription className="text-base leading-7">
-                    Zania does not sell random ad clutter. Vendors can pay for stronger placement only where they are genuinely relevant.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm leading-7 text-foreground/85">
-                  <ul className="space-y-2">
-                    {[
-                      'Featured in category or county',
-                      'Seasonal campaign boosts',
-                      'Planner-facing preferred placement',
-                      'Sponsored recommendations that stay clearly labelled',
-                      'Analytics on profile views, saves, and inquiries',
-                    ].map((item) => (
-                      <li key={item} className="flex items-start gap-2">
-                        <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="pt-2 text-sm font-medium uppercase tracking-[0.16em] text-primary">
-                    Visibility can be paid for. Trust cannot.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-
-          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
-            <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-              <CardHeader>
-                <CardTitle className="font-display text-3xl">Compare the paths</CardTitle>
-                <CardDescription className="text-base leading-7">
-                  The difference is simple: couples pay for complexity, planners pay for professional operations, and vendors pay for growth plus workflow tools.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <div className="min-w-[920px]">
-                    <div className="grid grid-cols-[1.4fr_repeat(5,minmax(110px,1fr))] gap-2 px-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      <span>Feature</span>
-                      <span className="text-center">Couple Free</span>
-                      <span className="text-center">Couple Basic</span>
-                      <span className="text-center">Couple Premium</span>
-                      <span className="text-center">Pro Free</span>
-                      <span className="text-center">Pro Premium</span>
-                    </div>
-                    <div className="mt-3 space-y-3">
-                      {compactComparisonRows.map((row) => (
-                        <div
-                          key={row.feature}
-                          className="grid grid-cols-[1.4fr_repeat(5,minmax(110px,1fr))] gap-2 rounded-xl border border-border/50 bg-background/60 px-4 py-3"
-                        >
-                          <p className="text-sm font-medium text-foreground">{row.feature}</p>
-                          <p className="text-center text-sm text-muted-foreground">{row.coupleFree}</p>
-                          <p className="text-center text-sm text-muted-foreground">{row.coupleBasic}</p>
-                          <p className="text-center text-sm font-medium text-primary">{row.couplePremium}</p>
-                          <p className="text-center text-sm text-muted-foreground">{row.professionalFree}</p>
-                          <p className="text-center text-sm font-medium text-primary">{row.professionalPremium}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              return (
+                <div className="grid gap-5 lg:grid-cols-2">
+                  {plans.map((plan) => {
+                    const isPaid = plan.tier === 'premium';
+                    return (
+                      <Card key={plan.tier} className={`flex h-full flex-col rounded-[22px] shadow-card ${isPaid ? 'border-primary/35 bg-primary/[0.04]' : 'border-border/60 bg-card/95'}`}>
+                        <CardHeader className="px-6 pb-3 pt-6 sm:px-8 sm:pt-8">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{isPaid ? 'Connected business' : 'Standalone tools'}</p>
+                          <CardTitle className="marketing-h3 mt-2">{plan.title}</CardTitle>
+                          {isPaid && <p className="mt-3 text-3xl font-semibold tracking-tight">{premiumPrice}</p>}
+                          <CardDescription className="mt-3 text-sm leading-7">{plan.tagline}</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-1 flex-col px-6 pb-6 sm:px-8 sm:pb-8">
+                          {isPaid ? (
+                            <div className="mb-5 flex border-b border-border/70" aria-label="Choose billing period">
+                              {(['annual', 'monthly'] as const).map((option) => (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => setSelectedProfessionalCadence((previous) => ({ ...previous, [activeAudience]: option }))}
+                                  className={`border-b-2 px-4 py-2 text-sm font-medium ${cadence === option ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'}`}
+                                >
+                                  {coupleCadenceLabels[option]}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          <ul className="mb-7 space-y-3 text-sm leading-6">
+                            {plan.includedFeatures.slice(0, 4).map((item) => (
+                              <li key={item} className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{item}</span></li>
+                            ))}
+                          </ul>
+                          {isPaid ? (
+                            <Button onClick={() => void handleProfessionalPlanCheckout(activeAudience)} className="mt-auto w-full gap-2" disabled={isLoading}>
+                              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                              {user ? 'Choose Professional' : 'Sign in to upgrade'}
+                              {!isLoading ? <ArrowRight className="h-4 w-4" /> : null}
+                            </Button>
+                          ) : (
+                            <Button asChild className="mt-auto w-full gap-2"><Link to={authSignupHref}>Start free <ArrowRight className="h-4 w-4" /></Link></Button>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
-              </CardContent>
-            </Card>
+              );
+            })()}
           </section>
 
-          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
-            <Card className="rounded-[28px] border-border/60 bg-card/95 shadow-card">
-              <CardHeader>
-                <CardTitle className="font-display text-3xl">AI that works inside the workflow</CardTitle>
-                <CardDescription className="text-base leading-7">
-                  Zania AI is not just a chatbot. It helps couples plan smarter, planners move faster, and vendors respond more professionally.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4 lg:grid-cols-3">
-                {[
-                  {
-                    title: 'For couples',
-                    items: ['Weekly planning focus', 'Budget and timeline guidance', 'Smarter vendor suggestions'],
-                  },
-                  {
-                    title: 'For planners',
-                    items: ['Operational summaries', 'Decision support', 'Workflow acceleration'],
-                  },
-                  {
-                    title: 'For vendors',
-                    items: ['Quote and contract drafting help', 'Follow-up support', 'Faster response workflows'],
-                  },
-                ].map((group) => (
-                  <div key={group.title} className="rounded-2xl border border-border/60 bg-background/60 p-5">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">{group.title}</p>
-                    <ul className="mt-4 space-y-2 text-sm leading-7 text-muted-foreground">
-                      {group.items.map((item) => (
-                        <li key={item} className="flex items-start gap-2">
-                          <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </section>
-
-          <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8 lg:pb-18">
-            <div className="mb-6 max-w-3xl">
-              <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-primary">
-                FAQ
-              </Badge>
-              <h2 className="mt-4 font-display text-4xl font-semibold">A few practical questions</h2>
+          <section className="border-y border-border/60 py-8 sm:flex sm:items-center sm:justify-between sm:gap-8">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">The simple rule</p>
+              <p className="mt-2 max-w-2xl text-lg font-semibold">
+                {activeAudience === 'couple'
+                  ? 'Your planning tools stay free. Collaboration is the upgrade.'
+                  : 'Your documents stay free. Connecting them to clients is the upgrade.'}
+              </p>
             </div>
-            <div className="grid gap-4 lg:grid-cols-2">
-              {[
-                {
-                  question: 'Why is Zania free to start?',
-                  answer: 'Because wedding planning is already expensive, and the core workspace should be accessible before any upgrade decision.',
-                },
-                {
-                  question: 'What usually triggers a couple upgrade?',
-                  answer: 'Guest volume, multi-event planning, deeper exports, and more advanced coordination needs.',
-                },
-                {
-                  question: 'Why would a planner upgrade?',
-                  answer: 'To manage multiple weddings, reuse systems, add team members, and run a more professional client operation.',
-                },
-                {
-                  question: 'Why would a vendor upgrade?',
-                  answer: 'To handle quotes, contracts, invoices, receipts, bookings, and visibility more professionally from one place.',
-                },
-              ].map((item) => (
-                <Card key={item.question} className="rounded-[24px] border border-border/60 bg-card/95 shadow-card">
-                  <CardContent className="px-6 py-5">
-                    <h3 className="font-display text-2xl font-semibold">{item.question}</h3>
-                    <p className="mt-3 text-sm leading-7 text-muted-foreground">{item.answer}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <Button asChild variant="outline" className="mt-5 shrink-0 sm:mt-0"><Link to={authSignupHref}>Create free account</Link></Button>
           </section>
-
-          <section className="mx-auto max-w-7xl px-4 pb-18 sm:px-6 lg:px-8">
-            <Card className="rounded-[28px] border border-primary/20 bg-primary/5 shadow-card">
-              <CardContent className="flex flex-col gap-5 px-6 py-8 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Ready to start?</p>
-                  <h2 className="mt-2 font-display text-3xl font-semibold">Choose the path that fits your role. Start free and grow from there.</h2>
-                  <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-                    One elegant wedding workspace. Free to begin. Built to scale with real weddings, real businesses, and real coordination pressure.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <Link to={authSignupHref}>
-                    <Button className="w-full gap-2 sm:w-auto">
-                      Create account
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  <Link to="/">
-                    <Button variant="outline" className="w-full sm:w-auto">
-                      Back to home
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          </section>
-        </>
+        </main>
       )}
+      <PublicSiteFooter />
     </div>
   );
 }

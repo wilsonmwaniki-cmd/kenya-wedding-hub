@@ -27,16 +27,20 @@ export function plannerHasFullAccess(record?: PlannerAccessRecord | null) {
   return Boolean(record?.planner_verified && plannerHasActiveSubscription(record));
 }
 
+export function plannerCanCollaborate(record?: PlannerAccessRecord | null) {
+  return Boolean(record?.planner_verified);
+}
+
 export function plannerAccessMessage(record?: PlannerAccessRecord | null) {
   if (hasActiveBetaTrial(record)) {
     return isCommitteePlanner(record)
       ? 'Your 14-day beta trial is active. Committee subscription-only features are unlocked while the trial runs.'
-      : 'Your 14-day beta trial is active. Planner Pro features are unlocked while the trial runs.';
+      : 'Your 14-day beta trial is active. Professional features are unlocked while the trial runs.';
   }
   if (!plannerHasActiveSubscription(record)) {
     return isCommitteePlanner(record)
       ? 'Active committee subscription required before committee vendor and couple coordination unlocks.'
-      : 'Active subscription required before planner connections and vendor outreach unlock.';
+      : 'Professional is required for multi-wedding operations and business tools.';
   }
   if (record?.planner_verification_requested && !record?.planner_verified) return 'Verification request is in admin review.';
   if (!record?.planner_verified) return isCommitteePlanner(record) ? 'Committee verification required.' : 'Verification required.';

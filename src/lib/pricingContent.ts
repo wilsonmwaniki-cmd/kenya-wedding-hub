@@ -1,17 +1,11 @@
 import {
   getAudiencePlan,
-  getCoupleAddonDefinition,
   getCouplePlanDefinition,
-  getProfessionalAddonDefinition,
   getProfessionalPlanDefinition,
   type AudiencePlan,
-  type CoupleAddonCode,
-  type CoupleAddonDefinition,
   type CouplePlanDefinition,
   type CouplePlanTier,
   type PricingAudience,
-  type ProfessionalAddonCode,
-  type ProfessionalAddonDefinition,
   type ProfessionalAudience,
   type ProfessionalPlanDefinition,
   type ProfessionalPlanTier,
@@ -32,10 +26,6 @@ type CouplePlanContent = {
   ctaLabel: string;
 };
 
-type CoupleAddonContent = {
-  supportCopy: string;
-};
-
 type ProfessionalPlanContent = {
   tagline: string;
   supportCopy: string;
@@ -43,19 +33,13 @@ type ProfessionalPlanContent = {
   ctaLabel: string;
 };
 
-type ProfessionalAddonContent = {
-  supportCopy: string;
-};
-
 export type AudiencePlanDefinition = AudiencePlan & AudiencePlanContent;
 export type CouplePlanDefinitionWithContent = CouplePlanDefinition & CouplePlanContent;
-export type CoupleAddonDefinitionWithContent = CoupleAddonDefinition & CoupleAddonContent;
 export type ProfessionalPlanDefinitionWithContent = ProfessionalPlanDefinition & ProfessionalPlanContent;
-export type ProfessionalAddonDefinitionWithContent = ProfessionalAddonDefinition & ProfessionalAddonContent;
 
 const audiencePlanContent: Record<PricingAudience, AudiencePlanContent> = {
   couple: {
-    subtitle: 'Free to explore, pay when you are ready to actively coordinate your wedding.',
+    subtitle: 'Explore and plan for free. Upgrade only when you are ready to collaborate with vendors and a planner.',
     pricingModel: 'Wedding plan',
     freeIncludes: [
       'Sign up and create a wedding workspace',
@@ -65,20 +49,14 @@ const audiencePlanContent: Record<PricingAudience, AudiencePlanContent> = {
       'Draft budget, tasks, and guest planning',
     ],
     paidUnlocks: [
-      'AI wedding assistant with workspace-aware guidance and actions',
       'Connect with vendors and planners',
-      'Track vendor payments and balances',
-      'Collaborate with committee members or a planner',
-      'Export progress and reports',
-      'Push schedules to Google Calendar',
+      'Work together inside one shared wedding workspace',
+      'Access new Collaborative features as they are released',
     ],
     upgradeMoments: [
-      'Opening the AI assistant',
       'Trying to contact a vendor',
       'Trying to connect to a planner',
-      'Inviting collaborators',
-      'Exporting progress',
-      'Syncing to Google Calendar',
+      'Opening a future Collaborative feature',
     ],
   },
   committee: {
@@ -108,162 +86,127 @@ const audiencePlanContent: Record<PricingAudience, AudiencePlanContent> = {
     ],
   },
   planner: {
-    subtitle: 'Start with a verified listing for discovery, then upgrade when you need operational tools for bookings, payments, contracts, and trust.',
+    subtitle: 'Create and manage business documents for free. Upgrade when you want those documents connected to couples and client workspaces.',
     pricingModel: 'Monthly or annual subscription',
     freeIncludes: [
       'Directory listing',
       'Basic public profile',
       'Verification eligibility',
+      'Receive invitations and inquiries',
+      'Collaborate in a couple-funded workspace',
+      'Public ratings from completed weddings',
+      'Standalone quotes, invoices, receipts, and contracts',
+      'Reusable document templates and PDF exports',
     ],
     paidUnlocks: [
       'Inquiries and bookings tracker',
-      'Quotes, invoicing, and receipts',
-      'Couple-linked payment tracking',
-      'Contract management with reusable templates',
-      'Public ratings from completed weddings',
+      'Connect documents to Zania couples and client workspaces',
+      'Answer in-app quote and contract requests',
+      'Keep linked payments and document status in sync',
+      'Advanced portfolio and business analytics',
     ],
     upgradeMoments: [
       'Trying to manage inquiries or bookings',
-      'Trying to create quotes or invoices',
-      'Trying to manage contracts',
-      'Trying to surface public ratings',
-      'Trying to use premium portfolio or growth tools',
+      'Trying to connect a document to a client workspace',
+      'Trying to answer an in-app document request',
+      'Trying to use advanced portfolio or business tools',
     ],
   },
   vendor: {
-    subtitle: 'Start with a verified listing for discovery, then upgrade when you need operational tools for bookings, payments, contracts, and trust.',
+    subtitle: 'Create and manage business documents for free. Upgrade when you want those documents connected to couples, planners, and bookings.',
     pricingModel: 'Monthly or annual subscription',
     freeIncludes: [
       'Directory listing',
       'Basic public profile',
       'Verification eligibility',
+      'Receive invitations and inquiries',
+      'Collaborate in a couple-funded workspace',
+      'Public ratings from completed weddings',
+      'Standalone quotes, invoices, receipts, and contracts',
+      'Reusable document templates and PDF exports',
     ],
     paidUnlocks: [
       'Inquiries and bookings tracker',
-      'Quotes, invoicing, and receipts',
-      'Couple-linked payment tracking',
-      'Contract management with reusable templates',
-      'Public ratings from completed weddings',
+      'Connect documents to Zania couples, planners, and bookings',
+      'Answer in-app quote and contract requests',
+      'Keep linked payments and document status in sync',
+      'Advanced portfolio and business analytics',
     ],
     upgradeMoments: [
       'Trying to manage inquiries or bookings',
-      'Trying to create quotes or invoices',
-      'Trying to manage contracts',
-      'Trying to surface public ratings',
-      'Trying to use premium portfolio or growth tools',
+      'Trying to connect a document to a Zania booking',
+      'Trying to answer an in-app document request',
+      'Trying to use advanced portfolio or business tools',
     ],
   },
 };
 
 const couplePlanContent: Record<CouplePlanTier, CouplePlanContent> = {
   free: {
-    tagline: 'Plan your wedding on your own',
-    supportCopy: 'Best for couples getting started with budgeting, vendor discovery, guests, and early planning.',
+    tagline: 'Plan your wedding in one private workspace.',
+    supportCopy: 'Use Zania\'s planning tools at no cost.',
     includedFeatures: [
-      'Task list',
-      'Cost estimator',
-      'Budget tracking',
-      'Vendor directory',
-      'Vendor management',
-      'Guest list',
+      'Budget, tasks, timeline, and guests',
+      'Find and save vendors and planners',
+      'Zania planning assistant',
+      'Gift registry and RSVP tools',
+      'One private wedding workspace',
     ],
     ctaLabel: 'Start free',
   },
-  basic: {
-    tagline: 'Plan together',
-    supportCopy: 'Stop planning alone. Bring your committee, family, planner, and vendors into one shared wedding workspace.',
+  collaborative: {
+    tagline: 'Invite your planner and vendors to work with you.',
+    supportCopy: 'Bring your wedding team into the same workspace.',
     includedFeatures: [
-      'Everything in Free',
-      'Planner collaboration',
-      'Vendor collaboration',
-      'Committee collaboration up to 10 people',
-      'Family collaboration up to 10 people',
+      'Everything in Intimate',
+      'Invite your planner',
+      'Invite your vendors',
+      'Plan together in one shared workspace',
     ],
-    ctaLabel: 'Upgrade to Basic',
-  },
-  premium: {
-    tagline: 'Run the whole wedding in one place',
-    supportCopy: 'Turn your wedding into a fully coordinated workspace with AI support, collaborative timelines, and richer vendor and planner coordination.',
-    includedFeatures: [
-      'Everything in Basic',
-      'Committee collaboration up to 20 people',
-      'Family collaboration up to 20 people',
-      'AI Wedding Assistant',
-      'Vendor collaboration tools',
-      'Planner collaboration tools',
-      'Timeline management',
-    ],
-    ctaLabel: 'Go Premium',
-  },
-};
-
-const coupleAddonContent: Record<CoupleAddonCode, CoupleAddonContent> = {
-  gift_registry_addon: {
-    supportCopy: 'Let guests buy directly from your wedding wishlist. Purchased items are automatically marked off so there are no duplicates.',
-  },
-  guest_rsvp_management_addon: {
-    supportCopy: 'Collect RSVPs, track attendance, and manage guest coordination beyond a simple guest list.',
+    ctaLabel: 'Upgrade to Collaborative',
   },
 };
 
 const professionalPlanContent: Record<ProfessionalAudience, Record<ProfessionalPlanTier, ProfessionalPlanContent>> = {
   planner: {
     free: {
-      tagline: 'Get discovered on Zania',
-      supportCopy: 'Best for planners who want a public profile, directory visibility, and a verified business presence before upgrading into operational tools.',
-      includedFeatures: ['Directory listing', 'Basic public profile', 'Verification eligibility'],
+      tagline: 'Get listed and create business documents.',
+      supportCopy: 'Use your public profile and standalone document desk without paying.',
+      includedFeatures: ['Public directory listing', 'Standalone quotes, invoices, receipts, and contracts', 'Reusable templates and PDF exports', 'Receive invitations and inquiries', 'Public ratings from completed weddings'],
       ctaLabel: 'Start free',
     },
     premium: {
-      tagline: 'Run your wedding business on Zania',
-      supportCopy: 'Manage inquiries, bookings, payments, contracts, and public credibility in one business workspace designed for wedding professionals.',
+      tagline: 'Connect your documents to real client work.',
+      supportCopy: 'Run client work and documents from one shared system.',
       includedFeatures: [
-        'Inquiries and bookings tracker',
-        'Quotes, invoicing, and receipts',
-        'Couple-linked payment tracking',
-        'Contract management with reusable templates',
-        'Public ratings from completed weddings',
+        'Everything in Free',
+        'Connect documents to couples and weddings',
+        'Manage inquiries, requests, and bookings',
+        'Keep payments and document status in sync',
+        'Advanced portfolio and business insights',
       ],
-      ctaLabel: 'Upgrade to Premium',
+      ctaLabel: 'Upgrade to Professional',
     },
   },
   vendor: {
     free: {
-      tagline: 'Get discovered on Zania',
-      supportCopy: 'Best for vendors who want a public profile, directory visibility, and a verified business presence before upgrading into operational tools.',
-      includedFeatures: ['Directory listing', 'Basic public profile', 'Verification eligibility'],
+      tagline: 'Get listed and create business documents.',
+      supportCopy: 'Use your public profile and standalone document desk without paying.',
+      includedFeatures: ['Public directory listing', 'Standalone quotes, invoices, receipts, and contracts', 'Reusable templates and PDF exports', 'Receive invitations and inquiries', 'Public ratings from completed weddings'],
       ctaLabel: 'Start free',
     },
     premium: {
-      tagline: 'Run your wedding business on Zania',
-      supportCopy: 'Manage inquiries, bookings, payments, contracts, and public credibility in one business workspace designed for wedding professionals.',
+      tagline: 'Connect your documents to real bookings.',
+      supportCopy: 'Run bookings and documents from one shared system.',
       includedFeatures: [
-        'Inquiries and bookings tracker',
-        'Quotes, invoicing, and receipts',
-        'Couple-linked payment tracking',
-        'Contract management with reusable templates',
-        'Public ratings from completed weddings',
+        'Everything in Free',
+        'Connect documents to couples and planners',
+        'Manage inquiries, requests, and bookings',
+        'Keep payments and document status in sync',
+        'Advanced portfolio and business insights',
       ],
-      ctaLabel: 'Upgrade to Premium',
+      ctaLabel: 'Upgrade to Professional',
     },
-  },
-};
-
-const professionalAddonContent: Record<ProfessionalAddonCode, ProfessionalAddonContent> = {
-  media_addon: {
-    supportCopy: 'Showcase your work with a richer photo and video portfolio experience beyond a basic profile.',
-  },
-  advertising_addon: {
-    supportCopy: 'Promote your listing through boosted placement, featured visibility, and directory marketing opportunities.',
-  },
-  team_workspace_bundle_3: {
-    supportCopy: 'Collaborate with colleagues inside Zania through a 3-seat team workspace bundle.',
-  },
-  team_workspace_bundle_5: {
-    supportCopy: 'Collaborate with colleagues inside Zania through a 5-seat team workspace bundle.',
-  },
-  team_workspace_bundle_10: {
-    supportCopy: 'Collaborate with colleagues inside Zania through a 10-seat team workspace bundle.',
   },
 };
 
@@ -282,18 +225,7 @@ export function getCouplePlanDefinitionWithContent(tier: CouplePlanTier): Couple
 }
 
 export function listCouplePlanDefinitions(): CouplePlanDefinitionWithContent[] {
-  return (['free', 'basic', 'premium'] as const).map((tier) => getCouplePlanDefinitionWithContent(tier));
-}
-
-export function getCoupleAddonDefinitionWithContent(code: CoupleAddonCode): CoupleAddonDefinitionWithContent {
-  return {
-    ...getCoupleAddonDefinition(code),
-    ...coupleAddonContent[code],
-  };
-}
-
-export function listCoupleAddonDefinitions(): CoupleAddonDefinitionWithContent[] {
-  return (['gift_registry_addon', 'guest_rsvp_management_addon'] as const).map((code) => getCoupleAddonDefinitionWithContent(code));
+  return (['free', 'collaborative'] as const).map((tier) => getCouplePlanDefinitionWithContent(tier));
 }
 
 export function getProfessionalPlanDefinitionWithContent(
@@ -303,14 +235,5 @@ export function getProfessionalPlanDefinitionWithContent(
   return {
     ...getProfessionalPlanDefinition(audience, tier),
     ...professionalPlanContent[audience][tier],
-  };
-}
-
-export function getProfessionalAddonDefinitionWithContent(
-  code: ProfessionalAddonCode,
-): ProfessionalAddonDefinitionWithContent {
-  return {
-    ...getProfessionalAddonDefinition(code),
-    ...professionalAddonContent[code],
   };
 }

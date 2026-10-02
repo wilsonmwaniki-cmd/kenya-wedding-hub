@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import ReactMarkdown from 'react-markdown';
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowRight, Loader2, Send, X } from 'lucide-react';
+import SafeMarkdown from '@/components/SafeMarkdown';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,6 +11,7 @@ import type { AiAssistantMessage } from '@/lib/aiAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
 import type { PlannerType } from '@/lib/roles';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { getAssistantAudience, loadLatestAssistantConversation } from '@/lib/assistantConversations';
 
 function ZaniaMonogram({
   className = '',
@@ -157,16 +158,32 @@ function getAssistantSurface(pathname: string, role?: string | null) {
   }
 
   return {
-    label: role === 'vendor' ? 'Vendor workspace' : 'Dashboard',
-    page: role === 'vendor' ? 'vendor_workspace' : 'dashboard',
+    label: role === 'vendor' ? 'Vendor workspace' : role === 'planner' ? 'Planner workspace' : 'Wedding home',
+    page: role === 'vendor' ? 'vendor_workspace' : role === 'planner' ? 'planner_dashboard' : 'dashboard',
     contextSource: 'assistant_panel_dashboard',
-    title: role === 'vendor' ? 'Vendor assistant' : 'Wedding assistant',
-    description: 'Get one clear recommendation based on the page you are already on.',
-    prompts: [
-      'Give me the next best move from this workspace.',
-      'Tell me what needs attention first right now.',
-      'Summarize the most important action to take next.',
-    ],
+    title: role === 'vendor' ? 'Vendor assistant' : role === 'planner' ? 'Planner assistant' : 'Wedding assistant',
+    description: role === 'planner'
+      ? 'Ask about priorities across your client weddings, then choose the client before Zania makes a change.'
+      : role === 'vendor'
+        ? 'Ask about leads, bookings, documents, payments, or the next client follow-up.'
+        : 'Ask about your wedding plan or tell Zania what you want to update.',
+    prompts: role === 'planner'
+      ? [
+        'Which client wedding needs my attention first today?',
+        'Summarize the overdue work across my client weddings.',
+        'Help me decide the next planner action, then ask before changing anything.',
+      ]
+      : role === 'vendor'
+        ? [
+          'Which lead or booking needs my attention first?',
+          'Summarize the client follow-ups and payment attention in this workspace.',
+          'Help me move the next client step forward.',
+        ]
+        : [
+          'What should we focus on this week?',
+          'How is our wedding plan doing?',
+          'Help me complete the next planning action.',
+        ],
   };
 }
 
@@ -182,13 +199,23 @@ export default function AssistantPanel({
   const [promptIndex, setPromptIndex] = useState(0);
   const [animatedPrompt, setAnimatedPrompt] = useState('');
   const [activeRequestPrompt, setActiveRequestPrompt] = useState('');
+  const [completedBriefingRequestId, setCompletedBriefingRequestId] = useState<number | null>(null);
   const [conversation, setConversation] = useState<AiAssistantMessage[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const handledLaunchRequestIdRef = useRef<number | null>(null);
+  const requestSequenceRef = useRef(0);
   const assistantPanel = useAssistantPanel();
+  const launchRequest = assistantPanel?.launchRequest ?? null;
+  const launchRequestId = launchRequest?.id ?? null;
+  const launchPrompt = launchRequest?.prompt ?? null;
+  const launchAutoSubmit = launchRequest?.autoSubmit ?? false;
   const feature = useMemo(() => getAssistantFeature(role, plannerType), [plannerType, role]);
   const surface = useMemo(() => getAssistantSurface(location.pathname, role), [location.pathname, role]);
   const compactDesktopLauncher = surface.page === 'settings';
+  const activeConciergeContext = launchRequest?.conciergeContext ?? null;
 
   const assistant = useInlineAssistant({
     feature: feature ?? 'couple.ai_assistant',
@@ -196,19 +223,84 @@ export default function AssistantPanel({
     surface: 'assistant_panel',
     contextSource: surface.contextSource,
     initialMessages: conversation,
+    conciergeContext: activeConciergeContext,
+    conversationId,
   });
   const starterPrompt = surface.prompts[0] ?? '';
+  const suggestedPrompts = !conversation.length
+    && (role === 'couple' || (role === 'planner' && plannerType !== 'committee'))
+    ? ['How is my wedding doing?', 'What should I focus on this week?']
+    : surface.prompts;
   const activePrompt = surface.prompts[promptIndex % Math.max(surface.prompts.length, 1)] ?? starterPrompt;
-  const assistantBusy = assistant.loading || assistant.usageLoading || assistant.accessLoading;
-  const inputPlaceholder = animatedPrompt || 'Ask anything about your wedding plans...';
+  const assistantBusy = assistant.loading || assistant.usageLoading || assistant.accessLoading || historyLoading;
+  const assistantDecisionReady = assistant.decision !== null;
+  const runInlineAssistantPrompt = assistant.runPrompt;
+  const launcherPrompt = animatedPrompt || 'Ask Zania what needs attention...';
+  const composerPlaceholder = surface.page === 'planner_dashboard'
+    ? 'Ask about your client weddings...'
+    : surface.page === 'vendor_workspace'
+      ? 'Ask about your vendor workspace...'
+      : 'Ask about this wedding...';
+
+  const runAssistantPrompt = useCallback(async (
+    promptValue: string,
+    surfaceName = 'assistant_panel_custom',
+    showPrompt = true,
+  ) => {
+    const prompt = promptValue.trim();
+    if (!prompt) return null;
+    const requestSequence = ++requestSequenceRef.current;
+    setActiveRequestPrompt(showPrompt ? prompt : '');
+    setCustomPrompt('');
+    const result = await runInlineAssistantPrompt(prompt, {
+      contextSource: surface.contextSource,
+      surface: surfaceName,
+      conciergeContext: activeConciergeContext,
+    });
+    if (requestSequence !== requestSequenceRef.current) return null;
+    if (result) {
+      setConversation((current) => [
+        ...current,
+        ...(showPrompt ? [{ role: 'user' as const, content: prompt }] : []),
+        { role: 'assistant', content: result },
+      ]);
+    }
+    setActiveRequestPrompt('');
+    return result;
+  }, [activeConciergeContext, runInlineAssistantPrompt, surface.contextSource]);
 
   useEffect(() => {
+    requestSequenceRef.current += 1;
     assistant.clearResponse();
     setCustomPrompt('');
     setActiveRequestPrompt('');
-    setConversation([]);
     setPromptIndex(0);
-  }, [location.pathname, starterPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.pathname, starterPrompt, assistant.workspaceKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!assistantPanel?.open || !feature || !assistant.canUseAssistant) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    void loadLatestAssistantConversation(getAssistantAudience(role, plannerType))
+      .then((history) => {
+        if (cancelled) return;
+        setConversationId(history.conversationId);
+        setConversation(history.messages);
+      })
+      .catch((error) => {
+        if (!cancelled) console.error('Could not load Ask Zania history:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assistant.canUseAssistant, assistantPanel?.open, feature, plannerType, role]);
+
+  useEffect(() => {
+    if (assistant.conversationId) setConversationId(assistant.conversationId);
+  }, [assistant.conversationId]);
 
   useEffect(() => {
     if (!surface.prompts.length) return undefined;
@@ -251,9 +343,41 @@ export default function AssistantPanel({
   }, [activePrompt, surface.prompts]);
 
   useEffect(() => {
-    if (!assistantPanel?.launchRequest) return;
-    setCustomPrompt(assistantPanel.launchRequest.prompt ?? '');
-  }, [assistantPanel?.launchRequest?.id, assistantPanel?.launchRequest?.prompt]);
+    if (!launchRequestId) return;
+    if (!launchAutoSubmit) {
+      setCustomPrompt(launchPrompt ?? '');
+    }
+    setCompletedBriefingRequestId(null);
+  }, [launchAutoSubmit, launchPrompt, launchRequestId]);
+
+  useEffect(() => {
+    if (
+      !assistantPanel?.open
+      || !launchAutoSubmit
+      || !launchPrompt
+      || !launchRequestId
+      || handledLaunchRequestIdRef.current === launchRequestId
+      || assistantBusy
+      || !assistantDecisionReady
+    ) {
+      return;
+    }
+
+    handledLaunchRequestIdRef.current = launchRequestId;
+    if (!assistant.canUseAssistant) return;
+    void runAssistantPrompt(launchPrompt, 'assistant_panel_briefing', false).then((result) => {
+      if (result) setCompletedBriefingRequestId(launchRequestId);
+    });
+  }, [
+    assistant.canUseAssistant,
+    assistantDecisionReady,
+    assistantBusy,
+    assistantPanel?.open,
+    launchAutoSubmit,
+    launchPrompt,
+    launchRequestId,
+    runAssistantPrompt,
+  ]);
 
   useEffect(() => {
     if (!assistantPanel?.open) return;
@@ -298,27 +422,9 @@ export default function AssistantPanel({
 
   if (!assistantPanel || !feature || location.pathname === '/ai-chat') return null;
 
-  const runAssistantPrompt = async (promptValue: string, surfaceName = 'assistant_panel_custom') => {
-    const prompt = promptValue.trim();
-    if (!prompt) return;
-    setActiveRequestPrompt(prompt);
-    setCustomPrompt('');
-    const result = await assistant.runPrompt(prompt, {
-      contextSource: surface.contextSource,
-      surface: surfaceName,
-    });
-    if (result) {
-      setConversation((current) => [
-        ...current,
-        { role: 'user', content: prompt },
-        { role: 'assistant', content: result },
-      ]);
-      setActiveRequestPrompt('');
-    }
-  };
-
   const submitCustomPrompt = async () => {
-    await runAssistantPrompt(customPrompt.trim() || activePrompt.trim());
+    if (!customPrompt.trim()) return;
+    await runAssistantPrompt(customPrompt.trim());
   };
 
   return (
@@ -327,65 +433,63 @@ export default function AssistantPanel({
         {!assistantPanel.open ? (
           <motion.button
             type="button"
-            onClick={() => assistantPanel.setOpen(true)}
+            onClick={() => assistantPanel.openAssistant()}
             initial={{ opacity: 0, y: 18, scale: 0.97, filter: 'blur(8px)' }}
             animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
             exit={{ opacity: 0, y: 16, scale: 0.97, filter: 'blur(8px)' }}
             transition={{ type: 'spring', stiffness: 220, damping: 24 }}
             whileHover={{ y: -4, scale: 1.01 }}
             whileTap={{ scale: 0.98 }}
-            className={`fixed right-3 z-30 grid h-14 w-14 place-items-center overflow-hidden rounded-full border border-white/[0.18] bg-[radial-gradient(circle_at_82%_18%,rgba(255,255,255,0.34),transparent_34%),radial-gradient(circle_at_18%_115%,rgba(238,202,160,0.32),transparent_42%),linear-gradient(135deg,rgba(80,75,64,0.78),rgba(185,155,119,0.60)_50%,rgba(76,87,65,0.78))] p-0 text-left text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_18px_46px_rgba(49,41,33,0.22)] backdrop-blur-[24px] bottom-[calc(env(safe-area-inset-bottom)+1rem)] sm:bottom-5 sm:right-4 sm:block sm:h-auto sm:w-[calc(100vw-2rem)] sm:max-w-[420px] sm:rounded-[1.65rem] sm:p-3.5 lg:bottom-6 lg:right-5 ${
+            className={`fixed right-3 z-[35] grid h-12 w-12 place-items-center overflow-hidden rounded-full border border-primary/30 bg-primary p-0 text-left text-primary-foreground shadow-card bottom-[calc(env(safe-area-inset-bottom)+5.1rem)] sm:bottom-[calc(env(safe-area-inset-bottom)+5.6rem)] sm:right-4 sm:block sm:h-auto sm:w-[calc(100vw-2rem)] sm:max-w-[420px] sm:rounded-2xl sm:p-3.5 lg:bottom-6 lg:right-5 ${
               compactDesktopLauncher
-                ? 'lg:w-[172px] lg:max-w-[172px] lg:rounded-[1rem] lg:px-2.25 lg:py-1.75'
-                : 'lg:w-[232px] lg:max-w-[232px] lg:rounded-[1.2rem] lg:p-2'
+                ? 'lg:w-[172px] lg:max-w-[172px] lg:rounded-xl lg:px-2.5 lg:py-2'
+                : 'lg:w-[232px] lg:max-w-[232px] lg:rounded-xl lg:p-2.5'
             }`}
             aria-label="Open Ask Zania assistant"
             aria-expanded={assistantPanel.open}
           >
-            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(118deg,transparent,rgba(255,255,255,0.20)_42%,transparent_66%)] opacity-75" />
-            <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/[0.18]" />
             <div className="relative flex h-full w-full items-center justify-center sm:hidden">
               <img
                 src="/assistant-badge.svg"
                 alt=""
                 aria-hidden="true"
-                className="h-11 w-11 select-none object-contain"
+                className="h-9 w-9 select-none object-contain"
               />
-              <span className="absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full bg-[#d9f7cb] ring-2 ring-[#6d5b46]" />
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-success ring-2 ring-primary" />
             </div>
             <div className={`relative hidden items-center justify-between gap-3 sm:flex ${
               compactDesktopLauncher ? 'mb-2.5 sm:mb-3 lg:mb-0' : 'mb-2.5 sm:mb-3 lg:mb-1'
             }`}>
               <div className="flex items-baseline gap-x-3">
-                <span className={`shrink-0 font-display leading-none text-[#fff6e8] drop-shadow-sm ${
+                <span className={`shrink-0 font-display leading-none text-primary-foreground ${
                   compactDesktopLauncher
                     ? 'text-[1.45rem] sm:text-[1.65rem] lg:text-[0.9rem]'
                     : 'text-[1.45rem] sm:text-[1.65rem] lg:text-[0.96rem]'
                 }`}>
                   Ask Zania
                 </span>
-                <span className="hidden min-w-0 truncate text-[0.55rem] font-semibold uppercase tracking-[0.26em] text-[#fff6e8]/68 sm:block sm:text-[0.6rem] sm:tracking-[0.30em] lg:hidden">
+                <span className="hidden min-w-0 truncate text-[0.55rem] font-semibold uppercase tracking-[0.26em] text-primary-foreground/70 sm:block sm:text-[0.6rem] sm:tracking-[0.30em] lg:hidden">
                   Planning assistant
                 </span>
               </div>
-              <span className={`inline-flex items-center gap-2 font-medium text-[#fff6e8]/82 ${
+              <span className={`inline-flex items-center gap-2 font-medium text-primary-foreground/85 ${
                 compactDesktopLauncher ? 'text-[0.68rem] sm:text-[0.72rem] lg:text-[0.54rem]' : 'text-[0.68rem] sm:text-[0.72rem] lg:text-[0.58rem]'
               }`}>
-                <span className="h-2 w-2 rounded-full bg-[#d9f7cb]" />
+                <span className="h-2 w-2 rounded-full bg-success" />
                 <span className="sm:inline">Ready</span>
               </span>
             </div>
-            <div className={`relative hidden min-h-[3.7rem] items-center gap-3 rounded-[1.25rem] border border-white/45 bg-white/[0.08] px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] sm:flex sm:min-h-[4rem] sm:rounded-[1.35rem] sm:px-4 ${
-              compactDesktopLauncher ? 'lg:hidden' : 'lg:min-h-[2.45rem] lg:gap-1.5 lg:rounded-[0.95rem] lg:px-2 lg:py-1.25'
+            <div className={`relative hidden min-h-[3.7rem] items-center gap-3 rounded-xl border border-primary-foreground/25 bg-primary-foreground/10 px-3.5 py-2.5 sm:flex sm:min-h-[4rem] sm:px-4 ${
+              compactDesktopLauncher ? 'lg:hidden' : 'lg:min-h-[2.45rem] lg:gap-1.5 lg:px-2 lg:py-1.5'
             }`}>
-              <span className="grid h-[17px] w-[17px] shrink-0 place-items-center rounded-full border border-white/20 text-[#fff6e8]/78 sm:h-[18px] sm:w-[18px] lg:h-[12px] lg:w-[12px]">
-                <ZaniaMonogram className="text-[0.4rem] sm:text-[0.42rem] lg:text-[0.28rem]" accentClassName="text-[#d4bb7d]" />
+              <span className="grid h-[17px] w-[17px] shrink-0 place-items-center rounded-full border border-primary-foreground/25 text-primary-foreground/80 sm:h-[18px] sm:w-[18px] lg:h-[12px] lg:w-[12px]">
+                <ZaniaMonogram className="text-[0.4rem] sm:text-[0.42rem] lg:text-[0.28rem]" accentClassName="text-accent" />
               </span>
-              <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium leading-none text-[#fff6e8]/90 sm:text-[1.03rem] lg:text-[0.72rem]">
-                {inputPlaceholder}
+              <span className="min-w-0 flex-1 truncate text-[0.98rem] font-medium leading-none text-primary-foreground/90 sm:text-[1.03rem] lg:text-[0.72rem]">
+                {launcherPrompt}
                 <span className="ml-0.5 animate-pulse">|</span>
               </span>
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff6e8]/16 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] sm:h-10 sm:w-10 lg:h-7 lg:w-7">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary-foreground/15 text-primary-foreground sm:h-10 sm:w-10 lg:h-7 lg:w-7">
                 <Send className="h-[18px] w-[18px] lg:h-[12px] lg:w-[12px]" />
               </span>
             </div>
@@ -396,7 +500,7 @@ export default function AssistantPanel({
       <AnimatePresence>
         {assistantPanel.open ? (
           <motion.div
-            className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center p-3 sm:p-4 lg:justify-end lg:p-6"
+            className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-4 lg:justify-end lg:p-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -406,40 +510,37 @@ export default function AssistantPanel({
               role="dialog"
               aria-modal="true"
               aria-label="Ask Zania assistant"
-              className="pointer-events-auto relative flex h-[min(700px,calc(100dvh-0.75rem))] w-full max-w-[460px] flex-col overflow-hidden rounded-[1.65rem] border border-white/[0.18] bg-[radial-gradient(circle_at_78%_16%,rgba(255,255,255,0.28),transparent_32%),radial-gradient(circle_at_20%_118%,rgba(238,202,160,0.24),transparent_40%),linear-gradient(138deg,rgba(63,58,51,0.94),rgba(170,145,112,0.84)_48%,rgba(70,82,61,0.92))] text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_24px_70px_rgba(43,36,29,0.26)] backdrop-blur-[24px] sm:h-[min(620px,calc(100dvh-3rem))] sm:max-w-[500px] sm:rounded-[1.75rem]"
+              className="pointer-events-auto relative flex h-[min(620px,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-0.75rem))] w-full max-w-[460px] flex-col overflow-hidden rounded-2xl border border-border bg-background text-foreground shadow-elevated sm:h-[min(620px,calc(100dvh-3rem))] sm:max-w-[500px] sm:rounded-3xl"
               initial={{ opacity: 0, y: 34, scale: 0.94, filter: 'blur(10px)' }}
               animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
               exit={{ opacity: 0, y: 24, scale: 0.95, filter: 'blur(8px)' }}
               transition={{ type: 'spring', stiffness: 210, damping: 24 }}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(118deg,transparent,rgba(255,255,255,0.20)_42%,transparent_66%)] opacity-75" />
-              <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/[0.18]" />
-
-              <div className="relative flex justify-center pt-2.5 sm:hidden">
-                <span className="h-1.5 w-12 rounded-full bg-white/28" />
+              <div className="relative flex justify-center pt-2 sm:hidden">
+                <span className="h-1 w-10 rounded-full bg-muted" />
               </div>
 
-              <header className="relative border-b border-white/[0.14] px-4 pb-3 pt-4 sm:px-5 sm:pt-[1.125rem]">
+              <header className="relative border-b border-border bg-card px-3.5 pb-3 pt-3 sm:px-5 sm:pt-[1.125rem]">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex items-baseline gap-x-3">
-                      <h2 className="shrink-0 font-display text-[1.65rem] leading-none text-[#fff6e8] drop-shadow-sm sm:text-[1.8rem]">
+                      <h2 className="shrink-0 font-display text-[1.5rem] leading-none text-foreground sm:text-[1.8rem]">
                         Ask Zania
                       </h2>
-                      <span className="min-w-0 truncate text-[0.58rem] font-semibold uppercase tracking-[0.30em] text-[#fff6e8]/68 sm:text-[0.64rem]">
+                      <span className="hidden min-w-0 truncate text-[0.64rem] font-semibold uppercase tracking-[0.30em] text-muted-foreground sm:inline">
                         Planning assistant
                       </span>
                     </div>
-                      <div className="mt-1.5 flex items-center gap-2 text-[0.85rem] text-[#fff6e8]/72">
-                      <span className="h-2 w-2 rounded-full bg-[#d9f7cb]" />
+                    <div className="mt-1.5 flex items-center gap-2 text-[0.8rem] text-muted-foreground sm:text-[0.85rem]">
+                      <span className="h-2 w-2 rounded-full bg-success" />
                       Ready to help
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => assistantPanel.setOpen(false)}
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.22] bg-white/[0.08] text-[#fff6e8]/82 transition-colors hover:bg-white/[0.14] hover:text-[#fff6e8]"
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:h-10 sm:w-10"
                     aria-label="Close Zania assistant"
                   >
                     <X className="h-[18px] w-[18px]" />
@@ -448,9 +549,9 @@ export default function AssistantPanel({
               </header>
 
               <div className="relative flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+                <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3 sm:px-5 sm:py-4">
                   {assistant.decision && !assistant.canUseAssistant ? (
-                    <div className="rounded-[1.5rem] border border-white/[0.18] bg-[#fff6e8]/86 p-4 text-foreground shadow-sm">
+                    <div className="rounded-2xl border border-border bg-card p-4 text-foreground shadow-card">
                       <InlineUpgradePrompt decision={assistant.decision} />
                     </div>
                   ) : (
@@ -458,7 +559,7 @@ export default function AssistantPanel({
                       <motion.div
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="max-w-[92%] rounded-[1.4rem] border border-white/35 bg-[#fff8ef]/82 px-4 py-3.5 text-sm font-medium leading-6 text-[#2b2118] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
+                        className="semantic-surface-info max-w-[94%] rounded-2xl border px-3.5 py-3 text-sm font-medium leading-6 text-foreground sm:max-w-[92%] sm:px-4 sm:py-3.5"
                       >
                         Hi, I'm your planning assistant. What would you like help with?
                       </motion.div>
@@ -470,13 +571,13 @@ export default function AssistantPanel({
                           animate={{ opacity: 1, y: 0 }}
                           className={
                             message.role === 'user'
-                              ? 'ml-auto max-w-[86%] rounded-[1.25rem] border border-[rgba(255,255,255,0.16)] bg-[linear-gradient(135deg,rgba(91,67,55,0.92),rgba(137,87,62,0.88))] px-4 py-3 text-sm font-medium leading-6 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]'
-                              : 'max-w-[94%] rounded-[1.25rem] border border-white/40 bg-[#fff8ef]/88 px-4 py-3 text-[#241f1a] shadow-[inset_0_1px_0_rgba(255,255,255,0.20)]'
+                              ? 'ml-auto max-w-[86%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-sm font-medium leading-6 text-primary-foreground'
+                              : 'semantic-surface-info max-w-[94%] rounded-2xl rounded-bl-sm border px-4 py-3 text-foreground'
                           }
                         >
                           {message.role === 'assistant' ? (
-                            <div className="prose prose-sm max-w-none text-[#241f1a] prose-p:my-2 prose-ul:my-2 prose-li:my-1">
-                              <ReactMarkdown>{message.content}</ReactMarkdown>
+                            <div className="prose prose-sm max-w-none text-foreground prose-p:my-2 prose-ul:my-2 prose-li:my-1">
+                              <SafeMarkdown>{message.content}</SafeMarkdown>
                             </div>
                           ) : (
                             message.content
@@ -488,10 +589,43 @@ export default function AssistantPanel({
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="ml-auto max-w-[86%] rounded-[1.25rem] border border-[rgba(255,255,255,0.16)] bg-[linear-gradient(135deg,rgba(91,67,55,0.92),rgba(137,87,62,0.88))] px-4 py-3 text-sm font-medium leading-6 text-[#fff6e8] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]"
+                          className="ml-auto max-w-[86%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-sm font-medium leading-6 text-primary-foreground"
                         >
                           {activeRequestPrompt}
                         </motion.div>
+                      ) : null}
+
+                      {!assistantBusy
+                        && completedBriefingRequestId === assistantPanel.launchRequest?.id
+                        && assistantPanel.launchRequest.actions.length ? (
+                        <motion.section
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="max-w-[94%] rounded-2xl border border-border bg-card p-3.5 shadow-card sm:max-w-[92%] sm:p-4"
+                          aria-labelledby="briefing-actions-title"
+                        >
+                          <p
+                            id="briefing-actions-title"
+                            className="text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+                          >
+                            Recommended actions
+                          </p>
+                          <div className="mt-2 grid gap-2">
+                            {assistantPanel.launchRequest.actions.map((action) => (
+                              <Button
+                                key={`${action.label}-${action.path}`}
+                                asChild
+                                variant="outline"
+                                className="h-auto min-h-11 justify-between gap-3 whitespace-normal px-3 py-2.5 text-left"
+                              >
+                                <Link to={action.path} onClick={() => assistantPanel.setOpen(false)}>
+                                  <span>{action.label}</span>
+                                  <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                </Link>
+                              </Button>
+                            ))}
+                          </div>
+                        </motion.section>
                       ) : null}
 
                       <AnimatePresence mode="wait">
@@ -501,9 +635,9 @@ export default function AssistantPanel({
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -8 }}
-                            className="flex max-w-[88%] items-center gap-3 rounded-[1.25rem] border border-white/35 bg-[#fff8ef]/82 px-4 py-3 text-sm font-medium text-[#2b2118]"
+                            className="semantic-surface-info flex max-w-[88%] items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium text-foreground"
                           >
-                            <Loader2 className="h-4 w-4 animate-spin text-[#8a583f]" />
+                            <Loader2 className="h-4 w-4 animate-spin text-info" />
                             Thinking through your workspace...
                           </motion.div>
                         ) : assistant.error ? (
@@ -512,10 +646,10 @@ export default function AssistantPanel({
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -8 }}
-                            className="max-w-[88%] rounded-[1.25rem] border border-red-200/60 bg-[#fff0ec]/92 px-4 py-3"
+                            className="semantic-surface-danger max-w-[88%] rounded-2xl border px-4 py-3"
                           >
-                            <p className="text-sm font-semibold text-[#7a261b]">Could not load AI guidance</p>
-                            <p className="mt-1 text-sm leading-6 text-[#5c4338]">{assistant.error}</p>
+                            <p className="text-sm font-semibold text-destructive">Could not load AI guidance</p>
+                            <p className="mt-1 text-sm leading-6 text-foreground/75">{assistant.error}</p>
                           </motion.div>
                         ) : null}
                       </AnimatePresence>
@@ -524,28 +658,43 @@ export default function AssistantPanel({
                   )}
                 </div>
 
-                {!(assistant.decision && !assistant.canUseAssistant) && !assistantBusy && !assistant.error ? (
-                  <div className="relative border-t border-white/[0.12] px-4 py-3 sm:px-5">
-                    <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible sm:pb-0">
-                      {surface.prompts.map((prompt) => (
+                {!conversation.length && !activeRequestPrompt && !(assistant.decision && !assistant.canUseAssistant) && !assistantBusy && !assistant.error ? (
+                  <section className="relative border-t border-border bg-card/40 px-3.5 py-3 sm:px-5 sm:py-4" aria-labelledby="assistant-suggestions-title">
+                    <p
+                      id="assistant-suggestions-title"
+                      className="mb-2 text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+                    >
+                      Try asking
+                    </p>
+                    <div className="border-y border-border/75">
+                      {suggestedPrompts.map((prompt, index) => (
                         <button
                           key={prompt}
                           type="button"
+                          aria-label={prompt}
+                          disabled={!assistant.canUseAssistant}
                           onClick={() => void runAssistantPrompt(prompt, 'assistant_panel_suggestion')}
-                          className="min-w-[13rem] rounded-[1rem] border border-white/35 bg-[#fff8ef]/78 px-3 py-2 text-left text-[0.72rem] font-medium leading-5 text-[#3a2a1d] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:bg-[#fff8ef]/92 sm:min-w-0 sm:flex-1"
+                          className="group grid w-full grid-cols-[1.5rem_minmax(0,1fr)_1.25rem] items-center gap-2 border-b border-border/75 py-2.5 text-left text-foreground transition-colors last:border-b-0 hover:bg-primary/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:py-3"
                         >
-                          {prompt}
+                          <span className="text-[0.62rem] font-semibold tabular-nums tracking-[0.12em] text-primary/70">
+                            {String(index + 1).padStart(2, '0')}
+                          </span>
+                          <span className="text-[0.78rem] font-medium leading-5 sm:text-[0.8rem]">{prompt}</span>
+                          <ArrowRight
+                            aria-hidden="true"
+                            className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-primary"
+                          />
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </section>
                 ) : null}
 
-                <footer className="relative border-t border-white/[0.14] px-4 pb-4 pt-3 sm:px-5">
-                  <div className="mb-3 rounded-[1.35rem] border border-white/35 bg-[#fff8ef]/78 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
-                    <div className="flex min-h-[3.5rem] items-center gap-3">
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[rgba(123,84,58,0.12)] text-[#7b543a]">
-                        <ZaniaMonogram className="text-[0.72rem]" accentClassName="text-[#b78162]" />
+                <footer className="relative border-t border-border bg-card px-3.5 pb-3 pt-2.5 sm:px-5 sm:pb-4 sm:pt-3">
+                  <div className="mb-2.5 rounded-xl border border-input bg-background px-2.5 py-1.5 sm:mb-3 sm:rounded-2xl sm:p-2">
+                    <div className="flex min-h-12 items-center gap-2 sm:min-h-[3.5rem] sm:gap-3">
+                      <div className="hidden h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary sm:grid">
+                        <ZaniaMonogram className="text-[0.72rem]" accentClassName="text-accent" />
                       </div>
                       <Textarea
                         ref={inputRef}
@@ -557,26 +706,26 @@ export default function AssistantPanel({
                             void submitCustomPrompt();
                           }
                         }}
-                        placeholder={inputPlaceholder}
-                        className="min-h-10 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-[0.92rem] font-medium leading-6 text-[#2f2117] placeholder:text-[#7f6a5c] focus-visible:ring-0 focus-visible:ring-offset-0"
+                        placeholder={composerPlaceholder}
+                        rows={1}
+                        className="h-12 min-h-12 max-h-24 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-3 text-[0.92rem] font-medium leading-6 text-foreground placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
                         disabled={assistant.decision ? !assistant.canUseAssistant : false}
                       />
                       <Button
                         type="button"
                         size="icon"
                         onClick={submitCustomPrompt}
-                        disabled={assistantBusy || (!customPrompt.trim() && !activePrompt.trim()) || (assistant.decision ? !assistant.canUseAssistant : false)}
-                        className="h-10 w-10 shrink-0 rounded-full border border-[#bd7a56] bg-[#b76743] text-[#fff8ef] shadow-none backdrop-blur hover:bg-[#9f5739] disabled:opacity-50"
+                        disabled={assistantBusy || !customPrompt.trim() || (assistant.decision ? !assistant.canUseAssistant : false)}
+                        className="h-9 w-9 shrink-0 rounded-full disabled:opacity-50 sm:h-10 sm:w-10"
                         aria-label="Ask Zania"
                       >
                         {assistant.loading ? <Loader2 className="h-[18px] w-[18px] animate-spin" /> : <Send className="h-[18px] w-[18px]" />}
                       </Button>
                     </div>
                   </div>
-                  <Button asChild variant="ghost" className="h-auto gap-2 px-1 py-0 text-[#fff6e8]/76 hover:bg-transparent hover:text-[#fff6e8]">
+                  <Button asChild variant="ghost" className="h-auto gap-2 px-1 py-0 text-muted-foreground hover:bg-transparent hover:text-foreground">
                     <Link to="/ai-chat" onClick={() => assistantPanel.setOpen(false)}>
                       Open full assistant
-                      <ArrowRight className="h-4 w-4" />
                     </Link>
                   </Button>
                 </footer>

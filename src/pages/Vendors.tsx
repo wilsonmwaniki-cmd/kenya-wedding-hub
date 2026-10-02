@@ -8,14 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, CalendarClock, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText } from 'lucide-react';
+import { Plus, Trash2, Phone, Search, CheckCircle2, Loader2, Save, ShieldCheck, Star, Receipt, ClipboardList, ArrowRightLeft, ArrowLeft, Download, MessageSquareText, ChevronDown, ExternalLink, FileSignature } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
-import { committeeResponsibilityOptions, contractStatusLabel, contractStatusOptions } from '@/lib/committeeRoles';
-import { getMyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { committeeResponsibilityOptions, contractStatusLabel } from '@/lib/committeeRoles';
 import {
   createWorkspaceVendorInviteDraft,
   listWorkspaceVendorInvitesForVendor,
@@ -30,16 +29,19 @@ import {
 } from '@/lib/vendorPriceIntelligence';
 import type { WeddingTaskPhase } from '@/lib/weddingTaskTemplates';
 import {
+  hasRecordedVendor,
+  isChosenVendor,
   setVendorSelectionStatus,
   vendorSelectionLabel,
   vendorSelectionTone,
   type VendorSelectionStatus,
 } from '@/lib/vendorSelection';
 import {
+  deriveVendorPaymentStatus,
+  totalRecordedVendorPayments,
   updateVendorPaymentState,
   vendorPaymentStatusLabel,
   vendorPaymentStatusTone,
-  vendorPaymentStatuses,
   type VendorPaymentStatus,
 } from '@/lib/vendorPayments';
 import {
@@ -54,6 +56,8 @@ import { createVendorTask, createVendorTaskBundle } from '@/lib/vendorTasks';
 import { getSuggestedTaskTemplates, getTaskCategoryDefaults } from '@/lib/weddingTaskTemplates';
 import { getEntitlementDecision, type EntitlementFeature } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
+import { useMilestoneCelebration } from '@/hooks/useMilestoneCelebration';
+import { useDeferredDelete } from '@/hooks/useDeferredDelete';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import { downloadCsv, safeDateLabel } from '@/lib/exportHelpers';
 import InlineAssistantCard from '@/components/InlineAssistantCard';
@@ -63,12 +67,42 @@ import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { submitPlannerChangeRequest } from '@/lib/plannerChangeRequests';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
+import { buildConciergeContext } from '@/lib/conciergeContext';
+import { motion, useReducedMotion } from 'framer-motion';
+import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
+import { PaymentReminderStatus } from '@/components/PaymentReminderStatus';
 import {
   archiveVendorWorkspaceUpdate,
   listVendorWorkspaceUpdates,
   vendorWorkspaceUpdateLabel,
   type VendorWorkspaceUpdate,
 } from '@/lib/vendorWorkspaceUpdates';
+import {
+  acceptVendorTaskSuggestion,
+  dismissVendorTaskSuggestion,
+  listVendorTaskSuggestions,
+  type VendorTaskSuggestion,
+} from '@/lib/vendorTaskSuggestions';
+import { SlidingSegmentedControl } from '@/components/SlidingSegmentedControl';
+import { getRelatedTasksForVendor } from '@/lib/budgetRelations';
+import {
+  canonicalizeVendorCategory,
+  getVendorCategoryOptions,
+  getVendorCategoryScope,
+  vendorCategoriesMatch,
+  vendorCategoryCatalog,
+} from '@/lib/vendorCategories';
+import {
+  coupleVendorContractMessage,
+  coupleVendorContractShareUrl,
+  coupleVendorContractStatusLabel,
+  getCoupleVendorContract,
+} from '@/lib/coupleVendorContracts';
+import { requestVendorQuote } from '@/lib/documentRequests';
+import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
+import CoupleLeadMarketplace from '@/components/leads/CoupleLeadMarketplace';
+import { deduplicateVendorDirectory } from '@/lib/vendorDirectory';
+import { vendorEnquiryResponseLabel } from '@/lib/vendorEnquiryResponses';
 
 interface Vendor {
   amount_paid: number;
@@ -89,21 +123,24 @@ interface Vendor {
   status: string | null;
   notes: string | null;
   vendor_listing_id: string | null;
+  wedding_id: string | null;
 }
 
 interface DirectoryVendor {
   id: string;
+  user_id: string | null;
   business_name: string;
   category: string;
   phone: string | null;
   email: string | null;
   location: string | null;
   is_verified: boolean;
+  profile_kind: string | null;
+  updated_at: string | null;
 }
 
 interface PaymentDraft {
   depositAmount: string;
-  amountPaid: string;
   paymentStatus: VendorPaymentStatus;
   paymentDueDate: string;
 }
@@ -113,12 +150,21 @@ interface WorkflowDraft {
   contractStatus: string;
 }
 
+interface VendorDetailsDraft {
+  name: string;
+  category: string;
+  email: string;
+  phone: string;
+}
+
 interface VendorTaskItem {
   id: string;
   title: string;
   due_date: string | null;
   completed: boolean;
   source_vendor_id: string | null;
+  category: string | null;
+  description: string | null;
   phase: WeddingTaskPhase | null;
   visibility: string;
   recommended_role: string | null;
@@ -144,15 +190,40 @@ interface VendorPaymentForm {
   notes: string;
 }
 
+interface VendorEnquiry {
+  id: string;
+  recipient_name: string;
+  recipient_email: string;
+  subject: string;
+  message: string;
+  delivery_status: 'sending' | 'sent' | 'failed';
+  provider_message_id: string | null;
+  approved_at: string | null;
+  sent_at: string | null;
+  created_at: string;
+  response_status: 'awaiting_response' | 'available' | 'unavailable' | 'needs_details';
+  responded_at: string | null;
+  vendor_enquiry_responses: Array<{
+    response: 'available' | 'unavailable' | 'needs_details';
+    message: string | null;
+    quote_amount: number | null;
+    quote_currency: string | null;
+    quote_valid_until: string | null;
+    created_at: string;
+  }>;
+}
+
 interface VendorsWorkspaceData {
+  categories: string[];
   vendors: Vendor[];
   vendorTasks: VendorTaskItem[];
   vendorPayments: VendorPaymentRecord[];
 }
 
+const emptyVendors: Vendor[] = [];
+
 type VendorMilestoneStatus = 'not_started' | 'in_progress' | 'complete';
 
-const vendorCategories = ['Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
 const vendorStatuses = ['contacted', 'quoted', 'booked', 'completed', 'rejected'] as const;
 const selectionStatuses: VendorSelectionStatus[] = ['shortlisted', 'final', 'backup', 'declined'];
 const selectionSortOrder: Record<string, number> = {
@@ -225,7 +296,7 @@ function learningMarketPosition(
 function reputationSummary(benchmark?: VendorReputationBenchmark | null) {
   if (!benchmark) return 'Loading planner trust data...';
   if (benchmark.benchmark_visible && benchmark.average_overall_rating != null) {
-    const hireAgainRate = benchmark.hire_again_rate != null ? `${Math.round(benchmark.hire_again_rate * 100)}% would hire again` : 'Hire-again rate pending';
+    const hireAgainRate = benchmark.hire_again_rate != null ? `${Math.round(benchmark.hire_again_rate * 100)}% would hire again` : 'Hire-again rate not available yet';
     return `Planner / committee score ${benchmark.average_overall_rating.toFixed(1)}/5 · ${hireAgainRate}`;
   }
   if (benchmark.sample_size > 0) {
@@ -353,9 +424,8 @@ async function loadVendorsWorkspace(dataOrFilter: string): Promise<VendorsWorksp
     supabase.from('vendors').select('*').or(dataOrFilter).order('created_at'),
     supabase
       .from('tasks')
-      .select('id, title, due_date, completed, source_vendor_id, phase, visibility, recommended_role')
+      .select('id, title, description, category, due_date, completed, source_vendor_id, phase, visibility, recommended_role')
       .or(dataOrFilter)
-      .not('source_vendor_id', 'is', null)
       .order('due_date', { ascending: true, nullsFirst: false }),
     supabase
       .from('budget_payments')
@@ -369,34 +439,54 @@ async function loadVendorsWorkspace(dataOrFilter: string): Promise<VendorsWorksp
   if (tasksResult.error) throw tasksResult.error;
   if (paymentsResult.error) throw paymentsResult.error;
 
-  const vendors = ((vendorsResult.data ?? []).map((d) => ({
+  const allVendors = ((vendorsResult.data ?? []).map((d) => ({
     ...d,
+    category: canonicalizeVendorCategory(d.category),
     amount_paid: Number(d.amount_paid ?? 0),
     committee_role_in_charge: d.committee_role_in_charge ?? null,
     contract_status: d.contract_status ?? 'not_started',
     deposit_amount: Number(d.deposit_amount ?? 0),
     price: d.price ? Number(d.price) : null,
   })) as Vendor[]);
+  const vendors = allVendors.filter(hasRecordedVendor);
+  const recordedVendorIds = new Set(vendors.map((vendor) => vendor.id));
 
   return {
+    categories: [
+      ...new Set([
+        ...vendorCategoryCatalog.map((category) => category.name),
+        ...allVendors.map((vendor) => vendor.category).filter(Boolean),
+      ]),
+    ],
     vendors,
-    vendorTasks: (tasksResult.data as VendorTaskItem[] | null) ?? [],
-    vendorPayments: (paymentsResult.data as VendorPaymentRecord[] | null) ?? [],
+    vendorTasks: ((tasksResult.data as VendorTaskItem[] | null) ?? []).filter(
+      (task) => !task.source_vendor_id || recordedVendorIds.has(task.source_vendor_id),
+    ),
+    vendorPayments: ((paymentsResult.data as VendorPaymentRecord[] | null) ?? []).filter(
+      (payment) => !payment.vendor_id || recordedVendorIds.has(payment.vendor_id),
+    ),
   };
 }
 
 export default function Vendors() {
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
-  const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
+  const {
+    weddingId: entitlementWeddingId,
+    entitlements: weddingEntitlements,
+    couplePlanTier,
+  } = useWeddingEntitlements();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useDeferredDelete();
   const queryClient = useQueryClient();
   const assistantPanel = useAssistantPanel();
+  const prefersReducedMotion = useReducedMotion();
   const plannerNeedsApproval = isPlanner && Boolean(selectedClient?.linked_user_id);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'directory' | 'custom'>('custom');
-  const [form, setForm] = useState({ name: '', category: 'Venue', email: '', phone: '', price: '' });
+  const [form, setForm] = useState({ name: '', category: 'Wedding Venue', email: '', phone: '', price: '' });
   const [addingVendor, setAddingVendor] = useState(false);
   const [vendorFormErrors, setVendorFormErrors] = useState<{ name?: string; email?: string; phone?: string; price?: string }>({});
   const [vendorSubmitError, setVendorSubmitError] = useState<string | null>(null);
@@ -417,8 +507,12 @@ export default function Vendors() {
   const [savingNotesId, setSavingNotesId] = useState<string | null>(null);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [savingSelectionId, setSavingSelectionId] = useState<string | null>(null);
+  const [selectionSucceededId, setSelectionSucceededId] = useState<string | null>(null);
   const [workflowDrafts, setWorkflowDrafts] = useState<Record<string, WorkflowDraft>>({});
   const [notesDrafts, setNotesDrafts] = useState<Record<string, string>>({});
+  const [vendorDetailsDrafts, setVendorDetailsDrafts] = useState<Record<string, VendorDetailsDraft>>({});
+  const [savingVendorDetailsId, setSavingVendorDetailsId] = useState<string | null>(null);
+  const [requestingQuoteVendorId, setRequestingQuoteVendorId] = useState<string | null>(null);
   const [comparisonCategory, setComparisonCategory] = useState<string>('all');
   const [modalBenchmark, setModalBenchmark] = useState<VendorPriceBenchmark | null>(null);
   const [modalBenchmarkLoading, setModalBenchmarkLoading] = useState(false);
@@ -435,9 +529,12 @@ export default function Vendors() {
   const [creatingVendorTaskBundleId, setCreatingVendorTaskBundleId] = useState<string | null>(null);
   const [vendorListView, setVendorListView] = useState<'by_category' | 'by_name'>('by_category');
   const [vendorWorkspaceQuery, setVendorWorkspaceQuery] = useState('');
+  const [showEmptyVendorCategories, setShowEmptyVendorCategories] = useState(false);
+  const [expandedVendorCategories, setExpandedVendorCategories] = useState<Record<string, boolean>>({});
   const [exportUpgradeOpen, setExportUpgradeOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [selectedVendorTab, setSelectedVendorTab] = useState<'details' | 'tasks' | 'payments'>('details');
+  const [highlightedVendorSection, setHighlightedVendorSection] = useState<string | null>(null);
   const [recordVendorPaymentOpen, setRecordVendorPaymentOpen] = useState(false);
   const [recordingVendorPayment, setRecordingVendorPayment] = useState(false);
   const [vendorPaymentFormErrors, setVendorPaymentFormErrors] = useState<{ payeeName?: string; amount?: string }>({});
@@ -456,8 +553,9 @@ export default function Vendors() {
     assignedTo: '',
   });
   const [vendorTaskTemplateKey, setVendorTaskTemplateKey] = useState('none');
-  const [managedWeddingId, setManagedWeddingId] = useState<string | null>(null);
   const [workspaceVendorInvites, setWorkspaceVendorInvites] = useState<Record<string, WorkspaceVendorInvite[]>>({});
+  const [vendorEnquiries, setVendorEnquiries] = useState<Record<string, VendorEnquiry[]>>({});
+  const [vendorEnquiriesLoadingId, setVendorEnquiriesLoadingId] = useState<string | null>(null);
   const [workspaceInviteLoadingVendorId, setWorkspaceInviteLoadingVendorId] = useState<string | null>(null);
   const [workspaceInviteSubmittingVendorId, setWorkspaceInviteSubmittingVendorId] = useState<string | null>(null);
   const [workspaceInviteError, setWorkspaceInviteError] = useState<string | null>(null);
@@ -467,9 +565,19 @@ export default function Vendors() {
     message: '',
     expiresAt: '',
   });
+  const [contactEditorVendor, setContactEditorVendor] = useState<Vendor | null>(null);
+  const [contactEditorForm, setContactEditorForm] = useState({ email: '', phone: '' });
+  const [contactEditorErrors, setContactEditorErrors] = useState<{ email?: string; phone?: string }>({});
+  const [contactEditorSubmitError, setContactEditorSubmitError] = useState<string | null>(null);
+  const [savingVendorContact, setSavingVendorContact] = useState(false);
+  const [createClaimAfterContactSave, setCreateClaimAfterContactSave] = useState(false);
   const [vendorWorkspaceUpdates, setVendorWorkspaceUpdates] = useState<Record<string, VendorWorkspaceUpdate[]>>({});
   const [vendorWorkspaceUpdatesLoadingId, setVendorWorkspaceUpdatesLoadingId] = useState<string | null>(null);
   const [archivingVendorWorkspaceUpdateId, setArchivingVendorWorkspaceUpdateId] = useState<string | null>(null);
+  const [vendorTaskSuggestions, setVendorTaskSuggestions] = useState<Record<string, VendorTaskSuggestion[]>>({});
+  const [vendorTaskSuggestionsLoadingId, setVendorTaskSuggestionsLoadingId] = useState<string | null>(null);
+  const [resolvingVendorTaskSuggestionId, setResolvingVendorTaskSuggestionId] = useState<string | null>(null);
+  const [acceptedVendorTaskSuggestionId, setAcceptedVendorTaskSuggestionId] = useState<string | null>(null);
   const [reviewForm, setReviewForm] = useState({
     overallRating: '5',
     reliabilityRating: '5',
@@ -485,38 +593,18 @@ export default function Vendors() {
   });
 
   useEffect(() => {
-    if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
+    if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/vendor-candidates');
   }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
 
-  useEffect(() => {
-    if (!user || profile?.role !== 'couple') {
-      setManagedWeddingId(null);
-      return;
-    }
-
-    let active = true;
-    void getMyWeddingOwnershipSummary()
-      .then((summary) => {
-        if (!active) return;
-        setManagedWeddingId(summary?.weddingId ?? null);
-      })
-      .catch((error) => {
-        console.error('Could not load couple wedding workspace for vendors:', error);
-        if (active) setManagedWeddingId(null);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [profile?.role, user]);
-
-  const activeWeddingId = isPlanner ? selectedClient?.wedding_id ?? null : managedWeddingId;
+  const activeWeddingId = isPlanner
+    ? selectedClient?.wedding_id ?? entitlementWeddingId
+    : entitlementWeddingId;
 
   const vendorsQueryKey = ['vendors', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null] as const;
   const vendorsQuery = useQuery({
     queryKey: vendorsQueryKey,
     queryFn: async () => {
-      if (!dataOrFilter) return { vendors: [], vendorTasks: [], vendorPayments: [] } as VendorsWorkspaceData;
+      if (!dataOrFilter) return { categories: [], vendors: [], vendorTasks: [], vendorPayments: [] } as VendorsWorkspaceData;
       return loadVendorsWorkspace(dataOrFilter);
     },
     enabled: Boolean(dataOrFilter),
@@ -533,15 +621,15 @@ export default function Vendors() {
     }
   }, [toast, vendorsQuery.error]);
 
-  const vendors = vendorsQuery.data?.vendors ?? [];
+  const vendors = vendorsQuery.data?.vendors ?? emptyVendors;
   const vendorTasksByVendorId = useMemo(
-    () =>
-      (vendorsQuery.data?.vendorTasks ?? []).reduce((summary, task) => {
-        if (!task.source_vendor_id) return summary;
-        summary[task.source_vendor_id] = [...(summary[task.source_vendor_id] ?? []), task];
-        return summary;
-      }, {} as Record<string, VendorTaskItem[]>),
-    [vendorsQuery.data?.vendorTasks],
+    () => Object.fromEntries(
+      vendors.map((vendor) => [
+        vendor.id,
+        getRelatedTasksForVendor(vendor, vendorsQuery.data?.vendorTasks ?? []),
+      ]),
+    ) as Record<string, VendorTaskItem[]>,
+    [vendors, vendorsQuery.data?.vendorTasks],
   );
   const vendorPaymentsByVendorId = useMemo(
     () =>
@@ -555,6 +643,17 @@ export default function Vendors() {
 
   const refreshVendorsWorkspace = async () => {
     await queryClient.invalidateQueries({ queryKey: vendorsQueryKey });
+  };
+
+  const openVendorContactEditor = (vendor: Vendor, createClaimAfterSave = false) => {
+    setContactEditorVendor(vendor);
+    setContactEditorForm({
+      email: vendor.email ?? '',
+      phone: vendor.phone ?? '',
+    });
+    setContactEditorErrors({});
+    setContactEditorSubmitError(null);
+    setCreateClaimAfterContactSave(createClaimAfterSave);
   };
 
   const saveWorkspaceVendorInvite = async (event: React.FormEvent) => {
@@ -619,6 +718,107 @@ export default function Vendors() {
     }
   };
 
+  const createQuickVendorClaimLink = async (vendor: Vendor) => {
+    if (vendor.vendor_listing_id || !activeWeddingId) return;
+    if (!vendor.email && !vendor.phone) {
+      openVendorContactEditor(vendor, true);
+      return;
+    }
+
+    setWorkspaceInviteSubmittingVendorId(vendor.id);
+    setWorkspaceInviteError(null);
+    try {
+      const savedInvite = await createWorkspaceVendorInviteDraft({
+        weddingId: activeWeddingId,
+        vendorId: vendor.id,
+        inviteContactEmail: vendor.email,
+        inviteContactPhone: vendor.phone,
+      });
+      setWorkspaceVendorInvites((current) => ({
+        ...current,
+        [vendor.id]: [savedInvite, ...(current[vendor.id] ?? [])],
+      }));
+      toast({
+        title: 'Vendor claim link ready',
+        description: `The private Zania claim link for ${vendor.name} is ready to share.`,
+      });
+    } catch (error: any) {
+      setWorkspaceInviteError(error?.message || 'Could not create this vendor claim link right now.');
+      toast({
+        title: 'Could not create claim link',
+        description: error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setWorkspaceInviteSubmittingVendorId(null);
+    }
+  };
+
+  const saveVendorContact = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!contactEditorVendor || profile?.role !== 'couple') return;
+
+    const email = contactEditorForm.email.trim().toLowerCase();
+    const phone = contactEditorForm.phone.trim();
+    const nextErrors: { email?: string; phone?: string } = {};
+    if (!email && !phone) {
+      nextErrors.email = 'Add an email address or phone number.';
+    } else if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      nextErrors.email = 'Enter a valid email address.';
+    }
+    if (phone && !/^[\d+\s()-]{7,}$/.test(phone)) {
+      nextErrors.phone = 'Enter a valid phone number.';
+    }
+    setContactEditorErrors(nextErrors);
+    setContactEditorSubmitError(null);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    const vendor = contactEditorVendor;
+    const shouldCreateClaim = createClaimAfterContactSave;
+    setSavingVendorContact(true);
+
+    try {
+      const { error } = await supabase
+        .from('vendors')
+        .update({ email: email || null, phone: phone || null })
+        .eq('id', vendor.id);
+      if (error) throw error;
+
+      const activeInvite = (workspaceVendorInvites[vendor.id] ?? []).find((invite) =>
+        ['draft', 'pending', 'sent', 'opened'].includes(invite.invite_status),
+      ) ?? null;
+      if (activeInvite) {
+        const updatedInvite = await updateWorkspaceVendorInvite(activeInvite.id, {
+          invite_contact_email: email || null,
+          invite_contact_phone: phone || null,
+        });
+        setWorkspaceVendorInvites((current) => ({
+          ...current,
+          [vendor.id]: (current[vendor.id] ?? []).map((invite) =>
+            invite.id === updatedInvite.id ? updatedInvite : invite,
+          ),
+        }));
+      }
+
+      await refreshVendorsWorkspace();
+      setContactEditorVendor(null);
+      setCreateClaimAfterContactSave(false);
+
+      if (shouldCreateClaim && !activeInvite) {
+        await createQuickVendorClaimLink({ ...vendor, email: email || null, phone: phone || null });
+      } else {
+        toast({
+          title: 'Vendor contact saved',
+          description: `${vendor.name}'s contact details are ready for invitations and follow-ups.`,
+        });
+      }
+    } catch (error: any) {
+      setContactEditorSubmitError(error?.message || 'Could not save these vendor contact details right now.');
+    } finally {
+      setSavingVendorContact(false);
+    }
+  };
+
   const sendWorkspaceVendorInviteEmail = async () => {
     if (!selectedVendor || !selectedVendorActiveInvite) return;
 
@@ -668,6 +868,7 @@ export default function Vendors() {
       setPaymentDrafts({});
       setWorkflowDrafts({});
       setNotesDrafts({});
+      setVendorDetailsDrafts({});
       return;
     }
 
@@ -678,7 +879,6 @@ export default function Vendors() {
           row.id,
           {
             depositAmount: String(row.deposit_amount ?? 0),
-            amountPaid: String(row.amount_paid ?? 0),
             paymentStatus: (row.payment_status || 'unpaid') as VendorPaymentStatus,
             paymentDueDate: row.payment_due_date ?? '',
           },
@@ -697,6 +897,19 @@ export default function Vendors() {
       ),
     );
     setNotesDrafts(Object.fromEntries(vendors.map((row) => [row.id, row.notes ?? ''])));
+    setVendorDetailsDrafts(
+      Object.fromEntries(
+        vendors.map((row) => [
+          row.id,
+          {
+            name: row.name,
+            category: row.category,
+            email: row.email ?? '',
+            phone: row.phone ?? '',
+          },
+        ]),
+      ),
+    );
   }, [vendors]);
 
   const loadBenchmarks = async (rows: Vendor[]) => {
@@ -750,6 +963,13 @@ export default function Vendors() {
   }, [vendors, selectedClient?.wedding_location]);
 
   const loadReputationData = async (rows: Vendor[]) => {
+    if (profile?.role !== 'planner' && profile?.role !== 'admin') {
+      setCategoryReputationBenchmarks({});
+      setListingReputationBenchmarks({});
+      setReviewsBySourceVendorId({});
+      return;
+    }
+
     if (!rows.length) {
       setCategoryReputationBenchmarks({});
       setListingReputationBenchmarks({});
@@ -809,7 +1029,7 @@ export default function Vendors() {
 
   useEffect(() => {
     void loadReputationData(vendors);
-  }, [vendors, selectedClient?.id]);
+  }, [vendors, selectedClient?.id, profile?.role]);
 
   useEffect(() => {
     if (!open || mode !== 'custom') return;
@@ -846,12 +1066,12 @@ export default function Vendors() {
       try {
         const { data } = await supabase
           .from('vendor_listings')
-          .select('id, business_name, category, phone, email, location, is_verified')
+          .select('id, user_id, business_name, category, phone, email, location, is_verified, profile_kind, updated_at')
           .eq('is_approved', true)
           .order('business_name')
           .limit(200);
 
-        if (active) setDirectoryPool((data as DirectoryVendor[]) || []);
+        if (active) setDirectoryPool(deduplicateVendorDirectory((data as DirectoryVendor[]) || []));
       } finally {
         if (active) setDirLoading(false);
       }
@@ -995,7 +1215,7 @@ export default function Vendors() {
             wedding_id: insert.wedding_id ?? null,
           },
         });
-        setForm({ name: '', category: 'Venue', email: '', phone: '', price: '' });
+        setForm({ name: '', category: 'Wedding Venue', email: '', phone: '', price: '' });
         setOpen(false);
         toast({
           title: 'Vendor request sent for approval',
@@ -1018,7 +1238,7 @@ export default function Vendors() {
       return;
     }
 
-    setForm({ name: '', category: 'Venue', email: '', phone: '', price: '' });
+    setForm({ name: '', category: 'Wedding Venue', email: '', phone: '', price: '' });
     setOpen(false);
     await refreshVendorsWorkspace();
     setAddingVendor(false);
@@ -1056,9 +1276,83 @@ export default function Vendors() {
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
+      if (vendor.wedding_id && (status === 'booked' || vendor.status === 'booked')) {
+        await recalculatePlanningExperiment(vendor.wedding_id);
+      }
       await refreshVendorsWorkspace();
     }
     setSavingStatusId(null);
+  };
+
+  const updateVendorDetails = async (vendor: Vendor) => {
+    const draft = vendorDetailsDrafts[vendor.id];
+    if (!draft) return;
+
+    const name = draft.name.trim();
+    const email = draft.email.trim();
+    const phone = draft.phone.trim();
+    if (!name) {
+      toast({
+        title: 'Vendor name is required',
+        description: 'Add the business or vendor name before saving.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast({
+        title: 'Check the email address',
+        description: 'Enter a complete email address or leave the field empty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const updates = {
+      name,
+      category: draft.category,
+      email: email || null,
+      phone: phone || null,
+    };
+    setSavingVendorDetailsId(vendor.id);
+
+    if (plannerNeedsApproval && selectedClient?.linked_user_id) {
+      try {
+        await submitPlannerChangeRequest({
+          clientId: selectedClient.id,
+          coupleUserId: selectedClient.linked_user_id,
+          plannerUserId: user!.id,
+          targetTable: 'vendors',
+          changeType: 'update',
+          targetId: vendor.id,
+          currentPayload: {
+            name: vendor.name,
+            category: vendor.category,
+            email: vendor.email,
+            phone: vendor.phone,
+          },
+          proposedPayload: updates,
+        });
+        toast({
+          title: 'Vendor details sent for approval',
+          description: `${vendor.name}'s details will update after the couple approves them.`,
+        });
+      } catch (error: any) {
+        toast({ title: 'Could not submit vendor details', description: error?.message, variant: 'destructive' });
+      } finally {
+        setSavingVendorDetailsId(null);
+      }
+      return;
+    }
+
+    const { error } = await supabase.from('vendors').update(updates).eq('id', vendor.id);
+    if (error) {
+      toast({ title: 'Could not save vendor details', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Vendor details saved', description: `${name} is up to date.` });
+      await refreshVendorsWorkspace();
+    }
+    setSavingVendorDetailsId(null);
   };
 
   const updateVendorPrice = async (vendor: Vendor) => {
@@ -1123,7 +1417,12 @@ export default function Vendors() {
     const contractAmountDraft = priceDrafts[vendor.id]?.trim() ?? '';
     const contractAmount = contractAmountDraft === '' ? null : Number(contractAmountDraft);
     const depositAmount = draft.depositAmount.trim() === '' ? 0 : Number(draft.depositAmount);
-    const amountPaid = draft.amountPaid.trim() === '' ? 0 : Number(draft.amountPaid);
+    const amountPaid = totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []);
+    const paymentStatus = deriveVendorPaymentStatus({
+      totalCost: contractAmount,
+      depositRequired: depositAmount,
+      totalPaid: amountPaid,
+    });
 
     if (contractAmountDraft !== '' && (!Number.isFinite(contractAmount) || (contractAmount ?? 0) <= 0)) {
       toast({
@@ -1134,10 +1433,10 @@ export default function Vendors() {
       return;
     }
 
-    if (!Number.isFinite(depositAmount) || !Number.isFinite(amountPaid) || depositAmount < 0 || amountPaid < 0) {
+    if (!Number.isFinite(depositAmount) || depositAmount < 0) {
       toast({
-        title: 'Invalid payment amounts',
-        description: 'Deposit and paid amounts must be zero or higher.',
+        title: 'Invalid deposit amount',
+        description: 'The agreed deposit must be zero or higher.',
         variant: 'destructive',
       });
       return;
@@ -1158,7 +1457,7 @@ export default function Vendors() {
             price: contractAmount,
             deposit_amount: depositAmount,
             amount_paid: amountPaid,
-            payment_status: draft.paymentStatus,
+            payment_status: paymentStatus,
             payment_due_date: draft.paymentDueDate || null,
           },
         });
@@ -1179,13 +1478,15 @@ export default function Vendors() {
         contractAmount,
         depositAmount,
         amountPaid,
-        paymentStatus: draft.paymentStatus,
+        paymentStatus,
         paymentDueDate: draft.paymentDueDate || null,
       });
 
       toast({
         title: 'Payment plan updated',
-        description: `${vendor.name} now shows ${vendorPaymentStatusLabel(draft.paymentStatus).toLowerCase()}.`,
+        description: draft.paymentDueDate
+          ? `${vendor.name} now shows ${vendorPaymentStatusLabel(paymentStatus).toLowerCase()}, with a payment reminder scheduled.`
+          : `${vendor.name} now shows ${vendorPaymentStatusLabel(paymentStatus).toLowerCase()}.`,
       });
       await refreshVendorsWorkspace();
     } catch (error: any) {
@@ -1219,11 +1520,34 @@ export default function Vendors() {
       });
       return;
     }
-    await supabase.from('vendors').delete().eq('id', id);
-    await refreshVendorsWorkspace();
+    const vendor = vendors.find((item) => item.id === id);
+    if (!vendor) return;
+    const wasSelected = selectedVendorId === id;
+    if (wasSelected) setSelectedVendorId(null);
+    scheduleDelete({
+      id,
+      title: 'Vendor removed',
+      description: `${vendor.name} was removed from the wedding workspace.`,
+      commit: async () => {
+        const { error } = await supabase.from('vendors').delete().eq('id', id);
+        if (error) throw error;
+      },
+      onCommit: refreshVendorsWorkspace,
+      onUndo: () => {
+        if (wasSelected) setSelectedVendorId(id);
+      },
+    });
   };
 
   const updateSelection = async (vendor: Vendor, selectionStatus: VendorSelectionStatus) => {
+    if (selectionStatus === 'final' && !hasRecordedVendor(vendor)) {
+      toast({
+        title: 'Add a vendor first',
+        description: `Record or link a ${vendor.category.toLowerCase()} vendor before choosing a final option.`,
+      });
+      return;
+    }
+    setSelectionSucceededId(null);
     setSavingSelectionId(vendor.id);
     if (plannerNeedsApproval && selectedClient?.linked_user_id) {
       try {
@@ -1250,6 +1574,7 @@ export default function Vendors() {
     }
     try {
       await setVendorSelectionStatus(vendor.id, selectionStatus);
+      setSelectionSucceededId(vendor.id);
       toast({
         title: selectionStatus === 'final' ? 'Final vendor selected' : 'Vendor selection updated',
         description:
@@ -1286,12 +1611,11 @@ export default function Vendors() {
           currentPayload: vendor as unknown as Record<string, unknown>,
           proposedPayload: {
             committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
-            contract_status: draft.contractStatus,
           },
         });
         toast({
           title: 'Vendor workflow sent for approval',
-          description: `${vendor.name} ownership and contract updates are pending couple approval.`,
+          description: `${vendor.name} changes are waiting for couple approval.`,
         });
       } catch (error: any) {
         toast({ title: 'Could not submit workflow update', description: error?.message, variant: 'destructive' });
@@ -1303,7 +1627,6 @@ export default function Vendors() {
       .from('vendors')
       .update({
         committee_role_in_charge: draft.committeeRoleInCharge === 'unassigned' ? null : draft.committeeRoleInCharge,
-        contract_status: draft.contractStatus,
       })
       .eq('id', vendor.id);
 
@@ -1431,7 +1754,7 @@ export default function Vendors() {
         });
         toast({
           title: 'Vendor notes sent for approval',
-          description: `Comparison notes for ${vendor.name} are now pending couple approval.`,
+          description: `Comparison notes for ${vendor.name} are waiting for couple approval.`,
         });
       } catch (error: any) {
         toast({ title: 'Could not submit vendor notes', description: error?.message, variant: 'destructive' });
@@ -1460,6 +1783,41 @@ export default function Vendors() {
     }
 
     setSavingNotesId(null);
+  };
+
+  const sendVendorQuoteRequest = async (vendor: Vendor) => {
+    if (!vendor.vendor_listing_id) {
+      toast({
+        title: 'Connect the vendor first',
+        description: 'This vendor needs a professional Zania account before they can receive quote requests.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setRequestingQuoteVendorId(vendor.id);
+    try {
+      await requestVendorQuote(vendor.id, {
+        message: `Please send a quote for ${vendor.category}.`,
+        budgetAmount: vendor.price,
+      });
+      toast({
+        title: 'Quote requested',
+        description: `${vendor.name} will see this request at the top of their document desk.`,
+      });
+    } catch (error) {
+      console.error('Could not request vendor quote:', error);
+      const description = error && typeof error === 'object' && 'message' in error
+        ? String(error.message)
+        : 'Please try again.';
+      toast({
+        title: 'Could not request quote',
+        description,
+        variant: 'destructive',
+      });
+    } finally {
+      setRequestingQuoteVendorId(null);
+    }
   };
 
   const buildVendorTaskBundle = async (vendor: Vendor) => {
@@ -1589,9 +1947,14 @@ export default function Vendors() {
       }));
   }, [vendors, categoryReputationBenchmarks]);
 
+  const visibleVendors = useMemo(
+    () => vendors.filter((vendor) => !pendingDeleteIds.has(vendor.id)),
+    [pendingDeleteIds, vendors],
+  );
+
   const sortedVendors = useMemo(
     () =>
-      [...vendors].sort((left, right) => {
+      [...visibleVendors].sort((left, right) => {
         const categoryCompare = left.category.localeCompare(right.category);
         if (categoryCompare !== 0) return categoryCompare;
 
@@ -1602,13 +1965,13 @@ export default function Vendors() {
 
         return left.name.localeCompare(right.name);
       }),
-    [vendors],
+    [visibleVendors],
   );
 
   const selectionCounts = useMemo(() => {
     return vendors.reduce(
       (summary, vendor) => {
-        const key = (vendor.selection_status || 'shortlisted') as VendorSelectionStatus;
+        const key = (isChosenVendor(vendor) ? 'final' : vendor.selection_status === 'final' ? 'shortlisted' : vendor.selection_status || 'shortlisted') as VendorSelectionStatus;
         summary[key] += 1;
         return summary;
       },
@@ -1622,20 +1985,26 @@ export default function Vendors() {
   }, [vendors]);
 
   const finalVendorEntries = useMemo(
-    () => sortedVendors.filter((vendor) => vendor.selection_status === 'final'),
+    () => sortedVendors.filter(isChosenVendor),
     [sortedVendors],
   );
 
   const finalVendorPaymentSummary = useMemo(() => {
     const totalContract = finalVendorEntries.reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
-    const totalPaid = finalVendorEntries.reduce((sum, vendor) => sum + (vendor.amount_paid ?? 0), 0);
+    const totalPaid = finalVendorEntries.reduce(
+      (sum, vendor) => sum + totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []),
+      0,
+    );
     const totalOutstanding = finalVendorEntries.reduce(
-      (sum, vendor) => sum + Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0),
+      (sum, vendor) => sum + Math.max(
+        (vendor.price ?? 0) - totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []),
+        0,
+      ),
       0,
     );
 
     return { totalContract, totalPaid, totalOutstanding };
-  }, [finalVendorEntries]);
+  }, [finalVendorEntries, vendorPaymentsByVendorId]);
 
   const vendorTaskSummary = useMemo(() => {
     const vendorTaskGroups = Object.values(vendorTasksByVendorId);
@@ -1650,6 +2019,36 @@ export default function Vendors() {
     };
   }, [vendorTasksByVendorId]);
 
+  const nextVendorFollowUpTask = useMemo(() => {
+    const uniqueTasks = new Map<string, VendorTaskItem>();
+    Object.values(vendorTasksByVendorId)
+      .flat()
+      .filter((task) => !task.completed)
+      .forEach((task) => uniqueTasks.set(task.id, task));
+
+    return [...uniqueTasks.values()].sort((left, right) => {
+      if (!left.due_date && !right.due_date) return left.title.localeCompare(right.title);
+      if (!left.due_date) return 1;
+      if (!right.due_date) return -1;
+      return left.due_date.localeCompare(right.due_date);
+    })[0] ?? null;
+  }, [vendorTasksByVendorId]);
+
+  const vendorConfirmationSummary = useMemo(() => {
+    const categoriesToConfirm = new Set(vendorsQuery.data?.categories ?? []);
+    const confirmedCategories = new Set(
+      finalVendorEntries
+        .map((vendor) => vendor.category)
+        .filter((category) => categoriesToConfirm.has(category)),
+    );
+
+    return {
+      total: categoriesToConfirm.size,
+      confirmed: confirmedCategories.size,
+      pending: Math.max(categoriesToConfirm.size - confirmedCategories.size, 0),
+    };
+  }, [finalVendorEntries, vendorsQuery.data?.categories]);
+
   const categoriesNeedingFinalChoice = useMemo(() => {
     const grouped = new Map<string, Vendor[]>();
     vendors.forEach((vendor) => {
@@ -1661,7 +2060,7 @@ export default function Vendors() {
     return [...grouped.entries()]
       .filter(([, group]) => {
         const activeVendors = group.filter((vendor) => vendor.selection_status !== 'declined');
-        return activeVendors.length > 0 && !activeVendors.some((vendor) => vendor.selection_status === 'final');
+        return activeVendors.length > 0 && !activeVendors.some(isChosenVendor);
       })
       .map(([category, group]) => ({
         category,
@@ -1695,7 +2094,8 @@ export default function Vendors() {
   }, [activeComparisonCategory, sortedVendors]);
 
   const isCommitteeWorkspace = profile?.role === 'planner' && profile?.planner_type === 'committee';
-  const showCoupleVendorWorkspace = profile?.role === 'couple' || isCommitteeWorkspace;
+  const showSharedVendorWorkspace =
+    profile?.role === 'couple' || isCommitteeWorkspace || Boolean(selectedClient);
   const exportFeature = profile?.role === 'planner'
     ? profile?.planner_type === 'committee'
       ? 'committee.export_progress'
@@ -1724,11 +2124,29 @@ export default function Vendors() {
   }, [sortedVendors, vendorWorkspaceQuery]);
 
   const vendorsGroupedByCategory = useMemo(() => {
+    const categories = vendorWorkspaceQuery.trim()
+      ? []
+      : (vendorsQuery.data?.categories ?? []);
+    const initialGroups = Object.fromEntries(
+      categories.map((category) => [category, [] as Vendor[]]),
+    ) as Record<string, Vendor[]>;
+
     return vendorWorkspaceVendors.reduce<Record<string, Vendor[]>>((summary, vendor) => {
       summary[vendor.category] = [...(summary[vendor.category] ?? []), vendor];
       return summary;
-    }, {});
-  }, [vendorWorkspaceVendors]);
+    }, initialGroups);
+  }, [vendorWorkspaceQuery, vendorWorkspaceVendors, vendorsQuery.data?.categories]);
+
+  const visibleVendorCategoryEntries = useMemo(() => {
+    const entries = Object.entries(vendorsGroupedByCategory);
+    if (vendorWorkspaceQuery.trim() || showEmptyVendorCategories) return entries;
+    return entries.filter(([, group]) => group.length > 0);
+  }, [showEmptyVendorCategories, vendorWorkspaceQuery, vendorsGroupedByCategory]);
+
+  const hiddenEmptyVendorCategoryCount = useMemo(
+    () => Object.values(vendorsGroupedByCategory).filter((group) => group.length === 0).length,
+    [vendorsGroupedByCategory],
+  );
 
   const filteredVendorsByName = useMemo(
     () => [...vendorWorkspaceVendors].sort((left, right) => left.name.localeCompare(right.name)),
@@ -1736,9 +2154,16 @@ export default function Vendors() {
   );
 
   const selectedVendor = useMemo(
-    () => vendors.find((vendor) => vendor.id === selectedVendorId) ?? null,
-    [vendors, selectedVendorId],
+    () => visibleVendors.find((vendor) => vendor.id === selectedVendorId) ?? null,
+    [selectedVendorId, visibleVendors],
   );
+
+  const selectedVendorContractQuery = useQuery({
+    queryKey: ['couple-vendor-contract', selectedVendorId],
+    queryFn: () => getCoupleVendorContract(selectedVendorId!),
+    enabled: Boolean(showSharedVendorWorkspace && selectedVendorId),
+    staleTime: 30_000,
+  });
 
   const vendorTaskSuggestedOptions = useMemo(() => {
     if (!vendorTaskDialogVendor) return [];
@@ -1786,6 +2211,10 @@ export default function Vendors() {
     if (!selectedVendorId) return [];
     return workspaceVendorInvites[selectedVendorId] ?? [];
   }, [selectedVendorId, workspaceVendorInvites]);
+  const selectedVendorEnquiries = useMemo(() => {
+    if (!selectedVendorId) return [];
+    return vendorEnquiries[selectedVendorId] ?? [];
+  }, [selectedVendorId, vendorEnquiries]);
   const selectedVendorActiveInvite = useMemo(
     () => selectedVendorInvites.find((invite) => ['draft', 'pending', 'sent', 'opened'].includes(invite.invite_status)) ?? null,
     [selectedVendorInvites],
@@ -1798,7 +2227,7 @@ export default function Vendors() {
   }, [selectedVendorTasks]);
 
   const selectedVendorMilestones = useMemo(() => {
-    if (!selectedVendor) return [];
+    if (!selectedVendor || !hasRecordedVendor(selectedVendor)) return [];
     return buildVendorMilestones(selectedVendor, selectedVendorTasks);
   }, [selectedVendor, selectedVendorTasks]);
 
@@ -1811,6 +2240,28 @@ export default function Vendors() {
     () => selectedVendorMilestones.filter((milestone) => milestone.status === 'complete').length,
     [selectedVendorMilestones],
   );
+  const selectedVendorMilestoneLabels = useMemo(
+    () => selectedVendorMilestones.map((milestone) => milestone.label),
+    [selectedVendorMilestones],
+  );
+  const selectedVendorCompletedMilestoneLabels = useMemo(
+    () => selectedVendorMilestones
+      .filter((milestone) => milestone.status === 'complete')
+      .map((milestone) => milestone.label),
+    [selectedVendorMilestones],
+  );
+  const { celebrating: selectedVendorMilestoneCelebrating } = useMilestoneCelebration({
+    entityKey: selectedVendor?.id,
+    completedCount: selectedVendorCompletedMilestones,
+    milestoneLabels: selectedVendorMilestoneLabels,
+    completedMilestoneLabels: selectedVendorCompletedMilestoneLabels,
+    onReached: ({ milestoneLabel }) => {
+      toast({
+        title: 'Vendor milestone reached',
+        description: `${milestoneLabel} is complete. Zania has updated the next action for this vendor.`,
+      });
+    },
+  });
 
   const selectedVendorPaymentSummary = useMemo(() => {
     if (!selectedVendor) {
@@ -1822,7 +2273,7 @@ export default function Vendors() {
     }
 
     const invoiceTotal = selectedVendor.price ?? 0;
-    const totalPaid = selectedVendor.amount_paid ?? 0;
+    const totalPaid = totalRecordedVendorPayments(vendorPaymentsByVendorId[selectedVendor.id] ?? []);
     const balance = Math.max(invoiceTotal - totalPaid, 0);
 
     return {
@@ -1830,7 +2281,7 @@ export default function Vendors() {
       totalPaid,
       balance,
     };
-  }, [selectedVendor]);
+  }, [selectedVendor, vendorPaymentsByVendorId]);
   const selectedVendorLearningProfile = useMemo(() => {
     if (!selectedVendor?.vendor_listing_id) return null;
     return vendorLearningProfiles[selectedVendor.vendor_listing_id] ?? null;
@@ -1847,6 +2298,10 @@ export default function Vendors() {
     if (!selectedVendorId) return [];
     return vendorWorkspaceUpdates[selectedVendorId] ?? [];
   }, [selectedVendorId, vendorWorkspaceUpdates]);
+  const selectedVendorTaskSuggestions = useMemo(() => {
+    if (!selectedVendorId) return [];
+    return vendorTaskSuggestions[selectedVendorId] ?? [];
+  }, [selectedVendorId, vendorTaskSuggestions]);
   const vendorsAssistantFeature = useMemo(
     () => getVendorsAssistantFeature(profile?.role, profile?.planner_type),
     [profile?.planner_type, profile?.role],
@@ -1886,11 +2341,56 @@ export default function Vendors() {
     return prompts.slice(0, 3);
   }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, vendorTaskSummary.openTasks, vendors.length]);
 
+  const vendorsConciergeContext = useMemo(() => buildConciergeContext({
+    page: selectedVendor ? `Vendor detail: ${selectedVendor.name}` : 'Vendors',
+    role: profile?.role,
+    primaryGoal: 'Help the user close vendor decisions, chase follow-ups, and understand payment or claim gaps.',
+    nextBestAction: categoriesNeedingFinalChoice[0]
+      ? `Close the ${categoriesNeedingFinalChoice[0].category} vendor decision`
+      : finalVendorPaymentsDueSoon[0]
+        ? `Review payment for ${finalVendorPaymentsDueSoon[0].name}`
+        : vendorTaskSummary.openTasks > 0
+          ? 'Review open vendor follow-ups'
+          : vendors.length === 0
+            ? 'Add the first vendor'
+            : 'Run a vendor health check',
+    facts: [
+      ['Vendors tracked', vendors.length],
+      ['Visible vendors', vendorWorkspaceVendors.length],
+      ['Final vendors', finalVendorEntries.length],
+      ['Private vendor records', vendors.filter((vendor) => !vendor.vendor_listing_id).length],
+      ['Categories needing final choice', categoriesNeedingFinalChoice.length],
+      ['Open vendor tasks', vendorTaskSummary.openTasks],
+      ['Linked vendor tasks', vendorTaskSummary.linkedTasks],
+      ['Vendor payments due soon', finalVendorPaymentsDueSoon.length],
+      ['Selected vendor', selectedVendor?.name],
+      ['Selected vendor category', selectedVendor?.category],
+      ['Selected vendor status', selectedVendor?.selection_status],
+    ],
+    risks: [
+      vendors.length === 0 ? 'No vendors have been added yet.' : null,
+      categoriesNeedingFinalChoice[0] ? `${categoriesNeedingFinalChoice[0].category} still needs a final vendor decision.` : null,
+      finalVendorPaymentsDueSoon.length > 0 ? `${finalVendorPaymentsDueSoon.length} final vendor payment(s) are due soon.` : null,
+      vendorTaskSummary.openTasks > 0 ? `${vendorTaskSummary.openTasks} vendor follow-up task(s) are open.` : null,
+    ].filter(Boolean) as string[],
+  }), [
+    categoriesNeedingFinalChoice,
+    finalVendorEntries.length,
+    finalVendorPaymentsDueSoon,
+    profile?.role,
+    selectedVendor,
+    vendorTaskSummary.linkedTasks,
+    vendorTaskSummary.openTasks,
+    vendorWorkspaceVendors.length,
+    vendors,
+  ]);
+
   const vendorsAssistant = useInlineAssistant({
     feature: vendorsAssistantFeature,
     page: 'vendors',
     surface: 'vendor_decision_card',
     contextSource: selectedVendor ? 'selected_vendor_detail' : 'vendor_workspace_summary',
+    conciergeContext: vendorsConciergeContext,
   });
   const [vendorsNudgeDismissed, setVendorsNudgeDismissed] = useState(false);
 
@@ -1962,11 +2462,13 @@ export default function Vendors() {
 
     if (vendorTaskSummary.openTasks > 0) {
       return {
-        title: 'Clear the vendor follow-up queue',
-        body: `${vendorTaskSummary.openTasks} open vendor follow-up${vendorTaskSummary.openTasks === 1 ? '' : 's'} are still active across your wedding workspace.`,
-        actionLabel: 'Summarize follow-ups',
-        actionType: 'assistant_prompt' as const,
-        prompt: 'Summarize the vendor follow-ups still open and tell me what to chase first.',
+        title: nextVendorFollowUpTask?.title ?? 'Review pending vendor tasks',
+        body: nextVendorFollowUpTask
+          ? `${vendorTaskSummary.openTasks} vendor task${vendorTaskSummary.openTasks === 1 ? '' : 's'} remaining.`
+          : `${vendorTaskSummary.openTasks} vendor task${vendorTaskSummary.openTasks === 1 ? '' : 's'} remaining.`,
+        actionLabel: nextVendorFollowUpTask ? 'Open task' : null,
+        actionType: nextVendorFollowUpTask ? 'task_link' as const : 'none' as const,
+        taskId: nextVendorFollowUpTask?.id ?? null,
       };
     }
 
@@ -1976,7 +2478,7 @@ export default function Vendors() {
       actionLabel: null,
       actionType: 'none' as const,
     };
-  }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, vendorTaskSummary.openTasks, vendors.length]);
+  }, [categoriesNeedingFinalChoice, finalVendorPaymentsDueSoon, nextVendorFollowUpTask, vendorTaskSummary.openTasks, vendors.length]);
 
   useEffect(() => {
     if (selectedVendorId && !selectedVendor) {
@@ -1984,6 +2486,44 @@ export default function Vendors() {
       setSelectedVendorTab('details');
     }
   }, [selectedVendorId, selectedVendor]);
+
+  useEffect(() => {
+    const requestedVendorId = searchParams.get('vendor');
+    if (!requestedVendorId || !vendors.some((vendor) => vendor.id === requestedVendorId)) return;
+    const requestedTab = searchParams.get('tab');
+    const requestedFocus = searchParams.get('focus');
+    const focusedSectionId = requestedFocus === 'payment-plan'
+      ? `vendor-payment-plan-${requestedVendorId}`
+      : `vendor-${requestedVendorId}`;
+
+    setSelectedVendorId(requestedVendorId);
+    if (requestedTab === 'payments') setSelectedVendorTab('payments');
+
+    let scrollTimer: number | undefined;
+    let attempts = 0;
+    const focusRequestedSection = () => {
+      const target = document.getElementById(focusedSectionId);
+      if (!target && attempts < 12) {
+        attempts += 1;
+        scrollTimer = window.setTimeout(focusRequestedSection, 80);
+        return;
+      }
+      if (!target) return;
+
+      setHighlightedVendorSection(focusedSectionId);
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus({ preventScroll: true });
+    };
+    scrollTimer = window.setTimeout(focusRequestedSection, 120);
+    const clearTimer = window.setTimeout(() => {
+      setHighlightedVendorSection((current) => current === focusedSectionId ? null : current);
+    }, 3_200);
+
+    return () => {
+      if (scrollTimer) window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [searchParams, vendors]);
 
   useEffect(() => {
     if (!selectedVendor || selectedVendor.vendor_listing_id) return;
@@ -2011,6 +2551,29 @@ export default function Vendors() {
   }, [selectedVendor]);
 
   useEffect(() => {
+    if (!selectedVendor) return;
+    let active = true;
+    setVendorEnquiriesLoadingId(selectedVendor.id);
+    void (supabase as any).from('vendor_enquiries')
+      .select('id,recipient_name,recipient_email,subject,message,delivery_status,provider_message_id,approved_at,sent_at,created_at,response_status,responded_at,vendor_enquiry_responses(response,message,quote_amount,quote_currency,quote_valid_until,created_at)')
+      .eq('vendor_id', selectedVendor.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+      .then(({ data, error }: { data: VendorEnquiry[] | null; error: any }) => {
+        if (!active) return;
+        if (error) {
+          toast({ title: 'Could not load vendor enquiries', description: error.message, variant: 'destructive' });
+          return;
+        }
+        setVendorEnquiries((current) => ({ ...current, [selectedVendor.id]: data ?? [] }));
+      })
+      .finally(() => {
+        if (active) setVendorEnquiriesLoadingId((current) => current === selectedVendor.id ? null : current);
+      });
+    return () => { active = false; };
+  }, [selectedVendor, toast]);
+
+  useEffect(() => {
     if (!selectedVendor || selectedVendor.vendor_listing_id) return;
 
     setWorkspaceInviteForm({
@@ -2023,17 +2586,25 @@ export default function Vendors() {
   }, [selectedVendor, selectedVendorActiveInvite]);
 
   useEffect(() => {
-    if (!selectedVendor) return;
+    if (showSharedVendorWorkspace || !selectedVendor) return;
 
     let cancelled = false;
     setVendorWorkspaceUpdatesLoadingId(selectedVendor.id);
 
-    void listVendorWorkspaceUpdates(selectedVendor.id)
-      .then((updates) => {
+    setVendorTaskSuggestionsLoadingId(selectedVendor.id);
+    void Promise.all([
+      listVendorWorkspaceUpdates(selectedVendor.id),
+      listVendorTaskSuggestions(selectedVendor.id),
+    ])
+      .then(([updates, suggestions]) => {
         if (cancelled) return;
         setVendorWorkspaceUpdates((current) => ({
           ...current,
           [selectedVendor.id]: updates.filter((update) => !update.is_archived),
+        }));
+        setVendorTaskSuggestions((current) => ({
+          ...current,
+          [selectedVendor.id]: suggestions,
         }));
       })
       .catch((error: any) => {
@@ -2045,13 +2616,16 @@ export default function Vendors() {
         });
       })
       .finally(() => {
-        if (!cancelled) setVendorWorkspaceUpdatesLoadingId((current) => (current === selectedVendor.id ? null : current));
+        if (!cancelled) {
+          setVendorWorkspaceUpdatesLoadingId((current) => (current === selectedVendor.id ? null : current));
+          setVendorTaskSuggestionsLoadingId((current) => (current === selectedVendor.id ? null : current));
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [selectedVendor, toast]);
+  }, [selectedVendor, showSharedVendorWorkspace, toast]);
 
   useEffect(() => {
     if (!selectedVendor?.vendor_listing_id) return;
@@ -2119,6 +2693,47 @@ export default function Vendors() {
     }
   };
 
+  const resolveSelectedVendorTaskSuggestion = async (suggestion: VendorTaskSuggestion, action: 'accept' | 'dismiss') => {
+    if (!selectedVendorId) return;
+
+    setResolvingVendorTaskSuggestionId(suggestion.id);
+    try {
+      const resolved = action === 'accept'
+        ? await acceptVendorTaskSuggestion(suggestion.id)
+        : await dismissVendorTaskSuggestion(suggestion.id);
+
+      setVendorTaskSuggestions((current) => ({
+        ...current,
+        [selectedVendorId]: (current[selectedVendorId] ?? []).map((item) => (
+          item.id === resolved.id ? resolved : item
+        )),
+      }));
+
+      if (action === 'accept') {
+        setAcceptedVendorTaskSuggestionId(suggestion.id);
+        await refreshVendorsWorkspace();
+        window.setTimeout(() => setAcceptedVendorTaskSuggestionId((current) => current === suggestion.id ? null : current), 1600);
+        toast({
+          title: 'Suggestion added to the plan',
+          description: 'The vendor suggestion is now a real vendor-linked task in your shared wedding workspace.',
+        });
+      } else {
+        toast({
+          title: 'Suggestion dismissed',
+          description: 'It remains in the relationship history but was not added to the wedding plan.',
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: `Could not ${action} suggestion`,
+        description: error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setResolvingVendorTaskSuggestionId(null);
+    }
+  };
+
   const vendorUpdateTone = (type: string | null) => {
     switch (type) {
       case 'waiting_on_couple':
@@ -2147,16 +2762,17 @@ export default function Vendors() {
 
     setRecordingVendorPayment(true);
     try {
+      const vendorBudgetScope = getVendorCategoryScope(selectedVendor.category);
       const { data: categoryRows, error: categoryLoadError } = await supabase
         .from('budget_categories')
         .select('*')
         .or(dataOrFilter)
-        .eq('budget_scope', 'wedding');
+        .eq('budget_scope', vendorBudgetScope);
 
       if (categoryLoadError) throw categoryLoadError;
 
       let selectedCategory = ((categoryRows ?? []) as any[]).find(
-        (category) => normalizeCategoryName(category.name) === normalizeCategoryName(selectedVendor.category),
+        (category) => vendorCategoriesMatch(category.name, selectedVendor.category),
       );
 
       if (!selectedCategory) {
@@ -2168,8 +2784,8 @@ export default function Vendors() {
           name: selectedVendor.category,
           allocated: selectedVendor.price ?? 0,
           spent: 0,
-          budget_scope: 'wedding',
-          visibility: 'public',
+          budget_scope: vendorBudgetScope,
+          visibility: vendorBudgetScope === 'personal' ? 'private' : 'public',
         };
 
         if (isPlanner && selectedClient) {
@@ -2188,13 +2804,13 @@ export default function Vendors() {
 
       if (plannerNeedsApproval && selectedClient?.linked_user_id) {
         const nextCategorySpent = Number(selectedCategory.spent ?? 0) + amount;
-        const nextPaid = Number(selectedVendor.amount_paid ?? 0) + amount;
-        const nextStatus: VendorPaymentStatus =
-          selectedVendor.price && nextPaid >= selectedVendor.price
-            ? 'paid_full'
-            : nextPaid > 0
-              ? 'part_paid'
-              : ((selectedVendor.payment_status as VendorPaymentStatus) || 'unpaid');
+        const recordedTotal = totalRecordedVendorPayments(vendorPaymentsByVendorId[selectedVendor.id] ?? []);
+        const nextPaid = recordedTotal + amount;
+        const nextStatus = deriveVendorPaymentStatus({
+          totalCost: selectedVendor.price,
+          depositRequired: selectedVendor.deposit_amount,
+          totalPaid: nextPaid,
+        });
 
         await submitPlannerChangeRequest({
           clientId: selectedClient.id,
@@ -2208,7 +2824,7 @@ export default function Vendors() {
           proposedPayload: {
             budget_category_id: selectedCategory.id,
             vendor_id: selectedVendor.id,
-            budget_scope: 'wedding',
+            budget_scope: vendorBudgetScope,
             category_name: selectedCategory.name,
             payee_name: payeeName,
             amount,
@@ -2235,7 +2851,7 @@ export default function Vendors() {
         client_id: selectedClient?.id ?? null,
         budget_category_id: selectedCategory.id,
         vendor_id: selectedVendor.id,
-        budget_scope: 'wedding',
+        budget_scope: vendorBudgetScope,
         category_name: selectedCategory.name,
         payee_name: payeeName,
         amount,
@@ -2254,13 +2870,13 @@ export default function Vendors() {
 
       if (updateCategoryError) throw updateCategoryError;
 
-      const nextPaid = Number(selectedVendor.amount_paid ?? 0) + amount;
-      const nextStatus: VendorPaymentStatus =
-        selectedVendor.price && nextPaid >= selectedVendor.price
-          ? 'paid_full'
-          : nextPaid > 0
-            ? 'part_paid'
-            : ((selectedVendor.payment_status as VendorPaymentStatus) || 'unpaid');
+      const recordedTotal = totalRecordedVendorPayments(vendorPaymentsByVendorId[selectedVendor.id] ?? []);
+      const nextPaid = recordedTotal + amount;
+      const nextStatus = deriveVendorPaymentStatus({
+        totalCost: selectedVendor.price,
+        depositRequired: selectedVendor.deposit_amount,
+        totalPaid: nextPaid,
+      });
 
       await updateVendorPaymentState({
         vendorId: selectedVendor.id,
@@ -2299,30 +2915,27 @@ export default function Vendors() {
           setMode('custom');
           setDirSearch('');
           setDirResults([]);
-          setForm({ name: '', category: 'Venue', email: '', phone: '', price: '' });
+          setForm({ name: '', category: 'Wedding Venue', email: '', phone: '', price: '' });
         }
       }}
     >
-      <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
-        <Plus className="h-4 w-4" />
-        Add Vendor
-      </Button>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader><DialogTitle className="font-display">Add a vendor</DialogTitle></DialogHeader>
-        <div className="flex gap-2 border-b border-border pb-3">
-          <Button variant={mode === 'custom' ? 'default' : 'outline'} size="sm" onClick={() => setMode('custom')} className="gap-1">
-            <Plus className="h-3.5 w-3.5" /> Add Vendor Record
+      <Button type="button" onClick={() => setOpen(true)}>Add vendor</Button>
+      <DialogContent className="overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="font-display">Add vendor</DialogTitle>
+          <DialogDescription>Enter their details or find an existing Zania vendor.</DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-2 border-b border-border pb-3">
+          <Button variant={mode === 'custom' ? 'default' : 'outline'} size="sm" onClick={() => setMode('custom')} className="min-w-0 px-2 sm:px-3">
+            Enter details
           </Button>
-          <Button variant={mode === 'directory' ? 'default' : 'outline'} size="sm" onClick={() => setMode('directory')} className="gap-1">
-            <Search className="h-3.5 w-3.5" /> Link From Zania
+          <Button variant={mode === 'directory' ? 'default' : 'outline'} size="sm" onClick={() => setMode('directory')} className="min-w-0 px-2 sm:px-3">
+            Search Zania
           </Button>
         </div>
         {mode === 'directory' ? (
           <div className="space-y-3">
-            <div className="rounded-lg border border-border/70 bg-muted/40 p-3 text-sm text-muted-foreground">
-              Search Zania when you want to attach an existing public vendor listing to this workspace. If your vendor is not here yet, switch back to <span className="font-medium text-foreground">Add Vendor Record</span>.
-            </div>
-            <Input placeholder="Search Zania vendors…" value={dirSearch} onChange={(e) => setDirSearch(e.target.value)} autoFocus />
+            <Input placeholder="Search vendors" value={dirSearch} onChange={(e) => setDirSearch(e.target.value)} autoFocus />
             {dirLoading && <p className="text-sm text-muted-foreground">Loading directory…</p>}
             {dirResults.length > 0 ? (
               <div className="max-h-60 overflow-y-auto space-y-2">
@@ -2350,8 +2963,8 @@ export default function Vendors() {
               </div>
             ) : dirSearch.trim().length >= 2 && !dirLoading ? (
               <div className="text-center py-6 space-y-2">
-                <p className="text-sm text-muted-foreground">No vendors found in directory.</p>
-                <Button variant="outline" size="sm" onClick={() => setMode('custom')}>Add Private Vendor Record Instead</Button>
+                <p className="text-sm font-medium text-foreground">No vendors found</p>
+                <Button variant="outline" size="sm" onClick={() => setMode('custom')}>Enter details</Button>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-4">Type at least 2 characters to search.</p>
@@ -2360,20 +2973,8 @@ export default function Vendors() {
         ) : (
           <form onSubmit={addVendor} className="space-y-4">
             <FormSubmitError message={vendorSubmitError} />
-            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
-              Add the vendor you are already working with. This starts as a <span className="font-medium text-foreground">private vendor record</span> inside your wedding workspace. It does <span className="font-medium text-foreground">not</span> create a public Zania profile, and the details stay private unless the vendor later joins and opts in.
-            </div>
-            <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                {modalBenchmarkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Market signal for {form.category}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {modalBenchmarkLoading ? 'Loading price benchmark…' : benchmarkSummary(modalBenchmark)}
-              </p>
-            </div>
             <div className="space-y-2">
-              <Label>Vendor Name</Label>
+              <Label>Vendor name</Label>
               <Input value={form.name} onChange={e => {
                 setForm(f => ({ ...f, name: e.target.value }));
                 setVendorFormErrors((current) => ({ ...current, name: undefined }));
@@ -2386,7 +2987,11 @@ export default function Vendors() {
               <Select value={form.category} onValueChange={value => setForm(f => ({ ...f, category: value }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {vendorCategories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                  {vendorCategoryCatalog.map((category) => (
+                    <SelectItem key={category.name} value={category.name}>
+                      {category.name} · {category.scope === 'personal' ? 'Personal' : 'Wedding'}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -2406,30 +3011,38 @@ export default function Vendors() {
               />
               <FormFieldError message={vendorFormErrors.email} />
             </div>
-            <div className="space-y-2">
-              <Label>Phone (optional)</Label>
-              <Input value={form.phone} onChange={e => {
-                setForm(f => ({ ...f, phone: e.target.value }));
-                setVendorFormErrors((current) => ({ ...current, phone: undefined }));
-                setVendorSubmitError(null);
-              }} placeholder="+254..." />
-              <FormFieldError message={vendorFormErrors.phone} />
-            </div>
-            <div className="space-y-2">
-              <Label>Quoted Price (KES, optional)</Label>
-              <Input type="number" value={form.price} onChange={e => {
-                setForm(f => ({ ...f, price: e.target.value }));
-                setVendorFormErrors((current) => ({ ...current, price: undefined }));
-                setVendorSubmitError(null);
-              }} placeholder="0" />
-              <FormFieldError message={vendorFormErrors.price} />
-              <p className="text-xs text-muted-foreground">
-                Saving a quote here automatically creates an anonymized price observation.
-              </p>
-            </div>
+            <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+              <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+              <div className="mt-4 space-y-4 border-t border-border/70 pt-4">
+                <div className="space-y-2">
+                  <Label>Phone</Label>
+                  <Input value={form.phone} onChange={e => {
+                    setForm(f => ({ ...f, phone: e.target.value }));
+                    setVendorFormErrors((current) => ({ ...current, phone: undefined }));
+                    setVendorSubmitError(null);
+                  }} placeholder="+254..." />
+                  <FormFieldError message={vendorFormErrors.phone} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Quoted price (KES)</Label>
+                  <Input type="number" value={form.price} onChange={e => {
+                    setForm(f => ({ ...f, price: e.target.value }));
+                    setVendorFormErrors((current) => ({ ...current, price: undefined }));
+                    setVendorSubmitError(null);
+                  }} placeholder="0" />
+                  <FormFieldError message={vendorFormErrors.price} />
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background p-3">
+                  <p className="text-sm font-medium text-foreground">Typical price</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {modalBenchmarkLoading ? 'Loading…' : benchmarkSummary(modalBenchmark)}
+                  </p>
+                </div>
+              </div>
+            </details>
             <Button type="submit" className="w-full" disabled={addingVendor}>
               {addingVendor ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {addingVendor ? 'Saving...' : 'Save Vendor Record'}
+              {addingVendor ? 'Saving…' : 'Add vendor'}
             </Button>
           </form>
         )}
@@ -2437,16 +3050,93 @@ export default function Vendors() {
     </Dialog>
   );
 
+  const vendorContactDialog = (
+    <Dialog
+      open={Boolean(contactEditorVendor)}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen || savingVendorContact) return;
+        setContactEditorVendor(null);
+        setContactEditorErrors({});
+        setContactEditorSubmitError(null);
+        setCreateClaimAfterContactSave(false);
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">
+            {contactEditorVendor?.email || contactEditorVendor?.phone ? 'Edit vendor contact' : 'Add vendor contact'}
+          </DialogTitle>
+          <DialogDescription>These details stay private to this wedding.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={saveVendorContact} className="space-y-4">
+          <FormSubmitError message={contactEditorSubmitError} />
+          <div className="space-y-2">
+            <Label htmlFor="quick-vendor-contact-email">Vendor email</Label>
+            <Input
+              id="quick-vendor-contact-email"
+              type="email"
+              value={contactEditorForm.email}
+              onChange={(event) => {
+                setContactEditorForm((current) => ({ ...current, email: event.target.value }));
+                setContactEditorErrors((current) => ({ ...current, email: undefined }));
+                setContactEditorSubmitError(null);
+              }}
+              placeholder="vendor@example.com"
+              autoFocus
+            />
+            <FormFieldError message={contactEditorErrors.email} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="quick-vendor-contact-phone">Vendor phone</Label>
+            <Input
+              id="quick-vendor-contact-phone"
+              value={contactEditorForm.phone}
+              onChange={(event) => {
+                setContactEditorForm((current) => ({ ...current, phone: event.target.value }));
+                setContactEditorErrors((current) => ({ ...current, phone: undefined }));
+                setContactEditorSubmitError(null);
+              }}
+              placeholder="+254..."
+            />
+            <FormFieldError message={contactEditorErrors.phone} />
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={savingVendorContact}
+              onClick={() => {
+                setContactEditorVendor(null);
+                setCreateClaimAfterContactSave(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={savingVendorContact}>
+              {savingVendorContact ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {savingVendorContact
+                ? 'Saving...'
+                : createClaimAfterContactSave
+                  ? 'Save and create link'
+                  : 'Save contact'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
   if (vendorsQuery.isLoading) return <WorkspacePageSkeleton compact />;
 
-  if (showCoupleVendorWorkspace) {
+  if (showSharedVendorWorkspace) {
     const exportVendorData = () => {
       downloadCsv(
         `zania-vendors-${new Date().toISOString().slice(0, 10)}.csv`,
         vendors.map((vendor) => {
           const vendorTasks = vendorTasksByVendorId[vendor.id] ?? [];
           const vendorPayments = vendorPaymentsByVendorId[vendor.id] ?? [];
+          const recordedPaymentTotal = totalRecordedVendorPayments(vendorPayments);
           return {
             vendor_name: vendor.name,
             category: vendor.category,
@@ -2456,8 +3146,8 @@ export default function Vendors() {
             payment_status: vendor.payment_status,
             contract_status: vendor.contract_status,
             quoted_price_kes: vendor.price ?? '',
-            amount_paid_kes: vendor.amount_paid,
-            outstanding_kes: vendor.price != null ? Math.max(vendor.price - vendor.amount_paid, 0) : '',
+            amount_paid_kes: recordedPaymentTotal,
+            outstanding_kes: vendor.price != null ? Math.max(vendor.price - recordedPaymentTotal, 0) : '',
             payment_due_date: safeDateLabel(vendor.payment_due_date),
             open_tasks: vendorTasks.filter((task) => !task.completed).length,
             completed_tasks: vendorTasks.filter((task) => task.completed).length,
@@ -2471,274 +3161,712 @@ export default function Vendors() {
     const renderVendorRow = (vendor: Vendor) => {
       const vendorTasks = vendorTasksByVendorId[vendor.id] ?? [];
       const openVendorTasks = vendorTasks.filter((task) => !task.completed).length;
-      const outstandingBalance = Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0);
+      const vendorPayments = vendorPaymentsByVendorId[vendor.id] ?? [];
+      const recordedPaymentTotal = totalRecordedVendorPayments(vendorPayments);
+      const outstandingBalance = Math.max((vendor.price ?? 0) - recordedPaymentTotal, 0);
+      const paymentProgress = vendor.price && vendor.price > 0
+        ? Math.min((recordedPaymentTotal / vendor.price) * 100, 100)
+        : 0;
       const dueDateLabel = vendor.payment_due_date ? safeDateLabel(vendor.payment_due_date) : null;
+      const isActive = selectedVendorId === vendor.id;
+      const detailsDraft = vendorDetailsDrafts[vendor.id] ?? {
+        name: vendor.name,
+        category: vendor.category,
+        email: vendor.email ?? '',
+        phone: vendor.phone ?? '',
+      };
+      const vendorActiveInvite = (workspaceVendorInvites[vendor.id] ?? []).find((invite) =>
+        ['draft', 'pending', 'sent', 'opened'].includes(invite.invite_status),
+      ) ?? null;
+      const vendorContract = isActive ? selectedVendorContractQuery.data ?? null : null;
+      const vendorContractUrl = vendorContract
+        ? coupleVendorContractShareUrl(vendorContract, window.location.origin)
+        : null;
+      const selectionStatusTextClass = vendor.selection_status === 'final'
+        ? 'text-success'
+        : vendor.selection_status === 'declined'
+          ? 'text-destructive'
+          : vendor.selection_status === 'backup'
+            ? 'text-warning-foreground'
+            : 'text-primary';
+      const selectionStatusDotClass = vendor.selection_status === 'final'
+        ? 'bg-success'
+        : vendor.selection_status === 'declined'
+          ? 'bg-destructive'
+          : vendor.selection_status === 'backup'
+            ? 'bg-warning'
+            : 'bg-primary';
 
       return (
-        <button
+        <motion.div
           key={vendor.id}
-          type="button"
-          onClick={() => {
-            setSelectedVendorId(vendor.id);
-            setSelectedVendorTab('details');
-          }}
-          className="flex w-full flex-col gap-4 rounded-[1.5rem] border border-border/70 bg-background px-4 py-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-accent/20 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-5 sm:rounded-[1.75rem]"
+          id={`vendor-${vendor.id}`}
+          layout={!prefersReducedMotion}
+          animate={prefersReducedMotion ? undefined : isActive ? { y: -1 } : { y: 0 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: 'easeOut' }}
+          className={`relative w-full min-w-0 max-w-full overflow-hidden rounded-xl border text-left transition-[border-color,background-color,box-shadow,opacity] duration-200 ${isActive ? 'z-10 border-primary/55 bg-primary/[0.025] shadow-[0_16px_38px_-28px_hsl(var(--foreground)/0.6)] ring-1 ring-primary/10' : 'border-border/80 bg-card/90 hover:border-primary/25 hover:bg-card'}`}
         >
-          <div className="min-w-0 space-y-3">
-            <div>
-              <p className="truncate text-xl font-semibold text-foreground">{vendor.name}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <Badge variant="outline">{vendor.category}</Badge>
-                <Badge variant={vendor.vendor_listing_id ? 'secondary' : 'outline'}>
-                  {vendor.vendor_listing_id ? 'Linked to Zania' : 'Private vendor record'}
-                </Badge>
-                {vendor.selection_status === 'final' && <Badge>Final choice</Badge>}
-                {vendor.selection_status === 'backup' && <Badge variant="secondary">Backup</Badge>}
-                {vendor.payment_status !== 'unpaid' && (
-                  <Badge variant={vendorPaymentStatusTone(vendor.payment_status)}>
-                    {vendorPaymentStatusLabel(vendor.payment_status)}
-                  </Badge>
-                )}
-                {vendor.phone && <span>{vendor.phone}</span>}
+          <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 bg-primary transition-opacity ${isActive ? 'opacity-100' : 'opacity-0'}`} />
+          <button
+            type="button"
+            onClick={() => setSelectedVendorId(isActive ? null : vendor.id)}
+            aria-expanded={isActive}
+            className={`w-full px-5 py-5 text-left transition-colors duration-200 sm:px-7 ${isActive ? 'bg-primary/[0.07]' : 'hover:bg-muted/30'}`}
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate text-lg font-semibold text-foreground">{vendor.name}</p>
+                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${selectionStatusTextClass}`}>
+                    <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${selectionStatusDotClass}`} />
+                    {vendorSelectionLabel(vendor.selection_status)}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {formatCurrency(recordedPaymentTotal)} paid · {formatCurrency(outstandingBalance)} balance
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>{vendor.category}</span>
+                  {openVendorTasks > 0 ? <span>· {openVendorTasks} follow-up{openVendorTasks === 1 ? '' : 's'}</span> : null}
+                  {dueDateLabel && vendor.payment_status !== 'paid_full' ? <span>· Next payment {dueDateLabel}</span> : null}
+                </div>
+              </div>
+              <div className="shrink-0 text-left sm:text-right">
+                <p className="text-lg font-semibold text-foreground">{formatCurrency(vendor.price)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{vendorPaymentStatusLabel(vendor.payment_status)}</p>
+                <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-primary">
+                  {isActive ? 'Hide details' : 'View details'}
+                  <ChevronDown className={`h-4 w-4 transition-transform duration-200 motion-reduce:transition-none ${isActive ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-              {openVendorTasks > 0 ? (
-                <span>{openVendorTasks} open follow-up{openVendorTasks === 1 ? '' : 's'}</span>
-              ) : (
-                <span>No open follow-ups</span>
-              )}
-              {dueDateLabel && vendor.payment_status !== 'paid_full' && <span>Payment due {dueDateLabel}</span>}
-              {outstandingBalance > 0 && <span>{formatCurrency(outstandingBalance)} outstanding</span>}
+            <div className="mt-4 h-1 overflow-hidden rounded-full bg-accent/60">
+              <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${paymentProgress}%` }} />
             </div>
-          </div>
-          <div className="text-left sm:min-w-[180px] sm:text-right">
-            <p className="text-xl font-semibold text-foreground">
-              {vendorListView === 'by_name' ? vendor.category : formatCurrency(vendor.price)}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {selectedVendorId === vendor.id
-                ? 'Open in workspace'
-                : openVendorTasks > 0
-                  ? 'Needs follow-up'
-                  : outstandingBalance > 0
-                    ? 'Payment still active'
-                    : 'View details'}
-            </p>
-          </div>
-        </button>
+          </button>
+
+          <AnimatedCardDetails open={isActive}>
+            <div className="min-w-0 space-y-5 border-t border-border bg-background/60 px-4 pb-6 pt-5 sm:px-7">
+              <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-background/70 text-center">
+                <div className="p-3"><p className="text-xs text-muted-foreground">Invoice</p><p className="mt-1 font-semibold">{formatCurrency(vendor.price)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Paid</p><p className="mt-1 font-semibold">{formatCurrency(recordedPaymentTotal)}</p></div>
+                <div className="p-3"><p className="text-xs text-muted-foreground">Balance</p><p className="mt-1 font-semibold">{formatCurrency(outstandingBalance)}</p></div>
+              </div>
+
+              <details className="rounded-xl border border-border/80 bg-card/70 p-4">
+                <summary className="cursor-pointer list-none font-semibold text-foreground">Contact details</summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label htmlFor={`vendor-name-${vendor.id}`}>Vendor name</Label>
+                    <Input
+                      id={`vendor-name-${vendor.id}`}
+                      value={detailsDraft.name}
+                      onChange={(event) => setVendorDetailsDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...detailsDraft, name: event.target.value },
+                      }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Category</Label>
+                    <Select
+                      value={detailsDraft.category}
+                      onValueChange={(value) => setVendorDetailsDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...detailsDraft, category: value },
+                      }))}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {getVendorCategoryOptions(detailsDraft.category).map((category) => (
+                          <SelectItem key={category.name} value={category.name}>
+                            {category.name} · {category.scope === 'personal' ? 'Personal' : 'Wedding'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`vendor-email-${vendor.id}`}>Email</Label>
+                    <Input
+                      id={`vendor-email-${vendor.id}`}
+                      type="email"
+                      value={detailsDraft.email}
+                      onChange={(event) => setVendorDetailsDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...detailsDraft, email: event.target.value },
+                      }))}
+                      placeholder="vendor@example.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`vendor-phone-${vendor.id}`}>Phone</Label>
+                    <Input
+                      id={`vendor-phone-${vendor.id}`}
+                      value={detailsDraft.phone}
+                      onChange={(event) => setVendorDetailsDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...detailsDraft, phone: event.target.value },
+                      }))}
+                      placeholder="+254..."
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <Button type="button" variant="outline" onClick={() => updateVendorDetails(vendor)} disabled={savingVendorDetailsId === vendor.id}>
+                    {savingVendorDetailsId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Save vendor details
+                  </Button>
+                </div>
+              </details>
+
+              <details className="rounded-xl border border-border/80 bg-card/70 p-4">
+                <summary className="cursor-pointer list-none font-semibold text-foreground">Enquiry history</summary>
+                <p className="mt-1 text-sm text-muted-foreground">Messages sent through Zania remain enquiries until a separate quote or booking action is completed.</p>
+                {vendorEnquiriesLoadingId === vendor.id ? (
+                  <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading enquiries...
+                  </div>
+                ) : selectedVendorEnquiries.length === 0 ? (
+                  <p className="mt-3 text-sm text-muted-foreground">No conversational enquiries have been sent to this vendor.</p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {selectedVendorEnquiries.map((enquiry) => (
+                      <div key={enquiry.id} className="rounded-lg border border-border/70 bg-background/80 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium text-foreground">{enquiry.subject}</p>
+                          <Badge variant={enquiry.delivery_status === 'sent' ? 'default' : enquiry.delivery_status === 'failed' ? 'destructive' : 'secondary'}>
+                            {enquiry.delivery_status === 'sent' ? 'Sent' : enquiry.delivery_status === 'failed' ? 'Delivery failed' : 'Sending'}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">To {enquiry.recipient_name} · {enquiry.recipient_email}</p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{enquiry.message}</p>
+                        {enquiry.delivery_status === 'sent' ? (
+                          <div className="mt-3 rounded-lg border border-border/70 bg-card p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-medium text-foreground">Vendor response</p>
+                              <Badge variant={enquiry.response_status === 'available' ? 'default' : enquiry.response_status === 'unavailable' ? 'destructive' : 'secondary'}>
+                                {vendorEnquiryResponseLabel(enquiry.response_status)}
+                              </Badge>
+                            </div>
+                            {enquiry.vendor_enquiry_responses?.[0]?.message ? (
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{enquiry.vendor_enquiry_responses[0].message}</p>
+                            ) : null}
+                            {enquiry.vendor_enquiry_responses?.[0]?.quote_amount != null ? (
+                              <p className="mt-2 text-sm font-medium text-foreground">
+                                Indicative amount: {enquiry.vendor_enquiry_responses[0].quote_currency ?? 'KES'} {Number(enquiry.vendor_enquiry_responses[0].quote_amount).toLocaleString('en-KE')}
+                                {enquiry.vendor_enquiry_responses[0].quote_valid_until ? ` · valid until ${new Date(enquiry.vendor_enquiry_responses[0].quote_valid_until).toLocaleDateString('en-KE')}` : ''}
+                              </p>
+                            ) : null}
+                            {enquiry.response_status !== 'awaiting_response' ? (
+                              <p className="mt-2 text-xs text-muted-foreground">This is a response only. It has not changed the vendor's quote or booking status.</p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {enquiry.sent_at ? `Sent ${new Date(enquiry.sent_at).toLocaleString('en-KE')}` : `Prepared ${new Date(enquiry.created_at).toLocaleString('en-KE')}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </details>
+
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+                <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                  <p className="font-semibold text-foreground">Confirmation and contract</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Choose this vendor and review any shared contract.</p>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Vendor decision</Label>
+                      <Select
+                        value={(vendor.selection_status || 'shortlisted') as VendorSelectionStatus}
+                        onValueChange={(value) => void updateSelection(vendor, value as VendorSelectionStatus)}
+                        disabled={savingSelectionId === vendor.id}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {selectionStatuses.map((status) => <SelectItem key={status} value={status}>{vendorSelectionLabel(status)}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="min-w-0 rounded-lg border border-border/70 bg-background/80 p-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <FileSignature className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium text-foreground">Vendor contract</p>
+                            {vendorContract ? (
+                              <Badge variant="outline" className="text-[10px]">
+                                {coupleVendorContractStatusLabel(vendorContract)}
+                              </Badge>
+                            ) : null}
+                          </div>
+
+                          {selectedVendorContractQuery.isLoading ? (
+                            <p className="mt-1 text-xs text-muted-foreground">Checking for a shared contract...</p>
+                          ) : selectedVendorContractQuery.isError ? (
+                            <p className="mt-1 text-xs text-destructive">The contract could not be loaded. Please try again.</p>
+                          ) : vendorContract ? (
+                            <>
+                              <p className="mt-1 truncate text-sm font-medium text-foreground">{vendorContract.title}</p>
+                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                {coupleVendorContractMessage(vendorContract)}
+                              </p>
+                              {vendorContractUrl ? (
+                                <Button asChild type="button" variant="link" className="mt-2 h-auto p-0 text-xs">
+                                  <a href={vendorContractUrl} target="_blank" rel="noreferrer">
+                                    Open contract
+                                    <ExternalLink className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                                  </a>
+                                </Button>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>
+                              <p className="mt-1 text-sm font-medium text-foreground">No contract shared yet</p>
+                              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                {vendor.vendor_listing_id
+                                  ? 'This vendor has not sent a contract through Zania yet.'
+                                  : 'Connect this vendor to their professional account so they can create and share the contract here.'}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  id={`vendor-payment-plan-${vendor.id}`}
+                  tabIndex={-1}
+                  className={`scroll-mt-24 rounded-xl border border-border/80 bg-card/70 p-4 outline-none transition-[background-color,box-shadow] duration-300 sm:p-5 ${
+                    highlightedVendorSection === `vendor-payment-plan-${vendor.id}`
+                      ? 'bg-primary/[0.07] shadow-[0_0_0_3px_hsl(var(--primary)/0.28)]'
+                      : ''
+                  }`}
+                >
+                  <p className="font-semibold text-foreground">Cost and payment plan</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Set the agreed cost and next payment date.</p>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`vendor-price-${vendor.id}`}>Total vendor cost</Label>
+                      <Input id={`vendor-price-${vendor.id}`} type="number" min="0" value={priceDrafts[vendor.id] ?? ''} onChange={(event) => setPriceDrafts((current) => ({ ...current, [vendor.id]: event.target.value }))} />
+                      <p className="text-xs text-muted-foreground">The full agreed price, used to calculate the outstanding balance.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`vendor-deposit-${vendor.id}`}>Booking deposit</Label>
+                      <Input id={`vendor-deposit-${vendor.id}`} type="number" min="0" value={paymentDrafts[vendor.id]?.depositAmount ?? '0'} onChange={(event) => setPaymentDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), depositAmount: event.target.value },
+                      }))} />
+                      <p className="text-xs text-muted-foreground">This is not counted as paid until you record it.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Payments recorded</Label>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                        <p className="font-semibold text-foreground">{formatCurrency(recordedPaymentTotal)}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Calculated from {vendorPayments.length} payment {vendorPayments.length === 1 ? 'record' : 'records'}.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Payment stage</Label>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                        <p className="font-semibold text-foreground">
+                          {vendorPaymentStatusLabel(deriveVendorPaymentStatus({
+                            totalCost: priceDrafts[vendor.id],
+                            depositRequired: paymentDrafts[vendor.id]?.depositAmount,
+                            totalPaid: recordedPaymentTotal,
+                          }))}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Calculated from recorded payments.</p>
+                      </div>
+                    </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor={`vendor-due-${vendor.id}`}>Next payment date</Label>
+                      <Input id={`vendor-due-${vendor.id}`} type="date" value={paymentDrafts[vendor.id]?.paymentDueDate ?? ''} onChange={(event) => setPaymentDrafts((current) => ({
+                        ...current,
+                        [vendor.id]: { ...(current[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }), paymentDueDate: event.target.value },
+                      }))} />
+                      <PaymentReminderStatus
+                        dueDate={paymentDrafts[vendor.id]?.paymentDueDate}
+                        vendorName={vendor.name}
+                        saved={(paymentDrafts[vendor.id]?.paymentDueDate || null) === vendor.payment_due_date}
+                        inputId={`vendor-due-${vendor.id}`}
+                      />
+                    </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label>Payment history</Label>
+                        <span className="text-xs text-muted-foreground">
+                          {vendorPayments.length} recorded
+                        </span>
+                      </div>
+                      <div className="divide-y divide-border overflow-hidden rounded-md border border-border/70 bg-background/80">
+                        {vendorPayments.length > 0 ? (
+                          vendorPayments
+                            .slice()
+                            .sort((a, b) => b.payment_date.localeCompare(a.payment_date))
+                            .map((payment) => (
+                              <div key={payment.id} className="flex items-start justify-between gap-4 px-3 py-2.5">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-foreground">{formatCurrency(payment.amount)}</p>
+                                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                    {payment.reference || 'No payment reference'}
+                                  </p>
+                                </div>
+                                <time className="shrink-0 text-xs text-muted-foreground" dateTime={payment.payment_date}>
+                                  {new Date(`${payment.payment_date}T00:00:00`).toLocaleDateString('en-KE', {
+                                    day: 'numeric',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  })}
+                                </time>
+                              </div>
+                            ))
+                        ) : (
+                          <p className="px-3 py-4 text-sm text-muted-foreground">
+                            No payments recorded yet. Record a payment when money changes hands.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <Button type="button" onClick={() => updateVendorPayment(vendor)} disabled={savingPaymentId === vendor.id}>
+                      {savingPaymentId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save payment plan
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <details className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                <summary className="cursor-pointer list-none font-semibold text-foreground">More vendor details</summary>
+                <div className="mt-4 space-y-5 border-t border-border/70 pt-4">
+              <div className="grid min-w-0 gap-5 lg:grid-cols-2">
+                <div className="rounded-xl border border-primary/20 bg-primary/[0.035] p-4 sm:p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-foreground">Follow-ups</p>
+                      <p className="mt-1 text-sm text-muted-foreground">Keep vendor tasks attached here.</p>
+                    </div>
+                    <span className={`inline-flex items-center gap-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] ${openVendorTasks > 0 ? 'text-warning-foreground' : 'text-success'}`}>
+                      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${openVendorTasks > 0 ? 'bg-warning' : 'bg-success'}`} />
+                      {openVendorTasks} open
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {vendorTasks.filter((task) => !task.completed).slice(0, 4).map((task) => (
+                      <div key={task.id} className="rounded-lg border border-border/70 bg-background/70 px-3 py-2 text-sm font-medium text-foreground">{task.title}</div>
+                    ))}
+                    {openVendorTasks === 0 ? <p className="text-sm text-muted-foreground">No open follow-ups.</p> : null}
+                  </div>
+                  <Button type="button" variant="link" className="mt-3 h-auto p-0" onClick={() => {
+                    resetVendorTaskForm();
+                    setVendorTaskDialogVendor(vendor);
+                  }}>
+                    Add a follow-up task
+                  </Button>
+                </div>
+                <div className="rounded-xl border border-border/80 bg-card/70 p-4 sm:p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-foreground">Private notes</p>
+                      <p className="mt-1 text-sm text-muted-foreground">Keep comparison and booking details together.</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => updateVendorNotes(vendor)} disabled={savingNotesId === vendor.id}>
+                      {savingNotesId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save notes
+                    </Button>
+                  </div>
+                  <Textarea className="mt-4 min-h-28" value={notesDrafts[vendor.id] ?? ''} onChange={(event) => setNotesDrafts((current) => ({ ...current, [vendor.id]: event.target.value }))} placeholder="Why you shortlisted this vendor, contract notes, and anything to remember..." />
+                </div>
+              </div>
+
+              {!vendor.vendor_listing_id ? (
+                <div className="flex flex-col gap-2 border-t border-border/70 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-muted-foreground">Want this vendor to collaborate in Zania?</p>
+                  <div className="flex flex-wrap gap-2">
+                    {vendorActiveInvite ? (
+                      <Button asChild type="button" variant="link" size="sm" className="h-auto p-0">
+                        <Link to={`/vendor-claim?token=${encodeURIComponent(vendorActiveInvite.invite_token)}&email=${encodeURIComponent(vendorActiveInvite.invite_contact_email ?? '')}`}>
+                          Open vendor claim link
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0"
+                        disabled={workspaceInviteLoadingVendorId === vendor.id || workspaceInviteSubmittingVendorId === vendor.id || !activeWeddingId}
+                        onClick={() => void createQuickVendorClaimLink(vendor)}
+                      >
+                        {workspaceInviteLoadingVendorId === vendor.id || workspaceInviteSubmittingVendorId === vendor.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {vendor.email || vendor.phone ? 'Create private claim link' : 'Add contact and create link'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+                </div>
+              </details>
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
+                {vendor.vendor_listing_id ? (
+                  <Button
+                    type="button"
+                    className="w-full gap-2 sm:w-auto"
+                    onClick={() => void sendVendorQuoteRequest(vendor)}
+                    disabled={requestingQuoteVendorId === vendor.id}
+                  >
+                    {requestingQuoteVendorId === vendor.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Receipt className="h-4 w-4" />
+                    )}
+                    Request quote
+                  </Button>
+                ) : null}
+                <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setSelectedVendorId(null)}>Close</Button>
+                <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label="Remove vendor" title="Remove vendor" onClick={() => deleteVendor(vendor.id)}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
+              </div>
+              {vendorPayments.length > 0 ? <p className="text-xs text-muted-foreground">{vendorPayments.length} payment{vendorPayments.length === 1 ? '' : 's'} recorded</p> : null}
+            </div>
+          </AnimatedCardDetails>
+        </motion.div>
       );
     };
 
     return (
-      <div className="space-y-8">
-        {!selectedVendor ? (
+      <div className="w-full min-w-0 max-w-full space-y-8">
+        {vendorContactDialog}
+        <Dialog
+          open={Boolean(vendorTaskDialogVendor)}
+          onOpenChange={(openState) => {
+            if (!openState) {
+              setVendorTaskDialogVendor(null);
+              resetVendorTaskForm();
+            }
+          }}
+        >
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="font-display">
+                Add task for {vendorTaskDialogVendor?.name}
+              </DialogTitle>
+              <DialogDescription>Choose a task or enter your own.</DialogDescription>
+            </DialogHeader>
+            {vendorTaskDialogVendor && (
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitVendorTask(vendorTaskDialogVendor);
+                }}
+              >
+                <FormSubmitError message={vendorTaskSubmitError} />
+                <div className="space-y-2">
+                  <Label>Task</Label>
+                  <Select
+                    value={vendorTaskTemplateKey}
+                    onValueChange={(value) => {
+                      setVendorTaskTemplateKey(value);
+                      if (value === 'none') return;
+                      const template = vendorTaskSuggestedOptions.find((option) => option.key === value);
+                      if (!template) return;
+                      setVendorTaskForm((prev) => ({
+                        ...prev,
+                        title: template.title,
+                        description: template.description,
+                        assignedTo: prev.assignedTo || template.recommendedRole || '',
+                      }));
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a suggested task" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Custom task</SelectItem>
+                      {vendorTaskSuggestedOptions.map((template) => (
+                        <SelectItem key={template.key} value={template.key}>
+                          {template.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedVendorTaskTemplate && (
+                    <p className="text-xs text-muted-foreground">
+                      {selectedVendorTaskTemplate.description}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Task title</Label>
+                  <Input
+                    value={vendorTaskForm.title}
+                    onChange={(event) => {
+                      setVendorTaskForm((prev) => ({ ...prev, title: event.target.value }));
+                      setVendorTaskFormErrors((current) => ({ ...current, title: undefined }));
+                      setVendorTaskSubmitError(null);
+                    }}
+                    placeholder={selectedVendorTaskTemplate?.title ?? `Confirm contract with ${vendorTaskDialogVendor.name}`}
+                    required
+                  />
+                  <FormFieldError message={vendorTaskFormErrors.title} />
+                </div>
+                <details className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                  <summary className="cursor-pointer list-none text-sm font-medium text-foreground">More details</summary>
+                  <div className="mt-4 space-y-4 border-t border-border/70 pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      {vendorTaskDialogVendor.category}
+                      {resolvedVendorTaskDefaults
+                        ? ` · ${resolvedVendorTaskDefaults.visibility === 'private' ? 'Private' : 'Shared'} · Priority ${resolvedVendorTaskDefaults.priorityLevel}`
+                        : ''}
+                    </p>
+                    <div className="space-y-2">
+                      <Label>Assigned to</Label>
+                      <Input
+                        value={vendorTaskForm.assignedTo}
+                        onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, assignedTo: event.target.value }))}
+                        placeholder="Couple, committee lead, planner, MC"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Due date</Label>
+                      <Input
+                        type="date"
+                        value={vendorTaskForm.dueDate}
+                        onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, dueDate: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Notes</Label>
+                      <Textarea
+                        rows={3}
+                        value={vendorTaskForm.description}
+                        onChange={(event) => setVendorTaskForm((prev) => ({ ...prev, description: event.target.value }))}
+                        placeholder="Add useful details"
+                      />
+                    </div>
+                  </div>
+                </details>
+                <Button type="submit" className="w-full gap-2" disabled={vendorTaskSubmitting}>
+                  {vendorTaskSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
+                  Add task
+                </Button>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
+        {showSharedVendorWorkspace ? (
           <>
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_360px]">
-              <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
-                <CardContent className="p-6 sm:p-8">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-primary">
-                      Vendor Workspace
-                    </Badge>
-                    <InfoTip content="Shortlist vendors, compare options, lock final choices, and stay on top of contracts, payments, and follow-up tasks." />
-                  </div>
-                  <h1 className="mt-4 font-display text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-                    Keep every vendor decision in one workspace
-                  </h1>
-                  <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-                    Start with the vendors you already have. Track private notes, quotes, deposits, tasks, and due dates here, then link or invite vendors later when the relationship is ready.
-                  </p>
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Tracked</p>
-                      <p className="mt-2 text-3xl font-semibold text-foreground">{vendors.length}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">vendors in your wedding lineup</p>
-                    </div>
-                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Final Choices</p>
-                      <p className="mt-2 text-3xl font-semibold text-foreground">{finalVendorEntries.length}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">categories already locked in</p>
-                    </div>
-                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Private Records</p>
-                      <p className="mt-2 text-3xl font-semibold text-foreground">{vendors.filter((vendor) => !vendor.vendor_listing_id).length}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">vendors not linked to a Zania listing yet</p>
-                    </div>
-                    <div className="rounded-[1.4rem] border border-border/70 bg-background/90 p-4 shadow-sm">
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Open Follow-ups</p>
-                      <p className="mt-2 text-3xl font-semibold text-foreground">{vendorTaskSummary.openTasks}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">vendor tasks still waiting on action</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <header className="flex flex-col gap-4 border-b border-border/70 pb-6 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h1 className="font-editorial text-3xl font-semibold text-foreground sm:text-4xl">Vendors</h1>
+                <p className="mt-2 text-sm text-muted-foreground">Compare options and choose who to book.</p>
+              </div>
+              {addVendorDialog}
+            </header>
 
-              <Card className="shadow-card">
-                <CardContent className="flex h-full flex-col justify-between gap-5 p-6">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Next Best Move</p>
-                      <InfoTip content="This suggestion changes based on shortlist gaps, final choices, payment deadlines, and open vendor follow-up tasks." />
+            <div className={`grid gap-3 ${!isPlanner ? 'xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)] xl:items-start' : ''}`}>
+              {!isPlanner && <CoupleLeadMarketplace weddingId={activeWeddingId} />}
+
+              <Card className="rounded-lg border-primary/25 bg-primary/5 shadow-none">
+              {vendorPrimaryAction.actionType === 'task_link' && vendorPrimaryAction.taskId ? (
+                <Link
+                  to={`/tasks?task=${encodeURIComponent(vendorPrimaryAction.taskId)}`}
+                  className="group block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                >
+                  <CardContent className="flex min-h-20 items-center justify-between gap-3 p-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next vendor task</p>
+                      <h2 className="mt-1 text-base font-semibold text-foreground group-hover:text-primary">{vendorPrimaryAction.title}</h2>
                     </div>
-                    <h2 className="mt-3 text-2xl font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
-                    <p className="mt-3 text-sm leading-6 text-muted-foreground">{vendorPrimaryAction.body}</p>
-                  </div>
-                  <div className="space-y-3">
-                    {vendorPrimaryAction.actionLabel && (
-                      <Button
-                        type="button"
-                        className="w-full gap-2"
-                        onClick={() => {
-                          if (vendorPrimaryAction.actionType === 'open_add_vendor') {
-                            setOpen(true);
-                            return;
-                          }
-                          if (vendorPrimaryAction.actionType === 'assistant_prompt' && vendorPrimaryAction.prompt && assistantPanel) {
-                            assistantPanel.openAssistant(vendorPrimaryAction.prompt);
-                          }
-                        }}
-                      >
-                        {vendorPrimaryAction.actionType === 'assistant_prompt' ? null : <Plus className="h-4 w-4" />}
-                        {vendorPrimaryAction.actionLabel}
-                      </Button>
-                    )}
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                      {vendorWorkspaceVendors.length === vendors.length
-                        ? `${vendors.length} vendor${vendors.length === 1 ? '' : 's'} visible in the workspace queue.`
-                        : `${vendorWorkspaceVendors.length} of ${vendors.length} vendor${vendors.length === 1 ? '' : 's'} visible after filtering.`}
-                    </div>
-                  </div>
+                    <span className="shrink-0 text-sm font-semibold text-primary">Open task</span>
+                  </CardContent>
+                </Link>
+              ) : (
+                <CardContent className="p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Next vendor action</p>
+                  <h2 className="mt-1 text-base font-semibold text-foreground">{vendorPrimaryAction.title}</h2>
                 </CardContent>
-              </Card>
+              )}
+            </Card>
             </div>
 
-            <Card className="shadow-card">
-              <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-                <div className="relative w-full lg:max-w-md">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Card className="rounded-lg border-border shadow-none">
+              <CardContent className="p-2.5 sm:p-3">
+                <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 px-1 text-xs text-muted-foreground" aria-label="Vendor progress">
+                  <span><strong className="font-semibold text-foreground">{vendorConfirmationSummary.total}</strong> categories</span>
+                  <span><strong className="font-semibold text-foreground">{vendorConfirmationSummary.confirmed}</strong> confirmed</span>
+                  <span><strong className="font-semibold text-foreground">{vendorConfirmationSummary.pending}</strong> pending</span>
+                </div>
+                <div className="grid gap-2 md:grid-cols-[minmax(16rem,1fr)_auto_auto] md:items-center">
+                <div className="min-w-0">
                   <Input
                     value={vendorWorkspaceQuery}
                     onChange={(event) => setVendorWorkspaceQuery(event.target.value)}
-                    placeholder="Search vendors by name, category, contact, or status"
-                    className="pl-9"
+                    placeholder="Search vendors"
                   />
                 </div>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <div className="grid w-full grid-cols-2 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
-                    <Button
-                      type="button"
-                      variant={vendorListView === 'by_category' ? 'default' : 'ghost'}
-                      className="rounded-full px-4 sm:px-6"
-                      onClick={() => setVendorListView('by_category')}
-                    >
-                      By Category
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={vendorListView === 'by_name' ? 'default' : 'ghost'}
-                      className="rounded-full px-4 sm:px-6"
-                      onClick={() => setVendorListView('by_name')}
-                    >
-                      By Name
-                    </Button>
-                  </div>
-                  <UpgradePromptDialog
-                    open={exportUpgradeOpen}
-                    onOpenChange={setExportUpgradeOpen}
-                    decision={exportDecision.allowed ? null : exportDecision}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => {
-                      if (!exportDecision.allowed) {
-                        setExportUpgradeOpen(true);
-                        return;
-                      }
-                      exportVendorData();
-                    }}
-                  >
-                    <Download className="h-4 w-4" />
-                    Export Vendors
-                  </Button>
-                  {addVendorDialog}
+
+                <SlidingSegmentedControl
+                  label="Vendor view"
+                  layoutId="vendor-list-view-selection"
+                  value={vendorListView}
+                  options={[{ value: 'by_category', label: 'Categories' }, { value: 'by_name', label: 'Name' }]}
+                  onChange={setVendorListView}
+                  minWidthClassName="w-full min-w-0 md:min-w-[15rem]"
+                />
+
+                <UpgradePromptDialog
+                  open={exportUpgradeOpen}
+                  onOpenChange={setExportUpgradeOpen}
+                  decision={exportDecision.allowed ? null : exportDecision}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full md:w-auto"
+                  variant="outline"
+                  onClick={() => {
+                    if (!exportDecision.allowed) {
+                      setExportUpgradeOpen(true);
+                      return;
+                    }
+                    exportVendorData();
+                  }}
+                >
+                  Export vendors
+                </Button>
                 </div>
               </CardContent>
             </Card>
 
-            {!vendorsNudgeDismissed && vendorsNudge && assistantPanel && (
-              <Card className="border-primary/20 bg-primary/5 shadow-card">
-                <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{vendorsNudge.title}</p>
-                    <p className="text-sm text-muted-foreground">{vendorsNudge.body}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="gap-2"
-                      onClick={() => assistantPanel.openAssistant(vendorsNudge.prompt)}
-                    >
-                      Review with AI
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setVendorsNudgeDismissed(true)}
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {!vendorsAssistant.dismissed && (
-              <InlineAssistantCard
-                title="Which vendor decision needs attention?"
-                description="A quick read on vendor decisions and follow-ups."
-                badgeLabel="AI Vendors"
-                prompts={vendorsPrompts}
-                response={vendorsAssistant.response}
-                error={vendorsAssistant.error}
-                loading={vendorsAssistant.loading || vendorsAssistant.usageLoading || vendorsAssistant.accessLoading}
-                decision={vendorsAssistant.decision}
-                canUseAssistant={vendorsAssistant.canUseAssistant}
-                emptyStateTitle="Get a simple vendor priority check before you dive into the list"
-                emptyStateBody="Ask for help closing a category, reviewing follow-ups, or seeing which vendor decision matters most right now."
-                dismissible
-                onDismiss={() => vendorsAssistant.setDismissed(true)}
-                onPromptClick={(prompt) => vendorsAssistant.runPrompt(prompt)}
-              />
-            )}
-
-            {vendorWorkspaceVendors.length === 0 ? (
-              <Card className="border-dashed border-primary/25 bg-primary/5 shadow-card">
+            {vendorWorkspaceVendors.length === 0 && (vendors.length === 0 || vendorListView === 'by_name' || Boolean(vendorWorkspaceQuery.trim())) ? (
+              <Card className="semantic-surface-info border-dashed shadow-card">
                 <CardContent className="flex flex-col items-start gap-4 p-6 sm:p-8">
                   <div className="space-y-2">
                     <h2 className="text-2xl font-semibold text-foreground">
-                      {vendors.length === 0 ? 'No vendors added yet' : 'No vendors match this search'}
+                      {vendors.length === 0 ? 'No vendors yet' : 'No vendors found'}
                     </h2>
                     <p className="text-sm leading-6 text-muted-foreground">
                       {vendors.length === 0
-                        ? 'Start building your shortlist so Zania can help you track decisions, payments, and vendor follow-ups.'
-                        : 'Try a different name, category, or status search to bring the right vendor back into view.'}
+                        ? 'Add someone you are considering or have already booked.'
+                        : 'Try another search.'}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3">
-                    {vendors.length === 0 ? (
-                      <Button type="button" className="gap-2" onClick={() => setOpen(true)}>
-                        <Plus className="h-4 w-4" />
-                        Add first vendor
-                      </Button>
-                    ) : (
+                    {vendors.length > 0 ? (
                       <Button type="button" variant="outline" onClick={() => setVendorWorkspaceQuery('')}>
                         Clear search
                       </Button>
+                    ) : (
+                      <Button type="button" onClick={() => setOpen(true)}>Add vendor</Button>
                     )}
                   </div>
                 </CardContent>
@@ -2748,45 +3876,261 @@ export default function Vendors() {
                 {filteredVendorsByName.map(renderVendorRow)}
               </div>
             ) : (
-              <div className="space-y-7">
-                {Object.entries(vendorsGroupedByCategory).map(([category, group]) => (
-                  <section key={category} className="space-y-4">
-                    <div className="border-t border-border/70 pt-6">
-                      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                        <h2 className="text-3xl font-semibold text-foreground">{category}</h2>
-                        <p className="text-sm text-muted-foreground">{group.length} vendor{group.length === 1 ? '' : 's'} in this category</p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      {group.map(renderVendorRow)}
-                    </div>
-                  </section>
-                ))}
+              <div className="space-y-6">
+                {visibleVendorCategoryEntries.map(([category, group]) => {
+                  const chosenVendor = group.find(isChosenVendor) ?? null;
+                  const featuredVendor = chosenVendor
+                    ?? group.find((vendor) => vendor.selection_status !== 'declined')
+                    ?? group[0]
+                    ?? null;
+                  const openTasks = new Map<string, VendorTaskItem>();
+                  group.forEach((vendor) => {
+                    (vendorTasksByVendorId[vendor.id] ?? [])
+                      .filter((task) => !task.completed)
+                      .forEach((task) => openTasks.set(task.id, task));
+                  });
+                  const openTaskCount = openTasks.size;
+                  const outstandingBalance = group.reduce(
+                    (total, vendor) => total + Math.max(
+                      (vendor.price ?? 0) - totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []),
+                      0,
+                    ),
+                    0,
+                  );
+                  const isExpanded = expandedVendorCategories[category] ?? group.length > 0;
+                  const statusLabel = chosenVendor
+                    ? 'Confirmed'
+                    : group.length > 0
+                      ? 'Needs confirmation'
+                      : 'Pending';
+                  const statusTextClass = chosenVendor
+                    ? 'text-success'
+                    : group.length > 0
+                      ? 'text-warning-foreground'
+                      : 'text-muted-foreground';
+                  const statusDotClass = chosenVendor
+                    ? 'bg-success'
+                    : group.length > 0
+                      ? 'bg-warning'
+                      : 'bg-primary/35';
+                  const categoryScope = getVendorCategoryScope(category) === 'personal' ? 'Personal' : 'Wedding';
+
+                  return (
+                    <section key={category} className="w-full min-w-0 max-w-full">
+                      <button
+                        type="button"
+                        aria-expanded={isExpanded}
+                        aria-label={`${category} vendor category. ${statusLabel}. ${isExpanded ? 'Collapse' : 'Expand'}`}
+                        onClick={() => {
+                          setExpandedVendorCategories((current) => ({
+                            ...current,
+                            [category]: !(current[category] ?? group.length > 0),
+                          }));
+                        }}
+                        className={`group relative w-full overflow-hidden rounded-2xl border px-5 py-5 text-left shadow-[0_12px_32px_-30px_hsl(var(--foreground)/0.5)] transition-[border-color,background-color,box-shadow] hover:shadow-[0_18px_38px_-28px_hsl(var(--foreground)/0.5)] sm:px-7 ${
+                          chosenVendor
+                            ? 'semantic-surface-success hover:border-success/40'
+                            : group.length > 0
+                              ? 'semantic-surface-warning hover:border-warning/40'
+                              : 'border-border/80 bg-muted/35 hover:border-primary/30 hover:bg-muted/50'
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`absolute inset-y-0 left-0 w-1.5 ${
+                            chosenVendor
+                              ? 'bg-success'
+                              : group.length > 0
+                                ? 'bg-warning'
+                                : 'bg-primary/30'
+                          }`}
+                        />
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <span className={`inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${statusTextClass}`}>
+                                <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
+                                {statusLabel}
+                              </span>
+                            </div>
+                            <h2 className="break-words text-2xl font-semibold text-foreground sm:text-3xl">{category}</h2>
+                            {categoryScope === 'Personal' ? <p className="text-xs font-medium text-muted-foreground">Private</p> : null}
+                            {featuredVendor ? (
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                                <span className="font-medium text-foreground">{featuredVendor.name}</span>
+                                <span className="text-muted-foreground">
+                                  {vendorSelectionLabel(featuredVendor.selection_status)}
+                                </span>
+                                {group.length > 1 ? (
+                                  <span className="text-muted-foreground">+ {group.length - 1} more</span>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <p className="text-sm font-medium text-foreground">No vendor added yet</p>
+                            )}
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground sm:text-sm">
+                              <span>
+                                {openTaskCount} task{openTaskCount === 1 ? '' : 's'} remaining
+                              </span>
+                              {group.length > 0 ? (
+                                <span>{formatCurrency(outstandingBalance)} balance</span>
+                              ) : (
+                                <span>Add a vendor to start this category</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-3">
+                            <span className="hidden text-xs text-muted-foreground sm:inline">
+                              {group.length} vendor{group.length === 1 ? '' : 's'}
+                            </span>
+                            <ChevronDown
+                              aria-hidden="true"
+                              className={`h-5 w-5 text-muted-foreground transition-transform duration-200 ${
+                                isExpanded ? 'rotate-180' : ''
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      </button>
+
+                      <AnimatedCardDetails open={isExpanded}>
+                        <div className="relative ml-2 min-w-0 max-w-[calc(100%_-_0.5rem)] pl-4 pt-4 sm:ml-7 sm:max-w-[calc(100%_-_1.75rem)] sm:pl-7">
+                          <span
+                            aria-hidden="true"
+                            className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-primary/45 via-primary/20 to-transparent"
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="absolute left-[-3px] top-7 h-[7px] w-[7px] rounded-full bg-primary/55 ring-4 ring-background"
+                          />
+                          <div className="space-y-4">
+                            {group.length > 0 ? group.map(renderVendorRow) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMode('custom');
+                                  setForm({ name: '', category, email: '', phone: '', price: '' });
+                                  setOpen(true);
+                                }}
+                                className="flex w-full items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-card/80 px-5 py-5 text-left shadow-[0_10px_28px_-28px_hsl(var(--foreground)/0.5)] transition-colors hover:border-primary/30 hover:bg-primary/[0.025] sm:px-7"
+                              >
+                                <div>
+                                  <p className="mt-1 font-medium text-foreground">Add your {category.toLowerCase()} vendor</p>
+                                </div>
+                                <span className="shrink-0 text-sm font-medium text-primary">Add vendor</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </AnimatedCardDetails>
+                    </section>
+                  );
+                })}
+                {!vendorWorkspaceQuery.trim() && hiddenEmptyVendorCategoryCount > 0 ? (
+                  <div className="flex justify-center">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setShowEmptyVendorCategories((current) => !current)}
+                    >
+                      {showEmptyVendorCategories
+                        ? 'Hide empty categories'
+                        : `Show empty categories (${hiddenEmptyVendorCategoryCount})`}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             )}
+
+            <details className="hidden rounded-[1.6rem] border border-border/70 bg-card shadow-card">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
+                <div>
+                  <p className="text-lg font-semibold text-foreground">AI guidance</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Open this when you want help prioritizing vendor decisions, shortlist gaps, or follow-ups.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                  <span>{categoriesNeedingFinalChoice.length} open decisions</span>
+                  <span>{vendorTaskSummary.openTasks} follow-ups</span>
+                </div>
+              </summary>
+
+              <div className="space-y-4 px-6 pb-6">
+                {!vendorsNudgeDismissed && vendorsNudge && assistantPanel && (
+                  <Card className="semantic-surface-info shadow-card">
+                    <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{vendorsNudge.title}</p>
+                        <p className="text-sm text-muted-foreground">{vendorsNudge.body}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => assistantPanel.openAssistant(vendorsNudge.prompt)}
+                        >
+                          Review with AI
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setVendorsNudgeDismissed(true)}
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {!vendorsAssistant.dismissed && (
+                  <InlineAssistantCard
+                    title="Which vendor decision needs attention?"
+                    description="A quick read on vendor decisions and follow-ups."
+                    badgeLabel="AI Vendors"
+                    prompts={vendorsPrompts}
+                    response={vendorsAssistant.response}
+                    error={vendorsAssistant.error}
+                    loading={vendorsAssistant.loading || vendorsAssistant.usageLoading || vendorsAssistant.accessLoading}
+                    decision={vendorsAssistant.decision}
+                    canUseAssistant={vendorsAssistant.canUseAssistant}
+                    emptyStateTitle="Get a simple vendor priority check before you dive into the list"
+                    emptyStateBody="Ask for help closing a category, reviewing follow-ups, or seeing which vendor decision matters most right now."
+                    dismissible
+                    onDismiss={() => vendorsAssistant.setDismissed(true)}
+                    onPromptClick={(prompt) => vendorsAssistant.runPrompt(prompt)}
+                  />
+                )}
+              </div>
+            </details>
           </>
         ) : (
           <>
-            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-background via-background to-primary/5 shadow-card">
+            <Card className={`overflow-hidden border-primary/70 bg-gradient-to-br from-primary/[0.075] via-background to-muted/30 shadow-[0_18px_44px_-28px_hsl(var(--foreground)/0.58)] ring-1 ring-primary/15 transition-[border-color,box-shadow] duration-300 ease-zania motion-reduce:transition-none ${
+              selectedVendorMilestoneCelebrating
+                ? 'border-[#dfbd79] shadow-[0_0_0_5px_rgba(223,189,121,0.14),0_22px_52px_rgba(74,51,30,0.10)]'
+                : 'border-border/70'
+            }`}>
               <CardContent className="p-6 sm:p-8">
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                     <div className="flex items-start gap-4">
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="rounded-full"
+                        variant="outline"
                         onClick={() => {
                           setSelectedVendorId(null);
                           setSelectedVendorTab('details');
                         }}
                       >
-                        <ArrowLeft className="h-8 w-8" />
+                        Back to vendors
                       </Button>
                       <div>
                         <Badge variant="outline" className="rounded-full">{selectedVendor.category}</Badge>
-                        <h1 className="mt-3 font-display text-4xl font-bold tracking-tight text-foreground">
+                        <h1 className="workspace-h1 mt-3">
                           {selectedVendor.name}
                         </h1>
                         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -2803,21 +4147,21 @@ export default function Vendors() {
                       </div>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2 xl:w-[520px] xl:grid-cols-4">
+                    <div className="grid w-full min-w-0 gap-3 sm:grid-cols-2 xl:w-[520px] xl:grid-cols-4">
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Quote</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Quote</p>
                         <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(selectedVendor.price)}</p>
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Paid</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Paid</p>
                         <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(selectedVendorPaymentSummary.totalPaid)}</p>
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Open Tasks</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Open Tasks</p>
                         <p className="mt-2 text-2xl font-semibold text-foreground">{selectedVendorTaskCounts.open.length}</p>
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-background/90 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Milestones</p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Milestones</p>
                         <p className="mt-2 text-2xl font-semibold text-foreground">
                           {selectedVendorCompletedMilestones}/{selectedVendorMilestones.length || 4}
                         </p>
@@ -2836,18 +4180,15 @@ export default function Vendors() {
                       </p>
                     </div>
 
-                  <div className="grid w-full grid-cols-3 rounded-full border border-border bg-background p-1 sm:inline-flex sm:w-auto">
-                    {(['details', 'tasks', 'payments'] as const).map((tab) => (
-                      <Button
-                        key={tab}
-                        type="button"
-                        variant={selectedVendorTab === tab ? 'default' : 'ghost'}
-                        className="rounded-full px-3 capitalize sm:px-8"
-                        onClick={() => setSelectedVendorTab(tab)}
-                      >
-                        {tab}
-                      </Button>
-                    ))}
+                  <div className="flex justify-center overflow-x-auto">
+                    <SlidingSegmentedControl
+                      label="Vendor details view"
+                      layoutId="vendor-detail-tab-selection"
+                      value={selectedVendorTab}
+                      options={[{ value: 'details', label: 'Details' }, { value: 'tasks', label: 'Tasks' }, { value: 'payments', label: 'Payments' }]}
+                      onChange={setSelectedVendorTab}
+                      minWidthClassName="min-w-[22rem]"
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -2856,7 +4197,7 @@ export default function Vendors() {
             {selectedVendorTab === 'details' && (
               <div className="space-y-8">
                 <section className="space-y-4">
-                  <h2 className="text-2xl font-medium text-foreground">Vendor Details</h2>
+                  <h2 className="text-2xl font-medium text-foreground">Overview</h2>
                   <Card className="shadow-card">
                     <CardContent className="space-y-3 py-6">
                       <p className="text-2xl font-semibold text-foreground">{selectedVendor.name}</p>
@@ -2887,121 +4228,127 @@ export default function Vendors() {
                       </div>
                     </CardContent>
                   </Card>
-                  {!selectedVendor.vendor_listing_id && (
-                    <Card className="shadow-card">
-                      <CardContent className="space-y-5 py-6">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <h3 className="text-xl font-medium text-foreground">Invite this vendor into Zania later</h3>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              This stays private to your wedding workspace. Save the vendor's contact details now so the record is ready for delivery in the next step.
-                            </p>
+                  <details className="rounded-[1.4rem] border border-border/70 bg-card shadow-card" open={!selectedVendor.vendor_listing_id}>
+                    <summary className="cursor-pointer list-none px-6 py-5">
+                      <p className="text-lg font-semibold text-foreground">Invite and pricing intelligence</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Contact setup, claim readiness, and learned price signals for this vendor.
+                      </p>
+                    </summary>
+                    <div className="space-y-5 px-6 pb-6">
+                      {!selectedVendor.vendor_listing_id && (
+                        <div className="rounded-xl border border-border/70 bg-background p-5">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <h3 className="text-xl font-medium text-foreground">Invite this vendor into Zania later</h3>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                This stays private to your wedding workspace. Save the vendor's contact details now so the record is ready for delivery in the next step.
+                              </p>
+                            </div>
+                            <Badge variant="outline">
+                              {selectedVendorActiveInvite ? `Draft status: ${selectedVendorActiveInvite.invite_status}` : 'No invite draft yet'}
+                            </Badge>
                           </div>
-                          <Badge variant="outline">
-                            {selectedVendorActiveInvite ? `Draft status: ${selectedVendorActiveInvite.invite_status}` : 'No invite draft yet'}
-                          </Badge>
-                        </div>
 
-                        {workspaceInviteLoadingVendorId === selectedVendor.id ? (
-                          <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Loading saved invite details...
-                          </div>
-                        ) : (
-                          <form onSubmit={saveWorkspaceVendorInvite} className="space-y-4">
-                            <FormSubmitError message={workspaceInviteError} />
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="workspace-vendor-invite-email">Vendor email</Label>
-                                <Input
-                                  id="workspace-vendor-invite-email"
-                                  type="email"
-                                  value={workspaceInviteForm.email}
-                                  onChange={(event) => {
-                                    setWorkspaceInviteForm((current) => ({ ...current, email: event.target.value }));
-                                    setWorkspaceInviteError(null);
-                                  }}
-                                  placeholder="vendor@example.com"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="workspace-vendor-invite-phone">Vendor phone</Label>
-                                <Input
-                                  id="workspace-vendor-invite-phone"
-                                  value={workspaceInviteForm.phone}
-                                  onChange={(event) => {
-                                    setWorkspaceInviteForm((current) => ({ ...current, phone: event.target.value }));
-                                    setWorkspaceInviteError(null);
-                                  }}
-                                  placeholder="+254..."
-                                />
-                              </div>
+                          {workspaceInviteLoadingVendorId === selectedVendor.id ? (
+                            <div className="mt-4 flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Loading saved invite details...
                             </div>
-                            <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
-                              <div className="space-y-2">
-                                <Label htmlFor="workspace-vendor-invite-message">Invite note</Label>
-                                <Textarea
-                                  id="workspace-vendor-invite-message"
-                                  value={workspaceInviteForm.message}
-                                  onChange={(event) => {
-                                    setWorkspaceInviteForm((current) => ({ ...current, message: event.target.value }));
-                                    setWorkspaceInviteError(null);
-                                  }}
-                                  placeholder="A couple has added you to their Zania wedding workspace and would like to invite you in when they are ready."
-                                />
+                          ) : (
+                            <form onSubmit={saveWorkspaceVendorInvite} className="mt-4 space-y-4">
+                              <FormSubmitError message={workspaceInviteError} />
+                              <div className="grid gap-4 sm:grid-cols-2">
+                                <div className="space-y-2">
+                                  <Label htmlFor="workspace-vendor-invite-email">Vendor email</Label>
+                                  <Input
+                                    id="workspace-vendor-invite-email"
+                                    type="email"
+                                    value={workspaceInviteForm.email}
+                                    onChange={(event) => {
+                                      setWorkspaceInviteForm((current) => ({ ...current, email: event.target.value }));
+                                      setWorkspaceInviteError(null);
+                                    }}
+                                    placeholder="vendor@example.com"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="workspace-vendor-invite-phone">Vendor phone</Label>
+                                  <Input
+                                    id="workspace-vendor-invite-phone"
+                                    value={workspaceInviteForm.phone}
+                                    onChange={(event) => {
+                                      setWorkspaceInviteForm((current) => ({ ...current, phone: event.target.value }));
+                                      setWorkspaceInviteError(null);
+                                    }}
+                                    placeholder="+254..."
+                                  />
+                                </div>
                               </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="workspace-vendor-invite-expiry">Draft expiry</Label>
-                                <Input
-                                  id="workspace-vendor-invite-expiry"
-                                  type="date"
-                                  value={workspaceInviteForm.expiresAt}
-                                  onChange={(event) => {
-                                    setWorkspaceInviteForm((current) => ({ ...current, expiresAt: event.target.value }));
-                                    setWorkspaceInviteError(null);
-                                  }}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                  Optional for now. Delivery and claim handling comes next.
-                                </p>
+                              <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
+                                <div className="space-y-2">
+                                  <Label htmlFor="workspace-vendor-invite-message">Invite note</Label>
+                                  <Textarea
+                                    id="workspace-vendor-invite-message"
+                                    value={workspaceInviteForm.message}
+                                    onChange={(event) => {
+                                      setWorkspaceInviteForm((current) => ({ ...current, message: event.target.value }));
+                                      setWorkspaceInviteError(null);
+                                    }}
+                                    placeholder="A couple has added you to their Zania wedding workspace and would like to invite you in when they are ready."
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="workspace-vendor-invite-expiry">Draft expiry</Label>
+                                  <Input
+                                    id="workspace-vendor-invite-expiry"
+                                    type="date"
+                                    value={workspaceInviteForm.expiresAt}
+                                    onChange={(event) => {
+                                      setWorkspaceInviteForm((current) => ({ ...current, expiresAt: event.target.value }));
+                                      setWorkspaceInviteError(null);
+                                    }}
+                                  />
+                                  <p className="text-xs text-muted-foreground">
+                                    Optional for now. Delivery and claim handling comes next.
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="text-sm text-muted-foreground">
-                                {selectedVendorInvites.length > 0
-                                  ? `${selectedVendorInvites.length} invite record${selectedVendorInvites.length === 1 ? '' : 's'} saved for this vendor.`
-                                  : 'No invite records saved yet for this vendor.'}
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {selectedVendorActiveInvite ? (
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="text-sm text-muted-foreground">
+                                  {selectedVendorInvites.length > 0
+                                    ? `${selectedVendorInvites.length} invite record${selectedVendorInvites.length === 1 ? '' : 's'} saved for this vendor.`
+                                    : 'No invite records saved yet for this vendor.'}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {selectedVendorActiveInvite ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      className="gap-2"
+                                      onClick={() => void sendWorkspaceVendorInviteEmail()}
+                                      disabled={workspaceInviteSubmittingVendorId === selectedVendor.id || !selectedVendorActiveInvite.invite_contact_email}
+                                    >
+                                      {workspaceInviteSubmittingVendorId === selectedVendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                      Send Invite Email
+                                    </Button>
+                                  ) : null}
                                   <Button
-                                    type="button"
-                                    variant="outline"
+                                    type="submit"
                                     className="gap-2"
-                                    onClick={() => void sendWorkspaceVendorInviteEmail()}
-                                    disabled={workspaceInviteSubmittingVendorId === selectedVendor.id || !selectedVendorActiveInvite.invite_contact_email}
+                                    disabled={workspaceInviteSubmittingVendorId === selectedVendor.id || !activeWeddingId}
                                   >
                                     {workspaceInviteSubmittingVendorId === selectedVendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                                    Send Invite Email
+                                    {selectedVendorActiveInvite ? 'Update Invite Draft' : 'Create Invite Draft'}
                                   </Button>
-                                ) : null}
-                                <Button
-                                  type="submit"
-                                  className="gap-2"
-                                  disabled={workspaceInviteSubmittingVendorId === selectedVendor.id || !activeWeddingId}
-                                >
-                                  {workspaceInviteSubmittingVendorId === selectedVendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                                  {selectedVendorActiveInvite ? 'Update Invite Draft' : 'Create Invite Draft'}
-                                </Button>
+                                </div>
                               </div>
-                            </div>
-                          </form>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-                  <Card className="shadow-card">
-                    <CardContent className="space-y-4 py-6">
+                            </form>
+                          )}
+                        </div>
+                      )}
+                      <Card className="shadow-none">
+                        <CardContent className="space-y-4 py-6">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-2">
@@ -3123,14 +4470,107 @@ export default function Vendors() {
                           No learned price signal yet. Once this vendor shares a range, sends a quote, or closes paid work through Zania, this profile will start estimating the real working price.
                         </div>
                       )}
-                    </CardContent>
-                  </Card>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </details>
                 </section>
 
-                <section className="space-y-4">
-                  <h2 className="text-2xl font-medium text-foreground">Vendor Updates</h2>
-                  <Card className="shadow-card">
-                    <CardContent className="space-y-4 py-6">
+                <details className="rounded-[1.4rem] border border-border/70 bg-card shadow-card">
+                  <summary className="cursor-pointer list-none px-6 py-5">
+                    <p className="text-lg font-semibold text-foreground">Updates and notes</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Progress notes from the vendor and your private planning notes for this relationship.
+                    </p>
+                  </summary>
+                  <div className="space-y-6 px-6 pb-6">
+                    <Card className="shadow-none">
+                      <CardContent className="space-y-4 py-6">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">Vendor task suggestions</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Review proposed actions before they become part of the shared wedding plan.
+                            </p>
+                          </div>
+                          <Badge variant="info">Vendor suggestion</Badge>
+                        </div>
+                        {vendorTaskSuggestionsLoadingId === selectedVendor.id ? (
+                          <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading suggestions...
+                          </div>
+                        ) : selectedVendorTaskSuggestions.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                            No task suggestions from this vendor yet.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {selectedVendorTaskSuggestions.map((suggestion) => {
+                              const accepting = resolvingVendorTaskSuggestionId === suggestion.id;
+                              const accepted = suggestion.status === 'accepted';
+                              const dismissed = suggestion.status === 'dismissed';
+                              return (
+                                <div
+                                  key={suggestion.id}
+                                  className={`rounded-xl border p-4 transition-[background-color,border-color,box-shadow,transform] duration-200 ease-zania motion-reduce:transition-none ${
+                                    accepted || acceptedVendorTaskSuggestionId === suggestion.id
+                                      ? 'border-success/35 bg-[hsl(var(--success-soft))] shadow-[0_0_0_4px_hsl(var(--success)/0.06)]'
+                                      : dismissed
+                                        ? 'border-border/60 bg-muted/20 opacity-70'
+                                        : 'border-border/70 bg-background'
+                                  }`}
+                                >
+                                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0 space-y-2">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Badge variant={accepted ? 'success' : dismissed ? 'outline' : 'warning'}>
+                                          {accepted ? 'Added to plan' : dismissed ? 'Dismissed' : 'Needs review'}
+                                        </Badge>
+                                        <span className="text-xs text-muted-foreground">
+                                          {new Date(suggestion.created_at).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                      <p className="font-semibold text-foreground">{suggestion.title}</p>
+                                      {suggestion.description ? <p className="text-sm leading-6 text-muted-foreground">{suggestion.description}</p> : null}
+                                      {suggestion.suggested_due_date ? (
+                                        <p className="text-xs text-muted-foreground">
+                                          Suggested due {new Date(`${suggestion.suggested_due_date}T00:00:00`).toLocaleDateString()}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                    {suggestion.status === 'pending' ? (
+                                      <div className="flex shrink-0 flex-wrap gap-2">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => resolveSelectedVendorTaskSuggestion(suggestion, 'dismiss')}
+                                          disabled={accepting}
+                                        >
+                                          Dismiss
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          status={accepting ? 'loading' : 'idle'}
+                                          loadingText="Adding task"
+                                          onClick={() => resolveSelectedVendorTaskSuggestion(suggestion, 'accept')}
+                                        >
+                                          Accept as task
+                                        </Button>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                    <Card className="shadow-none">
+                      <CardContent className="space-y-4 py-6">
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
                         Claimed vendors can post structured progress notes here. These stay separate from your private decision notes and from live planning tasks.
                       </div>
@@ -3181,14 +4621,10 @@ export default function Vendors() {
                           ))}
                         </div>
                       )}
-                    </CardContent>
-                  </Card>
-                </section>
-
-                <section className="space-y-4">
-                  <h2 className="text-2xl font-medium text-foreground">Notes</h2>
-                  <Card className="shadow-card">
-                    <CardContent className="space-y-4 py-6">
+                      </CardContent>
+                    </Card>
+                    <Card className="shadow-none">
+                      <CardContent className="space-y-4 py-6">
                       <Textarea
                         value={notesDrafts[selectedVendor.id] ?? ''}
                         onChange={(event) => setNotesDrafts((prev) => ({ ...prev, [selectedVendor.id]: event.target.value }))}
@@ -3206,9 +4642,10 @@ export default function Vendors() {
                           Save Notes
                         </Button>
                       </div>
-                    </CardContent>
-                  </Card>
-                </section>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </details>
               </div>
             )}
 
@@ -3250,7 +4687,12 @@ export default function Vendors() {
                         <Card key={task.id} className="shadow-card">
                           <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                             <div>
-                              <p className="text-xl font-medium text-foreground">{task.title}</p>
+                              <Link
+                                to={`/tasks?task=${encodeURIComponent(task.id)}`}
+                                className="text-xl font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
+                              >
+                                {task.title}
+                              </Link>
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                                 <Badge variant="outline">{task.visibility === 'private' ? 'Private' : 'Public'}</Badge>
                                 {task.phase && <Badge variant="outline">{vendorMilestoneLabel(task.phase)}</Badge>}
@@ -3283,7 +4725,12 @@ export default function Vendors() {
                         <Card key={task.id} className="opacity-60 shadow-card">
                           <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                             <div>
-                              <p className="text-xl font-medium line-through text-foreground">{task.title}</p>
+                              <Link
+                                to={`/tasks?task=${encodeURIComponent(task.id)}`}
+                                className="text-xl font-medium text-foreground line-through underline-offset-4 hover:text-primary hover:underline"
+                              >
+                                {task.title}
+                              </Link>
                               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                                 <Badge variant="outline">{task.visibility === 'private' ? 'Private' : 'Public'}</Badge>
                                 {task.phase && <Badge variant="outline">{vendorMilestoneLabel(task.phase)}</Badge>}
@@ -3317,7 +4764,15 @@ export default function Vendors() {
                   </Card>
                 </section>
 
-                <section className="space-y-4">
+                <section
+                  id={`vendor-payment-plan-${selectedVendor.id}`}
+                  tabIndex={-1}
+                  className={`space-y-4 rounded-xl transition-[background-color,box-shadow] duration-300 outline-none ${
+                    highlightedVendorSection === `vendor-payment-plan-${selectedVendor.id}`
+                      ? 'bg-primary/[0.07] shadow-[0_0_0_3px_hsl(var(--primary)/0.28)]'
+                      : ''
+                  }`}
+                >
                   <h2 className="text-2xl font-medium text-foreground">Payment Status</h2>
                   <Card className="shadow-card">
                     <CardContent className="flex flex-col gap-4 py-6 lg:flex-row lg:items-center lg:justify-between">
@@ -3338,12 +4793,9 @@ export default function Vendors() {
                           </DialogHeader>
                           <form onSubmit={submitVendorPayment} className="space-y-4">
                             <FormSubmitError message={vendorPaymentSubmitError} />
-                            <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
-                              <p className="text-sm font-medium text-foreground">This payment will update the vendor ledger, budget, and paid/balance totals.</p>
-                              <p className="mt-1 text-sm text-muted-foreground">
-                                Category: {selectedVendor.category} · Vendor: {selectedVendor.name}
-                              </p>
-                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {selectedVendor.name} · {selectedVendor.category}
+                            </p>
                             <div className="space-y-2">
                               <Label>Payee name</Label>
                               <Input
@@ -3392,13 +4844,13 @@ export default function Vendors() {
                               </div>
                             </div>
                             <div className="space-y-2">
-                              <Label>Reference</Label>
+                              <Label>Payment reference (optional)</Label>
                               <Input
                                 value={vendorPaymentForm.reference}
                                 onChange={(event) =>
                                   setVendorPaymentForm((prev) => ({ ...prev, reference: event.target.value }))
                                 }
-                                placeholder="e.g. MPESA Ref: ET546GFDC"
+                                placeholder="e.g. receipt or transaction number"
                               />
                             </div>
                             <div className="space-y-2">
@@ -3408,7 +4860,7 @@ export default function Vendors() {
                                 onChange={(event) =>
                                   setVendorPaymentForm((prev) => ({ ...prev, notes: event.target.value }))
                                 }
-                                placeholder="Deposit, second payment, balance, or delivery notes..."
+                                placeholder="Deposit, balance, or delivery note"
                               />
                             </div>
                             <Button type="submit" className="w-full gap-2" disabled={recordingVendorPayment}>
@@ -3455,7 +4907,7 @@ export default function Vendors() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Vendors</h1>
+          <h1 className="workspace-h1">Vendors</h1>
           <p className="text-muted-foreground">{vendors.length} vendors tracked</p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -3475,22 +4927,25 @@ export default function Vendors() {
               }
               downloadCsv(
                 `zania-vendors-${new Date().toISOString().slice(0, 10)}.csv`,
-                vendors.map((vendor) => ({
-                  vendor_name: vendor.name,
-                  category: vendor.category,
-                  phone: vendor.phone ?? '',
-                  email: vendor.email ?? '',
-                  selection_status: vendor.selection_status,
-                  payment_status: vendor.payment_status,
-                  contract_status: vendor.contract_status,
-                  quoted_price_kes: vendor.price ?? '',
-                  amount_paid_kes: vendor.amount_paid,
-                  outstanding_kes: vendor.price != null ? Math.max(vendor.price - vendor.amount_paid, 0) : '',
-                  payment_due_date: safeDateLabel(vendor.payment_due_date),
-                  open_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => !task.completed).length,
-                  completed_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => task.completed).length,
-                  notes: notesDrafts[vendor.id] ?? vendor.notes ?? '',
-                })),
+                vendors.map((vendor) => {
+                  const recordedPaymentTotal = totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []);
+                  return {
+                    vendor_name: vendor.name,
+                    category: vendor.category,
+                    phone: vendor.phone ?? '',
+                    email: vendor.email ?? '',
+                    selection_status: vendor.selection_status,
+                    payment_status: vendor.payment_status,
+                    contract_status: vendor.contract_status,
+                    quoted_price_kes: vendor.price ?? '',
+                    amount_paid_kes: recordedPaymentTotal,
+                    outstanding_kes: vendor.price != null ? Math.max(vendor.price - recordedPaymentTotal, 0) : '',
+                    payment_due_date: safeDateLabel(vendor.payment_due_date),
+                    open_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => !task.completed).length,
+                    completed_tasks: (vendorTasksByVendorId[vendor.id] ?? []).filter((task) => task.completed).length,
+                    notes: notesDrafts[vendor.id] ?? vendor.notes ?? '',
+                  };
+                }),
               );
             }}
           >
@@ -3500,6 +4955,8 @@ export default function Vendors() {
           {addVendorDialog}
         </div>
       </div>
+
+      {!isPlanner && <CoupleLeadMarketplace weddingId={activeWeddingId} />}
 
       <Card className="shadow-card">
         <CardContent className="py-5">
@@ -3717,6 +5174,9 @@ export default function Vendors() {
                             variant={vendor.selection_status === 'final' ? 'secondary' : 'default'}
                             onClick={() => updateSelection(vendor, 'final')}
                             disabled={savingSelectionId === vendor.id || vendor.selection_status === 'final'}
+                            status={savingSelectionId === vendor.id ? 'loading' : selectionSucceededId === vendor.id ? 'success' : 'idle'}
+                            loadingText="Updating"
+                            successText="Confirmed"
                           >
                             {vendor.selection_status === 'final' ? 'Final choice' : 'Make final'}
                           </Button>
@@ -3753,8 +5213,8 @@ export default function Vendors() {
                               ? `${activeReputation.average_overall_rating.toFixed(1)}/5`
                               : 'Insufficient reviews'}
                           </p>
-                          <p>Paid: {formatCurrency(vendor.amount_paid)}</p>
-                          <p>Outstanding: {formatCurrency(Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0))}</p>
+                          <p>Paid: {formatCurrency(totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []))}</p>
+                          <p>Outstanding: {formatCurrency(Math.max((vendor.price ?? 0) - totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []), 0))}</p>
                           <p>Owner: {workflowDrafts[vendor.id]?.committeeRoleInCharge === 'unassigned' ? 'Unassigned' : (workflowDrafts[vendor.id]?.committeeRoleInCharge ?? 'Unassigned')}</p>
                           <p>Contract: {contractStatusLabel(workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status)}</p>
                           <p>Open tasks: {openLinkedTasks.length}</p>
@@ -3788,7 +5248,7 @@ export default function Vendors() {
                   <div className="border-r border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">Amount paid</div>
                   {decisionWorkspaceVendors.map((vendor) => (
                     <div key={`${vendor.id}-paid`} className="px-4 py-3 text-sm text-foreground">
-                      {formatCurrency(vendor.amount_paid)}
+                      {formatCurrency(totalRecordedVendorPayments(vendorPaymentsByVendorId[vendor.id] ?? []))}
                     </div>
                   ))}
 
@@ -3932,6 +5392,8 @@ export default function Vendors() {
           const activeReputation = listingReputation?.benchmark_visible ? listingReputation : categoryReputation;
           const canReview = vendor.status === 'booked' || vendor.status === 'completed';
           const linkedTasks = vendorTasksByVendorId[vendor.id] ?? [];
+          const vendorPayments = vendorPaymentsByVendorId[vendor.id] ?? [];
+          const recordedPaymentTotal = totalRecordedVendorPayments(vendorPayments);
           const openLinkedTasks = linkedTasks.filter((task) => !task.completed);
           const milestones = buildVendorMilestones(vendor, linkedTasks);
           const nextMilestone = milestones.find((milestone) => milestone.status !== 'complete') ?? null;
@@ -4036,7 +5498,7 @@ export default function Vendors() {
                     <div className="space-y-1">
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Owner & contract</p>
                       <p className="text-sm text-muted-foreground">
-                        Record which committee or planning role owns this vendor and whether a contract has been drawn.
+                        Record who owns this vendor. Contract progress comes from the signed document workflow.
                       </p>
                     </div>
                     <Badge variant="outline" className="text-xs">
@@ -4071,27 +5533,14 @@ export default function Vendors() {
                     </div>
                     <div className="space-y-2">
                       <Label>Contract status</Label>
-                      <Select
-                        value={workflowDrafts[vendor.id]?.contractStatus ?? vendor.contract_status}
-                        onValueChange={(value) =>
-                          setWorkflowDrafts((prev) => ({
-                            ...prev,
-                            [vendor.id]: {
-                              ...(prev[vendor.id] ?? { committeeRoleInCharge: vendor.committee_role_in_charge ?? 'unassigned', contractStatus: vendor.contract_status }),
-                              contractStatus: value,
-                            },
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="h-10 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {contractStatusOptions.map((status) => (
-                            <SelectItem key={status} value={status}>{contractStatusLabel(status)}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {contractStatusLabel(vendor.contract_status)}
+                        </p>
+                        <Link to="/planner-documents/contracts" className="mt-0.5 inline-block text-xs text-primary hover:underline">
+                          Open contract documents
+                        </Link>
+                      </div>
                     </div>
                   </div>
                   <div className="mt-4 flex justify-end">
@@ -4128,19 +5577,19 @@ export default function Vendors() {
                     </div>
                     <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Paid</p>
-                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(vendor.amount_paid)}</p>
+                      <p className="mt-1 text-sm font-medium text-foreground">{formatCurrency(recordedPaymentTotal)}</p>
                     </div>
                     <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
                       <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Outstanding</p>
                       <p className="mt-1 text-sm font-medium text-foreground">
-                        {formatCurrency(Math.max((vendor.price ?? 0) - (vendor.amount_paid ?? 0), 0))}
+                        {formatCurrency(Math.max((vendor.price ?? 0) - recordedPaymentTotal, 0))}
                       </p>
                     </div>
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor={`deposit-${vendor.id}`}>Deposit amount</Label>
+                      <Label htmlFor={`deposit-${vendor.id}`}>Booking deposit required · Optional</Label>
                       <Input
                         id={`deposit-${vendor.id}`}
                         type="number"
@@ -4149,78 +5598,53 @@ export default function Vendors() {
                           setPaymentDrafts((prev) => ({
                             ...prev,
                             [vendor.id]: {
-                              ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                              ...(prev[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
                               depositAmount: e.target.value,
                             },
                           }))
                         }
                         placeholder="0"
                       />
+                      <p className="text-xs text-muted-foreground">The upfront amount requested to reserve the date; it only counts as paid after a payment is recorded.</p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor={`paid-${vendor.id}`}>Amount paid</Label>
+                      <Label>Payments recorded</Label>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/40 px-3 py-2">
+                        <p className="text-sm font-medium text-foreground">{formatCurrency(recordedPaymentTotal)}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {vendorPayments.length} payment {vendorPayments.length === 1 ? 'record' : 'records'} in the ledger.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Payment status</Label>
+                      <div className="min-h-10 rounded-md border border-border/70 bg-muted/40 px-3 py-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {vendorPaymentStatusLabel(deriveVendorPaymentStatus({
+                            totalCost: vendor.price,
+                            depositRequired: paymentDrafts[vendor.id]?.depositAmount,
+                            totalPaid: recordedPaymentTotal,
+                          }))}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">Calculated from the payment ledger.</p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`due-${vendor.id}`}>Next payment due date</Label>
                       <Input
-                        id={`paid-${vendor.id}`}
-                        type="number"
-                        value={paymentDrafts[vendor.id]?.amountPaid ?? '0'}
+                        id={`due-${vendor.id}`}
+                        type="date"
+                        value={paymentDrafts[vendor.id]?.paymentDueDate ?? ''}
                         onChange={(e) =>
                           setPaymentDrafts((prev) => ({
                             ...prev,
                             [vendor.id]: {
-                              ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
-                              amountPaid: e.target.value,
+                              ...(prev[vendor.id] ?? { depositAmount: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
+                              paymentDueDate: e.target.value,
                             },
                           }))
                         }
-                        placeholder="0"
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Payment status</Label>
-                      <Select
-                        value={paymentDrafts[vendor.id]?.paymentStatus ?? 'unpaid'}
-                        onValueChange={(value) =>
-                          setPaymentDrafts((prev) => ({
-                            ...prev,
-                            [vendor.id]: {
-                              ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
-                              paymentStatus: value as VendorPaymentStatus,
-                            },
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="h-10 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {vendorPaymentStatuses.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {vendorPaymentStatusLabel(status)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`due-${vendor.id}`}>Next payment due date</Label>
-                      <div className="relative">
-                        <CalendarClock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          id={`due-${vendor.id}`}
-                          type="date"
-                          className="pl-9"
-                          value={paymentDrafts[vendor.id]?.paymentDueDate ?? ''}
-                          onChange={(e) =>
-                            setPaymentDrafts((prev) => ({
-                              ...prev,
-                              [vendor.id]: {
-                                ...(prev[vendor.id] ?? { depositAmount: '0', amountPaid: '0', paymentStatus: 'unpaid', paymentDueDate: '' }),
-                                paymentDueDate: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </div>
                     </div>
                   </div>
 
@@ -4317,7 +5741,7 @@ export default function Vendors() {
                 <div className="rounded-lg border border-border/70 bg-background px-3 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Vendor-linked tasks</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Related tasks</p>
                       <p className="text-sm text-muted-foreground">
                         Keep quote, contract, and logistics work attached to this vendor.
                       </p>
@@ -4331,8 +5755,13 @@ export default function Vendors() {
                       {linkedTasks.slice(0, 3).map((task) => (
                         <div key={task.id} className="rounded-md border border-border/70 bg-muted/40 px-3 py-2">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-medium text-foreground">{task.title}</p>
-                            <Badge variant={task.completed ? 'secondary' : 'outline'} className="text-[10px]">
+                            <Link
+                              to={`/tasks?task=${encodeURIComponent(task.id)}`}
+                              className="text-sm font-medium text-foreground underline-offset-4 hover:text-primary hover:underline"
+                            >
+                              {task.title}
+                            </Link>
+                            <Badge variant={task.completed ? 'success' : 'outline'} className="text-[10px]">
                               {task.completed ? 'Done' : 'Open'}
                             </Badge>
                           </div>
@@ -4435,8 +5864,11 @@ export default function Vendors() {
                       className="gap-2"
                       onClick={() => updateSelection(vendor, 'final')}
                       disabled={savingSelectionId === vendor.id || vendor.selection_status === 'final'}
+                      status={savingSelectionId === vendor.id ? 'loading' : selectionSucceededId === vendor.id ? 'success' : 'idle'}
+                      loadingText="Updating choice"
+                      successText="Final choice confirmed"
                     >
-                      {savingSelectionId === vendor.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      <CheckCircle2 className="h-4 w-4" />
                       {vendor.selection_status === 'final' ? 'Final choice locked' : 'Make final choice'}
                     </Button>
                     {vendor.selection_status === 'final' && (

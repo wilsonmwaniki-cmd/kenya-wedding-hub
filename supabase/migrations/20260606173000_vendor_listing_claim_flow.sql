@@ -138,7 +138,7 @@ begin
   select
     next_token,
     format(
-      'https://www.zaniaweddings.com/vendor-claim?token=%s&email=%s',
+      'https://www.planwithzania.com/vendor-claim?token=%s&email=%s',
       next_token::text,
       normalized_email
     );

@@ -11,16 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Users, CalendarDays, TrendingUp, CheckCircle2, Clock, Phone, Mail, X, Check, LockKeyhole, ShieldCheck, CreditCard, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText, FilePlus2 } from 'lucide-react';
+import { Loader2, CalendarDays, CheckCircle2, Clock, Phone, Mail, X, Check, MapPin, CalendarPlus, Wallet, NotebookPen, ArrowUpRight, CheckCheck, ExternalLink, MessageSquareText, FilePlus2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { vendorHasFullAccess } from '@/lib/vendorAccess';
+import { vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { InlineUpgradePrompt } from '@/components/UpgradePrompt';
+import ContextualAssistantAction from '@/components/ContextualAssistantAction';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
-import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
 import { listAcceptedWorkspaceVendorInvitesForUser } from '@/lib/workspaceVendorInvites';
-import { vendorPaymentStatusLabel, vendorPaymentStatuses, type VendorPaymentStatus } from '@/lib/vendorPayments';
+import { deriveVendorPaymentStatus, vendorPaymentStatusLabel, type VendorPaymentStatus } from '@/lib/vendorPayments';
 import {
   createVendorWorkspaceUpdate,
   listVendorWorkspaceUpdates,
@@ -28,6 +28,16 @@ import {
   type VendorWorkspaceUpdate,
   type VendorWorkspaceUpdateType,
 } from '@/lib/vendorWorkspaceUpdates';
+import {
+  createVendorTaskSuggestion,
+  listVendorTaskSuggestions,
+  type VendorTaskSuggestion,
+} from '@/lib/vendorTaskSuggestions';
+import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
+import AttentionInbox from '@/components/AttentionInbox';
+import RecentWorkspaceChangesCard from '@/components/RecentWorkspaceChangesCard';
+import ProfessionalLeadInbox from '@/components/leads/ProfessionalLeadInbox';
+import ProfessionalClientNextSteps from '@/components/ProfessionalClientNextSteps';
 
 interface Booking {
   id: string;
@@ -163,6 +173,15 @@ function vendorStatusLabel(status: string | null | undefined) {
   }
 }
 
+function buildWhatsAppUrl(phone: string, clientName: string) {
+  const digits = phone.replace(/\D/g, '');
+  const internationalNumber = digits.startsWith('0')
+    ? `254${digits.slice(1)}`
+    : digits;
+  const message = encodeURIComponent(`Hello ${clientName}, I'm following up about your wedding plans.`);
+  return `https://wa.me/${internationalNumber}?text=${message}`;
+}
+
 export default function VendorDashboard() {
   const { user, profile, isSuperAdmin, rolePreview } = useAuth();
   const { toast } = useToast();
@@ -186,6 +205,7 @@ export default function VendorDashboard() {
   const [taskDetailsByBookingId, setTaskDetailsByBookingId] = useState<Record<string, VendorTaskDetail[]>>({});
   const [paymentDetailsByBookingId, setPaymentDetailsByBookingId] = useState<Record<string, VendorPaymentDetail[]>>({});
   const [workspaceUpdatesByBookingId, setWorkspaceUpdatesByBookingId] = useState<Record<string, VendorWorkspaceUpdate[]>>({});
+  const [taskSuggestionsByBookingId, setTaskSuggestionsByBookingId] = useState<Record<string, VendorTaskSuggestion[]>>({});
   const [internalNoteDrafts, setInternalNoteDrafts] = useState<Record<string, string>>({});
   const [statusDrafts, setStatusDrafts] = useState<Record<string, VendorWorkspaceStatus>>({});
   const [paymentStateDrafts, setPaymentStateDrafts] = useState<Record<string, {
@@ -200,7 +220,12 @@ export default function VendorDashboard() {
   }>>({});
   const [loadingWorkspaceUpdatesId, setLoadingWorkspaceUpdatesId] = useState<string | null>(null);
   const [savingWorkspaceUpdateId, setSavingWorkspaceUpdateId] = useState<string | null>(null);
-  const { entitlements: professionalEntitlements, teamSeatLimit: professionalTeamSeatLimit } = useProfessionalEntitlements('vendor');
+  const [savingTaskSuggestionId, setSavingTaskSuggestionId] = useState<string | null>(null);
+  const [taskSuggestionDrafts, setTaskSuggestionDrafts] = useState<Record<string, {
+    title: string;
+    description: string;
+    dueDate: string;
+  }>>({});
 
   const vendorPreviewMode = isSuperAdmin && rolePreview === 'vendor';
   const claimedWorkspaceInviteId =
@@ -329,7 +354,7 @@ export default function VendorDashboard() {
       id: row.id,
       user_id: row.user_id,
       name: row.name,
-      category: row.category,
+      category: canonicalizeVendorCategory(row.category),
       status: null,
       price: row.price != null ? Number(row.price) : null,
       phone: row.phone ?? null,
@@ -368,7 +393,7 @@ export default function VendorDashboard() {
           vendorId: invite.vendor_id,
           userId: vendor?.user_id ?? '',
           vendorName: vendor?.name ?? 'Vendor workspace',
-          vendorCategory: vendor?.category ?? 'Vendor',
+          vendorCategory: canonicalizeVendorCategory(vendor?.category) || 'Vendor',
           vendorPhone: vendor?.phone ?? null,
           vendorEmail: vendor?.email ?? null,
           vendorNotes: vendor?.notes ?? null,
@@ -570,7 +595,7 @@ export default function VendorDashboard() {
         await supabase.from('vendors').insert({
           user_id: request.requester_user_id,
           name: listing.business_name,
-          category: listing.category,
+          category: canonicalizeVendorCategory(listing.category),
           phone: listing.phone,
           email: listing.email,
           status: 'booked',
@@ -602,32 +627,12 @@ export default function VendorDashboard() {
   const claimedWorkspaceInvite = claimedWorkspaceInviteId
     ? workspaceInvites.find((invite) => invite.inviteId === claimedWorkspaceInviteId) ?? null
     : null;
-  const workspaceDecision = getEntitlementDecision('vendor.direct_leads', {
+  const workspaceDecision = getEntitlementDecision('vendor.analytics', {
     vendorListing: listing,
-    bypass: vendorPreviewMode,
-  });
-  const mediaAddonDecision = getEntitlementDecision('vendor.media_portfolio', {
-    vendorListing: listing,
-    professionalAudience: 'vendor',
-    professionalEntitlements,
-    professionalTeamSeatLimit,
-    bypass: vendorPreviewMode,
-  });
-  const advertisingAddonDecision = getEntitlementDecision('vendor.advertising', {
-    vendorListing: listing,
-    professionalAudience: 'vendor',
-    professionalEntitlements,
-    professionalTeamSeatLimit,
-    bypass: vendorPreviewMode,
-  });
-  const teamAddonDecision = getEntitlementDecision('vendor.team_workspace', {
-    vendorListing: listing,
-    professionalAudience: 'vendor',
-    professionalEntitlements,
-    professionalTeamSeatLimit,
     bypass: vendorPreviewMode,
   });
   const fullAccess = workspaceDecision.allowed;
+  const subscriptionActive = vendorPreviewMode || vendorHasActiveSubscription(listing);
   const workspaceInviteBookings = useMemo(
     () =>
       workspaceInvites.map((invite) => ({
@@ -671,17 +676,39 @@ export default function VendorDashboard() {
   const selectedProfile = selectedBooking ? profilesByUserId[selectedBooking.user_id] : null;
   const selectedTaskDetails = selectedBooking ? taskDetailsByBookingId[selectedBooking.id] ?? [] : [];
   const selectedPaymentDetails = selectedBooking ? paymentDetailsByBookingId[selectedBooking.id] ?? [] : [];
-
-  if (loading) {
-    return <WorkspacePageSkeleton compact />;
-  }
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueBooking = bookings.find((booking) => {
+    const paid = paymentSummaryByBookingId[booking.id]?.totalPaid ?? booking.amount_paid ?? 0;
+    return Boolean(booking.payment_due_date && booking.payment_due_date < today && (booking.price ?? 0) > paid);
+  });
+  const nextWeddingBooking = bookingsSorted.find((booking) => {
+    const weddingDate = profilesByUserId[booking.user_id]?.wedding_date;
+    return Boolean(weddingDate && weddingDate >= today && booking.status === 'booked');
+  });
+  const primaryBooking = overdueBooking ?? nextWeddingBooking ?? bookingsSorted[0] ?? null;
+  const primaryClientName = primaryBooking ? profilesByUserId[primaryBooking.user_id]?.full_name || 'this client' : null;
+  const primaryAction = !listing
+    ? 'Finish your business profile'
+    : pendingRequests.length > 0
+      ? 'Review a new enquiry'
+      : overdueBooking
+        ? 'Review an overdue payment'
+        : primaryBooking
+          ? 'Open your next client'
+          : 'Create your first invoice';
 
   const statusColor = (status: string | null) => {
     switch (status) {
-      case 'booked': return 'bg-primary/10 text-primary border border-primary/20';
-      case 'contacted': return 'bg-accent/20 text-foreground border border-accent/35';
-      case 'rejected': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
-      default: return 'bg-muted text-muted-foreground';
+      case 'booked':
+      case 'completed':
+        return 'border border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))] text-success';
+      case 'contacted':
+      case 'quoted':
+        return 'border border-[hsl(var(--info-soft-border))] bg-[hsl(var(--info-soft))] text-info';
+      case 'rejected':
+        return 'border border-[hsl(var(--destructive-soft-border))] bg-[hsl(var(--destructive-soft))] text-destructive';
+      default:
+        return 'border border-border bg-muted text-muted-foreground';
     }
   };
   const formatShortDate = (value: string | null) => {
@@ -701,6 +728,7 @@ export default function VendorDashboard() {
     ? workspaceInvites.find((invite) => invite.vendorId === selectedBooking.id) ?? null
     : null;
   const selectedWorkspaceUpdates = selectedBooking ? workspaceUpdatesByBookingId[selectedBooking.id] ?? [] : [];
+  const selectedTaskSuggestions = selectedBooking ? taskSuggestionsByBookingId[selectedBooking.id] ?? [] : [];
 
   useEffect(() => {
     if (!selectedBooking) return;
@@ -726,6 +754,14 @@ export default function VendorDashboard() {
         noteMessage: '',
       },
     }));
+    setTaskSuggestionDrafts((prev) => ({
+      ...prev,
+      [selectedBooking.id]: prev[selectedBooking.id] ?? {
+        title: '',
+        description: '',
+        dueDate: '',
+      },
+    }));
   }, [selectedBooking]);
 
   useEffect(() => {
@@ -734,12 +770,19 @@ export default function VendorDashboard() {
     let cancelled = false;
     setLoadingWorkspaceUpdatesId(selectedWorkspaceInvite.vendorId);
 
-    void listVendorWorkspaceUpdates(selectedWorkspaceInvite.vendorId)
-      .then((updates) => {
+    void Promise.all([
+      listVendorWorkspaceUpdates(selectedWorkspaceInvite.vendorId),
+      listVendorTaskSuggestions(selectedWorkspaceInvite.vendorId),
+    ])
+      .then(([updates, suggestions]) => {
         if (cancelled) return;
         setWorkspaceUpdatesByBookingId((prev) => ({
           ...prev,
           [selectedWorkspaceInvite.vendorId]: updates.filter((update) => !update.is_archived),
+        }));
+        setTaskSuggestionsByBookingId((prev) => ({
+          ...prev,
+          [selectedWorkspaceInvite.vendorId]: suggestions,
         }));
       })
       .catch((error) => {
@@ -758,6 +801,10 @@ export default function VendorDashboard() {
       cancelled = true;
     };
   }, [selectedWorkspaceInvite, toast]);
+
+  if (loading) {
+    return <WorkspacePageSkeleton compact />;
+  }
 
   const handleSaveInternalNotes = async (bookingId: string) => {
     const nextNotes = (internalNoteDrafts[bookingId] ?? '').trim();
@@ -924,12 +971,16 @@ export default function VendorDashboard() {
     };
 
     const nextContractAmount = draft.contractAmount.trim() === '' ? null : Number(draft.contractAmount);
-    const nextAmountPaid = draft.amountPaid.trim() === '' ? 0 : Number(draft.amountPaid);
+    const nextAmountPaid = paymentSummaryByBookingId[booking.id]?.totalPaid ?? booking.amount_paid ?? 0;
+    const nextPaymentStatus = deriveVendorPaymentStatus({
+      totalCost: nextContractAmount,
+      totalPaid: nextAmountPaid,
+    });
 
-    if ((draft.contractAmount.trim() !== '' && (!Number.isFinite(nextContractAmount) || nextContractAmount < 0)) || !Number.isFinite(nextAmountPaid) || nextAmountPaid < 0) {
+    if (draft.contractAmount.trim() !== '' && (!Number.isFinite(nextContractAmount) || nextContractAmount < 0)) {
       toast({
         title: 'Invalid payment values',
-        description: 'Use zero or greater for the quoted amount and amount paid.',
+        description: 'Use zero or greater for the quoted amount.',
         variant: 'destructive',
       });
       return;
@@ -940,7 +991,7 @@ export default function VendorDashboard() {
       target_vendor_id: booking.id,
       contract_amount_input: nextContractAmount,
       amount_paid_input: nextAmountPaid,
-      payment_status_input: draft.paymentStatus,
+      payment_status_input: nextPaymentStatus,
       payment_due_date_input: draft.paymentDueDate || null,
     });
 
@@ -963,8 +1014,8 @@ export default function VendorDashboard() {
       },
     }));
     toast({
-      title: 'Payment state updated',
-      description: `${booking.name} now shows ${vendorPaymentStatusLabel(draft.paymentStatus).toLowerCase()}.`,
+      title: 'Payment terms updated',
+      description: `${booking.name} now shows ${vendorPaymentStatusLabel(nextPaymentStatus).toLowerCase()} from the recorded payments.`,
     });
     setSavingPaymentStateId(null);
   };
@@ -1083,27 +1134,127 @@ export default function VendorDashboard() {
     }
   };
 
+  const handleCreateTaskSuggestion = async (bookingId: string) => {
+    const draft = taskSuggestionDrafts[bookingId] ?? { title: '', description: '', dueDate: '' };
+    if (draft.title.trim().length < 3) {
+      toast({
+        title: 'Add a task title',
+        description: 'Describe the action you need from the couple in at least three characters.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingTaskSuggestionId(bookingId);
+    try {
+      const created = await createVendorTaskSuggestion({
+        vendorId: bookingId,
+        title: draft.title.trim(),
+        description: draft.description.trim() || null,
+        suggestedDueDate: draft.dueDate || null,
+      });
+      setTaskSuggestionsByBookingId((prev) => ({
+        ...prev,
+        [bookingId]: [created, ...(prev[bookingId] ?? []).filter((item) => item.id !== created.id)],
+      }));
+      setTaskSuggestionDrafts((prev) => ({
+        ...prev,
+        [bookingId]: { title: '', description: '', dueDate: '' },
+      }));
+      toast({
+        title: 'Task suggested',
+        description: 'The couple can review this suggestion before it becomes part of their wedding plan.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Could not suggest task',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingTaskSuggestionId(null);
+    }
+  };
+
   const vendorUpdateTone = (type: string | null) => {
     switch (type) {
       case 'waiting_on_couple':
       case 'need_approval':
-        return 'secondary' as const;
+        return 'warning' as const;
       case 'delivered':
-        return 'default' as const;
+        return 'success' as const;
+      case 'on_track':
+        return 'info' as const;
       default:
         return 'outline' as const;
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-3xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground">Track your workspace invites, bookings, and client inquiries.</p>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Your business today</p>
+          <h1 className="mt-1 font-display text-2xl font-bold text-foreground sm:text-3xl">Keep the next client step moving.</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Start with one action. Everything else stays within reach.</p>
+        </div>
+        <ContextualAssistantAction
+          prompt="Look at my vendor workspace and tell me the one thing I should do next."
+          context={`This vendor has ${bookedCount} confirmed bookings, ${contactedCount} inquiries, ${workspaceInvites.length} workspace invites, and KES ${totalRevenue.toLocaleString()} in quoted revenue.`}
+          label="Tell Zania what you need"
+        />
       </div>
 
+      <section aria-labelledby="next-action-title" className="border-y border-border/70 bg-[hsl(var(--card))]">
+        <div className="grid gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Do this next</p>
+            <h2 id="next-action-title" className="mt-2 font-display text-xl font-semibold text-foreground">{primaryAction}</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              {!listing
+                ? 'Add the essentials once so clients can find and trust your business.'
+                : pendingRequests.length > 0
+                  ? `${pendingRequests.length} client ${pendingRequests.length === 1 ? 'enquiry needs' : 'enquiries need'} a clear response.`
+                  : overdueBooking
+                    ? `${primaryClientName} has an amount past its due date. Check the payment trail before following up.`
+                    : primaryBooking
+                      ? `${primaryClientName} is the next client record to review.`
+                      : 'Create one invoice to begin tracking client work and payments in one place.'}
+            </p>
+          </div>
+          <div className="flex min-w-[180px] flex-col gap-2">
+            {!listing ? (
+              <Button asChild className="w-full"><Link to="/vendor-settings">Set up business</Link></Button>
+            ) : pendingRequests.length > 0 ? (
+              <Button type="button" className="w-full" onClick={() => document.getElementById('connection-requests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Review enquiry</Button>
+            ) : primaryBooking ? (
+              <Button type="button" className="w-full" onClick={() => openBookingDetail(primaryBooking.id)}>Open client</Button>
+            ) : (
+              <Button asChild className="w-full"><Link to="/vendor-documents/invoices">Create invoice</Link></Button>
+            )}
+            <Button asChild variant="outline" className="w-full"><Link to="/vendor-documents#zania-pay">View payments</Link></Button>
+          </div>
+        </div>
+      </section>
+
+      <ProfessionalClientNextSteps role="vendor" />
+
+      <section aria-labelledby="business-snapshot-title" className="grid gap-px overflow-hidden border border-border/70 bg-border/70 sm:grid-cols-2 lg:grid-cols-4">
+        <h2 id="business-snapshot-title" className="sr-only">Business snapshot</h2>
+        <div className="bg-background px-4 py-4 sm:px-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Clients booked</p><p className="mt-2 text-2xl font-semibold text-foreground">{bookedCount}</p></div>
+        <div className="bg-background px-4 py-4 sm:px-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">New enquiries</p><p className="mt-2 text-2xl font-semibold text-foreground">{pendingRequests.length}</p></div>
+        <div className="bg-background px-4 py-4 sm:px-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Payment attention</p><p className="mt-2 text-2xl font-semibold text-foreground">{overdueBooking ? '1' : '0'}</p></div>
+        <div className="bg-background px-4 py-4 sm:px-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Quoted work</p><p className="mt-2 text-2xl font-semibold text-foreground">KES {totalRevenue.toLocaleString()}</p></div>
+      </section>
+
+      <ProfessionalLeadInbox />
+
+      <AttentionInbox showEmpty={false} maxItems={3} />
+
+      <RecentWorkspaceChangesCard maxItems={5} />
+
       {claimedWorkspaceInvite && (
-        <Card className="border-primary/30 bg-primary/5 shadow-card">
+        <Card className="semantic-surface-success shadow-card">
           <CardContent className="flex flex-col gap-3 py-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="font-display text-lg text-foreground">Workspace invite accepted</p>
@@ -1125,7 +1276,7 @@ export default function VendorDashboard() {
       )}
 
       {vendorPreviewMode && (
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className="semantic-surface-info">
           <CardContent className="py-4 text-sm text-muted-foreground">
             You are previewing the vendor dashboard with admin bypass enabled. Create a real vendor listing in
             <Link to="/vendor-settings" className="ml-1 font-medium text-primary underline-offset-4 hover:underline">
@@ -1137,135 +1288,44 @@ export default function VendorDashboard() {
       )}
 
       {listing && !fullAccess && (
-        <InlineUpgradePrompt decision={workspaceDecision} />
+        subscriptionActive ? (
+          <Card className="semantic-surface-warning shadow-card">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+              <p className="text-sm font-medium text-foreground">
+                {listing.is_approved ? 'Verification is under review.' : 'Listing approval is pending.'}
+              </p>
+              <Button asChild size="sm" variant="outline"><Link to="/vendor-settings">View status</Link></Button>
+            </CardContent>
+          </Card>
+        ) : <InlineUpgradePrompt decision={workspaceDecision} />
       )}
 
-      <Card className="border-border/70 bg-muted/20">
-        <CardHeader>
-          <CardTitle className="font-display text-base flex items-center gap-2">
-            <CreditCard className="h-4 w-4 text-primary" />
-            Business Growth Add-ons
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-3">
-          {[
-            {
-              key: 'media',
-              title: 'Media portfolio',
-              description: mediaAddonDecision.allowed
-                ? 'Richer portfolio media is active for this vendor business.'
-                : 'Upgrade to unlock richer gallery presentation on your vendor listing.',
-              decision: mediaAddonDecision,
-              activeLabel: 'Active',
-            },
-            {
-              key: 'advertising',
-              title: 'Advertising',
-              description: advertisingAddonDecision.allowed
-                ? 'Advertising is active for this vendor listing.'
-                : 'Upgrade to unlock promoted placement and stronger directory visibility.',
-              decision: advertisingAddonDecision,
-              activeLabel: 'Active',
-            },
-            {
-              key: 'team',
-              title: 'Team workspace',
-              description: teamAddonDecision.allowed
-                ? `Team collaboration is active with up to ${professionalTeamSeatLimit || 0} seats available.`
-                : 'Upgrade to add bundled colleague seats for your delivery and coordination team.',
-              decision: teamAddonDecision,
-              activeLabel: professionalTeamSeatLimit > 0 ? `${professionalTeamSeatLimit} seats` : 'Active',
-            },
-          ].map((item) => (
-            <div key={item.key} className="rounded-xl border border-border bg-card p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-card-foreground">{item.title}</p>
-                  <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
-                </div>
-                <Badge variant={item.decision.allowed ? 'default' : 'secondary'}>
-                  {item.decision.allowed ? item.activeLabel : 'Add-on'}
-                </Badge>
-              </div>
-              {!item.decision.allowed && (
-                <Button asChild variant="outline" className="mt-4 w-full gap-2">
-                  <Link to={item.decision.pricingHref}>
-                    {item.decision.ctaLabel}
-                    <ArrowUpRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-              )}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card className="border-primary/20 bg-primary/5 shadow-card">
-        <CardContent className="flex flex-col gap-4 py-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="font-display text-xl text-foreground">Commercial documents</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Create quotes, track invoice balances, and issue receipts without leaving your vendor workspace.
-            </p>
+      <details className="rounded-2xl border border-border/70 bg-background/35">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-foreground marker:content-none sm:px-5 sm:py-4">View totals</summary>
+      <section aria-labelledby="vendor-overview-title" className="border-t border-border/70">
+        <h2 id="vendor-overview-title" className="sr-only">Business at a glance</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4">
+          <div className="px-4 py-3 sm:px-5 sm:py-4">
+            <p className="text-xl font-bold text-foreground sm:text-2xl">{bookedCount}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Confirmed bookings</p>
           </div>
-          <Button asChild className="gap-2 self-start lg:self-auto">
-            <Link to="/vendor-documents">
-              Open documents
-              <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-4">
-        <Card className="shadow-card">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="rounded-xl bg-primary/10 p-3">
-              <CheckCircle2 className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground">{bookedCount}</p>
-              <p className="text-sm text-muted-foreground">Confirmed Bookings</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="rounded-xl bg-accent p-3">
-              <Clock className="h-5 w-5 text-accent-foreground" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground">{contactedCount}</p>
-              <p className="text-sm text-muted-foreground">Inquiries</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="rounded-xl bg-primary/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              Live
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground">{workspaceInvites.length}</p>
-              <p className="text-sm text-muted-foreground">Workspace Invites</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-card">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="rounded-xl bg-primary/10 p-3">
-              <TrendingUp className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground">
-                KES {totalRevenue.toLocaleString()}
-              </p>
-              <p className="text-sm text-muted-foreground">Quoted Revenue</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          <div className="border-l border-border/70 px-4 py-3 sm:px-5 sm:py-4">
+            <p className="text-xl font-bold text-foreground sm:text-2xl">{contactedCount}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Inquiries</p>
+          </div>
+          <div className="border-t border-border/70 px-4 py-3 sm:border-l sm:px-5 sm:py-4">
+            <p className="text-xl font-bold text-foreground sm:text-2xl">{workspaceInvites.length}</p>
+            <p className="mt-1 text-sm text-muted-foreground">Workspace invites</p>
+          </div>
+          <div className="border-l border-t border-border/70 px-4 py-3 sm:border-t-0 sm:px-5 sm:py-4">
+            <p className="text-xl font-bold text-foreground sm:text-2xl">
+              KES {totalRevenue.toLocaleString()}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">Quoted revenue</p>
+          </div>
+        </div>
+      </section>
+      </details>
 
       {!listing && workspaceInvites.length === 0 && (
         <Card className="shadow-card">
@@ -1276,15 +1336,9 @@ export default function VendorDashboard() {
       )}
 
       {workspaceInvites.length > 0 && (
-        <Card className="shadow-card border-primary/20">
+        <Card className="shadow-card">
           <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              Wedding Workspace Invites
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              These couples or planners added you into their Zania workspace first. You can collaborate here even before your public vendor listing is fully set up.
-            </p>
+            <CardTitle>Wedding invites</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {workspaceInvites.map((invite) => (
@@ -1311,11 +1365,11 @@ export default function VendorDashboard() {
                       <p className="font-display text-xl text-foreground">
                         {invite.weddingName || 'Wedding workspace'}
                       </p>
-                      <Badge className="bg-primary/10 text-primary border border-primary/20">
+                      <Badge variant={invite.inviteStatus === 'claimed' ? 'success' : 'warning'}>
                         {invite.inviteStatus}
                       </Badge>
                       <Badge variant="outline">{invite.vendorCategory}</Badge>
-                      <Badge variant={invite.hasPublicListingConnection ? 'secondary' : 'outline'}>
+                      <Badge variant={invite.hasPublicListingConnection ? 'success' : 'outline'}>
                         {invite.hasPublicListingConnection ? 'Public profile linked' : 'Private workspace link'}
                       </Badge>
                     </div>
@@ -1460,7 +1514,7 @@ export default function VendorDashboard() {
 
       {/* Connection Requests */}
       {fullAccess && connectionRequests.length > 0 && (
-        <Card className="shadow-card border-primary/20">
+        <Card id="connection-requests" className="shadow-card border-primary/20">
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
               Connection Requests
@@ -1475,17 +1529,17 @@ export default function VendorDashboard() {
                 <div
                   key={r.id}
                   className={`rounded-lg border p-4 transition-colors ${
-                    r.status === 'pending' ? 'border-primary/30 bg-primary/5' : 'border-border'
+                    r.status === 'pending' ? 'border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))]' : 'border-border'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-foreground">{r.requester_name}</span>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          r.status === 'pending' ? 'bg-accent/20 text-foreground border border-accent/35' :
-                          r.status === 'accepted' ? 'bg-primary/10 text-primary border border-primary/20' :
-                          'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
+                          r.status === 'pending' ? 'border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] text-warning' :
+                          r.status === 'accepted' ? 'border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))] text-success' :
+                          'border-destructive/25 bg-destructive/8 text-destructive'
                         }`}>
                           {r.status}
                         </span>
@@ -1535,26 +1589,19 @@ export default function VendorDashboard() {
       {/* Bookings list */}
       <Card className="shadow-card">
         <CardHeader>
-          <CardTitle className="font-display flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            Client Bookings
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            See the couple, their wedding context, your payment picture, and whether this booking has already been pushed to Google Calendar.
-          </p>
+          <CardTitle>Bookings</CardTitle>
         </CardHeader>
         <CardContent>
           {bookings.length === 0 ? (
-            <div className="text-center py-12 space-y-2">
-              <CalendarDays className="h-10 w-10 text-muted-foreground/40 mx-auto" />
+            <div className="py-10 text-center">
               <p className="text-muted-foreground">
                 {!fullAccess
-                  ? 'Bookings and planner requests unlock after subscription and verification.'
+                  ? 'Complete access setup to receive bookings.'
                   : workspaceInvites.length > 0
-                  ? 'Your accepted workspace invites appear above. Bookings tied to your public listing will show here once couples or planners connect them.'
+                  ? 'No directory bookings yet.'
                   : listingId
-                  ? 'No bookings yet. When couples or planners connect with you, they\'ll appear here.'
-                  : 'Set up your listing first to start receiving bookings.'}
+                  ? 'No bookings yet.'
+                  : 'Create your listing to receive bookings.'}
               </p>
             </div>
           ) : (
@@ -1753,14 +1800,13 @@ export default function VendorDashboard() {
                   <Badge variant="outline">{selectedBooking.category}</Badge>
                   <Badge className={statusColor(selectedBooking.status)}>{selectedBooking.status || 'unknown'}</Badge>
                   {selectedWorkspaceInvite && (
-                    <Badge variant="secondary" className="gap-1">
-                      <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                    <Badge variant="info">
                       Workspace invite
                     </Badge>
                   )}
                   {selectedBooking.vendor_calendar_synced_at && (
-                    <Badge variant="secondary" className="gap-1">
-                      <CheckCheck className="h-3.5 w-3.5 text-primary" />
+                    <Badge variant="success" className="gap-1">
+                      <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
                       In Google Calendar
                     </Badge>
                   )}
@@ -1851,6 +1897,20 @@ export default function VendorDashboard() {
                           </span>
                           {selectedBooking.email && <ExternalLink className="h-4 w-4 text-muted-foreground" />}
                         </a>
+                        {selectedBooking.phone && (
+                          <a
+                            href={buildWhatsAppUrl(selectedBooking.phone, selectedProfile?.full_name || 'there')}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background p-4 text-sm transition hover:border-primary/40 hover:bg-primary/5"
+                          >
+                            <span className="flex items-center gap-2">
+                              <MessageSquareText className="h-4 w-4 text-primary" />
+                              Message on WhatsApp
+                            </span>
+                            <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                          </a>
+                        )}
                         <Button
                           type="button"
                           className="w-full gap-2"
@@ -1957,10 +2017,7 @@ export default function VendorDashboard() {
                   {selectedWorkspaceInvite && (
                     <Card className="shadow-card">
                       <CardHeader className="pb-3">
-                        <CardTitle className="font-display flex items-center gap-2 text-xl">
-                          <MessageSquareText className="h-5 w-5 text-primary" />
-                          Vendor Updates
-                        </CardTitle>
+                        <CardTitle className="text-xl">Vendor Updates</CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -2054,16 +2111,97 @@ export default function VendorDashboard() {
                             ))
                           )}
                         </div>
+                        <div className="border-t border-border/70 pt-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-foreground">Suggest a planning task</p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                Propose an action for review. It does not change the wedding plan until the couple accepts it.
+                              </p>
+                            </div>
+                            <Badge variant="info">Vendor suggestion</Badge>
+                          </div>
+                          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2 sm:col-span-2">
+                              <Label htmlFor={`task-suggestion-title-${selectedBooking.id}`}>Task title</Label>
+                              <Input
+                                id={`task-suggestion-title-${selectedBooking.id}`}
+                                value={taskSuggestionDrafts[selectedBooking.id]?.title ?? ''}
+                                onChange={(event) => setTaskSuggestionDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? { title: '', description: '', dueDate: '' }),
+                                    title: event.target.value,
+                                  },
+                                }))}
+                                maxLength={160}
+                                placeholder="Approve the final floral palette"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`task-suggestion-due-${selectedBooking.id}`}>Suggested due date</Label>
+                              <Input
+                                id={`task-suggestion-due-${selectedBooking.id}`}
+                                type="date"
+                                value={taskSuggestionDrafts[selectedBooking.id]?.dueDate ?? ''}
+                                onChange={(event) => setTaskSuggestionDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? { title: '', description: '', dueDate: '' }),
+                                    dueDate: event.target.value,
+                                  },
+                                }))}
+                              />
+                            </div>
+                            <div className="space-y-2 sm:col-span-2">
+                              <Label htmlFor={`task-suggestion-description-${selectedBooking.id}`}>Context</Label>
+                              <Textarea
+                                id={`task-suggestion-description-${selectedBooking.id}`}
+                                value={taskSuggestionDrafts[selectedBooking.id]?.description ?? ''}
+                                onChange={(event) => setTaskSuggestionDrafts((prev) => ({
+                                  ...prev,
+                                  [selectedBooking.id]: {
+                                    ...(prev[selectedBooking.id] ?? { title: '', description: '', dueDate: '' }),
+                                    description: event.target.value,
+                                  },
+                                }))}
+                                maxLength={2000}
+                                rows={3}
+                                placeholder="Explain what is needed and why it matters now."
+                              />
+                            </div>
+                          </div>
+                          <div className="mt-4 flex justify-end">
+                            <Button
+                              type="button"
+                              status={savingTaskSuggestionId === selectedBooking.id ? 'loading' : 'idle'}
+                              loadingText="Sending suggestion"
+                              onClick={() => handleCreateTaskSuggestion(selectedBooking.id)}
+                            >
+                              <FilePlus2 className="h-4 w-4" />
+                              Suggest task
+                            </Button>
+                          </div>
+                          {selectedTaskSuggestions.length > 0 ? (
+                            <div className="mt-4 space-y-2">
+                              {selectedTaskSuggestions.slice(0, 4).map((suggestion) => (
+                                <div key={suggestion.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-2">
+                                  <span className="text-sm text-foreground">{suggestion.title}</span>
+                                  <Badge variant={suggestion.status === 'accepted' ? 'success' : suggestion.status === 'dismissed' ? 'outline' : 'warning'}>
+                                    {suggestion.status === 'pending' ? 'Waiting for review' : suggestion.status}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                       </CardContent>
                     </Card>
                   )}
 
                   <Card className="shadow-card">
                     <CardHeader className="pb-3">
-                      <CardTitle className="font-display flex items-center gap-2 text-xl">
-                        <MessageSquareText className="h-5 w-5 text-primary" />
-                        Vendor Internal Notes
-                      </CardTitle>
+                    <CardTitle className="text-xl">Vendor Internal Notes</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <p className="text-sm text-muted-foreground">
@@ -2105,7 +2243,7 @@ export default function VendorDashboard() {
                 <TabsContent value="payments" className="space-y-4">
                   <Card className="shadow-card">
                     <CardHeader className="pb-3">
-                      <CardTitle className="font-display text-xl">Update Payment State</CardTitle>
+                      <CardTitle className="font-display text-xl">Payment terms</CardTitle>
                     </CardHeader>
                     <CardContent className="grid gap-4 lg:grid-cols-2">
                       <div className="space-y-4">
@@ -2134,61 +2272,30 @@ export default function VendorDashboard() {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor={`amount-paid-${selectedBooking.id}`}>Amount paid (KES)</Label>
-                            <Input
-                              id={`amount-paid-${selectedBooking.id}`}
-                              inputMode="decimal"
-                              value={paymentStateDrafts[selectedBooking.id]?.amountPaid ?? ''}
-                              onChange={(event) =>
-                                setPaymentStateDrafts((prev) => ({
-                                  ...prev,
-                                  [selectedBooking.id]: {
-                                    ...(prev[selectedBooking.id] ?? {
-                                      contractAmount: '',
-                                      amountPaid: '',
-                                      paymentStatus: 'unpaid' as VendorPaymentStatus,
-                                      paymentDueDate: '',
-                                    }),
-                                    amountPaid: event.target.value,
-                                  },
-                                }))
-                              }
-                              placeholder="0"
-                            />
+                            <Label>Payments recorded</Label>
+                            <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                              <p className="font-medium text-foreground">
+                                KES {(paymentSummaryByBookingId[selectedBooking.id]?.totalPaid ?? selectedBooking.amount_paid ?? 0).toLocaleString()}
+                              </p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                Calculated from {selectedPaymentDetails.length} payment {selectedPaymentDetails.length === 1 ? 'entry' : 'entries'}.
+                              </p>
+                            </div>
                           </div>
                         </div>
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <Label htmlFor={`payment-status-${selectedBooking.id}`}>Payment status</Label>
-                            <Select
-                              value={paymentStateDrafts[selectedBooking.id]?.paymentStatus ?? 'unpaid'}
-                              onValueChange={(value) =>
-                                setPaymentStateDrafts((prev) => ({
-                                  ...prev,
-                                  [selectedBooking.id]: {
-                                    ...(prev[selectedBooking.id] ?? {
-                                      contractAmount: '',
-                                      amountPaid: '',
-                                      paymentStatus: 'unpaid' as VendorPaymentStatus,
-                                      paymentDueDate: '',
-                                    }),
-                                    paymentStatus: value as VendorPaymentStatus,
-                                  },
-                                }))
-                              }
-                            >
-                              <SelectTrigger id={`payment-status-${selectedBooking.id}`}>
-                                <SelectValue placeholder="Select payment status" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {vendorPaymentStatuses.map((status) => (
-                                  <SelectItem key={status} value={status}>
-                                    {vendorPaymentStatusLabel(status)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <Label>Payment status</Label>
+                            <div className="min-h-10 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
+                              <p className="font-medium text-foreground">
+                                {vendorPaymentStatusLabel(deriveVendorPaymentStatus({
+                                  totalCost: paymentStateDrafts[selectedBooking.id]?.contractAmount,
+                                  totalPaid: paymentSummaryByBookingId[selectedBooking.id]?.totalPaid ?? selectedBooking.amount_paid,
+                                }))}
+                              </p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">Updates automatically from the payment history.</p>
+                            </div>
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor={`payment-due-date-${selectedBooking.id}`}>Payment due date</Label>
@@ -2221,17 +2328,17 @@ export default function VendorDashboard() {
                           className="gap-2"
                         >
                           {savingPaymentStateId === selectedBooking.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-                          Save Payment State
+                          Save payment terms
                         </Button>
                       </div>
 
                       <div className="rounded-xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
                         <p className="font-medium text-foreground">Why this matters</p>
                         <p className="mt-2">
-                          This updates the vendor relationship state directly, even when the couple created you privately first and there is no public listing workflow yet.
+                          Set the agreed total and the next due date here. Recorded payments remain the single source of truth.
                         </p>
                         <p className="mt-2">
-                          It does not create a new ledger entry. It keeps the shared workspace totals and payment status aligned from the vendor side.
+                          When the couple records a payment, Zania updates the total and status automatically and asks you to confirm the details before issuing a receipt.
                         </p>
                       </div>
                     </CardContent>
@@ -2299,7 +2406,7 @@ export default function VendorDashboard() {
                                   <p className={`text-sm font-semibold ${task.completed ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
                                     {task.title}
                                   </p>
-                                  <Badge variant={task.completed ? 'secondary' : 'outline'}>
+                                  <Badge variant={task.completed ? 'success' : 'outline'}>
                                     {task.completed ? 'Completed' : 'Open'}
                                   </Badge>
                                   {task.visibility && <Badge variant="outline">{task.visibility}</Badge>}

@@ -255,7 +255,7 @@ export default function VendorClaim() {
               </div>
 
               {(claimType === "workspace_invite" ? workspaceInviteClaim?.invite_status === "expired" : claim?.claim_status === "expired") && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                <div className="rounded-2xl border border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-4 py-4 text-sm text-warning">
                   This invite link has expired. Ask for a fresh invite.
                 </div>
               )}
@@ -263,7 +263,7 @@ export default function VendorClaim() {
               {(claimType === "workspace_invite"
                 ? workspaceInviteClaim?.invite_status === "accepted"
                 : claim?.claim_status === "claimed") && (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+                <div className="rounded-2xl border border-[hsl(var(--success-soft-border))] bg-[hsl(var(--success-soft))] px-4 py-4 text-sm text-success">
                   {claimType === "workspace_invite"
                     ? "This workspace invite has already been accepted. Sign in with the vendor account that accepted it if you need to continue."
                     : "This vendor profile has already been claimed. Sign in with the owner account if you need to manage it."}
@@ -274,7 +274,7 @@ export default function VendorClaim() {
                 ? ["draft", "pending", "sent", "opened"].includes(workspaceInviteClaim?.invite_status ?? "")
                 : claim?.claim_status === "ready")) && !user && (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-muted-foreground">
+                  <div className="rounded-2xl border border-[hsl(var(--info-soft-border))] bg-[hsl(var(--info-soft))] px-4 py-4 text-sm text-info">
                     Sign in with the invited email to continue. If you do not have a vendor account yet, create one first and choose <span className="font-medium text-foreground">Vendor</span> during setup. This only joins you to this wedding workspace first. A public profile can come later.
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -291,7 +291,7 @@ export default function VendorClaim() {
               {((claimType === "workspace_invite"
                 ? ["draft", "pending", "sent", "opened"].includes(workspaceInviteClaim?.invite_status ?? "")
                 : claim?.claim_status === "ready")) && user && profile?.role !== "vendor" && !isProfessionalSetupPending(user.user_metadata, profile?.role, user.email ?? null) && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                <div className="rounded-2xl border border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-4 py-4 text-sm text-warning">
                   <div className="flex items-start gap-3">
                     <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
                     <div>
@@ -307,7 +307,7 @@ export default function VendorClaim() {
               {((claimType === "workspace_invite"
                 ? ["draft", "pending", "sent", "opened"].includes(workspaceInviteClaim?.invite_status ?? "")
                 : claim?.claim_status === "ready")) && user && profile?.role === "vendor" && (
-                <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-muted-foreground">
+                <div className="rounded-2xl border border-[hsl(var(--info-soft-border))] bg-[hsl(var(--info-soft))] px-4 py-4 text-sm text-info">
                   <div className="flex items-center gap-2 text-foreground">
                     <Loader2 className={`h-4 w-4 ${claiming ? "animate-spin" : ""}`} />
                     {claimType === "workspace_invite" ? "Joining the wedding workspace..." : "Finishing your vendor claim..."}

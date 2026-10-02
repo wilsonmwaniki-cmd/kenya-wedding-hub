@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlanner } from '@/contexts/PlannerContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,12 +8,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Clock, CheckCircle2, XCircle, Store, Users, X, Loader2, Copy, Link2, HeartHandshake } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ArrowRight, CheckCircle2, Clock, Copy, Loader2, LockKeyhole, Store, UserPlus, Users, X, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { getEntitlementDecision } from '@/lib/entitlements';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { UpgradePromptDialog } from '@/components/UpgradePrompt';
 import InfoTip from '@/components/InfoTip';
+import { FormFieldSuccess } from '@/components/FormFeedback';
+import AnimatedNumber from '@/components/AnimatedNumber';
 import { getWeddingInviteDeliveryFailureMessage, sendWeddingInviteEmail } from '@/lib/weddingWorkspace';
 import {
   approvePlannerCodeLinkRequest,
@@ -24,6 +27,7 @@ import {
 interface PlannerConnection {
   type: 'planner';
   id: string;
+  planner_user_id: string;
   name: string;
   status: string;
   created_at: string;
@@ -77,9 +81,9 @@ interface CommitteeWorkspaceAccess {
 }
 
 const statusConfig: Record<string, { label: string; icon: typeof Clock; className: string }> = {
-  pending: { label: 'Pending', icon: Clock, className: 'text-muted-foreground' },
-  approved: { label: 'Connected', icon: CheckCircle2, className: 'text-primary' },
-  accepted: { label: 'Connected', icon: CheckCircle2, className: 'text-primary' },
+  pending: { label: 'Pending', icon: Clock, className: 'text-warning' },
+  approved: { label: 'Connected', icon: CheckCircle2, className: 'text-success' },
+  accepted: { label: 'Connected', icon: CheckCircle2, className: 'text-success' },
   rejected: { label: 'Declined', icon: XCircle, className: 'text-destructive' },
   declined: { label: 'Declined', icon: XCircle, className: 'text-destructive' },
 };
@@ -97,13 +101,21 @@ export default function MyConnections() {
   const [ownedWedding, setOwnedWedding] = useState<OwnedWeddingWorkspace | null>(null);
   const [partnerEmailInput, setPartnerEmailInput] = useState('');
   const [partnerInviteSubmitting, setPartnerInviteSubmitting] = useState(false);
+  const [partnerInviteSent, setPartnerInviteSent] = useState(false);
   const [committeeWorkspace, setCommitteeWorkspace] = useState<CommitteeWorkspaceAccess | null>(null);
   const [committeeEmailInput, setCommitteeEmailInput] = useState('');
   const [committeeInviteRole, setCommitteeInviteRole] = useState<CommitteeInviteRole>('committee_member');
   const [committeeInviteSubmitting, setCommitteeInviteSubmitting] = useState(false);
+  const [committeeInviteSent, setCommitteeInviteSent] = useState(false);
+  const [plannerVendorAccess, setPlannerVendorAccess] = useState<Record<string, boolean>>({});
+  const [savingPlannerAccess, setSavingPlannerAccess] = useState<string | null>(null);
+  const committeeInviteInputRef = useRef<HTMLInputElement | null>(null);
 
   const effectiveCoupleView = profile?.role === 'couple' || (isSuperAdmin && rolePreview === 'couple');
   const plannerConnectDecision = getEntitlementDecision('couple.connect_planners', { profile, weddingEntitlements, couplePlanTier, bypass: isSuperAdmin && rolePreview === 'couple' });
+  const committeeEnabled = Boolean(committeeWorkspace?.enabled);
+  const committeeHasSeats = Boolean(committeeWorkspace?.enabled && committeeWorkspace.seatsRemaining > 0);
+  const committeeUnlockHref = '/pricing?audience=couple&feature=committee_collaboration';
   const activeConnections = useMemo(
     () => connections.filter((conn) => ['approved', 'accepted'].includes(conn.status)).length,
     [connections],
@@ -130,6 +142,12 @@ export default function MyConnections() {
     if (effectiveCoupleView && ownedWedding?.partnerStatus === 'pending') {
       return 'Your partner invite is still pending. A resend now could get shared planning moving faster.';
     }
+    if (effectiveCoupleView && !committeeEnabled) {
+      return 'Committee invites are locked until this wedding has a couple plan with committee collaboration seats.';
+    }
+    if (effectiveCoupleView && committeeEnabled && !committeeHasSeats) {
+      return 'Committee collaboration is active, but every configured committee seat is already in use.';
+    }
     if (pendingCommitteeInvites > 0) {
       return `${pendingCommitteeInvites} committee invite${pendingCommitteeInvites === 1 ? ' is' : 's are'} still waiting for a response.`;
     }
@@ -140,7 +158,20 @@ export default function MyConnections() {
       return 'Generate and share your collaboration code when you want a planner to connect to this wedding workspace.';
     }
     return 'Your collaboration layer is set up. Use this hub to keep owners, planners, committee members, and vendors aligned.';
-  }, [collaborationCode, effectiveCoupleView, ownedWedding?.partnerStatus, pendingCommitteeInvites, pendingConnections]);
+  }, [
+    collaborationCode,
+    committeeEnabled,
+    committeeHasSeats,
+    effectiveCoupleView,
+    ownedWedding?.partnerStatus,
+    pendingCommitteeInvites,
+    pendingConnections,
+  ]);
+
+  const focusCommitteeInvite = () => {
+    committeeInviteInputRef.current?.focus();
+    committeeInviteInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   const loadCommitteeWorkspaceAccess = async (weddingId: string) => {
     const db = supabase as any;
@@ -328,6 +359,7 @@ export default function MyConnections() {
         plannerConns.push({
           type: 'planner',
           id: r.id,
+          planner_user_id: r.planner_user_id,
           name: profileMap.get(r.planner_user_id) || 'Planner',
           status: r.status,
           created_at: r.created_at,
@@ -387,10 +419,30 @@ export default function MyConnections() {
   useEffect(() => {
     if (!ownedWedding) {
       setCommitteeWorkspace(null);
+      setPlannerVendorAccess({});
       return;
     }
 
     void loadCommitteeWorkspaceAccess(ownedWedding.weddingId);
+    setPlannerVendorAccess({});
+    void (async () => {
+      const { data, error } = await (supabase as any)
+        .from('wedding_memberships')
+        .select('user_id, metadata')
+        .eq('wedding_id', ownedWedding.weddingId)
+        .eq('role', 'planner')
+        .eq('membership_status', 'active');
+
+      if (error) {
+        console.error('Could not load planner vendor access:', error);
+        return;
+      }
+
+      setPlannerVendorAccess(Object.fromEntries((data ?? []).map((membership: {
+        user_id: string;
+        metadata: Record<string, unknown> | null;
+      }) => [membership.user_id, membership.metadata?.manage_vendors === true])));
+    })();
   }, [ownedWedding?.weddingId]);
 
   if (loading) return null;
@@ -438,6 +490,31 @@ export default function MyConnections() {
     }
   };
 
+  const updatePlannerVendorAccess = async (plannerUserId: string, allowed: boolean) => {
+    if (!ownedWedding) return;
+    setSavingPlannerAccess(plannerUserId);
+    try {
+      const { error } = await (supabase as any).rpc('set_planner_vendor_management_permission', {
+        target_wedding_id: ownedWedding.weddingId,
+        target_planner_user_id: plannerUserId,
+        allowed,
+      });
+      if (error) throw error;
+
+      setPlannerVendorAccess((current) => ({ ...current, [plannerUserId]: allowed }));
+      toast({
+        title: allowed ? 'Vendor access allowed' : 'Vendor access removed',
+        description: allowed
+          ? 'This planner will receive suitable provider alerts with you.'
+          : 'This planner will no longer receive provider alerts for this wedding.',
+      });
+    } catch (error: any) {
+      toast({ title: 'Could not update planner access', description: error.message, variant: 'destructive' });
+    } finally {
+      setSavingPlannerAccess(null);
+    }
+  };
+
   const copyCode = async () => {
     if (!collaborationCode) return;
     await navigator.clipboard.writeText(collaborationCode);
@@ -472,6 +549,7 @@ export default function MyConnections() {
       }
 
       await loadOwnedWeddingWorkspace();
+      setPartnerInviteSent(true);
       toast({
         title: ownedWedding.partnerStatus === 'pending' ? 'Partner invite refreshed' : 'Partner invite sent',
         description: deliveryDescription,
@@ -517,6 +595,7 @@ export default function MyConnections() {
 
       setCommitteeEmailInput('');
       await loadCommitteeWorkspaceAccess(ownedWedding.weddingId);
+      setCommitteeInviteSent(true);
       toast({
         title: committeeInviteRole === 'committee_chair' ? 'Committee chair invited' : 'Committee member invited',
         description,
@@ -537,12 +616,12 @@ export default function MyConnections() {
       <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 shadow-card">
         <CardContent className="space-y-6 p-6 sm:p-8">
           <div className="space-y-3">
-            <Badge variant="outline" className="rounded-full border-primary/20 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-primary">
+            <Badge variant="info" className="rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em]">
               {effectiveCoupleView ? 'Collaboration Hub' : 'Workspace Connections'}
             </Badge>
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <h2 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+              <div className="flex flex-wrap items-start gap-2">
+                <h2 className="workspace-h1 max-w-4xl">
                   {effectiveCoupleView
                     ? 'Bring your partner, planner, and committee into the same wedding workspace'
                     : 'Keep linked planners and vendors in one coordinated workspace'}
@@ -558,12 +637,12 @@ export default function MyConnections() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Connected</p>
-              <p className="mt-2 text-3xl font-semibold text-foreground">{activeConnections}</p>
+              <AnimatedNumber value={activeConnections} className="mt-2 block text-3xl font-semibold text-foreground" />
               <p className="mt-1 text-sm text-muted-foreground">active workspace relationships</p>
             </div>
             <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
               <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Pending</p>
-              <p className="mt-2 text-3xl font-semibold text-foreground">{pendingConnections + pendingCommitteeInvites}</p>
+              <AnimatedNumber value={pendingConnections + pendingCommitteeInvites} className="mt-2 block text-3xl font-semibold text-foreground" />
               <p className="mt-1 text-sm text-muted-foreground">requests or invites still waiting</p>
             </div>
             <div className="rounded-[1.3rem] border border-border/70 bg-background/90 p-4 shadow-sm">
@@ -582,23 +661,72 @@ export default function MyConnections() {
                 {effectiveCoupleView ? 'Seats Left' : 'Vendor Links'}
               </p>
               <p className="mt-2 text-3xl font-semibold text-foreground">
-                {effectiveCoupleView ? (committeeWorkspace?.seatsRemaining ?? 0) : vendorConnectionsCount}
+                {effectiveCoupleView
+                  ? committeeWorkspace?.seatLimit == null
+                    ? '0'
+                    : committeeWorkspace.seatsRemaining
+                  : vendorConnectionsCount}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {effectiveCoupleView ? 'committee invites still available' : 'vendor collaboration requests tracked'}
               </p>
             </div>
           </div>
+
+          {effectiveCoupleView && (
+            <div className="rounded-[1.5rem] border border-[#dfd2c4] bg-[linear-gradient(135deg,rgba(255,250,244,0.96),rgba(246,238,227,0.92))] p-4 shadow-sm sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex gap-3">
+                  <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                    committeeHasSeats
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'bg-[#f5dfd4] text-[#9d5635]'
+                  }`}>
+                    {committeeHasSeats ? <UserPlus className="h-5 w-5" /> : <LockKeyhole className="h-5 w-5" />}
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                      Invite your wedding team
+                    </p>
+                    <h3 className="workspace-h3 mt-1">
+                      {committeeHasSeats
+                        ? 'Add a committee member by email'
+                        : committeeEnabled
+                          ? 'Committee seats are full'
+                          : 'Committee invites are not active on this wedding yet'}
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                      {committeeHasSeats
+                        ? 'Use this when you want family, friends, or committee leads to help coordinate tasks, vendors, and follow-ups inside Zania.'
+                        : committeeEnabled
+                          ? 'The bundle is active, but all configured committee seats are already used. Add seats before inviting another person.'
+                          : 'Upgrade this wedding to a couple plan with committee collaboration, then Zania will unlock invite seats here.'}
+                    </p>
+                  </div>
+                </div>
+                {committeeHasSeats ? (
+                  <Button type="button" className="shrink-0 gap-2" onClick={focusCommitteeInvite}>
+                    Add committee member
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button asChild className="shrink-0 gap-2">
+                    <a href={committeeUnlockHref}>
+                      View plans with seats
+                      <ArrowRight className="h-4 w-4" />
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {effectiveCoupleView && ownedWedding && (
-        <Card className="shadow-card border-primary/20 bg-primary/5">
+        <Card className="semantic-surface-info shadow-card">
           <CardHeader>
-            <CardTitle className="font-display text-base flex items-center gap-2">
-              <HeartHandshake className="h-4 w-4 text-primary" />
-              Wedding Ownership
-            </CardTitle>
+            <CardTitle className="text-base">Wedding Ownership</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -608,7 +736,15 @@ export default function MyConnections() {
                   <Badge variant="outline" className="capitalize">
                     {ownedWedding.ownerRole}
                   </Badge>
-                  <Badge variant={ownedWedding.partnerStatus === 'active' ? 'default' : 'secondary'}>
+                  <Badge
+                    variant={
+                      ownedWedding.partnerStatus === 'active'
+                        ? 'success'
+                        : ownedWedding.partnerStatus === 'pending'
+                          ? 'warning'
+                          : 'outline'
+                    }
+                  >
                     {ownedWedding.partnerStatus === 'active'
                       ? 'Partner connected'
                       : ownedWedding.partnerStatus === 'pending'
@@ -617,7 +753,7 @@ export default function MyConnections() {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Wedding code: <span className="font-medium tracking-[0.16em] text-foreground">{ownedWedding.weddingCode}</span>
+                  Wedding code: <span className="break-all font-medium tracking-[0.12em] text-foreground">{ownedWedding.weddingCode}</span>
                 </p>
                 {ownedWedding.partnerInviteExpiresAt && (
                   <p className="text-xs text-muted-foreground">
@@ -632,23 +768,29 @@ export default function MyConnections() {
                     id="partner-email-input"
                     type="email"
                     value={partnerEmailInput}
-                    onChange={(event) => setPartnerEmailInput(event.target.value)}
+                    onChange={(event) => {
+                      setPartnerEmailInput(event.target.value);
+                      setPartnerInviteSent(false);
+                    }}
                     placeholder={ownedWedding.partnerRole === 'groom' ? 'groom@example.com' : 'bride@example.com'}
                   />
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Button
                     className="sm:w-auto"
-                    disabled={partnerInviteSubmitting || !partnerEmailInput.trim()}
+                    disabled={partnerInviteSubmitting || (!partnerInviteSent && !partnerEmailInput.trim())}
                     onClick={sendPartnerInvite}
+                    status={partnerInviteSubmitting ? 'loading' : partnerInviteSent ? 'success' : 'idle'}
+                    loadingText="Sending invite"
+                    successText="Invite sent"
                   >
-                    {partnerInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     {ownedWedding.partnerStatus === 'pending' ? 'Resend partner invite' : 'Send partner invite'}
                   </Button>
                   <p className="text-xs text-muted-foreground">
                     Owners share the same wedding workspace.
                   </p>
                 </div>
+                <FormFieldSuccess message={partnerInviteSent ? 'The pending invite is now visible in this wedding workspace.' : null} />
               </div>
             </div>
 
@@ -657,29 +799,45 @@ export default function MyConnections() {
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-foreground">Committee collaboration</p>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant={committeeWorkspace?.enabled ? 'default' : 'secondary'}>
-                      {committeeWorkspace?.enabled ? 'Committee bundle active' : 'Committee bundle not active'}
+                    <Badge variant={committeeEnabled ? 'success' : 'warning'}>
+                      {committeeEnabled ? 'Committee bundle active' : 'Committee bundle not active'}
                     </Badge>
                     <Badge variant="outline">
                       {committeeWorkspace?.seatLimit == null ? 'No seats configured' : `${committeeWorkspace.seatsRemaining}/${committeeWorkspace.seatLimit} seats left`}
                     </Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Invite committee members from the same workspace.
+                  <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
+                    {committeeHasSeats
+                      ? 'Enter an email, choose whether this person is a member or chair, and Zania will send the invite.'
+                      : committeeEnabled
+                        ? 'Committee collaboration is active, but there are no available seats for another invite.'
+                        : 'This wedding needs an active committee collaboration bundle before committee invites can be sent.'}
                   </p>
                 </div>
+                {!committeeHasSeats && (
+                  <Button asChild variant="outline" size="sm" className="shrink-0 gap-2">
+                    <a href={committeeUnlockHref}>
+                      Unlock committee seats
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </a>
+                  </Button>
+                )}
               </div>
 
               <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.8fr_auto]">
                 <div className="space-y-2">
                   <Label htmlFor="committee-email-input">Committee email</Label>
                   <Input
+                    ref={committeeInviteInputRef}
                     id="committee-email-input"
                     type="email"
                     placeholder="committee.member@example.com"
                     value={committeeEmailInput}
-                    onChange={(event) => setCommitteeEmailInput(event.target.value)}
-                    disabled={!committeeWorkspace?.enabled}
+                    onChange={(event) => {
+                      setCommitteeEmailInput(event.target.value);
+                      setCommitteeInviteSent(false);
+                    }}
+                    disabled={!committeeHasSeats}
                   />
                 </div>
                 <div className="space-y-2">
@@ -687,7 +845,7 @@ export default function MyConnections() {
                   <Select
                     value={committeeInviteRole}
                     onValueChange={(value) => setCommitteeInviteRole(value as CommitteeInviteRole)}
-                    disabled={!committeeWorkspace?.enabled}
+                    disabled={!committeeHasSeats}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -703,21 +861,27 @@ export default function MyConnections() {
                     className="w-full lg:w-auto"
                     disabled={
                       committeeInviteSubmitting ||
-                      !committeeWorkspace?.enabled ||
-                      !committeeEmailInput.trim() ||
-                      committeeWorkspace.seatsRemaining <= 0
+                      !committeeHasSeats ||
+                      (!committeeInviteSent && !committeeEmailInput.trim()) ||
+                      (committeeWorkspace?.seatsRemaining ?? 0) <= 0
                     }
                     onClick={sendCommitteeInvite}
+                    status={committeeInviteSubmitting ? 'loading' : committeeInviteSent ? 'success' : 'idle'}
+                    loadingText="Sending invite"
+                    successText="Invite sent"
                   >
-                    {committeeInviteSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Send committee invite
                   </Button>
                 </div>
               </div>
 
-              {!committeeWorkspace?.enabled && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Committee invites unlock when this wedding has an active committee collaboration entitlement and a committee bundle.
+              <FormFieldSuccess message={committeeInviteSent ? 'The committee seat is reserved and the pending invite is listed below.' : null} />
+
+              {!committeeHasSeats && (
+                <p className="mt-3 rounded-xl border border-dashed border-[hsl(var(--warning-soft-border))] bg-[hsl(var(--warning-soft))] px-3 py-2 text-xs leading-5 text-warning">
+                  {committeeEnabled
+                    ? 'All committee seats are currently used. Add seats or remove an inactive member before sending another invite.'
+                    : 'Committee invites unlock when this wedding has an active couple plan with committee collaboration seats.'}
                 </p>
               )}
 
@@ -739,7 +903,7 @@ export default function MyConnections() {
                                 <Badge variant="outline" className="capitalize">
                                   {member.role.replace('_', ' ')}
                                 </Badge>
-                                <Badge variant={member.membership_status === 'active' ? 'default' : 'secondary'}>
+                                <Badge variant={member.membership_status === 'active' ? 'success' : 'warning'}>
                                   {member.membership_status}
                                 </Badge>
                               </div>
@@ -762,7 +926,7 @@ export default function MyConnections() {
                           <div key={invite.id} className="rounded-lg border border-border bg-background p-3 text-sm">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <span className="font-medium text-foreground">{invite.email}</span>
-                              <Badge variant="secondary" className="capitalize">
+                              <Badge variant="info" className="capitalize">
                                 {invite.proposed_role.replace('_', ' ')}
                               </Badge>
                             </div>
@@ -784,19 +948,16 @@ export default function MyConnections() {
       )}
 
       {effectiveCoupleView && collaborationCode && (
-        <Card className="shadow-card border-primary/20 bg-primary/5">
+        <Card className="semantic-surface-info shadow-card">
           <CardHeader>
-            <CardTitle className="font-display text-base flex items-center gap-2">
-              <Link2 className="h-4 w-4 text-primary" />
-              Couple Collaboration Code
-            </CardTitle>
+            <CardTitle className="text-base">Couple Collaboration Code</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm text-muted-foreground">
                 Share this code with your planner to request access.
               </p>
-              <p className="mt-2 font-display text-2xl tracking-[0.2em] text-foreground">{collaborationCode}</p>
+              <p className="mt-2 break-all font-display text-2xl tracking-[0.12em] text-foreground sm:tracking-[0.18em]">{collaborationCode}</p>
             </div>
             <Button variant="outline" className="gap-2" onClick={copyCode}>
               <Copy className="h-4 w-4" />
@@ -823,13 +984,6 @@ export default function MyConnections() {
               const plannerNeedsApproval = plannerConn?.request_source === 'planner_code' && plannerConn.status === 'pending';
               return (
                 <div key={conn.id} className="flex flex-col gap-3 rounded-xl border border-border p-4 sm:flex-row sm:items-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 shrink-0">
-                    {conn.type === 'planner' ? (
-                      <Users className="h-4 w-4 text-primary" />
-                    ) : (
-                      <Store className="h-4 w-4 text-primary" />
-                    )}
-                  </div>
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium text-card-foreground truncate">{conn.name}</p>
@@ -844,11 +998,31 @@ export default function MyConnections() {
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                       <div className={`flex items-center gap-1 ${config.className}`}>
-                        <StatusIcon className="h-3.5 w-3.5" />
+                        <StatusIcon aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.8} />
                         {config.label}
                       </div>
                       <span>Added {new Date(conn.created_at).toLocaleDateString()}</span>
                     </div>
+                    {effectiveCoupleView
+                      && plannerConn
+                      && ['approved', 'accepted'].includes(plannerConn.status)
+                      && Object.prototype.hasOwnProperty.call(plannerVendorAccess, plannerConn.planner_user_id)
+                      && ownedWedding && (
+                        <label className="flex max-w-xl cursor-pointer items-start gap-3 border-t border-border pt-3 text-sm">
+                          <Checkbox
+                            checked={plannerVendorAccess[plannerConn.planner_user_id] ?? false}
+                            disabled={savingPlannerAccess === plannerConn.planner_user_id}
+                            onCheckedChange={(checked) => void updatePlannerVendorAccess(plannerConn.planner_user_id, checked === true)}
+                            aria-label={`Allow ${plannerConn.name} to manage vendors`}
+                          />
+                          <span>
+                            <span className="block font-medium text-foreground">Allow this planner to manage vendors</span>
+                            <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                              They will receive new provider match alerts with you.
+                            </span>
+                          </span>
+                        </label>
+                      )}
                   </div>
                   <div className="flex items-center gap-2 sm:shrink-0">
                     {plannerNeedsApproval ? (

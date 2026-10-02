@@ -37,12 +37,16 @@ import {
   matchesVendorCollection,
   vendorCollections,
 } from '@/lib/vendorDirectoryCollections';
-import { vendorHasFullAccess } from '@/lib/vendorAccess';
+import { vendorCanCollaborate } from '@/lib/vendorAccess';
 import { getVendorReputationOverview, type VendorReputationOverview } from '@/lib/vendorReputation';
 import { DirectoryResultsSkeleton } from '@/components/AppLoadingSkeletons';
 import { isProfessionalNetworkEnabled } from '@/lib/featureFlags';
-
-const vendorCategories = ['All', 'Venue', 'Catering', 'Photography', 'Videography', 'Flowers', 'Music/DJ', 'Décor', 'Transport', 'MC', 'Cake', 'Other'];
+import PublicSiteFooter from '@/components/PublicSiteFooter';
+import {
+  canonicalizeVendorCategory,
+  vendorCategoriesMatch,
+  vendorCategoryCatalog,
+} from '@/lib/vendorCategories';
 
 interface VendorListing {
   id: string;
@@ -85,7 +89,7 @@ interface VendorNetworkSignalSummary {
 
 const emptySuggestionForm = {
   vendorName: '',
-  category: 'Venue',
+  category: 'Wedding Venue',
   instagramOrWebsite: '',
   location: '',
   recommendationReason: '',
@@ -135,7 +139,7 @@ export default function VendorDirectory() {
 
   useEffect(() => {
     const load = async () => {
-      const [listingsRes, ratingsRes, recommendationsRes] = await Promise.all([
+      const [listingsRes, ratingsRes, guestRatingsRes, recommendationsRes] = await Promise.all([
         supabase
           .from('vendor_listings')
           .select('id, business_name, category, description, logo_url, location, location_county, location_town, service_areas, travel_scope, minimum_budget_kes, maximum_budget_kes, services, is_verified, subscription_status, subscription_expires_at, phone, email, website, profile_kind, public_listing_note, featured_rank')
@@ -146,6 +150,11 @@ export default function VendorDirectory() {
         supabase
           .from('vendor_reviews')
           .select('vendor_listing_id, rating'),
+        supabase
+          .from('professional_reviews')
+          .select('vendor_listing_id, rating')
+          .eq('professional_type', 'vendor')
+          .eq('status', 'published'),
         professionalNetworkEnabled
           ? supabase
               .from('vendor_planner_recommendations' as any)
@@ -154,10 +163,19 @@ export default function VendorDirectory() {
           : Promise.resolve({ data: [] }),
       ]);
 
-      setVendors((listingsRes.data as VendorListing[]) || []);
+      setVendors(((listingsRes.data as VendorListing[]) || []).map((listing) => ({
+        ...listing,
+        category: canonicalizeVendorCategory(listing.category),
+      })));
 
       const ratingsMap: Record<string, { total: number; count: number }> = {};
       ((ratingsRes.data || []) as Array<{ vendor_listing_id: string; rating: number }>).forEach((rating) => {
+        if (!ratingsMap[rating.vendor_listing_id]) ratingsMap[rating.vendor_listing_id] = { total: 0, count: 0 };
+        ratingsMap[rating.vendor_listing_id].total += rating.rating;
+        ratingsMap[rating.vendor_listing_id].count += 1;
+      });
+      ((guestRatingsRes.data || []) as Array<{ vendor_listing_id: string; rating: number }>).forEach((rating) => {
+        if (!rating.vendor_listing_id) return;
         if (!ratingsMap[rating.vendor_listing_id]) ratingsMap[rating.vendor_listing_id] = { total: 0, count: 0 };
         ratingsMap[rating.vendor_listing_id].total += rating.rating;
         ratingsMap[rating.vendor_listing_id].count += 1;
@@ -284,7 +302,7 @@ export default function VendorDirectory() {
     return vendors
       .filter((vendor) => {
         if (collection && !matchesVendorCollection(vendor, collection)) return false;
-        if (category !== 'All' && vendor.category !== category) return false;
+        if (category !== 'All' && !vendorCategoriesMatch(vendor.category, category)) return false;
         if (locationCounty !== 'all') {
           const servesCounty =
             vendor.location_county?.toLowerCase() === locationCounty.toLowerCase()
@@ -441,7 +459,7 @@ export default function VendorDirectory() {
         <motion.h1
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="font-display text-3xl font-bold text-foreground sm:text-4xl"
+          className="marketing-h2 text-foreground"
         >
           <Store className="mr-2 inline h-8 w-8 text-primary" />
           {headerTitle}
@@ -469,8 +487,11 @@ export default function VendorDirectory() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {vendorCategories.map((item) => (
-                <SelectItem key={item} value={item}>{item}</SelectItem>
+              <SelectItem value="All">All categories</SelectItem>
+              {vendorCategoryCatalog.map((item) => (
+                <SelectItem key={item.name} value={item.name}>
+                  {item.name} · {item.scope === 'personal' ? 'Personal' : 'Wedding'}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -510,7 +531,7 @@ export default function VendorDirectory() {
           <div className="mb-5 flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/80">Public collections</p>
-              <h2 className="mt-2 font-display text-2xl text-foreground">Browse vendor collections couples can actually share</h2>
+              <h2 className="marketing-h3 mt-2 text-foreground">Browse vendor collections couples can actually share</h2>
             </div>
             <Badge variant="outline" className="hidden md:inline-flex">Built for Google, browsing, and social proof</Badge>
           </div>
@@ -519,7 +540,7 @@ export default function VendorDirectory() {
               <Link key={item.slug} to={`/vendors-directory/collections/${item.slug}`}>
                 <Card className="h-full border-border/70 transition-shadow hover:shadow-warm">
                   <CardHeader>
-                    <CardTitle className="font-display text-xl">{item.title}</CardTitle>
+                    <CardTitle className="marketing-h4">{item.title}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground">{item.description}</p>
@@ -574,7 +595,7 @@ export default function VendorDirectory() {
                   viewport={{ once: true }}
                   transition={{ delay: index * 0.05 }}
                 >
-                  <Card className="group h-full shadow-card transition-shadow hover:shadow-warm">
+                  <Card className="group h-full shadow-card">
                     <CardContent className="flex h-full flex-col p-6">
                       <div className="flex items-start gap-4">
                         <div className="relative shrink-0">
@@ -702,7 +723,7 @@ export default function VendorDirectory() {
                             View profile
                           </Button>
                         </Link>
-                        {user && vendorHasFullAccess(vendor) && (
+                        {user && vendorCanCollaborate(vendor) && (
                           <VendorInterestButton
                             vendorListingId={vendor.id}
                             vendorName={vendor.business_name}
@@ -710,9 +731,9 @@ export default function VendorDirectory() {
                             existingStatus={requestStatuses[vendor.id] || null}
                           />
                         )}
-                        {user && !vendorHasFullAccess(vendor) && profile?.role !== 'vendor' && (
+                        {user && !vendorCanCollaborate(vendor) && profile?.role !== 'vendor' && (
                           <p className="text-xs text-muted-foreground">
-                            Planner connections unlock after vendor verification and subscription.
+                            Connections unlock after this vendor is approved and verified.
                           </p>
                         )}
                         {canRecommendVendor && (
@@ -738,7 +759,7 @@ export default function VendorDirectory() {
       <Dialog open={suggestDialogOpen} onOpenChange={setSuggestDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Suggest a Vendor</DialogTitle>
+            <DialogTitle className="marketing-h3">Suggest a Vendor</DialogTitle>
             <DialogDescription>
               Help Zania grow the directory with vendors you already trust.
             </DialogDescription>
@@ -763,8 +784,10 @@ export default function VendorDirectory() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {vendorCategories.filter((item) => item !== 'All').map((item) => (
-                    <SelectItem key={item} value={item}>{item}</SelectItem>
+                  {vendorCategoryCatalog.map((item) => (
+                    <SelectItem key={item.name} value={item.name}>
+                      {item.name} · {item.scope === 'personal' ? 'Personal' : 'Wedding'}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -808,7 +831,7 @@ export default function VendorDirectory() {
       <Dialog open={Boolean(recommendDialogVendor)} onOpenChange={(open) => !open && setRecommendDialogVendor(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Recommend {recommendDialogVendor?.business_name}</DialogTitle>
+            <DialogTitle className="marketing-h3">Recommend {recommendDialogVendor?.business_name}</DialogTitle>
             <DialogDescription>
               This adds your public Zania recommendation to the vendor profile. Founding planner recommendations show up as trust signals for couples.
             </DialogDescription>
@@ -837,12 +860,7 @@ export default function VendorDirectory() {
         </DialogContent>
       </Dialog>
 
-      <footer className="border-t border-border px-4 py-8 text-center text-sm text-muted-foreground sm:px-6">
-        <div className="flex items-center justify-center">
-          <BrandWordmark size="sm" showUnderline={false} className="origin-center scale-[0.9]" />
-        </div>
-        <p className="mt-2">Zania © {new Date().getFullYear()}</p>
-      </footer>
+      <PublicSiteFooter />
     </div>
   );
 }

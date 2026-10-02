@@ -1,10 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { createCorsHeaders } from "../_shared/cors.ts";
+import { assertActiveAuthSession, isAuthSessionError } from "../_shared/sessionGuard.ts";
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from "../_shared/demoGuard.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -12,17 +10,7 @@ const SUPABASE_ANON_KEY =
   Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ??
   '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const APP_BASE_URL = Deno.env.get('PUBLIC_APP_URL') ?? Deno.env.get('SITE_URL') ?? 'https://www.zaniaweddings.com';
-
-function jsonResponse(status: number, payload: Record<string, unknown>) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      ...corsHeaders,
-      'Content-Type': 'application/json',
-    },
-  });
-}
+const APP_BASE_URL = Deno.env.get('PUBLIC_APP_URL') ?? Deno.env.get('SITE_URL') ?? 'https://www.planwithzania.com';
 
 function htmlEscape(value: string) {
   return value
@@ -34,6 +22,16 @@ function htmlEscape(value: string) {
 }
 
 serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
+  const jsonResponse = (status: number, payload: Record<string, unknown>) =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
+    });
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -61,9 +59,21 @@ serve(async (req) => {
   if (authError || !authData.user) {
     return jsonResponse(401, { error: 'Unauthorized' });
   }
+  if (isTemporaryDemoUser(authData.user)) {
+    return jsonResponse(403, { error: DEMO_EXTERNAL_ACTION_MESSAGE, code: 'demo_action_blocked' });
+  }
+
+  try {
+    await assertActiveAuthSession(serviceClient, authHeader, authData.user.id);
+  } catch (error) {
+    if (isAuthSessionError(error)) {
+      return jsonResponse(error.status, { error: error.message });
+    }
+    throw error;
+  }
 
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-  const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Zania Weddings <onboarding@resend.dev>';
+  const RESEND_FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'Zania <hello@planwithzania.com>';
   if (!RESEND_API_KEY) {
     return jsonResponse(500, { error: 'RESEND_API_KEY not configured' });
   }
@@ -185,6 +195,10 @@ serve(async (req) => {
 
     return jsonResponse(200, { success: true });
   } catch (error) {
+    if (isAuthSessionError(error)) {
+      return jsonResponse(error.status, { error: error.message });
+    }
+
     console.error('send-workspace-vendor-invite error:', error);
     return jsonResponse(500, { error: error instanceof Error ? error.message : 'Unexpected error' });
   }

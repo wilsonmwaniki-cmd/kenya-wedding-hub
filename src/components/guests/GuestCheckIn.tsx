@@ -45,11 +45,11 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
   });
 
   const confirmed = guests.filter(g => g.rsvp_status === 'confirmed');
-  const checkedIn = guests.filter(g => g.checked_in).length;
+  const checkedIn = confirmed.filter(g => g.checked_in).length;
   const total = confirmed.length;
 
   const filtered = search.trim()
-    ? guests.filter(g => g.name.toLowerCase().includes(search.toLowerCase()))
+    ? confirmed.filter(g => g.name.toLowerCase().includes(search.toLowerCase()))
     : confirmed;
 
   const checkIn = async (guest: Guest) => {
@@ -57,7 +57,7 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
     if (!guest.wedding_id) {
       toast({
         title: 'Wedding workspace missing',
-        description: `${guest.name} is not attached to a wedding workspace yet, so check-in cannot start.`,
+        description: `${guest.name} is not linked to a wedding yet.`,
         variant: 'destructive',
       });
       return;
@@ -84,7 +84,7 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
       if (newStatus) {
         setLastAction({ id: guest.id, name: guest.name });
         toast({
-          title: data?.idempotent ? `${guest.name} is already checked in` : `✓ ${guest.name} checked in`,
+          title: data?.idempotent ? `${guest.name} is already checked in` : `${guest.name} checked in`,
         });
       } else {
         setLastAction(null);
@@ -125,16 +125,16 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
       {/* Header */}
       <div className="bg-card border-b border-border px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <UserCheck className="h-5 w-5 text-primary" />
-          <h1 className="font-display text-lg font-bold text-foreground">Guest Check-In</h1>
+          <UserCheck aria-hidden="true" className="h-5 w-5 text-primary" />
+          <h1 className="font-display text-lg font-bold text-foreground">Guest check-in</h1>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose}>
+        <Button variant="ghost" size="icon" aria-label="Close check-in" onClick={onClose}>
           <X className="h-5 w-5" />
         </Button>
       </div>
 
       {/* Stats bar */}
-      <div className="bg-card border-b border-border px-4 py-3 space-y-2 shrink-0">
+      <div aria-live="polite" className="bg-card border-b border-border px-4 py-3 space-y-2 shrink-0">
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-4">
             <span className="text-foreground font-semibold">{checkedIn} arrived</span>
@@ -148,11 +148,13 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
       {/* Search */}
       <div className="px-4 py-3 shrink-0">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <label htmlFor="guest-check-in-search" className="sr-only">Search confirmed guests</label>
+          <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
+            id="guest-check-in-search"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search guest name..."
+            placeholder="Search guests"
             className="pl-10"
             autoFocus
           />
@@ -168,7 +170,7 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
             exit={{ opacity: 0, height: 0 }}
             className="px-4 shrink-0"
           >
-            <div className="flex items-center justify-between bg-success/10 text-success rounded-lg px-3 py-2 text-sm">
+            <div role="status" className="flex items-center justify-between bg-success/10 text-success rounded-lg px-3 py-2 text-sm">
               <span>{lastAction.name} checked in</span>
               <Button variant="ghost" size="sm" className="text-success gap-1 h-7" onClick={undoCheckIn}>
                 <Undo2 className="h-3 w-3" /> Undo
@@ -187,20 +189,27 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
           >
+            <button
+              type="button"
+              className="w-full rounded-[1.5rem] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-label={g.checked_in ? `Undo check-in for ${g.name}` : `Check in ${g.name}`}
+              aria-pressed={g.checked_in}
+              disabled={pendingGuestId === g.id}
+              onClick={() => void checkIn(g)}
+            >
             <Card
-              className={`cursor-pointer transition-colors ${g.checked_in ? 'bg-success/5 border-success/20' : 'hover:bg-muted/50'} ${pendingGuestId === g.id ? 'pointer-events-none opacity-70' : ''}`}
-              onClick={() => checkIn(g)}
+              className={`transition-colors ${g.checked_in ? 'bg-success/5 border-success/20' : 'hover:bg-muted/50'} ${pendingGuestId === g.id ? 'opacity-70' : ''}`}
             >
               <CardContent className="flex items-center gap-3 py-3 px-4">
                 <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${
                   g.checked_in ? 'bg-success text-success-foreground' : 'bg-muted text-muted-foreground'
                 }`}>
                   {pendingGuestId === g.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
                   ) : g.checked_in ? (
-                    <CheckCircle2 className="h-4 w-4" />
+                    <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
                   ) : (
-                    <Users className="h-4 w-4" />
+                    <Users aria-hidden="true" className="h-4 w-4" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -219,11 +228,12 @@ export default function GuestCheckIn({ guests, onClose, onUpdate }: Props) {
                 )}
               </CardContent>
             </Card>
+            </button>
           </motion.div>
         ))}
         {filtered.length === 0 && (
           <p className="text-center text-muted-foreground py-12">
-            {search ? 'No guests found' : 'No confirmed guests yet'}
+            {search ? 'No guests found.' : 'No confirmed guests yet.'}
           </p>
         )}
       </div>

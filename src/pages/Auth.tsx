@@ -1,18 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Briefcase, Copy, Eye, EyeOff, Loader2, RefreshCw, ShieldCheck, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { setRememberSession, shouldRememberSession, supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { getHomeRouteForRole, isProfessionalSetupPending, type SignupRole } from '@/lib/roles';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
-import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import {
+  getEstimatorPlanDraft,
+  hasPendingEstimatorPlanDraft,
+  seedPendingEstimatorPlanForUser,
+} from '@/lib/estimatorPlanSeed';
 import {
   clearPendingOAuthSignupState,
   persistPendingOAuthSignupState,
@@ -34,8 +39,16 @@ import BrandWordmark from '@/components/BrandWordmark';
 import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import AppleAuthButton from '@/components/AppleAuthButton';
 import { normalizeHumanName, normalizeHumanNameInput } from '@/lib/names';
-import { isAppleAuthEnabled } from '@/lib/featureFlags';
+import { isAppleAuthEnabled, isPlanningExperimentEnabled } from '@/lib/featureFlags';
+import {
+  isEstimatorCoupleSignupEntry,
+  isLockedSignupEntry,
+  resolveAuthSignInAudience,
+  resolveSignupEntryStep,
+} from '@/lib/authEntryFlows';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
+import PublicSiteFooter from '@/components/PublicSiteFooter';
+import TurnstileChallenge from '@/components/TurnstileChallenge';
 
 type AuthEntryState = {
   mode?: 'signup' | 'signin';
@@ -54,6 +67,7 @@ type SignupSuccessState = {
   accent: string;
 };
 type OAuthProvider = 'google' | 'apple';
+type AccountPurpose = 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other';
 
 type SignupResultState = {
   requiresEmailConfirmation: boolean;
@@ -95,6 +109,14 @@ function buildSignupSuccessDescription(
   return signupResult.requiresEmailConfirmation ? confirmedMessage : instantAccessMessage;
 }
 
+const accountPurposeOptions: Array<{ value: AccountPurpose; label: string }> = [
+  { value: 'planning_my_own_wedding', label: 'Plan my wedding' },
+  { value: 'helping_family_or_friend', label: 'Help with a wedding' },
+  { value: 'professional_planner', label: 'Work as a planner' },
+  { value: 'vendor', label: 'Offer wedding services' },
+  { value: 'other', label: 'Something else' },
+];
+
 function getFallbackRouteFromUserMetadata(
   userMetadata: Record<string, unknown> | null | undefined,
   userEmail?: string | null,
@@ -125,13 +147,15 @@ function SignupTermsNotice({
   acceptedTerms,
   onAcceptedTermsChange,
   error,
+  compact = false,
 }: {
   acceptedTerms: boolean;
   onAcceptedTermsChange: (checked: boolean) => void;
   error?: string;
+  compact?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+    <div className={`rounded-2xl border border-border/60 bg-muted/20 px-4 ${compact ? 'py-2.5' : 'py-3'}`}>
       <div className="flex items-start gap-3">
         <Checkbox
           id="signup-terms"
@@ -139,7 +163,7 @@ function SignupTermsNotice({
           onCheckedChange={(checked) => onAcceptedTermsChange(Boolean(checked))}
           className="mt-0.5"
         />
-        <div className="space-y-1">
+        <div>
           <Label htmlFor="signup-terms" className="text-sm font-medium leading-6">
             I agree to the{' '}
             <Link to="/terms" target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">
@@ -151,9 +175,6 @@ function SignupTermsNotice({
             </Link>
             .
           </Label>
-          <p className="text-xs leading-5 text-muted-foreground">
-            Please review both documents before creating your Zania account.
-          </p>
           <FormFieldError message={error} />
         </div>
       </div>
@@ -174,6 +195,12 @@ export default function Auth() {
   const requestedFlow = searchParams.get('flow');
   const requestedAudience = searchParams.get('audience');
   const requestedRole = searchParams.get('role');
+  const isEstimatorCoupleEntry = isEstimatorCoupleSignupEntry({
+    mode: requestedMode,
+    flow: requestedFlow,
+    audience: requestedAudience,
+    role: requestedRole,
+  });
   const hasExplicitUrlAuthState = (
     location.pathname === '/sign-in'
     || searchParams.has('mode')
@@ -190,9 +217,14 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => shouldRememberSession());
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaError, setCaptchaError] = useState<string | null>(null);
+  const [captchaChallengeKey, setCaptchaChallengeKey] = useState(0);
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [accountPurpose, setAccountPurpose] = useState<AccountPurpose>('planning_my_own_wedding');
   const [signupMethod, setSignupMethod] = useState<SignupMethod | null>(defaultToSignup ? null : 'email');
   const [selectedAudience, setSelectedAudience] = useState<AuthAudience | null>(null);
   const [signupPath, setSignupPath] = useState<WeddingSignupIntent | null>(null);
@@ -218,6 +250,20 @@ export default function Auth() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const appleAuthEnabled = isAppleAuthEnabled();
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
+  const requiresCaptcha = Boolean(turnstileSiteKey);
+  const resetCaptcha = useCallback(() => {
+    if (!requiresCaptcha) return;
+    setCaptchaToken(null);
+    setCaptchaChallengeKey((current) => current + 1);
+  }, [requiresCaptcha]);
+  const handleCaptchaToken = useCallback((token: string | null) => {
+    setCaptchaToken(token);
+    if (token) setCaptchaError(null);
+  }, []);
+  const handleCaptchaError = useCallback((message: string | null) => {
+    setCaptchaError(message);
+  }, []);
 
   const hasHomepageCarryover = Boolean(entryState?.role);
   const audience: AuthAudience | null = selectedAudience;
@@ -236,13 +282,15 @@ export default function Auth() {
   const isSignupAccountStep = isSignUp && signupStep === 'account';
   const isSignupRoleStep = isSignUp && signupStep === 'role';
   const isSignupSuccessStep = isSignUp && signupStep === 'success' && !!signupSuccess;
-  const hasLockedSignupTrack = isSignUp && (
-    (requestedFlow === 'join_wedding')
-    || (requestedAudience === 'professional' && (requestedRole === 'planner' || requestedRole === 'vendor'))
-  );
+  const hasLockedSignupTrack = isSignUp && isLockedSignupEntry({
+    mode: requestedMode,
+    flow: requestedFlow,
+    audience: requestedAudience,
+    role: requestedRole,
+  });
   const showGenericModeChooser = false;
   const showGenericAudienceChooser = false;
-  const signupProgressStep = isSignupSuccessStep ? 4 : isSignupRoleStep ? 3 : isSignupAccountStep ? 2 : 1;
+  const signupProgressStep = isSignupRoleStep ? 3 : isSignupAccountStep ? 2 : 1;
   const authErrorMessage = useMemo(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('auth_error') !== 'missing_role') return null;
@@ -252,6 +300,22 @@ export default function Auth() {
     if (role === 'vendor') return 'This email does not have a vendor account yet. Choose vendor sign up first.';
     return 'This email does not have a wedding account yet. Choose the matching sign up path first.';
   }, [location.search]);
+
+  useEffect(() => {
+    if (!isSignUp) return;
+
+    if (signupPath === 'professional') {
+      setAccountPurpose(professionalSignupRole === 'vendor' ? 'vendor' : 'professional_planner');
+      return;
+    }
+
+    if (signupPath === 'join_wedding') {
+      setAccountPurpose('helping_family_or_friend');
+      return;
+    }
+
+    setAccountPurpose('planning_my_own_wedding');
+  }, [isSignUp, professionalSignupRole, signupPath]);
 
   useEffect(() => {
     if (hasExplicitUrlAuthState || location.pathname === '/sign-in') return;
@@ -335,8 +399,13 @@ export default function Auth() {
       setIsForgot(false);
       setPostSignupMessage(null);
       setSignupSuccess(null);
-      setSelectedAudience(null);
-      setSignupPath(null);
+      const signInAudience = resolveAuthSignInAudience(audienceParam);
+      setSelectedAudience(signInAudience);
+      setSignupPath(signInAudience === 'couple'
+        ? 'create_wedding'
+        : signInAudience === 'professional'
+          ? 'professional'
+          : null);
       setProfessionalSignupRole(null);
       setSignupMethod('email');
       setSignupStep('account');
@@ -410,10 +479,14 @@ export default function Auth() {
       setSelectedAudience(audienceParam);
       setSignupPath(audienceParam === 'couple' ? (flow === 'join_wedding' ? 'join_wedding' : 'create_wedding') : 'professional');
       if (mode === 'signup') {
-        setSignupMethod('email');
-        setSignupStep((flow === 'join_wedding' || (audienceParam === 'professional' && (roleParam === 'planner' || roleParam === 'vendor')))
-          ? 'account'
-          : 'role');
+        const entryStep = resolveSignupEntryStep({
+          mode,
+          flow,
+          audience: audienceParam,
+          role: roleParam,
+        });
+        setSignupMethod(entryStep === 'account' ? 'email' : null);
+        setSignupStep(entryStep);
       }
     }
 
@@ -480,27 +553,32 @@ export default function Auth() {
           return;
         }
 
-        if (hasPendingEstimatorPlanDraft()) {
+        if (hasPendingEstimatorPlanDraft(user.user_metadata)) {
           const seeded = await seedPendingEstimatorPlanForUser({
             userId: user.id,
             role: profile.role,
             plannerType: profile.planner_type,
+            userMetadata: user.user_metadata,
           });
 
           if (seeded && active) {
             setRedirecting(true);
-            toast({
-              title: 'Wedding plan ready',
-              description: 'Your estimate was turned into a starter budget, vendor list, and tasks.',
-            });
-            navigate('/budget', { replace: true });
+            navigate(
+              isPlanningExperimentEnabled()
+                ? '/plan'
+                : getHomeRouteForRole(profile.role, profile.planner_type),
+              { replace: true },
+            );
             return;
           }
         }
 
         if (active) {
           setRedirecting(true);
-          navigate(getHomeRouteForRole(profile.role, profile.planner_type), { replace: true });
+          const safeRequestedPath = requestedPath?.startsWith('/') && !requestedPath.startsWith('//')
+            ? requestedPath
+            : null;
+          navigate(safeRequestedPath || getHomeRouteForRole(profile.role, profile.planner_type), { replace: true });
         }
       } catch (err: any) {
         if (!active) return;
@@ -518,7 +596,7 @@ export default function Auth() {
     return () => {
       active = false;
     };
-  }, [loading, navigate, profile?.planner_type, profile?.role, redirecting, toast, user]);
+  }, [loading, navigate, profile?.planner_type, profile?.role, redirecting, requestedPath, toast, user]);
 
   const createGeneratedPassword = () => {
     const nextPassword = createSecurePassword();
@@ -567,6 +645,7 @@ export default function Auth() {
     setFullName('');
     setEmail('');
     setPassword('');
+    setAccountPurpose('planning_my_own_wedding');
     setGeneratedPassword(null);
     setShowPassword(false);
     setAcceptedTerms(false);
@@ -670,10 +749,6 @@ export default function Auth() {
       throw new Error(`Choose whether you are continuing as a couple or wedding professional first.`);
     }
 
-    if (!signupMethod || signupMethod === 'email') {
-      throw new Error('Choose Google or Apple first before continuing with a social signup.');
-    }
-
     if (!selectedAudience || !signupPath) {
       throw new Error('Choose how you are signing up before continuing.');
     }
@@ -701,11 +776,16 @@ export default function Auth() {
     setForgotErrors(nextErrors);
     setForgotSubmitError(null);
     if (Object.keys(nextErrors).length > 0) return;
+    if (requiresCaptcha && !captchaToken) {
+      setForgotSubmitError('Complete the quick security check before continuing.');
+      return;
+    }
 
     setSubmitting(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
         redirectTo: `${window.location.origin}/reset-password?type=recovery`,
+        captchaToken: captchaToken ?? undefined,
       });
       if (error) throw error;
       toast({ title: 'Reset link sent!', description: 'Check your email for the password reset link.' });
@@ -716,6 +796,7 @@ export default function Auth() {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
+      resetCaptcha();
     }
   };
 
@@ -757,6 +838,10 @@ export default function Auth() {
     setFormErrors(nextErrors);
     setSubmitError(null);
     if (Object.keys(nextErrors).length > 0) return;
+    if (requiresCaptcha && !captchaToken) {
+      setSubmitError('Complete the quick security check before continuing.');
+      return;
+    }
 
     setSubmitting(true);
 
@@ -775,6 +860,9 @@ export default function Auth() {
           persistWeddingIntentIfNeeded();
           const signupResult = await signUp(email, password, fullName, 'couple', {
             signupIntent: 'create_wedding',
+            accountPurpose,
+            estimatorPlanDraft: requestedFlow === 'estimator' ? getEstimatorPlanDraft() : null,
+            captchaToken,
           });
           setSignupSuccess({
             title: 'Welcome to Zania',
@@ -794,7 +882,9 @@ export default function Auth() {
           persistWeddingIntentIfNeeded();
           const signupResult = await signUp(email, password, fullName, 'couple', {
             signupIntent: 'join_wedding',
+            accountPurpose,
             weddingCode: normalizeJoinCode(weddingCode),
+            captchaToken,
           });
           setSignupSuccess({
             title: 'You are in',
@@ -815,7 +905,9 @@ export default function Auth() {
           clearPendingProfessionalSetup();
           const signupResult = await signUp(email, password, fullName, professionalSignupRole, {
             signupIntent: 'professional',
+            accountPurpose,
             professionalRoleLocked: true,
+            captchaToken,
           });
           setSignupSuccess({
             title: 'You joined the atelier',
@@ -830,19 +922,33 @@ export default function Auth() {
         }
       } else {
         persistWeddingIntentIfNeeded();
-        await signIn(email, password, adminEntry ? { audience: 'admin' } : undefined);
+        setRememberSession(rememberMe);
+        await signIn(
+          email,
+          password,
+          adminEntry
+            ? { audience: 'admin', captchaToken }
+            : audience
+              ? { audience, captchaToken }
+              : { captchaToken },
+        );
       }
     } catch (err: any) {
       setSubmitError(err.message || 'We could not complete that request right now.');
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
+      resetCaptcha();
     }
   };
 
   const handleOAuthSignIn = async (provider: 'google' | 'apple') => {
     setOauthSubmittingProvider(provider);
     try {
+      if (requiresCaptcha && !captchaToken) {
+        throw new Error('Complete the quick security check before continuing.');
+      }
+      setRememberSession(rememberMe);
       validateOAuthIntent();
       persistWeddingIntentIfNeeded();
       const pendingVendorClaim = readPendingVendorClaim();
@@ -886,6 +992,7 @@ export default function Auth() {
         ? {
             audience: 'admin' as const,
             mode: 'signin' as const,
+            captchaToken,
           }
         : audience
           ? {
@@ -893,9 +1000,11 @@ export default function Auth() {
               mode: isSignUp ? 'signup' : 'signin',
               targetRole: audience === 'professional' ? (isSignUp ? professionalSignupRole : null) : 'couple',
               plannerType: null,
+              captchaToken,
             }
           : {
               mode: 'signin' as const,
+              captchaToken,
             };
 
       if (provider === 'google') {
@@ -906,6 +1015,7 @@ export default function Auth() {
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
       setOauthSubmittingProvider(null);
+      resetCaptcha();
     }
   };
 
@@ -918,27 +1028,30 @@ export default function Auth() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-warm p-4">
-      <Card className="w-full max-w-2xl shadow-warm border-border/50">
-        <CardHeader className="space-y-3 text-center">
+    <div className={`min-h-screen bg-gradient-warm ${isEstimatorCoupleEntry ? 'p-3' : 'p-4'}`}>
+      <div className={`mx-auto flex max-w-2xl items-center justify-center ${isEstimatorCoupleEntry ? 'min-h-[calc(100vh-1.5rem)]' : 'min-h-[calc(100vh-2rem)]'}`}>
+        <Card className="w-full shadow-warm border-border/50">
+        <CardHeader className={isEstimatorCoupleEntry ? 'space-y-2 pb-3 text-center' : 'space-y-3 text-center'}>
           <div className="mx-auto">
             <BrandWordmark size="md" />
           </div>
           <CardTitle className="font-display text-xl">
             {isForgot
-              ? 'Forgot Password'
+              ? 'Reset your password'
               : isSignupSuccessStep
                 ? signupSuccess.title
               : isSignUp && isSignupMethodStep
-                ? 'Create your Zania account'
+                ? 'Create account'
               : isSignUp && isSignupAccountStep
-                ? 'Tell us about you'
+                ? isEstimatorCoupleEntry
+                  ? 'Save your wedding plan'
+                  : 'Your details'
               : isSignUp && isSignupRoleStep
-                ? 'Choose your path'
+                ? 'Choose account'
               : adminEntry
-                ? 'Admin Sign In'
+                ? 'Admin sign in'
                 : !isSignUp
-                  ? 'Enter Zania'
+                  ? 'Sign in to Zania'
                 : vendorClaimEntry
                 ? 'Create Your Vendor Account'
                 : audience === 'professional'
@@ -949,21 +1062,23 @@ export default function Auth() {
                   ? 'Start Your Wedding'
                   : 'Welcome Back'}
           </CardTitle>
-          <CardDescription>
+          {!isEstimatorCoupleEntry ? <CardDescription>
             {isForgot
-              ? 'Enter your email to receive a reset link.'
+              ? 'We will email you a reset link.'
               : isSignupSuccessStep
                 ? signupSuccess.description
               : isSignUp && isSignupMethodStep
-                ? 'Start with one clear choice, then we will guide you the rest of the way.'
+                ? 'Choose how to create your account.'
               : isSignUp && isSignupAccountStep
-                ? 'Secure your account details first, then we will lock in the workspace that fits you.'
+                ? isEstimatorCoupleEntry
+                  ? 'Your couple workspace is selected. Continue with Google or create it with email.'
+                  : 'Enter the details you will use to sign in.'
               : isSignUp && isSignupRoleStep
-                ? 'Pick the account you want Zania to open for you so the setup stays tailored from the start.'
+                ? 'Choose what you want to do with Zania.'
               : adminEntry
-                ? 'Open the private Zania operations backend.'
+                ? 'Use your admin account.'
                 : !isSignUp
-                  ? 'Use your Zania details and we will take you straight back into the right workspace.'
+                  ? 'Use your email and password.'
                 : vendorClaimEntry
                 ? 'Sign in with the invited email to claim this vendor listing, or create a vendor account first.'
                 : audience === 'professional'
@@ -979,9 +1094,32 @@ export default function Auth() {
                       ? 'Create your account now. You will choose the right path in the next step.'
                       : 'Choose whether this account starts a new wedding or joins one that already invited you.'
                     : 'Use the email and password already tied to your Zania account.'}
-          </CardDescription>
+          </CardDescription> : null}
         </CardHeader>
-        <CardContent>
+        <CardContent className={isEstimatorCoupleEntry ? 'pb-4' : undefined}>
+          {requiresCaptcha && !isSignupSuccessStep ? (
+            <div className="mb-5 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
+              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <ShieldCheck className="h-4 w-4 text-success" aria-hidden="true" />
+                {captchaToken ? 'Security check completed automatically' : 'Quick security check'}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {captchaToken ? 'No action was needed. You can continue securely.' : 'This protects your account from automated sign-ins.'}
+              </p>
+              {captchaError ? <FormFieldError message={captchaError} /> : null}
+              {!captchaToken ? (
+                <div className="mt-3">
+                  <TurnstileChallenge
+                    key={captchaChallengeKey}
+                    action="authenticate"
+                    siteKey={turnstileSiteKey}
+                    onVerify={handleCaptchaToken}
+                    onError={handleCaptchaError}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {isForgot ? (
             <form onSubmit={handleForgotPassword} className="space-y-4">
               <FormSubmitError message={forgotSubmitError} />
@@ -1001,7 +1139,7 @@ export default function Auth() {
                 />
                 <FormFieldError message={forgotErrors.email} />
               </div>
-              <Button type="submit" className="w-full" disabled={submitting}>
+              <Button type="submit" className="w-full" disabled={submitting || (requiresCaptcha && !captchaToken)}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Send Reset Link
               </Button>
@@ -1040,13 +1178,11 @@ export default function Auth() {
                           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#c2724f]">
                             {signupSuccess.accent}
                           </p>
-                          <h3 className="mt-2 font-display text-3xl text-[#201814]">
-                            Welcome to a calmer way to plan.
-                          </h3>
+                          <h3 className="marketing-h3 mt-2 text-[#201814]">Account created</h3>
                         </div>
                       </div>
                       <p className="max-w-2xl text-sm leading-7 text-[#6f5747]">
-                        Your Zania account is ready. Confirm your email first, then come back and we’ll open the right workspace with your planning, vendors, guests, and next steps waiting for you.
+                        Confirm your email, then sign in.
                       </p>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Button
@@ -1081,35 +1217,33 @@ export default function Auth() {
               )}
 
               {postSignupMessage && !isSignUp && (
-                <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left">
-                  <p className="text-sm font-medium text-emerald-900">Check your email, then sign in</p>
-                  <p className="mt-1 text-sm text-emerald-800">{postSignupMessage}</p>
+                <div className="semantic-surface-success mb-5 rounded-2xl border px-4 py-3 text-left">
+                  <p className="text-sm font-medium text-success">Check your email, then sign in</p>
+                  <p className="mt-1 text-sm text-foreground/75">{postSignupMessage}</p>
                 </div>
               )}
 
               {!isSignupSuccessStep && authErrorMessage && (
-                <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left">
-                  <p className="text-sm font-medium text-red-900">That account does not exist yet</p>
-                  <p className="mt-1 text-sm text-red-800">{authErrorMessage}</p>
+                <div className="semantic-surface-danger mb-5 rounded-2xl border px-4 py-3 text-left">
+                  <p className="text-sm font-medium text-destructive">That account does not exist yet</p>
+                  <p className="mt-1 text-sm text-foreground/75">{authErrorMessage}</p>
                 </div>
               )}
 
               {!isSignupSuccessStep && (
                 <>
-              {!isSignUp && (
-                <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4 text-left">
+              {!isSignUp && adminEntry && (
+                <div className="semantic-surface-info mb-5 rounded-2xl border px-4 py-4 text-left">
                   <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-full bg-primary/12 p-2 text-primary">
+                    <div className="mt-0.5 rounded-full border border-[hsl(var(--info-soft-border))] bg-[hsl(var(--info-soft))] p-2 text-info">
                       <ShieldCheck className="h-4 w-4" />
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-foreground">
-                        {adminEntry ? 'Admin backend' : 'Welcome back'}
+                        Admin access
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {adminEntry
-                          ? 'Sign in with your admin account to open the backend portal.'
-                          : 'Sign in once and Zania will open the right workspace automatically.'}
+                        Sign in with your admin account.
                       </p>
                     </div>
                   </div>
@@ -1118,28 +1252,30 @@ export default function Auth() {
 
               {isSignUp && (
                 <>
-                  <div className="mb-5 rounded-[28px] border border-[#ead9c8] bg-[linear-gradient(180deg,#fffaf4,#f8efe6)] px-5 py-4 text-left shadow-[0_16px_45px_rgba(194,114,79,0.08)]">
+                  {!isEstimatorCoupleEntry ? <div className="mb-5 rounded-[28px] border border-[#ead9c8] bg-[linear-gradient(180deg,#fffaf4,#f8efe6)] px-5 py-4 text-left shadow-[0_16px_45px_rgba(194,114,79,0.08)]">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#c2724f]">
-                          Guided signup
+                          Create account
                         </p>
                         <p className="mt-1 text-sm font-medium text-[#2c211c]">
-                          Step {signupProgressStep} of 4
+                          Step {signupProgressStep} of 3
                         </p>
                       </div>
                       <p className="text-xs text-[#7c6353]">
-                        {isSignupMethodStep
+                        {isEstimatorCoupleEntry
+                          ? 'Create your couple account'
+                          : isSignupMethodStep
                           ? 'How do you want to start?'
                           : isSignupAccountStep
                             ? 'Secure your account'
                             : isSignupRoleStep
-                              ? 'Choose your workspace'
+                              ? 'Choose your account'
                               : 'Almost done'}
                       </p>
                     </div>
-                    <div className="mt-4 grid grid-cols-4 gap-2">
-                      {[1, 2, 3, 4].map((step) => (
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      {[1, 2, 3].map((step) => (
                         <div
                           key={step}
                           className={`h-2 rounded-full ${
@@ -1148,89 +1284,26 @@ export default function Auth() {
                         />
                       ))}
                     </div>
-                  </div>
+                  </div> : null}
 
-                  {!isSignupMethodStep && (
-                    <motion.div
-                      initial={hasHomepageCarryover ? { opacity: 0, y: 18, scale: 0.985 } : false}
-                      animate={hasHomepageCarryover ? { opacity: 1, y: 0, scale: 1 } : { opacity: 1, y: 0, scale: 1 }}
-                      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                      className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {signupMethod === 'email'
-                            ? 'Email signup selected'
-                            : signupMethod === 'google'
-                              ? 'Google signup selected'
-                              : signupMethod === 'apple'
-                                ? 'Apple signup selected'
-                                : 'Choose your account type'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {audience === 'couple' && signupPath === 'join_wedding'
-                            ? 'Use the wedding code the couple shared with you.'
-                            : audience === 'couple'
-                              ? 'This will open a shared couple workspace.'
-                              : audience === 'professional'
-                                ? professionalSignupRole === 'vendor'
-                                  ? 'This will open your vendor portfolio and bookings workspace.'
-                                  : professionalSignupRole === 'planner'
-                                    ? 'This will open your planner operations workspace.'
-                                    : 'Choose whether you are joining as planner or vendor.'
-                                : signupMethod === 'email'
-                                  ? 'You can finish this with your email details.'
-                                  : 'You will continue securely with your selected provider in the final step.'}
-                        </p>
-                      </div>
-                      {audience === 'couple' && isSignupRoleStep && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setPostSignupMessage(null);
-                            setSignupPath(signupPath === 'join_wedding' ? 'create_wedding' : 'join_wedding');
-                          }}
-                        >
-                          {signupPath === 'join_wedding' ? 'Start a wedding instead' : 'I have a wedding code'}
-                        </Button>
-                      )}
-                    </motion.div>
-                  )}
                 </>
               )}
 
-              {isSignUp && hasChosenAudiencePath && (
-                <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-                  <p className="text-sm font-medium text-foreground">14-day full-access beta trial</p>
-                  <p className="mt-1 text-xs leading-6 text-muted-foreground">
-                    New accounts start with two weeks of premium access, so you can test the full experience before any upgrade is required.
-                  </p>
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className={isEstimatorCoupleEntry ? 'space-y-3' : 'space-y-4'}>
                 {isSignUp ? (
                   isSignupMethodStep ? (
                     <>
-                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-                        <p className="text-sm font-medium text-foreground">Step 1 of 4</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Choose how you want to begin. We will only show the next choice after this one.
-                        </p>
-                      </div>
                       <div className="grid gap-3">
                         <GoogleAuthButton
                           loading={oauthSubmittingProvider === 'google'}
-                          disabled={submitting || oauthSubmitting}
+                          disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}
                           onClick={() => chooseSignupMethod('google')}
                           text="Start with Google"
                         />
                         {appleAuthEnabled ? (
                           <AppleAuthButton
                             loading={oauthSubmittingProvider === 'apple'}
-                            disabled={submitting || oauthSubmitting}
+                            disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}
                             onClick={() => chooseSignupMethod('apple')}
                             text="Start with Apple"
                           />
@@ -1247,35 +1320,67 @@ export default function Auth() {
                     </>
                   ) : isSignupAccountStep ? (
                     <>
-                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-                        <p className="text-sm font-medium text-foreground">Step 2 of 4</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {hasLockedSignupTrack
-                            ? selectedAudience === 'professional'
-                              ? 'Add your details and we will finish creating your vendor account.'
-                              : 'Add your details and wedding code so we can join you to the right wedding.'
-                            : 'Add your details here, then we will move to the workspace choice.'}
-                        </p>
-                      </div>
+                      {isEstimatorCoupleEntry ? (
+                        <div className="semantic-surface-success rounded-2xl border px-4 py-2.5 text-left">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">Couple account selected</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">Your estimate will be saved after signup.</p>
+                          </div>
+                        </div>
+                      ) : null}
                       <FormSubmitError message={submitError} />
-                      {hasLockedSignupTrack ? (
+                      {isEstimatorCoupleEntry ? (
+                        <div className="space-y-3">
+                          <SignupTermsNotice
+                            acceptedTerms={acceptedTerms}
+                            onAcceptedTermsChange={(checked) => {
+                              setAcceptedTerms(checked);
+                              setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
+                            }}
+                            error={formErrors.acceptedTerms}
+                            compact
+                          />
+                          <GoogleAuthButton
+                            loading={oauthSubmittingProvider === 'google'}
+                            disabled={submitting || oauthSubmitting || !acceptedTerms || (requiresCaptcha && !captchaToken)}
+                            onClick={handleGoogleSignIn}
+                            text="Continue with Google"
+                          />
+                          <div className="relative py-1">
+                            <div className="absolute inset-0 flex items-center">
+                              <span className="w-full border-t border-border/60" />
+                            </div>
+                            <div className="relative flex justify-center">
+                              <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                                Or use email
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                      {hasLockedSignupTrack && selectedAudience !== 'professional' && !isEstimatorCoupleEntry ? (
                         <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
                           <p className="text-sm font-medium text-foreground">
                             {selectedAudience === 'professional'
                               ? professionalSignupRole === 'planner'
                                 ? 'Planner workspace selected'
                                 : 'Vendor workspace selected'
-                              : 'Wedding join path selected'}
+                              : isEstimatorCoupleEntry
+                                ? 'Couple workspace selected'
+                                : 'Wedding join path selected'}
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
                             {selectedAudience === 'professional'
                               ? professionalSignupRole === 'planner'
                                 ? 'This account will open your planner operations workspace right after setup.'
                                 : 'This account will open your vendor portfolio, bookings, and listing workspace.'
-                              : 'Use the same invited email and the wedding code the couple shared with you.'}
+                              : isEstimatorCoupleEntry
+                                ? 'Your estimate will be saved into this private wedding workspace after signup.'
+                                : 'Use the same invited email and the wedding code the couple shared with you.'}
                           </p>
                         </div>
                       ) : null}
+                      <div className={isEstimatorCoupleEntry ? 'grid gap-3 sm:grid-cols-2' : 'contents'}>
                       <div className="space-y-2">
                         <Label htmlFor="name">Full Name</Label>
                         <Input
@@ -1293,6 +1398,22 @@ export default function Auth() {
                         <FormFieldError message={formErrors.fullName} />
                       </div>
 
+                      {!isEstimatorCoupleEntry ? <div className="space-y-2">
+                        <Label htmlFor="account-purpose">How will you use Zania?</Label>
+                        <Select value={accountPurpose} onValueChange={(value: AccountPurpose) => setAccountPurpose(value)}>
+                          <SelectTrigger id="account-purpose">
+                            <SelectValue placeholder="Choose one" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {accountPurposeOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div> : null}
+
                       <div className="space-y-2">
                         <Label htmlFor="email">Your email</Label>
                         <Input
@@ -1309,10 +1430,12 @@ export default function Auth() {
                         />
                         <FormFieldError message={formErrors.email} />
                       </div>
+                      </div>
 
                       <div className="space-y-2">
                         <Label htmlFor="password">Password</Label>
                         <Input
+                          key={showPassword ? 'signup-password-visible' : 'signup-password-hidden'}
                           id="password"
                           type={showPassword ? 'text' : 'password'}
                           value={password}
@@ -1329,7 +1452,38 @@ export default function Auth() {
                           minLength={6}
                         />
                         <FormFieldError message={formErrors.password} />
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        {isEstimatorCoupleEntry ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs text-muted-foreground">
+                              {generatedPassword ? 'Generated securely. Save it safely.' : 'Use at least 6 characters.'}
+                            </p>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={createGeneratedPassword}
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                Generate
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                onClick={() => setShowPassword((current) => !current)}
+                                aria-controls="password"
+                                aria-pressed={showPassword}
+                                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                              >
+                                {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                {showPassword ? 'Hide' : 'Show'}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex flex-wrap items-center gap-2">
                             <Button
                               type="button"
@@ -1347,6 +1501,9 @@ export default function Auth() {
                               variant="ghost"
                               className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
                               onClick={() => setShowPassword((current) => !current)}
+                              aria-controls="password"
+                              aria-pressed={showPassword}
+                              aria-label={showPassword ? 'Hide password' : 'Show password'}
                             >
                               {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                               {showPassword ? 'Hide' : 'Show'}
@@ -1369,7 +1526,7 @@ export default function Auth() {
                               ? 'Generated for you. Save it somewhere safe before continuing.'
                               : 'Use at least 6 characters, or generate one instantly.'}
                           </p>
-                        </div>
+                        </div>}
                       </div>
 
                       {selectedAudience === 'couple' && signupPath === 'join_wedding' ? (
@@ -1390,24 +1547,33 @@ export default function Auth() {
                         </div>
                       ) : null}
 
-                      <SignupTermsNotice
-                        acceptedTerms={acceptedTerms}
-                        onAcceptedTermsChange={(checked) => {
-                          setAcceptedTerms(checked);
-                          setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
-                        }}
-                        error={formErrors.acceptedTerms}
-                      />
+                      {!isEstimatorCoupleEntry ? (
+                        <SignupTermsNotice
+                          acceptedTerms={acceptedTerms}
+                          onAcceptedTermsChange={(checked) => {
+                            setAcceptedTerms(checked);
+                            setFormErrors((current) => ({ ...current, acceptedTerms: undefined }));
+                          }}
+                          error={formErrors.acceptedTerms}
+                        />
+                      ) : null}
 
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <Button type="button" variant="outline" className="w-full" onClick={resetSignupWizard}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => isEstimatorCoupleEntry ? navigate('/') : resetSignupWizard()}
+                        >
                           Back
                         </Button>
                         {hasLockedSignupTrack ? (
-                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting}>
+                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}>
                             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {signupPath === 'join_wedding'
                               ? 'Create account and join'
+                              : selectedAudience === 'couple'
+                                ? 'Create couple account'
                               : professionalSignupRole === 'planner'
                                 ? 'Create planner account'
                                 : 'Create vendor account'}
@@ -1421,12 +1587,6 @@ export default function Auth() {
                     </>
                   ) : (
                     <>
-                      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
-                        <p className="text-sm font-medium text-foreground">Step 3 of 4</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Lock the workspace you want so Zania sets up the right journey from day one.
-                        </p>
-                      </div>
                       <FormSubmitError message={submitError} />
                       <div className="grid gap-3">
                         <button
@@ -1440,9 +1600,59 @@ export default function Auth() {
                         >
                           <p className="text-sm font-semibold text-foreground">Couple account</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Shared wedding planning, budgets, guests, registry, approvals, and timeline coordination.
+                            Plan your wedding.
                           </p>
                         </button>
+                        <AnimatePresence initial={false}>
+                          {selectedAudience === 'couple' && (
+                            <motion.div
+                              key="couple-account-options"
+                              initial={{ height: 0, opacity: 0, y: -8 }}
+                              animate={{ height: 'auto', opacity: 1, y: 0 }}
+                              exit={{ height: 0, opacity: 0, y: -8 }}
+                              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                              className="overflow-hidden"
+                            >
+                              <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={signupPath === 'create_wedding' ? 'default' : 'outline'}
+                                    onClick={() => setSignupPath('create_wedding')}
+                                  >
+                                    Start a new wedding
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant={signupPath === 'join_wedding' ? 'default' : 'outline'}
+                                    onClick={() => setSignupPath('join_wedding')}
+                                  >
+                                    I have a wedding code
+                                  </Button>
+                                </div>
+                                {showJoinDetails && (
+                                  <div className="space-y-2">
+                                    <Label htmlFor="wedding-code">Wedding Code</Label>
+                                    <Input
+                                      id="wedding-code"
+                                      value={weddingCode}
+                                      onChange={(event) => {
+                                        setWeddingCode(normalizeJoinCode(event.target.value));
+                                        setFormErrors((current) => ({ ...current, weddingCode: undefined }));
+                                        setSubmitError(null);
+                                      }}
+                                      placeholder="e.g. ZN-3RM94X"
+                                      required
+                                    />
+                                    <FormFieldError message={formErrors.weddingCode} />
+                                  </div>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                         <button
                           type="button"
                           onClick={() => chooseSignupRole('planner')}
@@ -1454,7 +1664,7 @@ export default function Auth() {
                         >
                           <p className="text-sm font-semibold text-foreground">Planner account</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Client workspaces, approvals, planning operations, and professional coordination tools.
+                            Plan weddings for clients.
                           </p>
                         </button>
                         <button
@@ -1468,50 +1678,10 @@ export default function Auth() {
                         >
                           <p className="text-sm font-semibold text-foreground">Vendor account</p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Portfolio, listing, leads, pricing, and booking management for your wedding business.
+                            Run your wedding business.
                           </p>
                         </button>
                       </div>
-
-                      {selectedAudience === 'couple' && (
-                        <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={signupPath === 'create_wedding' ? 'default' : 'outline'}
-                              onClick={() => setSignupPath('create_wedding')}
-                            >
-                              Start a new wedding
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={signupPath === 'join_wedding' ? 'default' : 'outline'}
-                              onClick={() => setSignupPath('join_wedding')}
-                            >
-                              I have a wedding code
-                            </Button>
-                          </div>
-                          {showJoinDetails && (
-                            <div className="space-y-2">
-                              <Label htmlFor="wedding-code">Wedding Code</Label>
-                              <Input
-                                id="wedding-code"
-                                value={weddingCode}
-                                onChange={(event) => {
-                                  setWeddingCode(normalizeJoinCode(event.target.value));
-                                  setFormErrors((current) => ({ ...current, weddingCode: undefined }));
-                                  setSubmitError(null);
-                                }}
-                                placeholder="e.g. ZN-3RM94X"
-                                required
-                              />
-                              <FormFieldError message={formErrors.weddingCode} />
-                            </div>
-                          )}
-                        </div>
-                      )}
 
                       <SignupTermsNotice
                         acceptedTerms={acceptedTerms}
@@ -1533,7 +1703,7 @@ export default function Auth() {
                           Back
                         </Button>
                         {signupMethod === 'email' ? (
-                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath}>
+                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath || (requiresCaptcha && !captchaToken)}>
                             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {signupPath === 'create_wedding'
                               ? 'Create couple account'
@@ -1546,14 +1716,14 @@ export default function Auth() {
                         ) : signupMethod === 'google' ? (
                           <GoogleAuthButton
                             loading={oauthSubmittingProvider === 'google'}
-                            disabled={submitting || oauthSubmitting || !hasChosenPath}
+                            disabled={submitting || oauthSubmitting || !hasChosenPath || (requiresCaptcha && !captchaToken)}
                             onClick={handleGoogleSignIn}
                             text="Continue with Google"
                           />
                         ) : appleAuthEnabled ? (
                           <AppleAuthButton
                             loading={oauthSubmittingProvider === 'apple'}
-                            disabled={submitting || oauthSubmitting || !hasChosenPath}
+                            disabled={submitting || oauthSubmitting || !hasChosenPath || (requiresCaptcha && !captchaToken)}
                             onClick={handleAppleSignIn}
                             text="Continue with Apple"
                           />
@@ -1564,34 +1734,32 @@ export default function Auth() {
                   )
                 ) : (
                   <>
-                    {!adminEntry ? (
-                      <div className="space-y-3">
-                        <GoogleAuthButton
-                          loading={oauthSubmittingProvider === 'google' && !submitting}
-                          disabled={submitting || oauthSubmitting}
-                          onClick={handleGoogleSignIn}
-                          text="Continue with Google"
-                        />
-                        {appleAuthEnabled ? (
+                    <div className="space-y-3">
+                      <GoogleAuthButton
+                        loading={oauthSubmittingProvider === 'google' && !submitting}
+                        disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}
+                        onClick={handleGoogleSignIn}
+                        text="Continue with Google"
+                      />
+                      {!adminEntry && appleAuthEnabled ? (
                           <AppleAuthButton
                             loading={oauthSubmittingProvider === 'apple' && !submitting}
-                            disabled={submitting || oauthSubmitting}
+                            disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}
                             onClick={handleAppleSignIn}
                             text="Continue with Apple"
                           />
-                        ) : null}
-                        <div className="relative py-1">
-                          <div className="absolute inset-0 flex items-center">
-                            <span className="w-full border-t border-border/60" />
-                          </div>
-                          <div className="relative flex justify-center">
-                            <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                              Or use email
-                            </span>
-                          </div>
+                      ) : null}
+                      <div className="relative py-1">
+                        <div className="absolute inset-0 flex items-center">
+                          <span className="w-full border-t border-border/60" />
+                        </div>
+                        <div className="relative flex justify-center">
+                          <span className="bg-card px-3 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                            Or use email
+                          </span>
                         </div>
                       </div>
-                    ) : null}
+                    </div>
 
                     <FormSubmitError message={submitError} />
                     <div className="space-y-2">
@@ -1623,6 +1791,7 @@ export default function Auth() {
                         </button>
                       </div>
                       <Input
+                        key={showPassword ? 'signin-password-visible' : 'signin-password-hidden'}
                         id="password"
                         type={showPassword ? 'text' : 'password'}
                         value={password}
@@ -1643,29 +1812,35 @@ export default function Auth() {
                           variant="ghost"
                           className="gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
                           onClick={() => setShowPassword((current) => !current)}
+                          aria-controls="password"
+                          aria-pressed={showPassword}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
                         >
                           {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                           {showPassword ? 'Hide' : 'Show'}
                         </Button>
                       </div>
+                      <div className="flex items-start gap-3 pt-1">
+                        <Checkbox
+                          id="remember-me"
+                          checked={rememberMe}
+                          onCheckedChange={(checked) => setRememberMe(Boolean(checked))}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <Label htmlFor="remember-me" className="text-sm font-medium">Keep me signed in</Label>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">Leave this unchecked on a shared device.</p>
+                        </div>
+                      </div>
                     </div>
 
-                    <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath}>
+                    <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath || (requiresCaptcha && !captchaToken)}>
                       {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       {adminEntry ? 'Sign in to admin' : 'Sign in'}
                     </Button>
                   </>
                 )}
               </form>
-
-              {!isSignUp && !adminEntry ? (
-                <div className="mt-5 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
-                  <p className="text-sm font-medium text-foreground">One sign-in. The right workspace.</p>
-                  <p className="mt-1 text-xs leading-6 text-muted-foreground">
-                    Couple, planner, and vendor accounts now open automatically from the email already attached to them.
-                  </p>
-                </div>
-              ) : null}
 
               <div className="mt-4 text-center">
                 {!isSignUp ? (
@@ -1680,7 +1855,7 @@ export default function Auth() {
                     }}
                     className="text-sm text-muted-foreground transition-colors hover:text-primary"
                   >
-                    Need an account? Start signup
+                    Create account
                   </button>
                 ) : null}
               </div>
@@ -1689,7 +1864,11 @@ export default function Auth() {
             </>
           )}
         </CardContent>
-      </Card>
+        </Card>
+      </div>
+      <div className="mx-auto mt-6 max-w-2xl">
+        <PublicSiteFooter className="rounded-[2rem] border-border/60 bg-white/45 backdrop-blur-sm" />
+      </div>
     </div>
   );
 }

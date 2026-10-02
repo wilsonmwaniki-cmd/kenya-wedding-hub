@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning, Calculator, BadgeDollarSign, History, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Loader2, RefreshCw, ShieldCheck, Users, UserCheck, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning, Calculator, BadgeDollarSign, History, RotateCcw, CircleDollarSign, Clock3, BadgeCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/lib/roles";
 import type { Json } from "@/integrations/supabase/types";
@@ -8,15 +8,20 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkspacePageSkeleton } from "@/components/AppLoadingSkeletons";
+import { weddingVendorCategoryNames } from "@/lib/vendorCategories";
+import AdminZaniaPayQueue from "@/components/admin/AdminZaniaPayQueue";
+import AdminZaniaPayLedger from "@/components/admin/AdminZaniaPayLedger";
 
 interface AdminDashboardMetrics {
   total_users: number;
+  total_real_users: number;
   total_couples: number;
   total_planners: number;
   total_vendors: number;
@@ -28,6 +33,28 @@ interface AdminDashboardMetrics {
   total_budget_items: number;
   total_clients: number;
   open_link_requests: number;
+  paid_active_users: number;
+  expiring_soon_users: number;
+  expired_access_users: number;
+  free_users: number;
+  pending_verification_requests: number;
+  verified_professionals: number;
+  paid_couples: number;
+  free_couples: number;
+  couples_needing_renewal: number;
+  paid_vendors: number;
+  free_vendors: number;
+  vendors_needing_renewal: number;
+}
+
+interface AdminDemoActivityMetrics {
+  total_demo_visitors: number;
+  demo_starts_last_7_days: number;
+  active_demo_sessions: number;
+  couple_demo_visitors: number;
+  vendor_demo_visitors: number;
+  planner_demo_visitors: number;
+  demo_resets: number;
 }
 
 interface AdminUserRow {
@@ -39,6 +66,11 @@ interface AdminUserRow {
   role: AppRole;
   company_name: string | null;
   wedding_date: string | null;
+  is_demo: boolean;
+  access_plan: string;
+  subscription_status: "inactive" | "active" | "past_due" | "cancelled" | "not_applicable";
+  subscription_expires_at: string | null;
+  verification_status: "verified" | "requested" | "not_requested" | "not_applicable";
 }
 
 interface AdminVendorRow {
@@ -105,6 +137,71 @@ interface AdminCouplePassRow {
   planning_pass_expires_at: string | null;
   updated_at: string;
   email: string | null;
+  is_demo: boolean;
+}
+
+interface AdminFreeTierRiskSummary {
+  flagged_accounts: number;
+  high_risk_accounts: number;
+  medium_risk_accounts: number;
+  pending_reviews: number;
+  restricted_reviews: number;
+  deleted_weddings: number;
+}
+
+interface AdminFreeTierRiskAccountRow {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  role: string;
+  account_purpose: string | null;
+  verified_couple: boolean;
+  professional_use_risk_score: number;
+  professional_use_risk_level: "low" | "medium" | "high";
+  last_risk_calculated_at: string | null;
+  support_review_status: "none" | "pending" | "approved" | "restricted";
+  support_review_notes: string | null;
+  lifetime_wedding_count: number;
+  active_wedding_count: number;
+  deleted_wedding_count: number;
+  archived_wedding_count: number;
+  device_count: number;
+  current_trusted_device_count: number;
+  device_switches_last_90_days: number;
+  otp_requests_last_30_days: number;
+  otp_failures_last_30_days: number;
+  collaborator_invite_attempts: number;
+  export_count: number;
+  last_wedding_created_at: string | null;
+  last_deleted_wedding_at: string | null;
+}
+
+interface AdminWeddingLifecycleRow {
+  wedding_id: string;
+  created_at: string;
+  deleted_at: string | null;
+  archived_at: string | null;
+  restored_at: string | null;
+  wedding_date: string | null;
+  status: string;
+  is_meaningful: boolean;
+  became_meaningful_at: string | null;
+  workspace_lifetime_days: number | null;
+  guest_count_at_deletion: number | null;
+  vendor_count_at_deletion: number | null;
+  export_count: number | null;
+  collaborator_invite_count: number | null;
+  created_wedding_name: string | null;
+  deletion_reason: string | null;
+}
+
+interface AdminRiskEventRow {
+  id: string;
+  created_at: string;
+  wedding_id: string | null;
+  device_session_id: string | null;
+  event_type: string;
+  metadata: Record<string, unknown> | null;
 }
 
 interface AdminBetaReadinessSnapshot {
@@ -141,6 +238,8 @@ type ReputationVisibilityFilter = "all" | "private" | "planner_network" | "admin
 type AiAudience = "couple" | "committee" | "planner" | "vendor";
 type AiAudienceFilter = "all" | AiAudience;
 type VendorSuggestionFilter = "all" | "pending" | "reviewed" | "converted" | "rejected";
+type FreeTierRiskLevelFilter = "all" | "low" | "medium" | "high";
+type FreeTierReviewFilter = "all" | "none" | "pending" | "approved" | "restricted";
 
 interface AdminReputationMetrics {
   total_reviews: number;
@@ -240,16 +339,16 @@ type AdminPricingPlanCard = {
   monthlyPriceKes?: number | null;
   annualPriceKes?: number | null;
   ctaLabel?: string;
-  stripeMonthlyLookupKey?: string | null;
-  stripeAnnualLookupKey?: string | null;
+  checkoutMonthlyLookupKey?: string | null;
+  checkoutAnnualLookupKey?: string | null;
   includedFeatures?: string[];
 };
 
 type AdminPricingAddonCard = {
   title?: string;
   supportCopy?: string;
-  stripeMonthlyLookupKey?: string | null;
-  stripeAnnualLookupKey?: string | null;
+  checkoutMonthlyLookupKey?: string | null;
+  checkoutAnnualLookupKey?: string | null;
   seatLimit?: number | null;
 };
 
@@ -262,16 +361,15 @@ type AdminAudiencePricingCard = {
   displayOneTimePriceKes?: number | null;
   displayMonthlyPriceKes?: number | null;
   displayAnnualPriceKes?: number | null;
-  stripeOneTimeLookupKey?: string | null;
-  stripeMonthlyLookupKey?: string | null;
-  stripeAnnualLookupKey?: string | null;
+  checkoutOneTimeLookupKey?: string | null;
+  checkoutMonthlyLookupKey?: string | null;
+  checkoutAnnualLookupKey?: string | null;
 };
 
 interface AdminPricingCatalogConfig {
   couplePlans?: Record<string, AdminPricingPlanCard>;
   coupleAddons?: Record<string, AdminPricingAddonCard>;
   professionalPlans?: Record<string, Record<string, AdminPricingPlanCard>>;
-  professionalAddons?: Record<string, AdminPricingAddonCard>;
   audiencePlans?: Record<string, AdminAudiencePricingCard>;
   checkout?: {
     allowedLookupKeys?: string[];
@@ -284,7 +382,7 @@ type EstimatorPriceType = "quote" | "booked" | "final_paid";
 type EstimatorWeddingStyle = "intimate" | "classic" | "garden" | "luxury";
 
 const roleOptions: AppRole[] = ["couple", "planner", "vendor", "admin"];
-const estimatorCategories = ["Venue", "Catering", "Photography", "Videography", "Flowers", "Music/DJ", "Décor", "Transport", "MC", "Cake", "Other"] as const;
+const estimatorCategories = weddingVendorCategoryNames;
 const estimatorPriceTypes: EstimatorPriceType[] = ["quote", "booked", "final_paid"];
 const estimatorWeddingStyles: EstimatorWeddingStyle[] = ["intimate", "classic", "garden", "luxury"];
 
@@ -296,29 +394,15 @@ const pricingAudienceCards = [
 ] as const;
 
 const pricingCouplePlanCards = [
-  { key: "free", label: "Couple Free" },
-  { key: "basic", label: "Couple Basic" },
-  { key: "premium", label: "Couple Premium" },
-] as const;
-
-const pricingCoupleAddonCards = [
-  { key: "gift_registry_addon", label: "Gift Registry Add-on" },
-  { key: "guest_rsvp_management_addon", label: "Guest RSVP Add-on" },
+  { key: "free", label: "Couple Intimate" },
+  { key: "collaborative", label: "Couple Collaborative" },
 ] as const;
 
 const pricingProfessionalPlanCards = [
   { audience: "planner", tier: "free", label: "Planner Free" },
-  { audience: "planner", tier: "premium", label: "Planner Premium" },
+  { audience: "planner", tier: "premium", label: "Planner Professional" },
   { audience: "vendor", tier: "free", label: "Vendor Free" },
-  { audience: "vendor", tier: "premium", label: "Vendor Premium" },
-] as const;
-
-const pricingProfessionalAddonCards = [
-  { key: "media_addon", label: "Media Add-on" },
-  { key: "advertising_addon", label: "Advertising Add-on" },
-  { key: "team_workspace_bundle_3", label: "Team Workspace 3" },
-  { key: "team_workspace_bundle_5", label: "Team Workspace 5" },
-  { key: "team_workspace_bundle_10", label: "Team Workspace 10" },
+  { audience: "vendor", tier: "premium", label: "Vendor Professional" },
 ] as const;
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -327,7 +411,71 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function asAdminPricingCatalogConfig(value: Json): AdminPricingCatalogConfig {
   if (!isObjectRecord(value)) return {};
-  return value as unknown as AdminPricingCatalogConfig;
+
+  const normalizeLookupFields = (input: Record<string, unknown>) => {
+    const next = { ...input };
+    next.checkoutOneTimeLookupKey = getTrimmedOrNull(
+      (next.checkoutOneTimeLookupKey as string | undefined) ?? (next.stripeOneTimeLookupKey as string | undefined),
+    );
+    next.checkoutMonthlyLookupKey = getTrimmedOrNull(
+      (next.checkoutMonthlyLookupKey as string | undefined) ?? (next.stripeMonthlyLookupKey as string | undefined),
+    );
+    next.checkoutAnnualLookupKey = getTrimmedOrNull(
+      (next.checkoutAnnualLookupKey as string | undefined) ?? (next.stripeAnnualLookupKey as string | undefined),
+    );
+    delete next.stripeOneTimeLookupKey;
+    delete next.stripeMonthlyLookupKey;
+    delete next.stripeAnnualLookupKey;
+    return next;
+  };
+
+  const next = { ...value } as Record<string, unknown>;
+
+  if (isObjectRecord(next.audiencePlans)) {
+    next.audiencePlans = Object.fromEntries(
+      Object.entries(next.audiencePlans).map(([key, plan]) => [
+        key,
+        isObjectRecord(plan) ? normalizeLookupFields(plan) : plan,
+      ]),
+    );
+  }
+
+  if (isObjectRecord(next.couplePlans)) {
+    next.couplePlans = Object.fromEntries(
+      Object.entries(next.couplePlans).map(([key, plan]) => [
+        key,
+        isObjectRecord(plan) ? normalizeLookupFields(plan) : plan,
+      ]),
+    );
+  }
+
+  if (isObjectRecord(next.coupleAddons)) {
+    next.coupleAddons = Object.fromEntries(
+      Object.entries(next.coupleAddons).map(([key, addon]) => [
+        key,
+        isObjectRecord(addon) ? normalizeLookupFields(addon) : addon,
+      ]),
+    );
+  }
+
+  if (isObjectRecord(next.professionalPlans)) {
+    next.professionalPlans = Object.fromEntries(
+      Object.entries(next.professionalPlans).map(([audience, plans]) => [
+        audience,
+        isObjectRecord(plans)
+          ? Object.fromEntries(
+              Object.entries(plans).map(([tier, plan]) => [
+                tier,
+                isObjectRecord(plan) ? normalizeLookupFields(plan) : plan,
+              ]),
+            )
+          : plans,
+      ]),
+    );
+  }
+
+  delete next.professionalAddons;
+  return next as unknown as AdminPricingCatalogConfig;
 }
 
 function getTrimmedOrNull(value: string | undefined) {
@@ -346,31 +494,21 @@ function deriveAllowedLookupKeys(config: AdminPricingCatalogConfig) {
   };
 
   Object.values(config.audiencePlans ?? {}).forEach((plan) => {
-    collect(plan.stripeOneTimeLookupKey);
-    collect(plan.stripeMonthlyLookupKey);
-    collect(plan.stripeAnnualLookupKey);
+    collect(plan.checkoutOneTimeLookupKey);
+    collect(plan.checkoutMonthlyLookupKey);
+    collect(plan.checkoutAnnualLookupKey);
   });
 
   Object.values(config.couplePlans ?? {}).forEach((plan) => {
-    collect(plan.stripeMonthlyLookupKey);
-    collect(plan.stripeAnnualLookupKey);
-  });
-
-  Object.values(config.coupleAddons ?? {}).forEach((addon) => {
-    collect(addon.stripeMonthlyLookupKey);
-    collect(addon.stripeAnnualLookupKey);
+    collect(plan.checkoutMonthlyLookupKey);
+    collect(plan.checkoutAnnualLookupKey);
   });
 
   Object.values(config.professionalPlans ?? {}).forEach((tiers) => {
     Object.values(tiers ?? {}).forEach((plan) => {
-      collect(plan.stripeMonthlyLookupKey);
-      collect(plan.stripeAnnualLookupKey);
+      collect(plan.checkoutMonthlyLookupKey);
+      collect(plan.checkoutAnnualLookupKey);
     });
-  });
-
-  Object.values(config.professionalAddons ?? {}).forEach((addon) => {
-    collect(addon.stripeMonthlyLookupKey);
-    collect(addon.stripeAnnualLookupKey);
   });
 
   return Array.from(keys);
@@ -382,40 +520,14 @@ function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): Admin
     checkout: {
       ...(config.checkout ?? {}),
       allowedLookupKeys: deriveAllowedLookupKeys(config),
-      coupleCheckoutMap: {
-        ...((config.checkout?.coupleCheckoutMap ?? {}) as Record<string, unknown>),
-      },
-      professionalCheckoutMap: {
-        ...((config.checkout?.professionalCheckoutMap ?? {}) as Record<string, unknown>),
-      },
+      coupleCheckoutMap: {},
+      professionalCheckoutMap: {},
     },
   };
 
-  const coupleAudienceOneTimeKey = next.audiencePlans?.couple?.stripeOneTimeLookupKey?.trim();
-  if (coupleAudienceOneTimeKey) {
-    next.checkout!.coupleCheckoutMap![coupleAudienceOneTimeKey] = {
-      bundleCode: "planning_pass_one_time",
-      bundleType: "wedding_pass",
-      features: [
-        "wedding_collaboration",
-        "planner_collaboration",
-        "vendor_collaboration",
-        "committee_collaboration",
-        "family_collaboration",
-        "timeline_management",
-        "ai_wedding_assistant",
-      ],
-      couplePlanTier: "premium",
-      seatLimits: { committee: 20, family: 20 },
-      syncLegacyPlanningPass: true,
-    };
-  }
-
   const couplePlans = [
-    { key: next.couplePlans?.basic?.stripeMonthlyLookupKey, bundleCode: "couple_basic_monthly", tier: "basic", committee: 10, family: 10, cadence: "monthly" },
-    { key: next.couplePlans?.basic?.stripeAnnualLookupKey, bundleCode: "couple_basic_annual", tier: "basic", committee: 10, family: 10, cadence: "annual" },
-    { key: next.couplePlans?.premium?.stripeMonthlyLookupKey, bundleCode: "couple_premium_monthly", tier: "premium", committee: 20, family: 20, cadence: "monthly" },
-    { key: next.couplePlans?.premium?.stripeAnnualLookupKey, bundleCode: "couple_premium_annual", tier: "premium", committee: 20, family: 20, cadence: "annual" },
+    { key: next.couplePlans?.collaborative?.checkoutMonthlyLookupKey, bundleCode: "couple_collaborative_monthly", cadence: "monthly" },
+    { key: next.couplePlans?.collaborative?.checkoutAnnualLookupKey, bundleCode: "couple_collaborative_annual", cadence: "annual" },
   ] as const;
 
   couplePlans.forEach((plan) => {
@@ -424,67 +536,25 @@ function normalizePricingCatalogConfig(config: AdminPricingCatalogConfig): Admin
     next.checkout!.coupleCheckoutMap![lookupKey] = {
       bundleCode: plan.bundleCode,
       bundleType: "wedding_pass",
-      features: plan.tier === "basic"
-        ? [
-            "wedding_collaboration",
-            "planner_collaboration",
-            "vendor_collaboration",
-            "committee_collaboration",
-            "family_collaboration",
-          ]
-        : [
-            "wedding_collaboration",
-            "planner_collaboration",
-            "vendor_collaboration",
-            "committee_collaboration",
-            "family_collaboration",
-            "timeline_management",
-            "ai_wedding_assistant",
-          ],
-      couplePlanTier: plan.tier,
-      seatLimits: { committee: plan.committee, family: plan.family },
-      syncLegacyPlanningPass: plan.tier === "premium",
+      features: ["wedding_collaboration", "planner_collaboration", "vendor_collaboration"],
+      couplePlanTier: "collaborative",
+      seatLimits: null,
+      syncLegacyPlanningPass: false,
     };
   });
 
-  const giftRegistryKey = next.coupleAddons?.gift_registry_addon?.stripeMonthlyLookupKey?.trim();
-  if (giftRegistryKey) {
-    next.checkout!.coupleCheckoutMap![giftRegistryKey] = {
-      bundleCode: "gift_registry_addon",
-      bundleType: "registry_addon",
-      features: ["gift_registry"],
-      couplePlanTier: null,
-      seatLimits: null,
-      syncLegacyPlanningPass: false,
-    };
-  }
+  const professionalPlans = [
+    next.professionalPlans?.planner?.premium?.checkoutMonthlyLookupKey,
+    next.professionalPlans?.planner?.premium?.checkoutAnnualLookupKey,
+    next.professionalPlans?.vendor?.premium?.checkoutMonthlyLookupKey,
+    next.professionalPlans?.vendor?.premium?.checkoutAnnualLookupKey,
+  ];
 
-  const guestRsvpKey = next.coupleAddons?.guest_rsvp_management_addon?.stripeMonthlyLookupKey?.trim();
-  if (guestRsvpKey) {
-    next.checkout!.coupleCheckoutMap![guestRsvpKey] = {
-      bundleCode: "guest_rsvp_management_addon",
-      bundleType: "guest_rsvp_addon",
-      features: ["guest_rsvp_management"],
-      couplePlanTier: null,
-      seatLimits: null,
-      syncLegacyPlanningPass: false,
-    };
-  }
-
-  const professionalAddons = [
-    { key: next.professionalAddons?.media_addon?.stripeMonthlyLookupKey, feature: "media_portfolio", seatLimit: null },
-    { key: next.professionalAddons?.advertising_addon?.stripeMonthlyLookupKey, feature: "advertising", seatLimit: null },
-    { key: next.professionalAddons?.team_workspace_bundle_3?.stripeMonthlyLookupKey, feature: "team_workspace", seatLimit: 3 },
-    { key: next.professionalAddons?.team_workspace_bundle_5?.stripeMonthlyLookupKey, feature: "team_workspace", seatLimit: 5 },
-    { key: next.professionalAddons?.team_workspace_bundle_10?.stripeMonthlyLookupKey, feature: "team_workspace", seatLimit: 10 },
-  ] as const;
-
-  professionalAddons.forEach((addon) => {
-    const lookupKey = addon.key?.trim();
+  professionalPlans.forEach((key) => {
+    const lookupKey = key?.trim();
     if (!lookupKey) return;
     next.checkout!.professionalCheckoutMap![lookupKey] = {
-      features: [addon.feature],
-      ...(addon.seatLimit ? { seatLimit: addon.seatLimit } : {}),
+      features: ["booking_management", "invoicing", "contract_management", "media_portfolio"],
     };
   });
 
@@ -495,6 +565,188 @@ function countLabel(value?: number) {
   return Number(value ?? 0).toLocaleString();
 }
 
+type SubscriptionHealth = "paid" | "expiring" | "expired" | "free" | "not_applicable";
+
+function getSubscriptionHealth(
+  status: string | null | undefined,
+  expiresAt: string | null | undefined,
+): SubscriptionHealth {
+  if (!status || status === "not_applicable") return "not_applicable";
+  if (status === "inactive") return "free";
+  if (status === "past_due" || status === "cancelled") return "expired";
+
+  const expiry = expiresAt ? new Date(expiresAt) : null;
+  if (!expiry || Number.isNaN(expiry.getTime())) return "paid";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const lastActiveDay = new Date(expiry);
+  lastActiveDay.setHours(0, 0, 0, 0);
+  if (lastActiveDay < today) return "expired";
+
+  const sevenDaysFromNow = new Date(today);
+  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+  return lastActiveDay <= sevenDaysFromNow ? "expiring" : "paid";
+}
+
+function subscriptionHealthLabel(health: SubscriptionHealth) {
+  switch (health) {
+    case "paid": return "Paid · active";
+    case "expiring": return "Paid · ending soon";
+    case "expired": return "Expired / past due";
+    case "free": return "Free";
+    default: return "Not applicable";
+  }
+}
+
+function formatExpiry(expiresAt: string | null | undefined) {
+  if (!expiresAt) return "No expiry recorded";
+  const expiry = new Date(expiresAt);
+  if (Number.isNaN(expiry.getTime())) return "Expiry not recorded";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiryDay = new Date(expiry);
+  expiryDay.setHours(0, 0, 0, 0);
+  const days = Math.round((expiryDay.getTime() - today.getTime()) / 86_400_000);
+
+  if (days < 0) return `Ended ${expiry.toLocaleDateString()}`;
+  if (days === 0) return "Ends today";
+  if (days === 1) return "Ends tomorrow";
+  if (days <= 7) return `Ends in ${days} days`;
+  return `Ends ${expiry.toLocaleDateString()}`;
+}
+
+function verificationLabel(status: string | null | undefined) {
+  switch (status) {
+    case "verified": return "Verified";
+    case "requested": return "Verification requested";
+    case "not_requested": return "Not verified";
+    default: return "—";
+  }
+}
+
+function accessPlanLabel(accessPlan: string | null | undefined) {
+  switch (accessPlan) {
+    case "Wedding Planning Pass": return "Collaborative plan";
+    case "Vendor subscription": return "Professional vendor plan";
+    case "Planner subscription": return "Professional planner plan";
+    case "Committee subscription": return "Committee pass";
+    default: return accessPlan || "Plan not recorded";
+  }
+}
+
+type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
+
+function StatusLine({ tone = "neutral", children }: { tone?: StatusTone; children: ReactNode }) {
+  const dotClass = {
+    neutral: "bg-muted-foreground/55",
+    success: "bg-success",
+    warning: "bg-warning",
+    danger: "bg-destructive",
+    info: "bg-info",
+  }[tone];
+
+  return (
+    <p className="flex items-center gap-2 text-sm text-foreground">
+      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+function accessHealthTone(health: SubscriptionHealth): StatusTone {
+  if (health === "paid") return "success";
+  if (health === "expiring") return "warning";
+  if (health === "expired") return "danger";
+  return "neutral";
+}
+
+function formatAccountPurposeLabel(value: string | null | undefined) {
+  if (!value) return "purpose not set";
+  return value.replace(/_/g, " ");
+}
+
+function formatRiskEventType(eventType: string) {
+  return eventType
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function summarizeRiskEvent(event: AdminRiskEventRow) {
+  const metadata = event.metadata ?? {};
+
+  switch (event.event_type) {
+    case "EXPORT_GENERATED":
+      return "User exported planning data from a workspace.";
+    case "DEVICE_SWITCHED":
+      return "User switched to a different device session.";
+    case "COLLABORATOR_INVITE_ATTEMPTED":
+      return "User attempted to add collaborators on a free-tier workspace.";
+    case "PLANNER_ROLE_ATTEMPTED":
+      return "User attempted to access planner-only capabilities.";
+    case "SECOND_WEDDING_ATTEMPTED":
+      return "User tried to create or retain an extra wedding workspace.";
+    case "COLLABORATIVE_PLAN_REQUIRED":
+      return "Feature access was blocked because the current plan does not allow collaboration.";
+    case "SUPPORT_REVIEW_UPDATED":
+      return `Support review set to ${String(metadata.support_review_status ?? "updated")}.`;
+    case "AUTOMATED_REVIEW_QUEUED":
+      return `Automatically queued for review at risk score ${String(metadata.risk_score ?? "unknown")}.`;
+    default:
+      return "Account activity recorded for review.";
+  }
+}
+
+function formatRiskEventMetadata(metadata: Record<string, unknown> | null) {
+  if (!metadata) return null;
+
+  const entries = Object.entries(metadata)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .slice(0, 3);
+
+  if (entries.length === 0) return null;
+
+  return entries
+    .map(([key, value]) => `${key.replace(/_/g, " ")}: ${String(value)}`)
+    .join(" · ");
+}
+
+function buildRiskSignals(account: AdminFreeTierRiskAccountRow | null) {
+  if (!account) return [];
+
+  const signals: string[] = [];
+
+  if (account.account_purpose === "professional_planner") {
+    signals.push("Account purpose explicitly set to professional planner");
+  }
+  if (account.lifetime_wedding_count > 2) {
+    signals.push(`${account.lifetime_wedding_count} total wedding workspaces created`);
+  }
+  if (account.deleted_wedding_count > 0 && account.active_wedding_count > 0) {
+    signals.push("Deleted workspaces while keeping an active workspace");
+  }
+  if (account.export_count >= 3) {
+    signals.push(`${account.export_count} exports recorded across workspaces`);
+  }
+  if (account.device_switches_last_90_days > 3) {
+    signals.push(`${account.device_switches_last_90_days} device switches in the last 90 days`);
+  }
+  if (account.collaborator_invite_attempts > 0) {
+    signals.push(`${account.collaborator_invite_attempts} collaborator or planner access attempts`);
+  }
+  if (account.otp_failures_last_30_days >= 3) {
+    signals.push(`${account.otp_failures_last_30_days} OTP failures in the last 30 days`);
+  }
+  if (account.deleted_wedding_count > 1) {
+    signals.push(`${account.deleted_wedding_count} deleted wedding workspaces on record`);
+  }
+
+  return signals;
+}
+
 export default function AdminPortal() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -502,11 +754,17 @@ export default function AdminPortal() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [metrics, setMetrics] = useState<AdminDashboardMetrics | null>(null);
+  const [demoActivity, setDemoActivity] = useState<AdminDemoActivityMetrics | null>(null);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [vendors, setVendors] = useState<AdminVendorRow[]>([]);
   const [planners, setPlanners] = useState<AdminPlannerRow[]>([]);
   const [vendorSuggestions, setVendorSuggestions] = useState<AdminVendorSuggestionRow[]>([]);
   const [couples, setCouples] = useState<AdminCouplePassRow[]>([]);
+  const [freeTierRiskSummary, setFreeTierRiskSummary] = useState<AdminFreeTierRiskSummary | null>(null);
+  const [freeTierRiskAccounts, setFreeTierRiskAccounts] = useState<AdminFreeTierRiskAccountRow[]>([]);
+  const [selectedRiskUserId, setSelectedRiskUserId] = useState<string | null>(null);
+  const [selectedRiskLifecycle, setSelectedRiskLifecycle] = useState<AdminWeddingLifecycleRow[]>([]);
+  const [selectedRiskEvents, setSelectedRiskEvents] = useState<AdminRiskEventRow[]>([]);
   const [betaSnapshot, setBetaSnapshot] = useState<AdminBetaReadinessSnapshot | null>(null);
   const [functionEvents, setFunctionEvents] = useState<AdminFunctionEventRow[]>([]);
   const [reputationMetrics, setReputationMetrics] = useState<AdminReputationMetrics | null>(null);
@@ -527,7 +785,7 @@ export default function AdminPortal() {
   const [loadingEstimatorSeeds, setLoadingEstimatorSeeds] = useState(false);
   const [estimatorSeedForm, setEstimatorSeedForm] = useState({
     vendorName: "Beta market backfill",
-    category: "Venue",
+    category: "Wedding Venue",
     amount: "",
     priceType: "quote" as EstimatorPriceType,
     county: "Nairobi",
@@ -549,6 +807,9 @@ export default function AdminPortal() {
   const [vendorClaimEmailDrafts, setVendorClaimEmailDrafts] = useState<Record<string, string>>({});
   const [vendorClaimLinkDrafts, setVendorClaimLinkDrafts] = useState<Record<string, string>>({});
   const [planningPassExpiryDrafts, setPlanningPassExpiryDrafts] = useState<Record<string, string>>({});
+  const [riskReviewStatusDrafts, setRiskReviewStatusDrafts] = useState<Record<string, FreeTierReviewFilter>>({});
+  const [riskReviewNotesDrafts, setRiskReviewNotesDrafts] = useState<Record<string, string>>({});
+  const [riskVerifiedCoupleDrafts, setRiskVerifiedCoupleDrafts] = useState<Record<string, boolean>>({});
   const [reviewVisibilityDrafts, setReviewVisibilityDrafts] = useState<Record<string, ReputationVisibilityFilter>>({});
   const [aiCapDrafts, setAiCapDrafts] = useState<Record<string, string>>({});
   const [aiEnabledDrafts, setAiEnabledDrafts] = useState<Record<string, boolean>>({});
@@ -559,6 +820,9 @@ export default function AdminPortal() {
   const [savingVendorId, setSavingVendorId] = useState<string | null>(null);
   const [savingReviewId, setSavingReviewId] = useState<string | null>(null);
   const [savingAiAudience, setSavingAiAudience] = useState<string | null>(null);
+  const [savingRiskUserId, setSavingRiskUserId] = useState<string | null>(null);
+  const [restoringRiskWeddingId, setRestoringRiskWeddingId] = useState<string | null>(null);
+  const [resettingRiskDeviceUserId, setResettingRiskDeviceUserId] = useState<string | null>(null);
 
   const [userSearch, setUserSearch] = useState("");
   const [userRoleFilter, setUserRoleFilter] = useState<UserRoleFilter>("all");
@@ -570,6 +834,9 @@ export default function AdminPortal() {
   const [plannerVerificationFilter, setPlannerVerificationFilter] = useState<PlannerVerificationFilter>("all");
   const [coupleSearch, setCoupleSearch] = useState("");
   const [planningPassFilter, setPlanningPassFilter] = useState<PlanningPassFilter>("all");
+  const [freeTierRiskSearch, setFreeTierRiskSearch] = useState("");
+  const [freeTierRiskLevelFilter, setFreeTierRiskLevelFilter] = useState<FreeTierRiskLevelFilter>("all");
+  const [freeTierReviewFilter, setFreeTierReviewFilter] = useState<FreeTierReviewFilter>("all");
   const [reputationSearch, setReputationSearch] = useState("");
   const [reputationIssueFilter, setReputationIssueFilter] = useState<ReputationIssueFilter>("flagged");
   const [reputationVisibilityFilter, setReputationVisibilityFilter] = useState<ReputationVisibilityFilter>("all");
@@ -583,10 +850,18 @@ export default function AdminPortal() {
     setMetrics((row ?? null) as unknown as AdminDashboardMetrics | null);
   };
 
+  const loadDemoActivity = async () => {
+    const { data, error } = await supabase.rpc("admin_demo_activity_metrics" as any);
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    setDemoActivity((row ?? null) as unknown as AdminDemoActivityMetrics | null);
+  };
+
   const loadUsers = async () => {
     const { data, error } = await supabase.rpc("admin_list_users" as any, {
       search_query: userSearch.trim() || null,
       role_filter: userRoleFilter === "all" ? null : userRoleFilter,
+      workspace_filter: "real",
       limit_rows: 100,
       offset_rows: 0,
     });
@@ -731,6 +1006,7 @@ export default function AdminPortal() {
     const { data, error } = await supabase.rpc("admin_list_couple_planning_passes" as any, {
       search_query: coupleSearch.trim() || null,
       status_filter: planningPassFilter,
+      workspace_filter: "real",
       limit_rows: 100,
       offset_rows: 0,
     });
@@ -747,6 +1023,63 @@ export default function AdminPortal() {
       for (const row of rows) next[row.user_id] = row.planning_pass_expires_at ? row.planning_pass_expires_at.slice(0, 10) : "";
       return next;
     });
+  };
+
+  const loadFreeTierRiskSummary = async () => {
+    const { data, error } = await supabase.rpc("admin_free_tier_risk_summary" as any);
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    setFreeTierRiskSummary((row ?? null) as unknown as AdminFreeTierRiskSummary | null);
+  };
+
+  const loadFreeTierRiskAccounts = async () => {
+    const { data, error } = await supabase.rpc("admin_list_free_tier_risk_accounts" as any, {
+      search_query: freeTierRiskSearch.trim() || null,
+      risk_level_filter: freeTierRiskLevelFilter,
+      review_status_filter: freeTierReviewFilter,
+      limit_rows: 100,
+      offset_rows: 0,
+    });
+    if (error) throw error;
+
+    const rows = (data ?? []) as unknown as AdminFreeTierRiskAccountRow[];
+    setFreeTierRiskAccounts(rows);
+    setRiskReviewStatusDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.support_review_status;
+      return next;
+    });
+    setRiskReviewNotesDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) {
+        if (!(row.user_id in next)) next[row.user_id] = row.support_review_notes ?? "";
+      }
+      return next;
+    });
+    setRiskVerifiedCoupleDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of rows) next[row.user_id] = row.verified_couple;
+      return next;
+    });
+    setSelectedRiskUserId((current) => current ?? rows[0]?.user_id ?? null);
+  };
+
+  const loadSelectedRiskDetails = async (targetUserId: string) => {
+    const [{ data: lifecycleData, error: lifecycleError }, { data: eventsData, error: eventsError }] = await Promise.all([
+      supabase.rpc("admin_list_user_wedding_lifecycle" as any, {
+        target_user_id: targetUserId,
+      }),
+      supabase.rpc("admin_list_user_account_audit_events" as any, {
+        target_user_id: targetUserId,
+        limit_rows: 30,
+      }),
+    ]);
+
+    if (lifecycleError) throw lifecycleError;
+    if (eventsError) throw eventsError;
+
+    setSelectedRiskLifecycle((lifecycleData ?? []) as unknown as AdminWeddingLifecycleRow[]);
+    setSelectedRiskEvents((eventsData ?? []) as unknown as AdminRiskEventRow[]);
   };
 
   const loadBetaSnapshot = async () => {
@@ -866,11 +1199,14 @@ export default function AdminPortal() {
     try {
       await Promise.all([
         loadMetrics(),
+        loadDemoActivity(),
         loadUsers(),
         loadVendors(),
         loadVendorSuggestions(),
         loadPlanners(),
         loadCouples(),
+        loadFreeTierRiskSummary(),
+        loadFreeTierRiskAccounts(),
         loadBetaSnapshot(),
         loadFunctionEvents(),
         loadReputationMetrics(),
@@ -897,6 +1233,22 @@ export default function AdminPortal() {
   useEffect(() => {
     void loadAll(true);
   }, []);
+
+  useEffect(() => {
+    if (!selectedRiskUserId) {
+      setSelectedRiskLifecycle([]);
+      setSelectedRiskEvents([]);
+      return;
+    }
+
+    void loadSelectedRiskDetails(selectedRiskUserId).catch((error: any) => {
+      toast({
+        title: "Failed to load account risk details",
+        description: error.message,
+        variant: "destructive",
+      });
+    });
+  }, [selectedRiskUserId]);
 
   const applyUserFilters = async () => {
     try {
@@ -946,6 +1298,18 @@ export default function AdminPortal() {
     }
   };
 
+  const applyFreeTierRiskFilters = async () => {
+    try {
+      await Promise.all([loadFreeTierRiskSummary(), loadFreeTierRiskAccounts()]);
+    } catch (error: any) {
+      toast({
+        title: "Failed to load free-tier risk queue",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const applyReputationFilters = async () => {
     try {
       await loadReputationReviews();
@@ -978,6 +1342,27 @@ export default function AdminPortal() {
 
     return { missingNames, pendingVendorCount, noLocationCount, flaggedReviews };
   }, [users, vendors, reputationMetrics]);
+
+  const overviewAttention = useMemo(
+    () => [
+      healthSummary.missingNames > 0 ? { tone: "danger" as const, label: `${healthSummary.missingNames} profile${healthSummary.missingNames === 1 ? "" : "s"} need${healthSummary.missingNames === 1 ? "s" : ""} a name` } : null,
+      healthSummary.pendingVendorCount > 0 ? { tone: "warning" as const, label: `${healthSummary.pendingVendorCount} vendor listing${healthSummary.pendingVendorCount === 1 ? "" : "s"} awaiting approval` } : null,
+      healthSummary.noLocationCount > 0 ? { tone: "warning" as const, label: `${healthSummary.noLocationCount} vendor listing${healthSummary.noLocationCount === 1 ? "" : "s"} need${healthSummary.noLocationCount === 1 ? "s" : ""} a location` } : null,
+      healthSummary.flaggedReviews > 0 ? { tone: "danger" as const, label: `${healthSummary.flaggedReviews} reputation review${healthSummary.flaggedReviews === 1 ? "" : "s"} need${healthSummary.flaggedReviews === 1 ? "s" : ""} review` } : null,
+      metrics?.pending_verification_requests ? { tone: "warning" as const, label: `${metrics.pending_verification_requests} verification request${metrics.pending_verification_requests === 1 ? "" : "s"} waiting` } : null,
+    ].filter((item): item is { tone: StatusTone; label: string } => item !== null),
+    [healthSummary, metrics?.pending_verification_requests],
+  );
+
+  const selectedRiskAccount = useMemo(
+    () => freeTierRiskAccounts.find((item) => item.user_id === selectedRiskUserId) ?? null,
+    [freeTierRiskAccounts, selectedRiskUserId],
+  );
+
+  const selectedRiskSignals = useMemo(
+    () => buildRiskSignals(selectedRiskAccount),
+    [selectedRiskAccount],
+  );
 
   const updateAudiencePricingDraft = (
     audienceKey: string,
@@ -1019,26 +1404,6 @@ export default function AdminPortal() {
     });
   };
 
-  const updateCoupleAddonDraft = (
-    addonKey: string,
-    field: keyof AdminPricingAddonCard,
-    value: string | number | null,
-  ) => {
-    setPricingCatalogDraft((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        coupleAddons: {
-          ...(current.coupleAddons ?? {}),
-          [addonKey]: {
-            ...(current.coupleAddons?.[addonKey] ?? {}),
-            [field]: value,
-          },
-        },
-      };
-    });
-  };
-
   const updateProfessionalPlanDraft = (
     audienceKey: string,
     tierKey: string,
@@ -1057,26 +1422,6 @@ export default function AdminPortal() {
               ...(current.professionalPlans?.[audienceKey]?.[tierKey] ?? {}),
               [field]: value,
             },
-          },
-        },
-      };
-    });
-  };
-
-  const updateProfessionalAddonDraft = (
-    addonKey: string,
-    field: keyof AdminPricingAddonCard,
-    value: string | number | null,
-  ) => {
-    setPricingCatalogDraft((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        professionalAddons: {
-          ...(current.professionalAddons ?? {}),
-          [addonKey]: {
-            ...(current.professionalAddons?.[addonKey] ?? {}),
-            [field]: value,
           },
         },
       };
@@ -1422,6 +1767,102 @@ export default function AdminPortal() {
     }
   };
 
+  const handleFreeTierReviewSave = async (targetUserId: string) => {
+    const nextReviewStatus = riskReviewStatusDrafts[targetUserId];
+    const nextReviewNotes = riskReviewNotesDrafts[targetUserId] ?? "";
+    const nextVerifiedCouple = riskVerifiedCoupleDrafts[targetUserId];
+
+    if (!nextReviewStatus || nextVerifiedCouple === undefined) return;
+
+    setSavingRiskUserId(targetUserId);
+    try {
+      const { error } = await supabase.rpc("admin_set_free_tier_review_state" as any, {
+        target_user_id: targetUserId,
+        new_review_status: nextReviewStatus,
+        new_review_notes: nextReviewNotes.trim() || null,
+        new_verified_couple: nextVerifiedCouple,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Review state updated",
+        description: "The free-tier review status and notes were saved.",
+      });
+
+      await Promise.all([
+        loadFreeTierRiskSummary(),
+        loadFreeTierRiskAccounts(),
+        selectedRiskUserId === targetUserId ? loadSelectedRiskDetails(targetUserId) : Promise.resolve(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "Review update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingRiskUserId(null);
+    }
+  };
+
+  const handleRestoreDeletedWedding = async (weddingId: string) => {
+    setRestoringRiskWeddingId(weddingId);
+    try {
+      const { error } = await supabase.rpc("admin_restore_deleted_wedding" as any, {
+        target_wedding_id: weddingId,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Wedding restored",
+        description: "The deleted wedding workspace was restored into an archived state.",
+      });
+
+      await Promise.all([
+        loadFreeTierRiskSummary(),
+        loadFreeTierRiskAccounts(),
+        selectedRiskUserId ? loadSelectedRiskDetails(selectedRiskUserId) : Promise.resolve(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "Restore failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setRestoringRiskWeddingId(null);
+    }
+  };
+
+  const handleResetRiskDevices = async (targetUserId: string) => {
+    setResettingRiskDeviceUserId(targetUserId);
+    try {
+      const { data, error } = await supabase.rpc("admin_reset_free_tier_device_sessions" as any, {
+        target_user_id: targetUserId,
+      });
+      if (error) throw error;
+
+      toast({
+        title: "Trusted devices reset",
+        description: `Revoked ${Number(data ?? 0)} active device session${Number(data ?? 0) === 1 ? "" : "s"}. The user can verify a device again on next sign-in.`,
+      });
+
+      await Promise.all([
+        loadFreeTierRiskSummary(),
+        loadFreeTierRiskAccounts(),
+        selectedRiskUserId === targetUserId ? loadSelectedRiskDetails(targetUserId) : Promise.resolve(),
+      ]);
+    } catch (error: any) {
+      toast({
+        title: "Device reset failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setResettingRiskDeviceUserId(null);
+    }
+  };
+
   const handleReputationVisibilityUpdate = async (reviewId: string) => {
     const nextVisibility = reviewVisibilityDrafts[reviewId];
     const target = reputationReviews.find((item) => item.review_id === reviewId);
@@ -1640,70 +2081,52 @@ export default function AdminPortal() {
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Total Users</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(metrics?.total_users)}</p>
-            <Users className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Pending Vendor Reviews</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(metrics?.pending_vendor_approvals)}</p>
-            <Store className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Open Link Requests</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(metrics?.open_link_requests)}</p>
-            <UserCog className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Total Tasks</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(metrics?.total_tasks)}</p>
-            <CheckSquare className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Flagged Scorecards</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(reputationMetrics?.flagged_reviews)}</p>
-            <MessageSquareWarning className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">AI Messages This Month</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(aiUsageMetrics?.total_messages)}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader className="pb-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Operations overview</p>
+          <CardTitle>What needs your attention</CardTitle>
+          <CardDescription>Start with access and verification. Activity metrics stay in their dedicated tabs.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid divide-y border-t md:grid-cols-3 md:divide-x md:divide-y-0">
+          <section className="py-5 md:pr-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Audience</p>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-baseline justify-between gap-4"><span className="text-sm">Real accounts</span><strong className="text-2xl">{countLabel(metrics?.total_real_users)}</strong></div>
+              <div className="flex items-baseline justify-between gap-4 text-muted-foreground"><span className="text-sm">Demo visitors, tracked separately</span><span>{countLabel(demoActivity?.total_demo_visitors)}</span></div>
+              <div className="flex items-baseline justify-between gap-4 text-muted-foreground"><span className="text-sm">Pending vendor reviews</span><span>{countLabel(metrics?.pending_vendor_approvals)}</span></div>
+            </div>
+          </section>
+          <section className="py-5 md:px-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Access</p>
+            <div className="mt-4 space-y-3">
+              <StatusLine tone="success">{countLabel(metrics?.paid_active_users)} paid and active</StatusLine>
+              <StatusLine tone="neutral">{countLabel(metrics?.free_users)} free accounts</StatusLine>
+              <StatusLine tone="warning">{countLabel(metrics?.expiring_soon_users)} ending within 7 days</StatusLine>
+              <StatusLine tone="danger">{countLabel(metrics?.expired_access_users)} expired or past due</StatusLine>
+            </div>
+          </section>
+          <section className="py-5 md:pl-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Follow-up</p>
+            <div className="mt-4 space-y-3">
+              <StatusLine tone={metrics?.pending_verification_requests ? "warning" : "neutral"}>{countLabel(metrics?.pending_verification_requests)} verification requests</StatusLine>
+              <StatusLine tone="success">{countLabel(metrics?.verified_professionals)} verified professionals</StatusLine>
+              <StatusLine tone={metrics?.open_link_requests ? "warning" : "neutral"}>{countLabel(metrics?.open_link_requests)} open link requests</StatusLine>
+            </div>
+          </section>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="h-auto w-full flex-wrap justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="ops">Ops & Beta</TabsTrigger>
+          <TabsTrigger value="payouts">Payouts</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
           <TabsTrigger value="estimator">Estimator Seeding</TabsTrigger>
           <TabsTrigger value="users">Users & Roles</TabsTrigger>
           <TabsTrigger value="couples">Wedding Plans</TabsTrigger>
+          <TabsTrigger value="demos">Demo Activity</TabsTrigger>
+          <TabsTrigger value="risk">Free-tier Risk</TabsTrigger>
           <TabsTrigger value="planners">Planner Moderation</TabsTrigger>
           <TabsTrigger value="vendors">Vendor Moderation</TabsTrigger>
           <TabsTrigger value="ai">AI Controls</TabsTrigger>
@@ -1711,78 +2134,117 @@ export default function AdminPortal() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Role Distribution</CardTitle>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Your platform</p>
+                <CardTitle>Customers and active work</CardTitle>
+                <CardDescription>The live account base and the work they are building in Zania.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span>Couples</span><span>{countLabel(metrics?.total_couples)}</span></div>
-                <div className="flex justify-between"><span>Planners</span><span>{countLabel(metrics?.total_planners)}</span></div>
-                <div className="flex justify-between"><span>Vendors</span><span>{countLabel(metrics?.total_vendors)}</span></div>
-                <div className="flex justify-between"><span>Admins</span><span>{countLabel(metrics?.total_admins)}</span></div>
+              <CardContent className="grid border-t md:grid-cols-2">
+                <section className="py-5 md:pr-8">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Customer conversion</p>
+                  <p className="mt-2 text-3xl font-semibold">{countLabel(metrics?.total_real_users)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Real accounts, excluding demos</p>
+                  <div className="mt-5 grid grid-cols-[1fr_auto_auto_auto] gap-x-4 gap-y-3 text-sm">
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Account</span>
+                    <span className="text-right text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Free</span>
+                    <span className="text-right text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Paying</span>
+                    <span className="text-right text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Renewal</span>
+                    <span>Couples</span>
+                    <span className="text-right text-muted-foreground">{countLabel(metrics?.free_couples)}</span>
+                    <span className="text-right font-semibold text-success">{countLabel(metrics?.paid_couples)}</span>
+                    <span className="text-right text-warning">{countLabel(metrics?.couples_needing_renewal)}</span>
+                    <span>Vendors</span>
+                    <span className="text-right text-muted-foreground">{countLabel(metrics?.free_vendors)}</span>
+                    <span className="text-right font-semibold text-success">{countLabel(metrics?.paid_vendors)}</span>
+                    <span className="text-right text-warning">{countLabel(metrics?.vendors_needing_renewal)}</span>
+                  </div>
+                </section>
+                <section className="border-t py-5 md:border-l md:border-t-0 md:pl-8">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Work in progress</p>
+                  <div className="mt-4 space-y-3 text-sm">
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Planner client spaces</span><span>{countLabel(metrics?.total_clients)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Vendor listings</span><span>{countLabel(metrics?.total_vendor_listings)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Budget items planned</span><span>{countLabel(metrics?.total_budget_items)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Guests being managed</span><span>{countLabel(metrics?.total_guests)}</span></div>
+                  </div>
+                </section>
               </CardContent>
             </Card>
+
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Planning Data</CardTitle>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Action queue</p>
+                <CardTitle>Needs your attention</CardTitle>
+                <CardDescription>Only items requiring an owner decision appear here.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span>Planner Clients</span><span>{countLabel(metrics?.total_clients)}</span></div>
-                <div className="flex justify-between"><span>Budget Categories</span><span>{countLabel(metrics?.total_budget_items)}</span></div>
-                <div className="flex justify-between"><span>Guests</span><span>{countLabel(metrics?.total_guests)}</span></div>
-                <div className="flex justify-between"><span>Vendor Listings</span><span>{countLabel(metrics?.total_vendor_listings)}</span></div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Data Health</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span>Profiles missing names</span>
-                  <Badge variant={healthSummary.missingNames > 0 ? "destructive" : "secondary"}>
-                    {healthSummary.missingNames}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Listings pending approval</span>
-                  <Badge variant={healthSummary.pendingVendorCount > 0 ? "outline" : "secondary"}>
-                    {healthSummary.pendingVendorCount}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Listings without location</span>
-                  <Badge variant={healthSummary.noLocationCount > 0 ? "outline" : "secondary"}>
-                    {healthSummary.noLocationCount}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Flagged reputation reviews</span>
-                  <Badge variant={healthSummary.flaggedReviews > 0 ? "destructive" : "secondary"}>
-                    {healthSummary.flaggedReviews}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Beta Readiness</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span>Active beta trials</span><span>{countLabel(betaSnapshot?.active_beta_trials)}</span></div>
-                <div className="flex justify-between"><span>Recent failed syncs</span><span>{countLabel(betaSnapshot?.recent_failed_syncs)}</span></div>
-                <div className="flex justify-between"><span>Recent AI failures</span><span>{countLabel(betaSnapshot?.recent_ai_failures)}</span></div>
-                <div className="flex justify-between"><span>Wedding entitlements</span><span>{countLabel(betaSnapshot?.active_wedding_entitlements)}</span></div>
+              <CardContent className="space-y-3 border-t pt-5">
+                {overviewAttention.length > 0 ? (
+                  overviewAttention.map((item) => <StatusLine key={item.label} tone={item.tone}>{item.label}</StatusLine>)
+                ) : (
+                  <StatusLine tone="success">Nothing needs review right now</StatusLine>
+                )}
               </CardContent>
             </Card>
           </div>
-          <Card className="border-primary/20 bg-primary/5">
-            <CardContent className="py-4">
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <ShieldCheck className="h-4 w-4 text-primary" />
-                Admin actions are executed through secure RPCs and blocked for non-admin users at the database layer.
-              </p>
+
+          <Card>
+            <CardHeader>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Platform health</p>
+              <CardTitle>System and beta status</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-5 border-t pt-5 sm:grid-cols-2 lg:grid-cols-4">
+              <StatusLine tone={betaSnapshot?.recent_failed_syncs ? "danger" : "success"}>{countLabel(betaSnapshot?.recent_failed_syncs)} failed syncs recently</StatusLine>
+              <StatusLine tone={betaSnapshot?.recent_ai_failures ? "danger" : "success"}>{countLabel(betaSnapshot?.recent_ai_failures)} AI failures recently</StatusLine>
+              <StatusLine tone="info">{countLabel(betaSnapshot?.active_beta_trials)} active beta trials</StatusLine>
+              <StatusLine tone="info">{countLabel(betaSnapshot?.active_wedding_entitlements)} active wedding entitlements</StatusLine>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="demos" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Product curiosity</p>
+              <CardTitle>Demo activity</CardTitle>
+              <CardDescription>
+                Demo workspaces are isolated from customer operations. This view keeps only the anonymous interest signal.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid divide-y border-t sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+              <section className="py-5 sm:pr-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Unique visitors</p>
+                <p className="mt-2 text-3xl font-semibold">{countLabel(demoActivity?.total_demo_visitors)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">People who have started a demo</p>
+              </section>
+              <section className="py-5 sm:px-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">This week</p>
+                <p className="mt-2 text-3xl font-semibold">{countLabel(demoActivity?.demo_starts_last_7_days)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">New demo visitors in seven days</p>
+              </section>
+              <section className="py-5 sm:px-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Open now</p>
+                <p className="mt-2 text-3xl font-semibold">{countLabel(demoActivity?.active_demo_sessions)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">Active, short-lived sessions</p>
+              </section>
+              <section className="py-5 sm:pl-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Resets</p>
+                <p className="mt-2 text-3xl font-semibold">{countLabel(demoActivity?.demo_resets)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">People exploring a workspace again</p>
+              </section>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Where interest is landing</CardTitle>
+              <CardDescription>These counts are unique demo visitors, not customer accounts or subscriptions.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-5 border-t pt-5 sm:grid-cols-3">
+              <StatusLine tone="info">{countLabel(demoActivity?.couple_demo_visitors)} explored the couple workspace</StatusLine>
+              <StatusLine tone="info">{countLabel(demoActivity?.planner_demo_visitors)} explored the planner workspace</StatusLine>
+              <StatusLine tone="info">{countLabel(demoActivity?.vendor_demo_visitors)} explored the vendor workspace</StatusLine>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1874,12 +2336,17 @@ export default function AdminPortal() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="payouts" className="space-y-4">
+          <AdminZaniaPayQueue />
+          <AdminZaniaPayLedger />
+        </TabsContent>
+
         <TabsContent value="pricing" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Live Pricing Catalog</CardTitle>
               <CardDescription>
-                Change plan names, copy, displayed prices, and Stripe lookup keys here. Zania saves this to Supabase and the pricing page reads it live.
+                Change plan names, copy, displayed prices, and checkout lookup keys here. Zania saves this to Supabase and the pricing page reads it live.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -2035,24 +2502,24 @@ export default function AdminPortal() {
                       <Input type="number" value={plan.displayOneTimePriceKes ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "displayOneTimePriceKes", e.target.value ? Number(e.target.value) : null)} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">One-time lookup key</label>
-                      <Input value={plan.stripeOneTimeLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "stripeOneTimeLookupKey", getTrimmedOrNull(e.target.value))} />
+                      <label className="text-sm font-medium">One-time checkout key</label>
+                      <Input value={plan.checkoutOneTimeLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "checkoutOneTimeLookupKey", getTrimmedOrNull(e.target.value))} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Display monthly price</label>
                       <Input type="number" value={plan.displayMonthlyPriceKes ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "displayMonthlyPriceKes", e.target.value ? Number(e.target.value) : null)} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Monthly lookup key</label>
-                      <Input value={plan.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                      <label className="text-sm font-medium">Monthly checkout key</label>
+                      <Input value={plan.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Display annual price</label>
                       <Input type="number" value={plan.displayAnnualPriceKes ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "displayAnnualPriceKes", e.target.value ? Number(e.target.value) : null)} />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Annual lookup key</label>
-                      <Input value={plan.stripeAnnualLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "stripeAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
+                      <label className="text-sm font-medium">Annual checkout key</label>
+                      <Input value={plan.checkoutAnnualLookupKey ?? ""} onChange={(e) => updateAudiencePricingDraft(item.key, "checkoutAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
                     </div>
                   </CardContent>
                 </Card>
@@ -2091,12 +2558,12 @@ export default function AdminPortal() {
                         <Input type="number" value={plan.annualPriceKes ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "annualPriceKes", e.target.value ? Number(e.target.value) : null)} />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Monthly lookup key</label>
-                        <Input value={plan.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                        <label className="text-sm font-medium">Monthly checkout key</label>
+                        <Input value={plan.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Annual lookup key</label>
-                        <Input value={plan.stripeAnnualLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "stripeAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
+                        <label className="text-sm font-medium">Annual checkout key</label>
+                        <Input value={plan.checkoutAnnualLookupKey ?? ""} onChange={(e) => updateCouplePlanDraft(item.key, "checkoutAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
                       </div>
                       <div className="space-y-2 md:col-span-2">
                         <label className="text-sm font-medium">CTA label</label>
@@ -2148,12 +2615,12 @@ export default function AdminPortal() {
                         <Input type="number" value={plan.annualPriceKes ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "annualPriceKes", e.target.value ? Number(e.target.value) : null)} />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Monthly lookup key</label>
-                        <Input value={plan.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
+                        <label className="text-sm font-medium">Monthly checkout key</label>
+                        <Input value={plan.checkoutMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "checkoutMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium">Annual lookup key</label>
-                        <Input value={plan.stripeAnnualLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "stripeAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
+                        <label className="text-sm font-medium">Annual checkout key</label>
+                        <Input value={plan.checkoutAnnualLookupKey ?? ""} onChange={(e) => updateProfessionalPlanDraft(item.audience, item.tier, "checkoutAnnualLookupKey", getTrimmedOrNull(e.target.value))} />
                       </div>
                       <div className="space-y-2 md:col-span-2">
                         <label className="text-sm font-medium">CTA label</label>
@@ -2168,64 +2635,6 @@ export default function AdminPortal() {
                         />
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-2">
-            {pricingCoupleAddonCards.map((item) => {
-              const addon = pricingCatalogDraft?.coupleAddons?.[item.key] ?? {};
-              return (
-                <Card key={item.key}>
-                  <CardHeader>
-                    <CardTitle className="text-base">{item.label}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Title</label>
-                      <Input value={addon.title ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "title", e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Monthly lookup key</label>
-                      <Input value={addon.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-sm font-medium">Support copy</label>
-                      <Textarea value={addon.supportCopy ?? ""} onChange={(e) => updateCoupleAddonDraft(item.key, "supportCopy", e.target.value)} rows={4} />
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-
-            {pricingProfessionalAddonCards.map((item) => {
-              const addon = pricingCatalogDraft?.professionalAddons?.[item.key] ?? {};
-              return (
-                <Card key={item.key}>
-                  <CardHeader>
-                    <CardTitle className="text-base">{item.label}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Title</label>
-                      <Input value={addon.title ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "title", e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Monthly lookup key</label>
-                      <Input value={addon.stripeMonthlyLookupKey ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "stripeMonthlyLookupKey", getTrimmedOrNull(e.target.value))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-sm font-medium">Support copy</label>
-                      <Textarea value={addon.supportCopy ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "supportCopy", e.target.value)} rows={4} />
-                    </div>
-                    {item.key.startsWith("team_workspace") ? (
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Seat limit</label>
-                        <Input type="number" value={addon.seatLimit ?? ""} onChange={(e) => updateProfessionalAddonDraft(item.key, "seatLimit", e.target.value ? Number(e.target.value) : null)} />
-                      </div>
-                    ) : null}
                   </CardContent>
                 </Card>
               );
@@ -2455,10 +2864,10 @@ export default function AdminPortal() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>User</TableHead>
-                    <TableHead>Current Role</TableHead>
-                    <TableHead>New Role</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead>Access & Plan</TableHead>
+                    <TableHead>Verification</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead className="text-right">Update</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2473,15 +2882,41 @@ export default function AdminPortal() {
                     const nextRole = roleDrafts[item.user_id] ?? item.role;
                     const roleChanged = nextRole !== item.role;
                     const isCurrentAdmin = item.user_id === user?.id;
+                    const accessHealth = getSubscriptionHealth(item.subscription_status, item.subscription_expires_at);
 
                     return (
                       <TableRow key={item.user_id}>
-                        <TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
                           <p className="font-medium">{item.full_name || item.company_name || "Unnamed User"}</p>
-                          <p className="text-xs text-muted-foreground">{item.email || item.user_id}</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            {item.is_demo ? "Demo account" : item.role}
+                          </p>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{item.email || item.user_id}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Joined {item.created_at ? new Date(item.created_at).toLocaleDateString() : "on an unknown date"}
+                        </p>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{item.role}</Badge>
+                          {accessHealth === "not_applicable" ? (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <div className="space-y-1">
+                              <StatusLine tone={accessHealthTone(accessHealth)}>{subscriptionHealthLabel(accessHealth)}</StatusLine>
+                              <p className="pl-4 text-xs text-muted-foreground">{accessPlanLabel(item.access_plan)}</p>
+                              <p className="pl-4 text-xs text-muted-foreground">{formatExpiry(item.subscription_expires_at)}</p>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {item.verification_status === "not_applicable" ? (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <StatusLine tone={item.verification_status === "verified" ? "success" : item.verification_status === "requested" ? "warning" : "neutral"}>
+                              {verificationLabel(item.verification_status)}
+                            </StatusLine>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Select
@@ -2501,12 +2936,9 @@ export default function AdminPortal() {
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {item.created_at ? new Date(item.created_at).toLocaleDateString() : "Unknown"}
-                        </TableCell>
                         <TableCell className="text-right">
                           {isCurrentAdmin ? (
-                            <Badge variant="secondary">Current Admin</Badge>
+                            <span className="text-sm text-muted-foreground">Current admin</span>
                           ) : (
                             <Button
                               size="sm"
@@ -2564,24 +2996,27 @@ export default function AdminPortal() {
                   <TableRow>
                     <TableHead>Couple</TableHead>
                     <TableHead>Wedding</TableHead>
-                    <TableHead>Wedding Plan</TableHead>
+                    <TableHead>Plan & Renewal</TableHead>
                     <TableHead>Last Updated</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {couples.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
                         No couples matched your filters.
                       </TableCell>
                     </TableRow>
                   )}
-                  {couples.map((item) => (
+                  {couples.map((item) => {
+                    const accessHealth = getSubscriptionHealth(item.planning_pass_status, item.planning_pass_expires_at);
+
+                    return (
                     <TableRow key={item.user_id}>
                       <TableCell>
                         <p className="font-medium">{item.full_name || "Unnamed Couple"}</p>
                         <p className="text-xs text-muted-foreground">{item.email || item.user_id}</p>
+                        {item.is_demo && <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Demo workspace</p>}
                       </TableCell>
                       <TableCell>
                         <p className="text-sm">{item.wedding_location || "Location not set"}</p>
@@ -2591,6 +3026,10 @@ export default function AdminPortal() {
                       </TableCell>
                       <TableCell>
                         <div className="space-y-2">
+                          <div>
+                            <StatusLine tone={accessHealthTone(accessHealth)}>{subscriptionHealthLabel(accessHealth)}</StatusLine>
+                            <p className="mt-1 pl-4 text-xs text-muted-foreground">Collaborative plan · {formatExpiry(item.planning_pass_expires_at)}</p>
+                          </div>
                           <Select
                             value={planningPassDrafts[item.user_id] ?? item.planning_pass_status}
                             onValueChange={(value) =>
@@ -2634,9 +3073,157 @@ export default function AdminPortal() {
                       <TableCell className="text-xs text-muted-foreground">
                         {new Date(item.updated_at).toLocaleDateString()}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant={item.planning_pass_status === "active" ? "secondary" : "outline"}>
-                          {item.planning_pass_status}
+                    </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="risk" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Flagged Accounts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(freeTierRiskSummary?.flagged_accounts)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">High Risk</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(freeTierRiskSummary?.high_risk_accounts)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Pending Reviews</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold">{countLabel(freeTierRiskSummary?.pending_reviews)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="space-y-3">
+              <CardTitle className="text-base">Free-tier Risk Queue</CardTitle>
+              <CardDescription>
+                Review couples showing professional-use signals, repeated workspace churn, or support follow-up needs.
+              </CardDescription>
+              <div className="flex flex-col gap-3 lg:flex-row">
+                <Input
+                  value={freeTierRiskSearch}
+                  onChange={(e) => setFreeTierRiskSearch(e.target.value)}
+                  placeholder="Search by name, email, or account purpose"
+                />
+                <Select value={freeTierRiskLevelFilter} onValueChange={(value) => setFreeTierRiskLevelFilter(value as FreeTierRiskLevelFilter)}>
+                  <SelectTrigger className="w-full lg:w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All risk levels</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={freeTierReviewFilter} onValueChange={(value) => setFreeTierReviewFilter(value as FreeTierReviewFilter)}>
+                  <SelectTrigger className="w-full lg:w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All reviews</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="restricted">Restricted</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={() => applyFreeTierRiskFilters()}>
+                  Apply
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Account</TableHead>
+                    <TableHead>Risk</TableHead>
+                    <TableHead>Wedding History</TableHead>
+                    <TableHead>Devices & OTP</TableHead>
+                    <TableHead>Review</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {freeTierRiskAccounts.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        No accounts matched your current risk filters.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {freeTierRiskAccounts.map((item) => (
+                    <TableRow
+                      key={item.user_id}
+                      className={selectedRiskUserId === item.user_id ? "bg-muted/40" : undefined}
+                      onClick={() => setSelectedRiskUserId(item.user_id)}
+                    >
+                      <TableCell>
+                        <p className="font-medium">{item.full_name || "Unnamed Couple"}</p>
+                        <p className="text-xs text-muted-foreground">{item.email || item.user_id}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {item.account_purpose?.replace(/_/g, " ") || "purpose not set"}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <Badge
+                            variant={
+                              item.professional_use_risk_level === "high"
+                                ? "destructive"
+                                : item.professional_use_risk_level === "medium"
+                                  ? "warning"
+                                  : "outline"
+                            }
+                          >
+                            {item.professional_use_risk_level} · {item.professional_use_risk_score}
+                          </Badge>
+                          <p className="text-xs text-muted-foreground">
+                            {item.last_risk_calculated_at
+                              ? `Updated ${new Date(item.last_risk_calculated_at).toLocaleString()}`
+                              : "Risk not calculated yet"}
+                          </p>
+                          {buildRiskSignals(item)[0] ? (
+                            <p className="text-xs text-muted-foreground">{buildRiskSignals(item)[0]}</p>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        <p>{item.lifetime_wedding_count} lifetime</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.active_wedding_count} active · {item.deleted_wedding_count} deleted · {item.archived_wedding_count} archived
+                        </p>
+                        <p className="text-xs text-muted-foreground">{item.export_count} exports recorded</p>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        <p>{item.device_count} devices · {item.current_trusted_device_count} trusted</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.device_switches_last_90_days} switches / 90d · {item.otp_failures_last_30_days} OTP failures / 30d
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={item.support_review_status === "restricted" ? "destructive" : item.support_review_status === "pending" ? "warning" : item.support_review_status === "approved" ? "success" : "outline"}>
+                          {item.support_review_status}
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -2645,6 +3232,209 @@ export default function AdminPortal() {
               </Table>
             </CardContent>
           </Card>
+
+          {selectedRiskAccount && (
+            <div className="grid gap-4 xl:grid-cols-[1.1fr,0.9fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Review Actions</CardTitle>
+                  <CardDescription>
+                    Manage support review state, verify a genuine couple, and restore deleted weddings when needed.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Support review status</Label>
+                      <Select
+                        value={riskReviewStatusDrafts[selectedRiskAccount.user_id] ?? selectedRiskAccount.support_review_status}
+                        onValueChange={(value) =>
+                          setRiskReviewStatusDrafts((prev) => ({
+                            ...prev,
+                            [selectedRiskAccount.user_id]: value as FreeTierReviewFilter,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">none</SelectItem>
+                          <SelectItem value="pending">pending</SelectItem>
+                          <SelectItem value="approved">approved</SelectItem>
+                          <SelectItem value="restricted">restricted</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Verified couple</Label>
+                      <Select
+                        value={(riskVerifiedCoupleDrafts[selectedRiskAccount.user_id] ?? selectedRiskAccount.verified_couple) ? "true" : "false"}
+                        onValueChange={(value) =>
+                          setRiskVerifiedCoupleDrafts((prev) => ({
+                            ...prev,
+                            [selectedRiskAccount.user_id]: value === "true",
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">Verified</SelectItem>
+                          <SelectItem value="false">Not verified</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Internal review notes</Label>
+                    <Textarea
+                      value={riskReviewNotesDrafts[selectedRiskAccount.user_id] ?? ""}
+                      onChange={(e) =>
+                        setRiskReviewNotesDrafts((prev) => ({
+                          ...prev,
+                          [selectedRiskAccount.user_id]: e.target.value,
+                        }))
+                      }
+                      rows={4}
+                      placeholder="Summarize why this account is approved, pending, or restricted."
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                    <span>{selectedRiskAccount.collaborator_invite_attempts} collaboration attempts</span>
+                    <span>{selectedRiskAccount.export_count} exports</span>
+                    <span>{selectedRiskAccount.otp_requests_last_30_days} OTP requests / 30d</span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      disabled={savingRiskUserId === selectedRiskAccount.user_id}
+                      onClick={() => handleFreeTierReviewSave(selectedRiskAccount.user_id)}
+                    >
+                      {savingRiskUserId === selectedRiskAccount.user_id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save review state
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={resettingRiskDeviceUserId === selectedRiskAccount.user_id}
+                      onClick={() => handleResetRiskDevices(selectedRiskAccount.user_id)}
+                    >
+                      {resettingRiskDeviceUserId === selectedRiskAccount.user_id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Reset trusted devices
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Risk Signals</CardTitle>
+                    <CardDescription>
+                      Interpreted reasons this account is appearing in the free-tier review queue.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant={selectedRiskAccount.professional_use_risk_level === "high" ? "destructive" : selectedRiskAccount.professional_use_risk_level === "medium" ? "warning" : "outline"}>
+                        {selectedRiskAccount.professional_use_risk_level} risk
+                      </Badge>
+                      <Badge variant={selectedRiskAccount.verified_couple ? "success" : "outline"}>
+                        {selectedRiskAccount.verified_couple ? "verified couple" : "not verified"}
+                      </Badge>
+                      <Badge variant="outline">{formatAccountPurposeLabel(selectedRiskAccount.account_purpose)}</Badge>
+                    </div>
+                    {selectedRiskSignals.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No standout signals beyond the stored risk score yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {selectedRiskSignals.map((signal) => (
+                          <div key={signal} className="rounded-lg border border-border/70 px-3 py-2 text-sm">
+                            {signal}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Wedding Lifecycle</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {selectedRiskLifecycle.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No wedding lifecycle records found for this account.</p>
+                    ) : selectedRiskLifecycle.map((item) => (
+                      <div key={item.wedding_id} className="rounded-lg border border-border/70 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{item.created_wedding_name || "Unnamed wedding"}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Created {new Date(item.created_at).toLocaleDateString()}
+                              {item.wedding_date ? ` · Wedding date ${new Date(item.wedding_date).toLocaleDateString()}` : ""}
+                            </p>
+                          </div>
+                          <Badge variant={item.status === "deleted" ? "destructive" : item.status === "archived" ? "warning" : "outline"}>
+                            {item.status}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                          <p>{item.workspace_lifetime_days ?? 0} lifetime days · {item.guest_count_at_deletion ?? 0} guests at deletion · {item.export_count ?? 0} exports</p>
+                          <p>{item.is_meaningful ? "Meaningful workspace" : "Low-activity workspace"}{item.deletion_reason ? ` · Reason: ${item.deletion_reason}` : ""}</p>
+                        </div>
+                        {item.status === "deleted" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="mt-3"
+                            disabled={restoringRiskWeddingId === item.wedding_id}
+                            onClick={() => handleRestoreDeletedWedding(item.wedding_id)}
+                          >
+                            {restoringRiskWeddingId === item.wedding_id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                            Restore as archived
+                          </Button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Recent Account Activity</CardTitle>
+                    <CardDescription>
+                      Latest audit events for exports, device changes, support actions, and blocked plan behavior.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {selectedRiskEvents.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No recent audit events found for this account.</p>
+                    ) : selectedRiskEvents.map((event) => (
+                      <div key={event.id} className="rounded-lg border border-border/70 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{formatRiskEventType(event.event_type)}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(event.created_at).toLocaleString()}
+                            </p>
+                          </div>
+                          <Badge variant="outline">{event.wedding_id ? "workspace-linked" : "account-level"}</Badge>
+                        </div>
+                        <p className="mt-3 text-sm">{summarizeRiskEvent(event)}</p>
+                        {formatRiskEventMetadata(event.metadata) ? (
+                          <p className="mt-2 text-xs text-muted-foreground">{formatRiskEventMetadata(event.metadata)}</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="vendors" className="space-y-4">
@@ -2683,7 +3473,7 @@ export default function AdminPortal() {
                   <TableRow>
                     <TableHead>Suggested Vendor</TableHead>
                     <TableHead>Recommended By</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Review</TableHead>
                     <TableHead>Why They Matter</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
@@ -2711,7 +3501,7 @@ export default function AdminPortal() {
                         <p className="text-xs text-muted-foreground">{[item.suggester_role, item.suggester_email].filter(Boolean).join(" • ")}</p>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={item.status === "pending" ? "outline" : item.status === "converted" ? "secondary" : item.status === "rejected" ? "destructive" : "outline"}>
+                        <Badge variant={item.status === "pending" ? "warning" : item.status === "converted" ? "success" : item.status === "rejected" ? "destructive" : "outline"}>
                           {item.status}
                         </Badge>
                       </TableCell>
@@ -2810,22 +3600,24 @@ export default function AdminPortal() {
                       </TableCell>
                     </TableRow>
                   )}
-                  {vendors.map((item) => (
+                  {vendors.map((item) => {
+                    const accessHealth = getSubscriptionHealth(item.subscription_status, item.subscription_expires_at);
+
+                    return (
                     <TableRow key={item.listing_id}>
                       <TableCell>
                         <p className="font-medium">{item.business_name}</p>
                         <p className="text-xs text-muted-foreground">{item.category}{item.location ? ` • ${item.location}` : ""}</p>
                       </TableCell>
-                      <TableCell className="space-x-2">
-                        <Badge variant={item.is_approved ? "secondary" : "outline"}>
-                          {item.is_approved ? "Approved" : "Pending"}
-                        </Badge>
-                        <Badge variant={item.is_verified ? "secondary" : "outline"}>
-                          {item.is_verified ? "Verified" : "Unverified"}
-                        </Badge>
-                        {item.verification_requested && !item.is_verified && (
-                          <Badge variant="outline">Verification requested</Badge>
-                        )}
+                      <TableCell>
+                        <div className="space-y-2">
+                          <StatusLine tone={item.is_approved ? "success" : "warning"}>
+                            {item.is_approved ? "Approved for the directory" : "Awaiting approval"}
+                          </StatusLine>
+                          <StatusLine tone={item.is_verified ? "success" : item.verification_requested ? "warning" : "neutral"}>
+                            {item.is_verified ? "Verified" : item.verification_requested ? "Verification requested" : "Not verified"}
+                          </StatusLine>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <p className="text-sm">{item.owner_name || (item.user_id ? "Unknown owner" : "Curated listing")}</p>
@@ -2838,7 +3630,8 @@ export default function AdminPortal() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Directory profile</p>
                           <Select
                             value={vendorProfileKindDrafts[item.listing_id] ?? item.profile_kind}
                             onValueChange={(value) =>
@@ -2857,7 +3650,9 @@ export default function AdminPortal() {
                               <SelectItem value="featured">featured</SelectItem>
                             </SelectContent>
                           </Select>
-                          <Input
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Featured rank</label>
+                            <Input
                             value={vendorFeaturedRankDrafts[item.listing_id] ?? "0"}
                             onChange={(e) =>
                               setVendorFeaturedRankDrafts((prev) => ({
@@ -2868,9 +3663,12 @@ export default function AdminPortal() {
                             placeholder="Featured rank"
                             type="number"
                             min="0"
-                            className="w-[150px]"
-                          />
-                          <Textarea
+                              className="w-[150px]"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Public listing note</label>
+                            <Textarea
                             value={vendorProfileNoteDrafts[item.listing_id] ?? ""}
                             onChange={(e) =>
                               setVendorProfileNoteDrafts((prev) => ({
@@ -2880,8 +3678,9 @@ export default function AdminPortal() {
                             }
                             placeholder="Public listing note"
                             rows={3}
-                            className="min-w-[240px]"
-                          />
+                              className="min-w-[240px]"
+                            />
+                          </div>
                           <Button
                             size="sm"
                             variant="outline"
@@ -2941,7 +3740,13 @@ export default function AdminPortal() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <StatusLine tone={accessHealthTone(accessHealth)}>{subscriptionHealthLabel(accessHealth)}</StatusLine>
+                            <p className="pl-4 text-xs text-muted-foreground">Professional vendor plan · {formatExpiry(item.subscription_expires_at)}</p>
+                          </div>
+                          <div className="border-t border-border/70 pt-3">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Change access</p>
                           <Select
                             value={subscriptionDrafts[item.listing_id] ?? item.subscription_status}
                             onValueChange={(value) =>
@@ -2980,6 +3785,7 @@ export default function AdminPortal() {
                           >
                             Save subscription
                           </Button>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
@@ -3025,7 +3831,8 @@ export default function AdminPortal() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -3081,7 +3888,7 @@ export default function AdminPortal() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Planner</TableHead>
-                    <TableHead>Type / Status</TableHead>
+                    <TableHead>Profile</TableHead>
                     <TableHead>Subscription</TableHead>
                     <TableHead>Founding</TableHead>
                     <TableHead>Last Updated</TableHead>
@@ -3096,7 +3903,10 @@ export default function AdminPortal() {
                       </TableCell>
                     </TableRow>
                   )}
-                  {planners.map((item) => (
+                  {planners.map((item) => {
+                    const accessHealth = getSubscriptionHealth(item.planner_subscription_status, item.planner_subscription_expires_at);
+
+                    return (
                     <TableRow key={item.user_id}>
                       <TableCell>
                         <p className="font-medium">
@@ -3106,27 +3916,31 @@ export default function AdminPortal() {
                         </p>
                         <p className="text-xs text-muted-foreground">{item.company_email || item.user_id}</p>
                       </TableCell>
-                      <TableCell className="space-x-2">
-                        <Badge variant="outline">
-                          {item.planner_type === 'committee' ? 'Committee' : 'Professional'}
-                        </Badge>
-                        {item.planner_type === 'committee' && (
-                          <Badge variant={item.planner_subscription_status === "active" && item.planner_verified ? "secondary" : "outline"}>
-                            {item.planner_subscription_status === "active" && item.planner_verified ? 'Exports enabled' : 'Exports locked'}
-                          </Badge>
-                        )}
-                        <Badge variant={item.planner_verified ? "secondary" : "outline"}>
-                          {item.planner_verified ? "Verified" : "Unverified"}
-                        </Badge>
-                        {item.planner_verification_requested && !item.planner_verified && (
-                          <Badge variant="outline">Verification requested</Badge>
-                        )}
-                        {item.founding_planner_contributor && (
-                          <Badge className="border-0 bg-[#ead8a8] text-[#4c3528]">Founding contributor</Badge>
-                        )}
-                      </TableCell>
                       <TableCell>
                         <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                            {item.planner_type === 'committee' ? 'Committee workspace' : 'Professional planner'}
+                          </p>
+                          <StatusLine tone={item.planner_verified ? "success" : item.planner_verification_requested ? "warning" : "neutral"}>
+                            {item.planner_verified ? "Verified" : item.planner_verification_requested ? "Verification requested" : "Not verified"}
+                          </StatusLine>
+                          {item.planner_type === 'committee' && (
+                            <StatusLine tone={item.planner_subscription_status === "active" && item.planner_verified ? "success" : "neutral"}>
+                              {item.planner_subscription_status === "active" && item.planner_verified ? 'Exports enabled' : 'Exports locked'}
+                            </StatusLine>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <StatusLine tone={accessHealthTone(accessHealth)}>{subscriptionHealthLabel(accessHealth)}</StatusLine>
+                            <p className="pl-4 text-xs text-muted-foreground">
+                              {item.planner_type === "committee" ? "Committee pass" : "Professional planner plan"} · {formatExpiry(item.planner_subscription_expires_at)}
+                            </p>
+                          </div>
+                          <div className="border-t border-border/70 pt-3">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Change access</p>
                           <Select
                             value={plannerSubscriptionDrafts[item.user_id] ?? item.planner_subscription_status}
                             onValueChange={(value) =>
@@ -3170,10 +3984,14 @@ export default function AdminPortal() {
                             />
                             <span className="text-sm">Verified</span>
                           </div>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
+                          <p className="text-xs text-muted-foreground">
+                            {item.founding_planner_contributor ? "Founding contributor" : "Standard contributor"}
+                          </p>
                           <div className="flex items-center gap-2">
                             <input
                               type="checkbox"
@@ -3210,11 +4028,12 @@ export default function AdminPortal() {
                           onClick={() => handlePlannerAccessUpdate(item.user_id)}
                         >
                           {savingUserId === item.user_id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                          Save access
+                          Save subscription & verification
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -3244,7 +4063,7 @@ export default function AdminPortal() {
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 <p>
                   AI usage is counted per user message and resets monthly. Each audience can have its own cap,
-                  can be disabled, and can be marked as Stripe-ready for a separate add-on later.
+                  can be disabled, and can be marked as payment-ready for a separate add-on later.
                 </p>
                 <p>
                   Separate add-on lookup keys are optional right now. Leaving them blank keeps AI bundled into the

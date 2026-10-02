@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Wallet, CheckSquare, Users, Store, Heart, LinkIcon, Unlink, CalendarPlus, Clock, ChevronRight, MapPin, Receipt, BriefcaseBusiness, AlertTriangle, ShieldCheck, EyeOff, HandCoins } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useNavigate, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import PlannerBrandingBanner from '@/components/PlannerBrandingBanner';
+import AttentionInbox from '@/components/AttentionInbox';
+import RecentWorkspaceChangesCard from '@/components/RecentWorkspaceChangesCard';
 import MyConnections from '@/components/MyConnections';
 import PlannerChangeRequestsCard from '@/components/PlannerChangeRequestsCard';
 import InfoTip from '@/components/InfoTip';
@@ -23,7 +25,14 @@ import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
 import { getMyWeddingOwnershipSummary, type MyWeddingOwnershipSummary } from '@/lib/weddingWorkspace';
 import { summarizeContributions, type ContributionSummaryRow } from '@/lib/contributions';
 import { WorkspacePageSkeleton } from '@/components/AppLoadingSkeletons';
-import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
+import { getLabsPath, getSpaceTablePlanPath, isLabsEnabled, isLaunchFeatureEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
+import { buildConciergeContext } from '@/lib/conciergeContext';
+import AnimatedNumber from '@/components/AnimatedNumber';
+import { compareTasksByWeddingChecklistOrder, getNextWeddingChecklistTask } from '@/lib/weddingTaskTemplates';
+import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
+import type { AttentionItem } from '@/lib/attention';
+import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import ContextualAssistantAction from '@/components/ContextualAssistantAction';
 
 interface DashboardStats {
   totalBudget: number;
@@ -84,6 +93,7 @@ interface VendorDigestRow {
 interface TaskDigestRow {
   id: string;
   title: string;
+  category: string | null;
   due_date: string | null;
   completed: boolean;
   visibility: string;
@@ -124,11 +134,25 @@ const EMPTY_DASHBOARD_WORKSPACE_DATA: DashboardWorkspaceData = {
   contributionRows: [],
 };
 
+function guidedTimelineDescription(timelineLabel: string | null) {
+  if (!timelineLabel) return 'Continue with the next guided planning step.';
+  if (timelineLabel.toLowerCase() === 'wedding day') return 'Plan this for the wedding day.';
+  if (timelineLabel.toLowerCase() === 'post wedding') return 'Complete this after the wedding.';
+  return `${timelineLabel} before the wedding.`;
+}
+
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWorkspaceData> {
   const today = new Date().toISOString().slice(0, 10);
   const [budget, tasks, guests, vendors, finalVendorRows, vendorTaskRows, contributions, timelines] = await Promise.all([
     supabase.from('budget_categories').select('id, name, allocated, spent, budget_scope, visibility').or(dataOrFilter),
-    supabase.from('tasks').select('id, title, due_date, completed, visibility, phase').or(dataOrFilter),
+    supabase.from('tasks').select('id, title, category, due_date, completed, visibility, phase').or(dataOrFilter),
     supabase.from('guests').select('rsvp_status').or(dataOrFilter),
     supabase.from('vendors').select('id, name, category, selection_status, payment_due_date, payment_status').or(dataOrFilter),
     supabase
@@ -211,6 +235,7 @@ async function loadDashboardWorkspace(dataOrFilter: string): Promise<DashboardWo
     })),
     vendorDigestRows: vendorRows.map((row) => ({
       ...row,
+      category: canonicalizeVendorCategory(row.category || 'Other'),
       selection_status: row.selection_status ?? 'shortlisted',
       payment_due_date: row.payment_due_date ?? null,
       payment_status: row.payment_status ?? 'not_started',
@@ -260,16 +285,43 @@ function getDashboardAssistantFeature(role?: string | null, plannerType?: string
 }
 
 export default function Dashboard() {
+  const location = useLocation();
   const { user, profile } = useAuth();
   const { isPlanner, selectedClient, dataOrFilter, linkedPlanner, unlinkPlanner, plannerClientHydrating } = usePlanner();
+
+  useEffect(() => {
+    if (location.hash !== '#planner-change-requests' || isPlanner) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const reviewSection = document.getElementById('planner-change-requests');
+      reviewSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      reviewSection?.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isPlanner, location.hash]);
   const navigate = useNavigate();
   const { toast } = useToast();
   const assistantPanel = useAssistantPanel();
   const isCommittee = profile?.role === 'planner' && profile?.planner_type === 'committee';
   const showPlanningDigest = profile?.role === 'couple' || isCommittee;
+  const showSharedWeddingHome = !isPlanner || Boolean(selectedClient);
   const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
   const labsEnabled = isLabsEnabled();
   const [dashboardNudgeDismissed, setDashboardNudgeDismissed] = useState(false);
+  const [estimatorRecoveryAttempted, setEstimatorRecoveryAttempted] = useState(false);
+
+  useEffect(() => {
+    if (location.hash !== '#planner-change-requests' || isPlanner) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const reviewSection = document.getElementById('planner-change-requests');
+      reviewSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      reviewSection?.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isPlanner, location.hash]);
 
   const dashboardQuery = useQuery({
     queryKey: ['dashboard', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null],
@@ -284,6 +336,49 @@ export default function Dashboard() {
     enabled: Boolean(user && !isPlanner && profile?.role === 'couple'),
     staleTime: 60_000,
   });
+
+  useEffect(() => {
+    if (
+      estimatorRecoveryAttempted
+      || !user
+      || profile?.role !== 'couple'
+      || !hasPendingEstimatorPlanDraft(user.user_metadata)
+    ) return;
+
+    let active = true;
+    setEstimatorRecoveryAttempted(true);
+
+    void seedPendingEstimatorPlanForUser({
+      userId: user.id,
+      role: profile.role,
+      plannerType: profile.planner_type,
+      userMetadata: user.user_metadata,
+    })
+      .then(async (seeded) => {
+        if (!active || !seeded) return;
+        await Promise.all([dashboardQuery.refetch(), ownershipSummaryQuery.refetch()]);
+        if (active) {
+          toast({
+            title: 'Your estimate is ready',
+            description: 'We added the estimate you made before creating your account to this wedding plan.',
+          });
+        }
+      })
+      .catch((error) => {
+        console.error('Could not recover pending estimator plan:', error);
+        if (active) {
+          toast({
+            title: 'We could not restore your estimate yet',
+            description: 'Your estimate is safe. Refresh the page and try again.',
+            variant: 'destructive',
+          });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [dashboardQuery, estimatorRecoveryAttempted, ownershipSummaryQuery, profile?.planner_type, profile?.role, toast, user]);
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) {
@@ -444,6 +539,41 @@ export default function Dashboard() {
     () => taskDigestRows.filter((task) => !task.completed),
     [taskDigestRows],
   );
+  const coupleTaskAttentionItems = useMemo<AttentionItem[]>(() => {
+    const todayKey = localDateKey(new Date());
+    const horizon = new Date();
+    horizon.setDate(horizon.getDate() + 14);
+    const horizonKey = localDateKey(horizon);
+
+    return pendingTasks
+      .filter((task) => task.due_date && task.due_date <= horizonKey)
+      .sort((left, right) => String(left.due_date).localeCompare(String(right.due_date)))
+      .map((task) => {
+        const overdue = Boolean(task.due_date && task.due_date < todayKey);
+        const dueAt = task.due_date ? `${task.due_date}T00:00:00` : null;
+
+        return {
+          id: `wedding-home-task:${task.id}`,
+          createdAt: dueAt ?? new Date().toISOString(),
+          updatedAt: dueAt ?? new Date().toISOString(),
+          recipientRole: isPlanner ? 'planner' : 'couple',
+          weddingId: null,
+          sourceType: 'task',
+          sourceId: task.id,
+          kind: 'action',
+          priority: overdue ? 'urgent' : 'action',
+          status: 'read',
+          title: task.title,
+          summary: overdue ? 'This task is overdue.' : 'This task is due soon.',
+          actionLabel: 'Open task',
+          actionPath: `/tasks?task=${task.id}`,
+          dueAt,
+          metadata: {
+            wedding_name: weddingTitle,
+          },
+        };
+      });
+  }, [isPlanner, pendingTasks, weddingTitle]);
   const privateTasks = useMemo(
     () => pendingTasks.filter((task) => task.visibility === 'private'),
     [pendingTasks],
@@ -463,10 +593,16 @@ export default function Dashboard() {
   const topPendingTasks = useMemo(
     () =>
       [...pendingTasks]
-        .sort((left, right) => (left.due_date ?? '9999-12-31').localeCompare(right.due_date ?? '9999-12-31'))
+        .sort(compareTasksByWeddingChecklistOrder)
         .slice(0, 3),
     [pendingTasks],
   );
+  const nextGuidedRecommendation = useMemo(
+    () => getNextWeddingChecklistTask(taskDigestRows),
+    [taskDigestRows],
+  );
+  const nextGuidedTask = nextGuidedRecommendation?.task ?? null;
+  const nextGuidedStep = nextGuidedRecommendation?.step ?? null;
 
   const vendorDecisionsPending = useMemo(() => {
     const byCategory = vendorDigestRows.reduce((summary, vendor) => {
@@ -568,10 +704,161 @@ export default function Dashboard() {
     vendorDecisionsPending,
   ]);
 
+  const homeSetupChecklist = [
+    {
+      label: 'Wedding profile',
+      detail: weddingDate && weddingLocation ? 'Date and location are in place.' : 'Add the date and location so the workspace feels complete.',
+      complete: Boolean(weddingDate && weddingLocation),
+    },
+    {
+      label: 'Budget started',
+      detail: stats.totalBudget > 0 ? `KES ${stats.totalBudget.toLocaleString()} planned so far.` : 'Set your first budget categories and working totals.',
+      complete: stats.totalBudget > 0,
+    },
+    {
+      label: 'Guest list started',
+      detail: stats.totalGuests > 0 ? `${stats.totalGuests} guest${stats.totalGuests === 1 ? '' : 's'} already tracked.` : 'Add your first guests to unlock RSVPs and seating.',
+      complete: stats.totalGuests > 0,
+    },
+    {
+      label: 'Checklist active',
+      detail: stats.totalTasks > 0 ? `${pendingTasks.length} task${pendingTasks.length === 1 ? '' : 's'} still open.` : 'Add your first tasks so the plan has momentum.',
+      complete: stats.totalTasks > 0,
+    },
+    {
+      label: 'Timeline started',
+      detail: upcomingEvents.length > 0 ? `${upcomingEvents.length} timeline moment${upcomingEvents.length === 1 ? '' : 's'} already visible.` : 'Build the first timeline events for the wedding day.',
+      complete: upcomingEvents.length > 0,
+    },
+    {
+      label: 'Vendor decisions moving',
+      detail: finalVendorUrgencies.length > 0 ? `${finalVendorUrgencies.length} final vendor${finalVendorUrgencies.length === 1 ? '' : 's'} already confirmed.` : 'Choose final vendors and track payments here.',
+      complete: finalVendorUrgencies.length > 0,
+    },
+  ];
+
+  const completedHomeSetupCount = homeSetupChecklist.filter((item) => item.complete).length;
+  const homeSetupPercentage = Math.round((completedHomeSetupCount / homeSetupChecklist.length) * 100);
+
+  const homePrimaryAction: { href: string; label: string; description: string; cta?: string } = (() => {
+    if (!isPlanner && (!weddingDate || !weddingLocation)) {
+      return {
+        href: '/settings',
+        label: 'Complete wedding profile',
+        description: 'Add your wedding date and location.',
+      };
+    }
+
+    if (stats.totalTasks === 0) {
+      return {
+        href: '/tasks',
+        label: 'Create first tasks',
+        description: 'Start with a short wedding checklist.',
+      };
+    }
+
+    if (nextGuidedTask && nextGuidedStep) {
+      return {
+        href: `/tasks?task=${encodeURIComponent(nextGuidedTask.id)}`,
+        label: nextGuidedTask.title,
+        description: `${guidedTimelineDescription(nextGuidedStep.timelineLabel)} · Step ${nextGuidedStep.step} of ${nextGuidedStep.totalSteps}.`,
+        cta: 'Start this step',
+      };
+    }
+
+    if (stats.totalBudget === 0) {
+      return {
+        href: '/budget',
+        label: 'Start the budget',
+        description: 'Add your first budget categories and amounts.',
+      };
+    }
+
+    if (stats.totalGuests === 0 && isLaunchFeatureEnabled('/guests')) {
+      return {
+        href: '/guests',
+        label: 'Build the guest list',
+        description: 'Add the first people you want to invite.',
+      };
+    }
+
+    if (upcomingEvents.length === 0 && isLaunchFeatureEnabled('/timeline')) {
+      return {
+        href: '/timeline',
+        label: 'Create the timeline',
+        description: 'Add the first events for your wedding day.',
+      };
+    }
+
+    if (finalVendorUrgencies.length === 0) {
+      return {
+        href: '/vendors',
+        label: 'Choose final vendors',
+        description: 'Review the vendors you are considering.',
+      };
+    }
+
+    return {
+      href: '/tasks',
+      label: 'Review this week',
+      description: 'See what needs your attention next.',
+    };
+  })();
+
+  const dashboardConciergeContext = useMemo(() => buildConciergeContext({
+    page: 'Wedding Home',
+    role: profile?.role,
+    weddingName: weddingTitle,
+    primaryGoal: 'Help the couple understand the next best planning move without overwhelming them.',
+    nextBestAction: homePrimaryAction.label,
+    facts: [
+      ['Wedding date countdown', daysUntil === null ? 'No date set' : daysUntil === 0 ? 'Wedding day' : `${daysUntil} days`],
+      ['Location', weddingLocation],
+      ['Setup progress', `${homeSetupPercentage}%`],
+      ['Budget allocated', `KES ${stats.totalBudget.toLocaleString()}`],
+      ['Budget spent', `KES ${stats.totalSpent.toLocaleString()}`],
+      ['Guests tracked', stats.totalGuests],
+      ['Guests confirmed', stats.confirmedGuests],
+      ['Open tasks', pendingTasks.length],
+      ['Vendors tracked', stats.totalVendors],
+      ['Final vendors', finalVendorUrgencies.length],
+      ['Funding gap', `KES ${contributionGap.toLocaleString()}`],
+    ],
+    risks: [
+      stats.totalTasks === 0 ? 'No checklist exists yet.' : null,
+      stats.totalBudget === 0 ? 'No budget categories are set yet.' : null,
+      stats.totalGuests === 0 ? 'Guest list has not started.' : null,
+      upcomingEvents.length === 0 ? 'Timeline has not started.' : null,
+      vendorDecisionsPending[0] ? `${vendorDecisionsPending[0].category} vendor decision is still open.` : null,
+      paymentsDueSoon.length > 0 ? `${paymentsDueSoon.length} vendor payment deadline(s) are due soon.` : null,
+    ].filter(Boolean) as string[],
+  }), [
+    contributionGap,
+    daysUntil,
+    finalVendorUrgencies.length,
+    homePrimaryAction.label,
+    homeSetupPercentage,
+    paymentsDueSoon.length,
+    pendingTasks.length,
+    profile?.role,
+    stats.completedTasks,
+    stats.confirmedGuests,
+    stats.totalBudget,
+    stats.totalGuests,
+    stats.totalSpent,
+    stats.totalTasks,
+    stats.totalVendors,
+    upcomingEvents.length,
+    vendorDecisionsPending,
+    weddingLocation,
+    weddingTitle,
+  ]);
+
   const dashboardAssistant = useInlineAssistant({
     feature: dashboardAssistantFeature,
     page: 'dashboard',
     surface: 'weekly_focus_card',
+    conciergeContext: dashboardConciergeContext,
   });
   const dashboardNudge = useMemo(() => {
     if (pendingTasks.length >= 3) {
@@ -611,98 +898,6 @@ export default function Dashboard() {
     ? Math.round((stats.confirmedGuests / stats.totalGuests) * 100)
     : 0;
 
-  const homeSetupChecklist = [
-    {
-      label: 'Wedding profile',
-      detail: weddingDate && weddingLocation ? 'Date and location are in place.' : 'Add the date and location so the workspace feels complete.',
-      complete: Boolean(weddingDate && weddingLocation),
-    },
-    {
-      label: 'Budget started',
-      detail: stats.totalBudget > 0 ? `KES ${stats.totalBudget.toLocaleString()} planned so far.` : 'Set your first budget categories and working totals.',
-      complete: stats.totalBudget > 0,
-    },
-    {
-      label: 'Guest list started',
-      detail: stats.totalGuests > 0 ? `${stats.totalGuests} guest${stats.totalGuests === 1 ? '' : 's'} already tracked.` : 'Add your first guests to unlock RSVPs and seating.',
-      complete: stats.totalGuests > 0,
-    },
-    {
-      label: 'Checklist active',
-      detail: stats.totalTasks > 0 ? `${pendingTasks.length} task${pendingTasks.length === 1 ? '' : 's'} still open.` : 'Add your first tasks so the plan has momentum.',
-      complete: stats.totalTasks > 0,
-    },
-    {
-      label: 'Timeline started',
-      detail: upcomingEvents.length > 0 ? `${upcomingEvents.length} timeline moment${upcomingEvents.length === 1 ? '' : 's'} already visible.` : 'Build the first timeline events for the wedding day.',
-      complete: upcomingEvents.length > 0,
-    },
-    {
-      label: 'Vendor decisions moving',
-      detail: finalVendorUrgencies.length > 0 ? `${finalVendorUrgencies.length} final vendor${finalVendorUrgencies.length === 1 ? '' : 's'} already confirmed.` : 'Choose final vendors and track payments here.',
-      complete: finalVendorUrgencies.length > 0,
-    },
-  ];
-
-  const completedHomeSetupCount = homeSetupChecklist.filter((item) => item.complete).length;
-  const homeSetupPercentage = Math.round((completedHomeSetupCount / homeSetupChecklist.length) * 100);
-
-  const homePrimaryAction = (() => {
-    if (!isPlanner && (!weddingDate || !weddingLocation)) {
-      return {
-        href: '/settings',
-        label: 'Complete wedding profile',
-        description: 'Add your date and location so the workspace becomes more useful.',
-      };
-    }
-
-    if (stats.totalTasks === 0) {
-      return {
-        href: '/tasks',
-        label: 'Create first tasks',
-        description: 'Start the checklist so the rest of the plan has something concrete to organize around.',
-      };
-    }
-
-    if (stats.totalBudget === 0) {
-      return {
-        href: '/budget',
-        label: 'Start the budget',
-        description: 'Set your first categories and amounts before vendor costs start spreading out.',
-      };
-    }
-
-    if (stats.totalGuests === 0) {
-      return {
-        href: '/guests',
-        label: 'Build the guest list',
-        description: 'Add the first guests so RSVPs, tables, and invites have somewhere to begin.',
-      };
-    }
-
-    if (upcomingEvents.length === 0) {
-      return {
-        href: '/timeline',
-        label: 'Create the timeline',
-        description: 'Map the wedding day so everyone knows what happens next.',
-      };
-    }
-
-    if (finalVendorUrgencies.length === 0) {
-      return {
-        href: '/vendors',
-        label: 'Choose final vendors',
-        description: 'Move from browsing to confirmed bookings and payment tracking.',
-      };
-    }
-
-    return {
-      href: '/tasks',
-      label: 'Review this week',
-      description: 'Open the live checklist and move the highest-impact items forward.',
-    };
-  })();
-
   const homeActionCards = [
     {
       title: topPendingTasks[0]?.title ?? 'Build your first checklist',
@@ -711,7 +906,6 @@ export default function Dashboard() {
         : 'Start with the next planning task so the workspace has an obvious rhythm.',
       href: '/tasks',
       cta: stats.totalTasks > 0 ? 'Open tasks' : 'Create first task',
-      icon: CheckSquare,
     },
     {
       title: vendorDecisionsPending[0]
@@ -724,7 +918,6 @@ export default function Dashboard() {
           : 'Keep bookings, costs, and follow-up tasks tied to the same wedding workspace.',
       href: '/vendors',
       cta: vendorDecisionsPending[0] ? 'Review vendors' : 'Open vendor hub',
-      icon: Store,
     },
     {
       title: upcomingEvents[0]?.title ?? (stats.totalBudget > 0 ? 'Check the funding gap' : 'Start your wedding timeline'),
@@ -735,7 +928,6 @@ export default function Dashboard() {
           : 'Create the day-of sequence so the plan has a real shape.',
       href: upcomingEvents[0] ? '/timeline' : (stats.totalBudget > 0 ? '/contributions' : '/timeline'),
       cta: upcomingEvents[0] ? 'Open timeline' : (stats.totalBudget > 0 ? 'Open contributions' : 'Create timeline'),
-      icon: upcomingEvents[0] ? Clock : HandCoins,
     },
   ];
 
@@ -745,7 +937,6 @@ export default function Dashboard() {
       value: daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : `${daysUntil} days`,
       detail: weddingDate ? 'Until the wedding day arrives.' : 'Set a wedding date to unlock the live countdown.',
       href: !isPlanner && !weddingDate ? '/settings' : '/timeline',
-      icon: Clock,
     },
     {
       label: 'Budget health',
@@ -754,7 +945,6 @@ export default function Dashboard() {
         ? `KES ${(stats.totalBudget - stats.totalSpent).toLocaleString()} still available.`
         : 'Create budget categories and totals.',
       href: '/budget',
-      icon: Wallet,
     },
     {
       label: 'Task progress',
@@ -763,7 +953,6 @@ export default function Dashboard() {
         ? `${pendingTasks.length} task${pendingTasks.length === 1 ? '' : 's'} still open.`
         : 'Build the first checklist items.',
       href: '/tasks',
-      icon: CheckSquare,
     },
     {
       label: 'Guest response',
@@ -772,12 +961,134 @@ export default function Dashboard() {
         ? `${stats.confirmedGuests} confirmed of ${stats.totalGuests}.`
         : 'Start the guest list to unlock invites and seating.',
       href: '/guests',
-      icon: Users,
     },
+  ];
+
+  const workspaceQuickLinks = [
+    { label: 'Budget', href: '/budget', summary: moduleCards[0].summary, icon: Wallet },
+    { label: 'Guests', href: '/guests', summary: moduleCards[3].summary, icon: Users },
+    { label: 'Tasks', href: '/tasks', summary: moduleCards[5].summary, icon: CheckSquare },
+    { label: 'Vendors', href: '/vendors', summary: moduleCards[2].summary, icon: Store },
+    { label: 'Timeline', href: '/timeline', summary: moduleCards[1].summary, icon: Clock },
+    { label: 'Contributions', href: '/contributions', summary: moduleCards[4].summary, icon: HandCoins },
   ];
 
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton />;
   if (pageLoading) return <WorkspacePageSkeleton />;
+
+  if (showSharedWeddingHome) {
+    const supportingActions = homeActionCards
+      .filter((action) => action.href !== homePrimaryAction.href && isLaunchFeatureEnabled(action.href))
+      .slice(0, 1);
+    const remainingBudget = stats.totalBudget - stats.totalSpent;
+
+    return (
+      <div className="mx-auto max-w-5xl space-y-4">
+        <div className="grid gap-4 border-b border-border/70 pb-4 lg:grid-cols-[0.72fr_1.45fr] lg:items-stretch">
+          <header className="flex flex-col justify-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Wedding Home</p>
+            <h1 className="mt-1.5 font-editorial text-3xl font-semibold text-foreground">{weddingTitle}</h1>
+            {weddingMeta.length > 0 ? (
+              <p className="mt-1 text-sm text-muted-foreground">{weddingMeta.join(' · ')}</p>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">Your wedding plan starts here.</p>
+            )}
+          </header>
+
+          <Card className="rounded-xl border-primary/25 bg-primary/5 shadow-none">
+            <CardContent className="flex h-full flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 max-w-2xl">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Do this next</p>
+                <h2 className="mt-1.5 line-clamp-2 text-xl font-semibold text-foreground">{homePrimaryAction.label}</h2>
+                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{homePrimaryAction.description}</p>
+              </div>
+              <div className="flex shrink-0 flex-col gap-2 sm:min-w-44">
+                <ContextualAssistantAction
+                  label="Tell Zania what you need"
+                  prompt="What should we focus on next, and can you help us do it?"
+                  context={dashboardConciergeContext}
+                  className="w-full"
+                />
+                <Button asChild size="sm" variant="ghost" className="w-full">
+                  <Link to={homePrimaryAction.href}>{homePrimaryAction.cta ?? homePrimaryAction.label}</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <section aria-labelledby="plan-overview-title">
+          <h2 id="plan-overview-title" className="text-base font-semibold text-foreground">Your plan</h2>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            <Link to="/budget" className="rounded-lg border border-border bg-card p-3 transition-colors duration-200 hover:border-primary/40">
+              <p className="text-sm font-medium text-muted-foreground">Budget</p>
+              <p className={`mt-1 text-lg font-semibold ${remainingBudget < 0 ? 'text-destructive' : 'text-foreground'}`}>
+                {stats.totalBudget > 0 ? `KES ${Math.abs(remainingBudget).toLocaleString()} ${remainingBudget < 0 ? 'over' : 'left'}` : 'Not started'}
+              </p>
+              <p className="text-xs text-muted-foreground">{stats.totalBudget > 0 ? `${budgetUsagePercentage}% used` : 'Add your estimate'}</p>
+            </Link>
+            <Link to="/tasks" className="rounded-lg border border-border bg-card p-3 transition-colors duration-200 hover:border-primary/40">
+              <p className="text-sm font-medium text-muted-foreground">Tasks</p>
+              <p className="mt-1 text-lg font-semibold text-foreground">
+                {stats.totalTasks > 0 ? `${pendingTasks.length} left` : 'Not started'}
+              </p>
+              <p className="text-xs text-muted-foreground">{stats.totalTasks > 0 ? `${taskCompletionPercentage}% complete` : 'Create your checklist'}</p>
+            </Link>
+            <Link to="/vendors" className="rounded-lg border border-border bg-card p-3 transition-colors duration-200 hover:border-primary/40">
+              <p className="text-sm font-medium text-muted-foreground">Vendors</p>
+              <p className="mt-1 text-lg font-semibold text-foreground">
+                {stats.totalVendors > 0 ? `${stats.totalVendors} saved` : 'None saved'}
+              </p>
+              <p className="text-xs text-muted-foreground">{stats.totalVendors > 0 ? 'Open vendor list' : 'Add a vendor'}</p>
+            </Link>
+          </div>
+        </section>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <AttentionInbox
+            showEmpty
+            maxItems={3}
+            compact
+            supplementaryItems={coupleTaskAttentionItems}
+            onSupplementaryAction={(item) => {
+              if (item.actionPath) navigate(item.actionPath);
+            }}
+          />
+          <RecentWorkspaceChangesCard
+            maxItems={5}
+            compact
+          />
+        </div>
+
+        {!isPlanner && <PlannerChangeRequestsCard hideWhenEmpty />}
+
+        {supportingActions.length > 0 ? (
+          <section aria-labelledby="coming-up-title">
+            <h2 id="coming-up-title" className="text-lg font-semibold text-foreground">Coming up</h2>
+            <div className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+              {supportingActions.map((action) => (
+                <div key={action.href} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium text-foreground">{action.title}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{action.body}</p>
+                  </div>
+                  <Button asChild variant="outline" size="sm" className="shrink-0">
+                    <Link to={action.href}>{action.cta}</Link>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <div className="border-t border-border/70 pt-4">
+          <Link to="/settings" className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            Wedding settings and team
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -790,11 +1101,11 @@ export default function Dashboard() {
                 <p className="text-xs font-medium uppercase tracking-[0.3em] text-primary">Wedding Home</p>
                 <InfoTip content="This overview keeps your next actions, guests, budget, vendors, and timeline in one place so you can see what needs attention fastest." />
               </div>
-              <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.95] text-foreground sm:text-5xl">
+              <h1 className="workspace-h1 mt-3">
                 {weddingTitle}
               </h1>
               <p className="mt-3 max-w-2xl text-sm text-muted-foreground sm:text-lg">
-                Your planning command center.
+                Start with the one action Zania needs from you next. The deeper reports stay tucked away until you need them.
               </p>
             </div>
 
@@ -811,19 +1122,19 @@ export default function Dashboard() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-[24px] border border-[#ebdccb] bg-white/72 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
+              <div className="rounded-[24px] border border-[#d9e5f4] bg-[#f4f8fd]/90 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Countdown</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : `${daysUntil} days`}
+                  {daysUntil === null ? 'No date yet' : daysUntil === 0 ? 'Today' : <AnimatedNumber value={daysUntil} suffix=" days" />}
                 </p>
               </div>
-              <div className="rounded-[24px] border border-[#ebdccb] bg-white/72 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
+              <div className="rounded-[24px] border border-[#d9ead7] bg-[#f4fbf3]/90 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Funding gap</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
-                  KES {contributionGap.toLocaleString()}
+                  <AnimatedNumber value={contributionGap} prefix="KES " />
                 </p>
               </div>
-              <div className="rounded-[24px] border border-[#ebdccb] bg-white/72 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
+              <div className="rounded-[24px] border border-[#f0dfc5] bg-[#fff8ec]/95 p-4 shadow-[0_12px_30px_rgba(28,22,18,0.04)]">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Next focus</p>
                 <p className="mt-2 text-sm font-medium text-foreground">
                   {homePrimaryAction.label}
@@ -832,8 +1143,13 @@ export default function Dashboard() {
             </div>
 
             <div className="flex flex-wrap gap-3">
+              <ContextualAssistantAction
+                label="Tell Zania what you need"
+                prompt="What should we focus on next, and can you help us do it?"
+                context={dashboardConciergeContext}
+              />
               <Button asChild>
-                <Link to={homePrimaryAction.href}>{homePrimaryAction.label}</Link>
+                <Link to={homePrimaryAction.href}>{homePrimaryAction.cta ?? homePrimaryAction.label}</Link>
               </Button>
               <Button asChild variant="outline">
                 <Link to="/tasks">Open task workspace</Link>
@@ -861,12 +1177,12 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="rounded-full border-primary/20 bg-primary/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-primary">
+                      <Badge variant="info" className="rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.16em]">
                         Live
                       </Badge>
-                      <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary/70">Workspace tool</p>
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary/70">Workspace tool</p>
                     </div>
-                    <h2 className="font-display text-2xl text-foreground">Open the Space &amp; Table Plan</h2>
+                    <h2 className="workspace-h2">Open the Space &amp; Table Plan</h2>
                     <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                       Map tables, stage flow, guest seating, and ceremony zones directly inside the main wedding workspace.
                     </p>
@@ -898,8 +1214,8 @@ export default function Dashboard() {
                   {completedHomeSetupCount} of {homeSetupChecklist.length} foundations complete.
                 </p>
               </div>
-              <div className="rounded-2xl border border-primary/20 bg-[linear-gradient(180deg,rgba(255,250,245,0.96),rgba(252,243,235,0.88))] px-3 py-2 text-right shadow-sm">
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">Location</p>
+              <div className="rounded-2xl border border-primary/20 bg-[linear-gradient(180deg,rgba(255,250,245,0.96),rgba(252,243,235,0.88))] px-3 py-2 text-left shadow-sm sm:text-right">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-primary">Location</p>
                 <p className="mt-1 flex items-center gap-2 text-sm font-medium text-foreground">
                   <MapPin className="h-4 w-4 text-primary" />
                   {weddingLocation || 'Add location'}
@@ -915,7 +1231,7 @@ export default function Dashboard() {
             </div>
 
             <div className="mt-5 space-y-3">
-              {homeSetupChecklist.slice(0, 4).map((item) => (
+              {homeSetupChecklist.filter((item) => !item.complete).slice(0, 3).map((item) => (
                 <div key={item.label} className="rounded-2xl border border-[#ebdccb] bg-white/72 p-3 shadow-[0_8px_20px_rgba(28,22,18,0.03)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -931,9 +1247,14 @@ export default function Dashboard() {
                   </div>
                 </div>
               ))}
+              {homeSetupChecklist.every((item) => item.complete) && (
+                <div className="rounded-2xl border border-[#d9ead7] bg-[#f4fbf3]/90 p-3 text-sm text-[#2f6f3c] shadow-[0_8px_20px_rgba(28,22,18,0.03)]">
+                  The foundations are in place. Use the next move below to keep momentum.
+                </div>
+              )}
             </div>
 
-            <div className="mt-4 rounded-2xl border border-primary/15 bg-[linear-gradient(180deg,rgba(255,249,242,0.98),rgba(250,239,228,0.9))] p-4">
+            <div className="semantic-surface-info mt-4 rounded-2xl border p-4">
               <p className="text-sm font-medium text-foreground">{homePrimaryAction.label}</p>
               <p className="mt-1 text-sm text-muted-foreground">Best next move right now.</p>
             </div>
@@ -941,11 +1262,23 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AttentionInbox
+          showEmpty
+          maxItems={3}
+          supplementaryItems={coupleTaskAttentionItems}
+          onSupplementaryAction={(item) => {
+            if (item.actionPath) navigate(item.actionPath);
+          }}
+        />
+        <RecentWorkspaceChangesCard maxItems={5} />
+      </div>
+
       <div className="space-y-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.28em] text-primary">Next Best Moves</p>
           <div className="mt-2 flex items-center gap-2">
-            <h2 className="font-display text-4xl font-semibold leading-none text-foreground">Keep the wedding moving</h2>
+            <h2 className="workspace-h2">Keep the wedding moving</h2>
             <InfoTip content="These suggested actions update as your workspace changes, so the list reflects what looks most useful right now." />
           </div>
         </div>
@@ -953,18 +1286,12 @@ export default function Dashboard() {
           {homeActionCards.map((action, index) => (
             <motion.div
               key={action.title}
-              initial={{ opacity: 0, y: 15 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1], delay: index * 0.035 }}
             >
-              <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.88))] shadow-[0_18px_40px_rgba(28,22,18,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(28,22,18,0.07)]">
+              <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.88))] shadow-[0_18px_40px_rgba(28,22,18,0.05)]">
                 <CardContent className="flex h-full flex-col gap-4 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
-                      <action.icon className="h-5 w-5 text-primary" />
-                    </div>
-                    <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground" />
-                  </div>
                   <div className="space-y-2">
                     <p className="text-lg font-semibold text-foreground">{action.title}</p>
                     <p className="text-sm text-muted-foreground">{action.body}</p>
@@ -980,7 +1307,7 @@ export default function Dashboard() {
       </div>
 
       {!dashboardNudgeDismissed && dashboardNudge && assistantPanel && (
-        <Card className="border-primary/20 bg-primary/5 shadow-card">
+        <Card className="semantic-surface-info shadow-card">
           <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-foreground">{dashboardNudge.title}</p>
@@ -993,7 +1320,6 @@ export default function Dashboard() {
                 className="gap-2"
                 onClick={() => assistantPanel.openAssistant(dashboardNudge.prompt)}
               >
-                <AlertTriangle className="h-4 w-4" />
                 Review with AI
               </Button>
               <Button
@@ -1028,47 +1354,81 @@ export default function Dashboard() {
         />
       )}
 
-      <div className="space-y-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.28em] text-primary">Wedding Pulse</p>
-          <h2 className="mt-2 font-display text-3xl font-semibold leading-none text-foreground">One quick read of the whole plan</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Get the clearest progress signals before you dive into any one workspace.
-          </p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {homePulseCards.map((card, index) => (
-            <motion.div
-              key={card.label}
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.04 }}
-            >
-              <Link to={card.href} className="block h-full">
-                <Card className="h-full rounded-[28px] border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(249,242,235,0.84))] shadow-[0_18px_40px_rgba(28,22,18,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(28,22,18,0.07)]">
-                  <CardContent className="space-y-4 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-3">
-                        <card.icon className="h-5 w-5 text-primary" />
-                      </div>
-                      <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground" />
+      <details className="group rounded-[32px] border border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(250,244,237,0.76))] shadow-[0_18px_44px_rgba(28,22,18,0.05)]">
+        <summary className="flex cursor-pointer list-none flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Reports</p>
+              <InfoTip content="Open this when you want the deeper operational view: progress signals, workspace shortcuts, vendor commitments, and planning risks." />
+            </div>
+            <h2 className="workspace-h2 mt-2">Open the deeper wedding reports</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Keep the home screen focused, then open the detailed reports only when you need the full picture.
+            </p>
+          </div>
+          <Badge variant="outline" className="w-fit rounded-full border-primary/20 bg-white/80 px-3 py-1 text-primary">
+            View reports
+          </Badge>
+        </summary>
+        <div className="space-y-8 border-t border-[#ead8c7] p-5 pt-6">
+      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+        <Card className="border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.84))] shadow-[0_18px_40px_rgba(28,22,18,0.05)]">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Wedding pulse</p>
+              <InfoTip content="Use this strip when you want the quickest read on progress before opening a specific workspace." />
+            </div>
+            <CardTitle className="workspace-h2">One quick read of the whole plan</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Four signals that tell you whether the wedding is moving cleanly.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {homePulseCards.map((card) => (
+                <Link key={card.label} to={card.href} className="group rounded-2xl border border-border/70 bg-white/72 p-4 transition-all hover:-translate-y-0.5 hover:border-primary/30">
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.label}</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">{card.value}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{card.detail}</p>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-[#ead8c7] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,242,235,0.84))] shadow-[0_18px_40px_rgba(28,22,18,0.05)]">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium uppercase tracking-[0.24em] text-primary">Workspaces</p>
+              <InfoTip content="Jump straight to the area you need without scanning a full card grid." />
+            </div>
+            <CardTitle className="workspace-h2">Open the right workspace fast</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Quick links to the six places couples need most often.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {workspaceQuickLinks.map((module) => (
+                <Link key={module.label} to={module.href} className="group flex items-start justify-between gap-3 rounded-2xl border border-border/70 bg-white/72 p-4 transition-all hover:-translate-y-0.5 hover:border-primary/30">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <module.icon className="h-4 w-4 text-primary/80" />
+                      <p className="text-sm font-medium text-foreground">{module.label}</p>
                     </div>
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{card.label}</p>
-                      <p className="mt-2 text-2xl font-semibold text-foreground">{card.value}</p>
-                      <p className="mt-2 text-sm text-muted-foreground">{card.detail}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">{module.summary}</p>
+                  </div>
+                  <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Linked planner info for couples */}
       {linkedPlanner && !isPlanner && (
-        <Card className="border-primary/20 bg-primary/5">
+        <Card className="semantic-surface-info">
           <CardContent className="flex items-center gap-3 py-4">
             <LinkIcon className="h-5 w-5 text-primary shrink-0" />
             <div className="flex-1">
@@ -1094,41 +1454,12 @@ export default function Dashboard() {
 
       {linkedPlanner && !isPlanner && <PlannerChangeRequestsCard />}
 
-      <div className="space-y-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.25em] text-primary">Workspaces</p>
-          <h2 className="mt-2 font-display text-2xl font-semibold text-foreground">Open the part of the wedding you need</h2>
-          <p className="text-sm text-muted-foreground">Each area keeps the relevant decisions, actions, and records together.</p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {moduleCards.map((module, i) => (
-            <motion.div key={module.label} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-              <Link to={module.href} className="block h-full">
-                <Card className="h-full shadow-card transition-all hover:-translate-y-0.5 hover:shadow-warm">
-                  <CardHeader className="flex flex-row items-start justify-between pb-3">
-                    <div>
-                      <CardTitle className="text-lg">{module.label}</CardTitle>
-                      <p className="mt-2 text-sm font-semibold text-foreground">{module.summary}</p>
-                    </div>
-                    <module.icon className="h-5 w-5 text-primary" />
-                  </CardHeader>
-                  <CardContent className="flex items-center justify-between pt-0">
-                    <p className="max-w-[18rem] text-sm text-muted-foreground">{module.description}</p>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  </CardContent>
-                </Card>
-              </Link>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-
       <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <Card className="border-primary/15 shadow-card">
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <CardTitle className="font-display text-2xl">Vendor Watch</CardTitle>
+                <CardTitle className="workspace-h2">Vendor Watch</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Track booked vendors, what is still owed, and the next action tied to each final decision.
                 </p>
@@ -1216,9 +1547,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-primary/20 bg-primary/5 shadow-card">
+        <Card className="semantic-surface-info shadow-card">
           <CardHeader className="pb-3">
-            <CardTitle className="font-display text-xl">Timeline And Support</CardTitle>
+            <CardTitle className="workspace-h3">Timeline And Support</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
@@ -1276,8 +1607,7 @@ export default function Dashboard() {
         {upcomingEvents.length > 0 && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Clock className="h-4 w-4" />
+              <CardTitle className="text-sm font-medium text-muted-foreground">
                 What Happens Next
                 {upcomingEvents[0]?.timeline_date && (
                   <Badge variant="outline" className="text-[10px] font-normal ml-1">
@@ -1306,7 +1636,7 @@ export default function Dashboard() {
                       key={ev.id}
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.05 }}
+                      transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1], delay: i * 0.03 }}
                       className="flex items-center gap-3 py-1.5"
                     >
                       <span className="text-sm font-semibold text-primary font-display min-w-[70px]">{formatTime(ev.event_time)}</span>
@@ -1321,13 +1651,28 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         )}
-        <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="flex h-full items-start gap-4 py-5">
-            <Heart className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-            <div>
-              <p className="font-medium text-card-foreground">Wedding Rhythm</p>
+        <Card className="semantic-surface-info">
+          <CardContent className="space-y-3 py-5">
+            <div className="flex items-start gap-4">
+              <Heart className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div>
+                <p className="font-medium text-card-foreground">Collaboration principle</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  The wedding runs better when money, people, vendors, and schedule stay tied to the same workspace.
+                </p>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-background/70 p-4">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Fastest unblocker</p>
+              <p className="mt-2 text-base font-medium text-foreground">
+                {vendorDecisionsPending[0]
+                  ? `Choose a final ${vendorDecisionsPending[0].category} vendor`
+                  : nextPublicTask?.title ?? nextPrivateTask?.title ?? 'Open the wedding workspace'}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                The strongest version of this product keeps every decision attached to the wedding itself. When the money, people, vendors, and schedule stay connected, planning feels lighter and follow-up gets faster.
+                {vendorDecisionsPending[0]
+                  ? `${vendorDecisionsPending[0].candidates} options are still active in that category.`
+                  : 'The fastest path forward is the next visible task or payment milestone.'}
               </p>
             </div>
           </CardContent>
@@ -1340,7 +1685,7 @@ export default function Dashboard() {
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <CardTitle className="font-display text-2xl">Planning Digest</CardTitle>
+                  <CardTitle className="workspace-h2">Planning Digest</CardTitle>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Budget pressure, open vendor choices, payment deadlines, and private versus shared work in one place.
                   </p>
@@ -1498,9 +1843,9 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="border-primary/20 bg-primary/5">
+          <Card className="semantic-surface-info">
             <CardHeader className="pb-3">
-              <CardTitle className="font-display text-xl">What Your Side Should Handle Next</CardTitle>
+              <CardTitle className="workspace-h3">What your side should handle next</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
@@ -1538,6 +1883,8 @@ export default function Dashboard() {
           </Card>
         </div>
       )}
+        </div>
+      </details>
 
       {/* My Connections — couples only */}
       {!isPlanner && <MyConnections />}
