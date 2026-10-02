@@ -394,7 +394,10 @@ export function getGatewayCapability(name: string) {
 
 export function getGatewayReadIntent(prompt: string): GatewayReadCapability | null {
   const normalized = prompt.trim().toLowerCase().replace(/[?.!]+$/, "");
-  if (!normalized || /\b(add|create|delete|remove|update|change|record|complete|send|invite|cancel)\b/.test(normalized)) {
+  const intentText = normalized
+    .replace(/\b(?:do not|don't|dont|never)\s+(?:also\s+)?(?:add|create|delete|remove|update|change|record|complete|send|invite|cancel)\b[^.;,]*/g, "")
+    .replace(/\bwithout\s+(?:also\s+)?(?:adding|creating|deleting|removing|updating|changing|recording|completing|sending|inviting|cancelling|canceling)\b[^.;,]*/g, "");
+  if (!normalized || /\b(add|create|delete|remove|update|change|record|complete|send|invite|cancel)\b/.test(intentText)) {
     return null;
   }
   if (parseVendorSearchPrompt(prompt)) return "discover_vendors";
@@ -419,7 +422,8 @@ export function getGatewayReadIntent(prompt: string): GatewayReadCapability | nu
   if (/\bquote requests?\b/.test(normalized)) return "get_formal_quote_summary";
   if (/\b(negotiation|deal)\b.*\b(status|state|history|rounds?|progress|agreed|countered)\b/.test(normalized)) return "get_negotiation_state";
   if (/\b(counteroffers?|counter offers?)\b.*\b(show|received|history|status|state)\b/.test(normalized)) return "get_negotiation_state";
-  if (/\b(contract|agreement)\b.*\b(compare|review|check|difference|discrepanc|match|changed|agreed)\w*\b/.test(normalized)) return "get_agreement_review";
+  if (/\b(contract|agreement)\b.*\b(compare|review|check|difference|discrepanc|match|changed|agreed|summari[sz])\w*\b/.test(normalized)) return "get_agreement_review";
+  if (/\b(compare|review|check|summari[sz])\w*\b.*\b(?:confirmed |external |uploaded )?(contract|agreement)s?\b/.test(normalized)) return "get_agreement_review";
   if (/\b(what|which)\b.*\b(changed|different)\b.*\b(contract|agreement)\b/.test(normalized)) return "get_agreement_review";
   if (/\b(negotiate|negotiation|counteroffer|counter offer|better deal|package flexibility)\b/.test(normalized)) return "get_negotiation_brief";
   if (/\b(saved|private) (vendor )?candidates\b/.test(normalized)) return "get_vendor_candidates";
@@ -1314,11 +1318,40 @@ async function getAgreementReview(
       const total = finiteAmount(facts.totalAmount ?? 0);
       const currency = String(facts.currency ?? "KES");
       const unknowns = Array.isArray(facts.unknowns) ? facts.unknowns.map(String).slice(0, 5) : [];
+      const paymentSchedule = Array.isArray(facts.paymentSchedule)
+        ? (facts.paymentSchedule as Record<string, unknown>[]).map((payment) => ({
+          title: String(payment.title ?? "Payment"),
+          amount: finiteAmount(payment.amount),
+          dueDate: String(payment.dueDate ?? ""),
+        })).filter((payment) => payment.amount > 0 && /^\d{4}-\d{2}-\d{2}$/.test(payment.dueDate)).slice(0, 8)
+        : [];
+      const serviceScope = Array.isArray(facts.serviceScope) ? facts.serviceScope.map(String).filter(Boolean).slice(0, 6) : [];
+      const deliverables = Array.isArray(facts.deliverables) ? facts.deliverables.map(String).filter(Boolean).slice(0, 6) : [];
+      const practicalTerms = [
+        ["Cancellation", facts.cancellation],
+        ["Postponement", facts.postponement],
+        ["Overtime", facts.overtime],
+        ["Travel", facts.travel],
+        ["Force majeure", facts.forceMajeure],
+        ["Termination", facts.termination],
+        ["Dispute resolution", facts.disputeResolution],
+      ].filter((entry): entry is [string, unknown] => typeof entry[1] === "string" && entry[1].trim().length > 0)
+        .map(([label, value]) => `- ${label}: ${String(value).trim().slice(0, 500)}`);
+      const reviewedDetails = contract.status === "confirmed"
+        ? [
+          paymentSchedule.length ? `Payment dates:\n${paymentSchedule.map((payment) => `- ${payment.title}: ${quoteMoney(currency, payment.amount)} due ${payment.dueDate}`).join("\n")}` : "No confirmed payment dates are recorded.",
+          serviceScope.length ? `Key service obligations:\n${serviceScope.map((item) => `- ${item}`).join("\n")}` : "No confirmed service scope is recorded.",
+          deliverables.length ? `Deliverables:\n${deliverables.map((item) => `- ${item}`).join("\n")}` : "No confirmed deliverables are recorded.",
+          practicalTerms.length ? `Practical terms to review:\n${practicalTerms.join("\n")}` : "No structured cancellation, postponement, overtime, travel, force-majeure, termination, or dispute terms are recorded.",
+        ]
+        : [];
       return [
         `${vendor} · ${contract.filename} · ${contract.status}.`,
         total > 0 ? `Recorded total: ${quoteMoney(currency, total)}.` : "No confirmed total is recorded.",
         unknowns.length ? `Needs review: ${unknowns.join("; ")}.` : "No extraction unknowns were recorded.",
         contract.status === "extracted" ? "These facts are still an unconfirmed AI extraction. Review them in Received documents before relying on them." : "These facts were reviewed and confirmed in Zania.",
+        ...reviewedDetails,
+        contract.status === "confirmed" ? "This is a factual summary, not legal advice. No task or payment was created." : "",
       ].join("\n");
     }).join("\n\n")
     : "";

@@ -281,11 +281,30 @@ The fastest next build step is **external contract ingestion**: accept a tempora
 - A linked upload compares confirmed amount, currency and event date with the accepted formal quote. A standalone upload supports factual clause and obligation guidance without claiming alignment. Internal Zania contracts continue through the same `get_agreement_review` capability using their native structured evidence.
 - Confirming extracted facts creates no task, payment, invoice, reminder or money movement. Payment dates remain proposals that require the existing exact `create_task` preview and confirmation flow.
 - Migration `20261003172000_external_contract_ingestion.sql` is applied only to staging and the migration ledger is current. Staging `analyze-external-contract` version 1, `wedding-ai-chat` version 50 and `intelligence-gateway-mcp` version 43 are active; the analyzer and MCP endpoints reject unauthenticated requests with `401`.
-- TypeScript, 31 focused tests and the production build pass. The full Vitest run displayed all **387 tests across 80 files** as passing, although the runner did not exit after completion and was interrupted; this process-cleanup issue remains to be isolated before production release reporting.
+- TypeScript, 31 focused tests and the production build pass. The full Vitest run now completes and exits normally with all **387 tests across 80 files** passing. The earlier teardown leak came from the Received Documents test fixture repeatedly recreating its mocked user while the real entitlement hook was mounted; the test now supplies a stable entitlement boundary.
 - Vercel deployment `dpl_6mdmGeSZTvGoMFWdwGsBXa8Nstc3` is `READY` and aliased to `https://staging.planwithzania.com`. Its served browser bundle includes the upload/review controls, contains the staging Supabase reference and no production reference. A signed-in Free planner with no active client correctly sees the entitlement/client boundary rather than the uploader. Production remains unchanged.
 - Architecture reference `ZANIA_INTELLIGENCE_GATEWAY_ARCHITECTURE.md` is now version 1.8.
 
 The fastest next build step is **production-evidence validation followed by proactive monitoring**: use one consenting representative contract to prove extraction accuracy, confirmation, comparison and deletion receipts, then surface confirmed upcoming deadlines without automatically creating tasks or contacting vendors.
+
+### Production release hardening — release candidate prepared
+
+- The accumulated staging work is preserved on `codex/production-release-candidate-2026-10-02` at commit `1f62513`.
+- The candidate was merged without conflicts onto the current `origin/main` production base in `codex/production-release-integrated-2026-10-02`; production itself remains unchanged.
+- The live production bundle and integrated candidate both target production Supabase project `csrrnirpgkqjhvqcyxjp`. The old `origin/main` tracked `.env` points at an obsolete project and must not be used as the production environment authority.
+- On the integrated candidate, all 388 tests pass and exit normally, TypeScript passes, the production build passes, and `git diff --check` passes. The repository-wide ESLint baseline still reports legacy issues and remains a separate cleanup track.
+- The production migration ledger now aligns with the two already-applied device-OTP migrations. A linked production dry run succeeds and identifies 28 pending conversational-planner migrations; none has been applied to production.
+- The production Supabase advisor baseline is non-empty: 303 security findings and 245 performance findings. Most are existing broad security-definer/auth-policy and policy-efficiency warnings rather than failures introduced by this release, but they must remain visible in the controlled-rollout checklist instead of being treated as a clean baseline.
+- Review-only Vercel deployment `dpl_28H1sTBRYwkLEy3Ya66bPF7nzpG9` is `READY` at `https://kenya-wedding-5xsrwwcvd-mwaniki.vercel.app`. Its authenticated served bundle contains production Supabase project `csrrnirpgkqjhvqcyxjp` and contains neither the staging project nor the obsolete project reference. The production alias has not been changed.
+
+### External contract end-to-end validation — passed in staging
+
+- A temporary planner client named **Contract Pilot Couple & Release Test Partner** was created in staging and a two-page synthetic photography agreement was uploaded through the real Received Documents UI.
+- Extraction completed at 100% evidence confidence and correctly identified the parties, event date and location, KES 250,000 total, KES 50,000 deposit due 10 October 2026, KES 200,000 balance due 14 April 2027, service scope, deliverables and all seven reviewed practical clauses. The reviewer added the omitted overtime service-scope line before confirmation, proving that extracted values are editable before trust is granted.
+- Confirmation produced a `confirmed` ingestion record. The temporary PDF object count is zero, `file_deleted_at` is recorded, and the test wedding still has zero tasks and zero payment records.
+- The first conversational retest exposed two real routing gaps: read-only prompts that began with “Review…” were not recognized when the word `contract` appeared later, and a “Do not create…” safety clause was incorrectly treated as a write request. Both cases now have regression coverage.
+- Confirmed external-contract guidance now includes payment dates, service obligations, deliverables, cancellation, postponement, overtime, travel, force-majeure, termination and dispute-resolution terms. The live staging response states that it is factual guidance rather than legal advice and confirms that no task or payment was created.
+- Staging `wedding-ai-chat` was redeployed with the fixes and the complete signed-in planner journey now passes. The synthetic staging workspace remains clearly labelled for release evidence; production remains unchanged.
 
 ### Production validation schedule — prepared
 

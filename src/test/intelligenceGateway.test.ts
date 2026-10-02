@@ -141,6 +141,7 @@ describe('Intelligence Gateway read foundation', () => {
     expect(getGatewayReadIntent('Can you help us negotiate this quote around KES 220k?')).toBe('get_negotiation_brief');
     expect(getGatewayReadIntent('Show the negotiation status and counteroffer history.')).toBe('get_negotiation_state');
     expect(getGatewayReadIntent('Review the contract against what we agreed.')).toBe('get_agreement_review');
+    expect(getGatewayReadIntent('Review the confirmed external contract for this wedding. Summarize the payment dates, key obligations, and practical concerns. Do not create any tasks or payments.')).toBe('get_agreement_review');
     expect(getGatewayReadIntent('What changed in the contract?')).toBe('get_agreement_review');
     expect(getGatewayReadIntent('Review our budget and change it')).toBeNull();
   });
@@ -375,6 +376,31 @@ describe('Intelligence Gateway read foundation', () => {
     expect(result.data.agreementReview?.externalContracts[0]).toMatchObject({ filename: 'coast-film-contract.pdf', status: 'extracted' });
     expect(result.userSummary).toContain('unconfirmed AI extraction');
     expect(result.userSummary).toContain('Cancellation terms were not found');
+  });
+
+  it('summarizes confirmed external contract payments, obligations, and practical terms without creating records', async () => {
+    const db = databaseFromTables({
+      wedding_memberships: [{ user_id: 'couple-user', wedding_id: weddingId, role: 'bride', membership_status: 'active', revoked_at: null }],
+      weddings: [{ id: weddingId, name: 'Gateway Wedding', wedding_date: '2027-05-14', status: 'active', deleted_at: null }],
+      __agreement_review: [{ agreements: [], externalContracts: [{
+        id: 'upload-2', filename: 'confirmed-contract.pdf', status: 'confirmed', agreementId: null,
+        facts: {
+          vendorName: 'Coastal Light Photography', currency: 'KES', totalAmount: 250000, unknowns: [],
+          paymentSchedule: [{ title: 'Deposit', amount: '50000', dueDate: '2026-10-10' }, { title: 'Balance', amount: 200000, dueDate: '2027-04-14' }],
+          serviceScope: ['Eight hours of photography', 'Two photographers'],
+          deliverables: ['300 edited images'],
+          cancellation: 'The deposit is non-refundable if the client cancels.',
+          overtime: 'Additional coverage costs KES 12,000 per hour.',
+        },
+        fileDeletedAt: '2026-10-02T14:00:00Z', createdAt: '2026-10-02T13:59:00Z',
+      }] }],
+    });
+    const result = await executeGatewayRead(db as never, request('get_agreement_review'));
+    expect(result.userSummary).toContain('Deposit: KES 50,000 due 2026-10-10');
+    expect(result.userSummary).toContain('Eight hours of photography');
+    expect(result.userSummary).toContain('300 edited images');
+    expect(result.userSummary).toContain('Cancellation: The deposit is non-refundable');
+    expect(result.userSummary).toContain('No task or payment was created');
   });
 
   it('fails closed before reading wedding records for an unauthorized role', async () => {
