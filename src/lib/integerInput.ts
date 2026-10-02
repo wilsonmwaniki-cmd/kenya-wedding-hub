@@ -3,6 +3,10 @@ export function formatIntegerInput(value: number) {
 }
 
 export function parseIntegerInput(value: string) {
-  const digits = value.replace(/\D/g, '');
+  const digits = sanitizeIntegerInput(value);
   return digits ? Number(digits) : 0;
+}
+
+export function sanitizeIntegerInput(value: string) {
+  return value.replace(/\D/g, '');
 }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { BookmarkPlus, Copy, Eye, Link2, Loader2, Mail, PenLine, RotateCw, Send, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BookmarkPlus, Copy, CopyPlus, Download, Eye, History, Link2, Loader2, Mail, PenLine, RotateCw, Send, ShieldOff, Trash2, XCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,26 +7,36 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ToastAction } from '@/components/ui/toast';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 import DocumentSummaryRail from '@/components/documents/DocumentSummaryRail';
 import DocumentCollaborationUpgrade from '@/components/documents/DocumentCollaborationUpgrade';
 import ContractDocumentEditor, { type ContractDocumentDraft } from '@/components/documents/ContractDocumentEditor';
+import DocumentActionMenus, { type DocumentMenuAction } from '@/components/documents/DocumentActionMenus';
+import MobileDetailBackButton from '@/components/documents/MobileDetailBackButton';
+import { useMobileDetailNavigation } from '@/hooks/useMobileDetailNavigation';
+import { useDocumentAutosave } from '@/hooks/useDocumentAutosave';
+import { hydrateContractSections } from '@/lib/contractSections';
+import { getContractPlaceholders, type ContractPlaceholder } from '@/lib/contractPlaceholders';
+import { contractActionPolicy } from '@/lib/documentActionPolicy';
 import {
   createDocumentTemplate,
   createProfessionalContract,
+  cancelProfessionalContract,
   deleteProfessionalContract,
-  buildProfessionalContractShareEmailDraft,
   buildProfessionalContractShareUrl,
   getProfessionalContractActivity,
   listDocumentTemplates,
   listProfessionalContracts,
-  markProfessionalContractSent,
   professionalContractStatusLabel,
   professionalContractEventLabel,
   refreshProfessionalContractShareToken,
   revokeProfessionalContractShareToken,
+  sendProfessionalContract,
   signOwnedProfessionalContract,
   updateProfessionalContract,
+  additionalRecipientEmailsFromMetadata,
   type CommercialDocumentRole,
   type ProfessionalContractActivity,
   type ProfessionalContractShareState,
@@ -37,6 +47,7 @@ import {
   type VendorBookingOption,
   type VendorListingOption,
 } from '@/lib/commercialDocuments';
+import { deleteProfessionalContact, saveDocumentRecipientAsContact } from '@/lib/professionalContacts';
 
 type Props = {
   role: CommercialDocumentRole;
@@ -44,6 +55,7 @@ type Props = {
   vendorListings?: VendorListingOption[];
   vendorBookings?: VendorBookingOption[];
   canConnectDocuments?: boolean;
+  initialContractId?: string | null;
 };
 
 function blankDraft(): ContractDocumentDraft {
@@ -52,16 +64,35 @@ function blankDraft(): ContractDocumentDraft {
     status: 'draft',
     recipientName: '',
     recipientEmail: '',
+    additionalRecipientEmails: [],
     recipientPhone: '',
     weddingName: '',
     clientId: '',
     vendorListingId: '',
     vendorId: '',
     eventDate: '',
+    currency: 'KES',
+    totalAmount: '',
+    depositAmount: '',
+    paymentSchedule: [],
     summary: '',
     terms: '',
     notes: '',
   };
+}
+
+function optionalAmount(value: string) {
+  if (!value.trim()) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+}
+
+function paymentSchedulePayload(draft: ContractDocumentDraft) {
+  return draft.paymentSchedule.flatMap((payment) => {
+    const amount = Number(payment.amount);
+    if (!payment.title.trim() || !payment.dueDate || !Number.isFinite(amount) || amount <= 0) return [];
+    return [{ title: payment.title.trim(), amount, dueDate: payment.dueDate }];
+  });
 }
 
 function isShareActive(shareState: ProfessionalContractShareState | null) {
@@ -85,7 +116,9 @@ export default function ContractsWorkspace({
   vendorListings = [],
   vendorBookings = [],
   canConnectDocuments = false,
+  initialContractId = null,
 }: Props) {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -105,6 +138,15 @@ export default function ContractsWorkspace({
   const [activityLoading, setActivityLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [signingIssuer, setSigningIssuer] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [placeholderFocus, setPlaceholderFocus] = useState<(ContractPlaceholder & { requestId: number }) | null>(null);
+  const { mobileDetailOpen, openMobileDetail, closeMobileDetail } = useMobileDetailNavigation();
+  const appliedInitialContractRef = useRef<string | null>(null);
+
+  const openContractDetail = (contractId: string) => {
+    openMobileDetail(() => setSelectedId(contractId));
+  };
 
   const loadContracts = async (preferredId?: string | null) => {
     const next = await listProfessionalContracts({ role, search: search.trim() || undefined });
@@ -137,6 +179,13 @@ export default function ContractsWorkspace({
       cancelled = true;
     };
   }, [role]);
+
+  useEffect(() => {
+    if (!initialContractId || !contracts.some((contract) => contract.id === initialContractId)) return;
+    if (appliedInitialContractRef.current === initialContractId) return;
+    appliedInitialContractRef.current = initialContractId;
+    openMobileDetail(() => setSelectedId(initialContractId));
+  }, [contracts, initialContractId, openMobileDetail]);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,17 +231,52 @@ export default function ContractsWorkspace({
       status: selectedContract.status,
       recipientName: selectedContract.recipientName,
       recipientEmail: selectedContract.recipientEmail ?? '',
+      additionalRecipientEmails: additionalRecipientEmailsFromMetadata(selectedContract.metadata, selectedContract.recipientEmail),
       recipientPhone: selectedContract.recipientPhone ?? '',
       weddingName: selectedContract.weddingName ?? '',
       clientId: selectedContract.clientId ?? '',
       vendorListingId: selectedContract.vendorListingId ?? '',
       vendorId: selectedContract.vendorId ?? '',
       eventDate: selectedContract.eventDate ?? '',
+      currency: selectedContract.currency,
+      totalAmount: selectedContract.totalAmount == null ? '' : String(selectedContract.totalAmount),
+      depositAmount: selectedContract.depositAmount == null ? '' : String(selectedContract.depositAmount),
+      paymentSchedule: selectedContract.paymentSchedule.map((payment) => ({ ...payment, amount: String(payment.amount) })),
       summary: selectedContract.summary ?? '',
       terms: selectedContract.terms ?? '',
       notes: selectedContract.notes ?? '',
     });
   }, [selectedContract?.id]);
+
+  const autosaveContractId = selectedContract?.id ?? null;
+  const autosaveContractLocked = Boolean(selectedContract?.lockedAt);
+  const saveContractDraft = useCallback(async (draft: ContractDocumentDraft) => {
+    if (!autosaveContractId || autosaveContractLocked) return;
+    const updated = await updateProfessionalContract(autosaveContractId, {
+      title: draft.title,
+      recipientName: draft.recipientName,
+      recipientEmail: draft.recipientEmail || null,
+      recipientPhone: draft.recipientPhone || null,
+      weddingName: draft.weddingName || null,
+      eventDate: draft.eventDate || null,
+      currency: draft.currency || 'KES',
+      totalAmount: optionalAmount(draft.totalAmount),
+      depositAmount: optionalAmount(draft.depositAmount),
+      paymentSchedule: paymentSchedulePayload(draft),
+      summary: null,
+      terms: draft.terms || null,
+      notes: draft.notes || null,
+      metadata: { ...selectedContract?.metadata, additionalRecipientEmails: draft.additionalRecipientEmails },
+    });
+    setContracts((current) => current.map((item) => item.id === updated.id ? updated : item));
+  }, [autosaveContractId, autosaveContractLocked]);
+
+  const contractAutosave = useDocumentAutosave({
+    documentId: selectedContract?.id ?? null,
+    enabled: Boolean(selectedContract && detailDraft && !selectedContract.lockedAt),
+    value: detailDraft,
+    save: saveContractDraft,
+  });
 
   useEffect(() => {
     if (!selectedContract) return;
@@ -295,11 +379,16 @@ export default function ContractsWorkspace({
         vendorListingId: role === 'vendor' ? createDraft.vendorListingId || null : null,
         vendorId: role === 'vendor' && canConnectDocuments ? createDraft.vendorId || null : null,
         eventDate: createDraft.eventDate || null,
-        summary: createDraft.summary.trim() || null,
+        currency: createDraft.currency || 'KES',
+        totalAmount: optionalAmount(createDraft.totalAmount),
+        depositAmount: optionalAmount(createDraft.depositAmount),
+        paymentSchedule: paymentSchedulePayload(createDraft),
+        summary: null,
         terms: createDraft.terms.trim() || null,
         notes: createDraft.notes.trim() || null,
       });
       await loadContracts(created.id);
+      openMobileDetail(() => setSelectedId(created.id));
       setCreateDraft(blankDraft());
       setSelectedTemplateId('');
       if (role === 'vendor' && vendorListings[0]?.id) {
@@ -317,24 +406,27 @@ export default function ContractsWorkspace({
 
   const handleSave = async (silent = false) => {
     if (!selectedContract || !detailDraft) return false;
+    if (selectedContract.lockedAt) {
+      if (!silent) toast({ title: 'Contract is locked', description: 'Create a new contract to change sent terms.' });
+      return true;
+    }
     setSaving(true);
     try {
       await updateProfessionalContract(selectedContract.id, {
         title: detailDraft.title.trim(),
-        status: detailDraft.status,
         recipientName: detailDraft.recipientName.trim(),
         recipientEmail: detailDraft.recipientEmail.trim() || null,
         recipientPhone: detailDraft.recipientPhone.trim() || null,
         weddingName: detailDraft.weddingName.trim() || null,
         eventDate: detailDraft.eventDate || null,
-        summary: detailDraft.summary.trim() || null,
+        currency: detailDraft.currency || 'KES',
+        totalAmount: optionalAmount(detailDraft.totalAmount),
+        depositAmount: optionalAmount(detailDraft.depositAmount),
+        paymentSchedule: paymentSchedulePayload(detailDraft),
+        summary: null,
         terms: detailDraft.terms.trim() || null,
         notes: detailDraft.notes.trim() || null,
-        sentAt: detailDraft.status === 'sent' || detailDraft.status === 'awaiting_signature' || detailDraft.status === 'countersigned' || detailDraft.status === 'completed'
-          ? selectedContract.sentAt ?? new Date().toISOString()
-          : null,
-        signedAt: detailDraft.status === 'completed' ? selectedContract.signedAt ?? new Date().toISOString() : null,
-        cancelledAt: detailDraft.status === 'cancelled' ? selectedContract.cancelledAt ?? new Date().toISOString() : null,
+        metadata: { ...selectedContract.metadata, additionalRecipientEmails: detailDraft.additionalRecipientEmails },
       });
       await loadContracts(selectedContract.id);
       if (!silent) toast({ title: 'Contract saved', description: 'The agreement details are up to date.' });
@@ -368,11 +460,11 @@ export default function ContractsWorkspace({
         role,
         templateType: 'contract',
         name: detailDraft.title.trim(),
-        description: detailDraft.summary.trim() || null,
+        description: null,
         defaultTitle: detailDraft.title.trim(),
-        defaultNotes: detailDraft.summary.trim() || null,
+        defaultNotes: null,
         defaultTerms: detailDraft.terms.trim() || null,
-        defaultItems: [],
+        defaultItems: hydrateContractSections([], detailDraft.terms.trim()),
         metadata: { source: 'contract_editor' },
       });
       setTemplates((current) => [created, ...current]);
@@ -392,13 +484,16 @@ export default function ContractsWorkspace({
     setCreateDraft((current) => ({
       ...current,
       title: template.defaultTitle || current.title,
-      summary: template.defaultNotes || '',
       terms: template.defaultTerms || '',
     }));
   };
 
   const handleDelete = async () => {
     if (!selectedContract) return;
+    if (selectedContract.lockedAt) {
+      toast({ title: 'Sent contracts cannot be deleted', description: 'Keep it as part of the signing record.' });
+      return;
+    }
     if (!window.confirm(`Delete ${selectedContract.title}? This cannot be undone.`)) return;
     setDeleting(true);
     try {
@@ -413,20 +508,70 @@ export default function ContractsWorkspace({
     }
   };
 
-  const handleCopyShareLink = async () => {
+  const handleDuplicate = async () => {
     if (!selectedContract || !detailDraft) return;
-    setSharing(true);
+    setDuplicating(true);
     try {
-      const saved = await handleSave(true);
-      if (!saved) return;
-      const token = await markProfessionalContractSent(selectedContract.id);
-      const url = buildProfessionalContractShareUrl(token, window.location.origin);
-      await navigator.clipboard.writeText(url);
+      const created = await createProfessionalContract({
+        role,
+        title: `${detailDraft.title.trim()} copy`,
+        recipientName: detailDraft.recipientName.trim(),
+        recipientEmail: detailDraft.recipientEmail.trim() || null,
+        recipientPhone: detailDraft.recipientPhone.trim() || null,
+        weddingName: detailDraft.weddingName.trim() || null,
+        clientId: detailDraft.clientId || null,
+        vendorListingId: detailDraft.vendorListingId || null,
+        vendorId: detailDraft.vendorId || null,
+        eventDate: detailDraft.eventDate || null,
+        currency: detailDraft.currency || 'KES',
+        totalAmount: optionalAmount(detailDraft.totalAmount),
+        depositAmount: optionalAmount(detailDraft.depositAmount),
+        paymentSchedule: paymentSchedulePayload(detailDraft),
+        summary: null,
+        terms: detailDraft.terms.trim() || null,
+        notes: detailDraft.notes.trim() || null,
+        status: 'draft',
+        metadata: { duplicatedFrom: selectedContract.id },
+      });
+      await loadContracts(created.id);
+      toast({ title: 'Contract duplicated', description: 'A new draft is ready to edit.' });
+    } catch (error) {
+      console.error('Could not duplicate contract:', error);
+      toast({ title: 'Could not duplicate contract', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!selectedContract) return;
+    if (!window.confirm(`Cancel ${selectedContract.title}? The signing link will stop working, but the record will remain.`)) return;
+    setCancelling(true);
+    try {
+      await cancelProfessionalContract(selectedContract.id);
       await loadContracts(selectedContract.id);
       setActivity(await getProfessionalContractActivity(selectedContract.id));
+      toast({ title: 'Contract cancelled', description: 'The signing link is now inactive.' });
+    } catch (error) {
+      console.error('Could not cancel contract:', error);
+      toast({ title: 'Could not cancel contract', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleCopyShareLink = async () => {
+    if (!selectedContract || !activity?.shareState || !shareActive) {
+      toast({ title: 'Send the contract first', description: 'The email gives the client both the link and verification code.' });
+      return;
+    }
+    setSharing(true);
+    try {
+      const url = buildProfessionalContractShareUrl(activity.shareState.shareToken, window.location.origin);
+      await navigator.clipboard.writeText(url);
       toast({
         title: 'Signing link copied',
-        description: 'The public contract link is ready to send.',
+        description: 'The client still needs the verification code from the Zania email.',
       });
     } catch (error) {
       console.error('Could not copy contract share link:', error);
@@ -442,30 +587,47 @@ export default function ContractsWorkspace({
 
   const handleEmailShare = async () => {
     if (!selectedContract || !detailDraft) return;
+    const missingDetails = getContractPlaceholders({ summary: '', terms: detailDraft.terms });
+    if (missingDetails.length > 0) {
+      const first = missingDetails[0];
+      setPlaceholderFocus({ ...first, requestId: Date.now() });
+      document.getElementById('contract-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast({
+        title: `Finish ${missingDetails.length} ${missingDetails.length === 1 ? 'detail' : 'details'}`,
+        description: `Start with “${first.label}”. The words to replace are highlighted.`,
+      });
+      return;
+    }
     setSharing(true);
     try {
       const saved = await handleSave(true);
       if (!saved) return;
-      const token = await markProfessionalContractSent(selectedContract.id);
-      const url = buildProfessionalContractShareUrl(token, window.location.origin);
-      const draft = buildProfessionalContractShareEmailDraft({
-        contract: {
-          ...selectedContract,
-          title: detailDraft.title.trim(),
-          recipientName: detailDraft.recipientName.trim(),
-          recipientEmail: detailDraft.recipientEmail.trim() || null,
-          weddingName: detailDraft.weddingName.trim() || null,
-          eventDate: detailDraft.eventDate || null,
-        },
-        shareUrl: url,
-      });
+      const result = await sendProfessionalContract(selectedContract.id);
       await loadContracts(selectedContract.id);
       setActivity(await getProfessionalContractActivity(selectedContract.id));
-      window.location.href = draft.href;
-    } catch (error) {
-      console.error('Could not prepare contract share email:', error);
+      let savedContact: Awaited<ReturnType<typeof saveDocumentRecipientAsContact>> = null;
+      if (user?.id) {
+        try {
+          savedContact = await saveDocumentRecipientAsContact(user.id, {
+            contactType: 'client',
+            displayName: detailDraft.recipientName,
+            primaryEmail: detailDraft.recipientEmail,
+            phone: detailDraft.recipientPhone,
+            additionalEmails: detailDraft.additionalRecipientEmails,
+          });
+        } catch (contactError) {
+          console.error('Could not save contract recipient as a contact:', contactError);
+        }
+      }
       toast({
-        title: 'Could not prepare email draft',
+        title: 'Contract sent',
+        description: `Review and signing details were emailed to ${result.recipientEmail}.`,
+        action: savedContact?.created ? <ToastAction altText="Undo saving this contact" onClick={() => void deleteProfessionalContact(savedContact!.contact.id)}>Undo save</ToastAction> : undefined,
+      });
+    } catch (error) {
+      console.error('Could not send contract email:', error);
+      toast({
+        title: 'Could not send contract',
         description: error instanceof Error ? error.message : 'Please try again.',
         variant: 'destructive',
       });
@@ -543,6 +705,26 @@ export default function ContractsWorkspace({
     }
   };
 
+  const selectedActionPolicy = selectedContract ? contractActionPolicy(selectedContract) : null;
+  const contractActions: DocumentMenuAction[] = selectedContract ? [
+    ...(selectedActionPolicy?.canEdit ? [{ label: 'Edit contract', icon: PenLine, onSelect: () => document.getElementById('contract-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }] : []),
+    { label: 'Print or save PDF', icon: Download, onSelect: handlePreview },
+    { label: 'Create template', icon: BookmarkPlus, onSelect: handleSaveAsTemplate, disabled: savingTemplate },
+    { label: 'Duplicate', icon: CopyPlus, onSelect: handleDuplicate, disabled: duplicating },
+    ...(selectedActionPolicy?.canCancel
+      ? [{ label: 'Cancel contract', icon: XCircle, onSelect: handleCancel, disabled: cancelling, destructive: true, separated: true }]
+      : []),
+    ...(selectedActionPolicy?.canDelete
+      ? [{ label: 'Delete', icon: Trash2, onSelect: handleDelete, disabled: deleting, destructive: true, separated: true }]
+      : []),
+  ] : [];
+
+  const contractShareActions: DocumentMenuAction[] = selectedContract && selectedActionPolicy?.canShare ? [
+    { label: selectedContract.sentAt ? 'Resend contract' : 'Send contract', icon: Mail, onSelect: handleEmailShare, disabled: sharing },
+    { label: 'Get signing link', icon: Link2, onSelect: handleCopyShareLink, disabled: sharing || !shareActive },
+    { label: 'Email history', icon: History, onSelect: () => document.getElementById('contract-timeline')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+  ] : [];
+
   if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
@@ -555,16 +737,19 @@ export default function ContractsWorkspace({
   }
 
   return (
-    <section className="space-y-6">
-      <header className="space-y-5 border-b border-border/70 pb-6">
+    <section className="space-y-4 sm:space-y-6">
+      <header className={`${mobileDetailOpen ? 'hidden md:block' : ''} space-y-3 border-b border-border/70 pb-4 sm:space-y-5 sm:pb-6`}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="font-display text-3xl font-semibold text-foreground sm:text-4xl">Contracts</h1>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="self-start sm:self-auto">New contract</Button>
         </div>
-        <details className="rounded-2xl border border-border/70 bg-card">
-          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">View details</summary>
+        <details className="group rounded-2xl border border-border/70 bg-card">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">
+            <span className="group-open:hidden">View details</span>
+            <span className="hidden group-open:inline">Hide details</span>
+          </summary>
           <div className="border-t border-border/70 p-4"><DocumentSummaryRail items={[
           { label: 'Contracts', value: stats.total },
           { label: 'Needs action', value: stats.awaiting },
@@ -574,10 +759,10 @@ export default function ContractsWorkspace({
         </details>
       </header>
 
-      {!canConnectDocuments && <DocumentCollaborationUpgrade audience={role} />}
+      {!canConnectDocuments && <div className={mobileDetailOpen ? 'hidden md:block' : undefined}><DocumentCollaborationUpgrade audience={role} /></div>}
 
       <section className="grid items-start gap-5 xl:grid-cols-[minmax(260px,0.34fr)_minmax(0,1.66fr)]">
-        <Card className="border-border/70 bg-white/95 shadow-card xl:sticky xl:top-5">
+        <Card className={`${mobileDetailOpen ? 'hidden md:block' : ''} border-border/70 bg-white/95 shadow-card xl:sticky xl:top-5`}>
           <CardHeader className="space-y-3 pb-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -604,7 +789,8 @@ export default function ContractsWorkspace({
                       <button
                         key={contract.id}
                         type="button"
-                        onClick={() => setSelectedId(contract.id)}
+                        aria-pressed={active}
+                        onClick={() => openContractDetail(contract.id)}
                         className={`w-full px-3 py-3 text-left transition ${active ? 'border-l-2 border-primary bg-primary/6' : 'border-l-2 border-transparent bg-card hover:bg-muted/10'}`}
                       >
                         <p className="truncate text-sm font-semibold text-foreground">{contract.title}</p>
@@ -634,9 +820,27 @@ export default function ContractsWorkspace({
           </CardContent>
         </Card>
 
-        <Card className="min-w-0 border-border/70 bg-white/95 shadow-card">
-          <CardHeader className="pb-4">
+        <Card className={`${mobileDetailOpen ? 'block' : 'hidden md:block'} min-w-0 border-border/70 bg-white/95 shadow-card`}>
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 pb-4">
+            <MobileDetailBackButton label="Back to contracts" onBack={closeMobileDetail} />
             <CardTitle className="font-display text-xl">{selectedContract ? 'Contract' : 'Choose a contract'}</CardTitle>
+            {selectedContract && (
+              <div className="grid w-full min-w-0 grid-cols-2 items-center gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+                <Button type="button" size="sm" variant="outline" className="w-full gap-2 sm:w-auto" onClick={handlePreview} disabled={saving}>
+                  <Eye className="h-4 w-4" />Preview
+                </Button>
+                <DocumentActionMenus
+                  className="col-span-2 sm:w-auto"
+                  actions={contractActions}
+                  shareActions={contractShareActions}
+                  primary={selectedContract.status === 'draft'
+                    ? { label: 'Send contract', icon: Send, onClick: handleEmailShare, disabled: sharing }
+                    : selectedContract.status !== 'cancelled' && selectedContract.status !== 'completed' && !issuerSigner?.signedAt
+                      ? { label: 'Sign contract', icon: PenLine, onClick: handleIssuerSignature, disabled: signingIssuer || !selectedContract.lockedAt }
+                      : undefined}
+                />
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             {!selectedContract || !detailDraft ? (
@@ -645,7 +849,21 @@ export default function ContractsWorkspace({
               </div>
             ) : (
               <div className="space-y-5">
-                <ContractDocumentEditor contract={selectedContract} draft={detailDraft} setDraft={setDetailDraft} saving={saving} onSave={() => handleSave()} />
+                <div id="contract-editor" className="scroll-mt-5">
+                  <ContractDocumentEditor
+                    contract={selectedContract}
+                    draft={detailDraft}
+                    setDraft={setDetailDraft}
+                    saving={saving}
+                    locked={Boolean(selectedContract.lockedAt)}
+                    onSave={() => handleSave()}
+                    autosaveStatus={contractAutosave.status}
+                    onRetryAutosave={contractAutosave.retry}
+                    onFlushAutosave={contractAutosave.flush}
+                    placeholderFocus={placeholderFocus}
+                    onPlaceholderFocus={(placeholder) => setPlaceholderFocus({ ...placeholder, requestId: Date.now() })}
+                  />
+                </div>
                 <details className="rounded-2xl border border-border/70">
                   <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-foreground marker:content-none">More details</summary>
                 <div className="border-t border-border/70 p-4">
@@ -655,12 +873,9 @@ export default function ContractsWorkspace({
                         <Label htmlFor="contract-private-note">Private note</Label>
                         <span className="text-xs text-muted-foreground">Only your team can see this</span>
                       </div>
-                      <Textarea className="min-h-20 resize-y" id="contract-private-note" rows={2} value={detailDraft.notes} onChange={(event) => setDetailDraft((current) => current ? { ...current, notes: event.target.value } : current)} placeholder="Add an internal reminder" />
+                      <Textarea disabled={Boolean(selectedContract.lockedAt)} className="min-h-20 resize-y" id="contract-private-note" rows={2} value={detailDraft.notes} onChange={(event) => setDetailDraft((current) => current ? { ...current, notes: event.target.value } : current)} placeholder="Add an internal reminder" />
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2 lg:pt-6">
-                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handlePreview} disabled={saving}>
-                        <Eye className="h-4 w-4" />Preview contract
-                      </Button>
                       <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
                         {savingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookmarkPlus className="h-4 w-4" />}
                         Save template
@@ -684,13 +899,13 @@ export default function ContractsWorkspace({
                       {activityLoading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Button type="button" size="sm" className="gap-2" onClick={handleCopyShareLink} disabled={sharing}>
+                      <Button type="button" size="sm" className="gap-2" onClick={handleEmailShare} disabled={sharing}>
+                        <Mail className="h-4 w-4" />
+                        Send contract
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleCopyShareLink} disabled={sharing || !shareActive}>
                         {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
                         Copy signing link
-                      </Button>
-                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleEmailShare} disabled={sharing}>
-                        <Mail className="h-4 w-4" />
-                        Send by email
                       </Button>
                       <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleRefreshShareLink} disabled={sharing}>
                         {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
@@ -735,7 +950,7 @@ export default function ContractsWorkspace({
                           Keep the issuer and client signature states in one place.
                         </p>
                       </div>
-                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleIssuerSignature} disabled={signingIssuer || !!issuerSigner?.signedAt}>
+                      <Button type="button" size="sm" variant="outline" className="gap-2" onClick={handleIssuerSignature} disabled={signingIssuer || !!issuerSigner?.signedAt || !selectedContract.lockedAt}>
                         {signingIssuer ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
                         {issuerSigner?.signedAt ? 'Issuer signed' : 'Sign as issuer'}
                       </Button>
@@ -772,16 +987,11 @@ export default function ContractsWorkspace({
                     <span>Sent: {selectedContract.sentAt ? new Date(selectedContract.sentAt).toLocaleDateString() : 'Not yet'}</span>
                     <span>Signed: {selectedContract.signedAt ? new Date(selectedContract.signedAt).toLocaleDateString() : 'Not yet'}</span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setDetailDraft((current) => current ? { ...current, status: 'awaiting_signature' } : current)}>
-                      <Send className="mr-2 h-4 w-4" />Mark awaiting signature
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setDetailDraft((current) => current ? { ...current, status: 'completed' } : current)}>
-                      <ShieldCheck className="mr-2 h-4 w-4" />Mark completed
-                    </Button>
-                  </div>
+                  {selectedContract.lockedHash && (
+                    <span className="font-mono text-xs">Document {selectedContract.lockedHash.slice(0, 12)}</span>
+                  )}
                 </div>
-                <div className="rounded-2xl border border-border bg-white/90 p-4">
+                <div id="contract-timeline" className="scroll-mt-5 rounded-2xl border border-border bg-white/90 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-foreground">Timeline</p>
@@ -816,7 +1026,7 @@ export default function ContractsWorkspace({
                   </div>
                 </div>
                 <div className="flex flex-wrap justify-start gap-3">
-                  <Button type="button" variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={handleDelete} disabled={deleting}>
+                  <Button type="button" variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={handleDelete} disabled={deleting || Boolean(selectedContract.lockedAt)}>
                     <Trash2 className="h-4 w-4" />
                     {deleting ? 'Deleting...' : 'Delete contract'}
                   </Button>

@@ -37,6 +37,7 @@ import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 import AttentionInbox from '@/components/AttentionInbox';
 import RecentWorkspaceChangesCard from '@/components/RecentWorkspaceChangesCard';
 import ProfessionalLeadInbox from '@/components/leads/ProfessionalLeadInbox';
+import ProfessionalClientNextSteps from '@/components/ProfessionalClientNextSteps';
 
 interface Booking {
   id: string;
@@ -170,6 +171,15 @@ function vendorStatusLabel(status: string | null | undefined) {
     default:
       return status || 'Unknown';
   }
+}
+
+function buildWhatsAppUrl(phone: string, clientName: string) {
+  const digits = phone.replace(/\D/g, '');
+  const internationalNumber = digits.startsWith('0')
+    ? `254${digits.slice(1)}`
+    : digits;
+  const message = encodeURIComponent(`Hello ${clientName}, I'm following up about your wedding plans.`);
+  return `https://wa.me/${internationalNumber}?text=${message}`;
 }
 
 export default function VendorDashboard() {
@@ -666,6 +676,26 @@ export default function VendorDashboard() {
   const selectedProfile = selectedBooking ? profilesByUserId[selectedBooking.user_id] : null;
   const selectedTaskDetails = selectedBooking ? taskDetailsByBookingId[selectedBooking.id] ?? [] : [];
   const selectedPaymentDetails = selectedBooking ? paymentDetailsByBookingId[selectedBooking.id] ?? [] : [];
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueBooking = bookings.find((booking) => {
+    const paid = paymentSummaryByBookingId[booking.id]?.totalPaid ?? booking.amount_paid ?? 0;
+    return Boolean(booking.payment_due_date && booking.payment_due_date < today && (booking.price ?? 0) > paid);
+  });
+  const nextWeddingBooking = bookingsSorted.find((booking) => {
+    const weddingDate = profilesByUserId[booking.user_id]?.wedding_date;
+    return Boolean(weddingDate && weddingDate >= today && booking.status === 'booked');
+  });
+  const primaryBooking = overdueBooking ?? nextWeddingBooking ?? bookingsSorted[0] ?? null;
+  const primaryClientName = primaryBooking ? profilesByUserId[primaryBooking.user_id]?.full_name || 'this client' : null;
+  const primaryAction = !listing
+    ? 'Finish your business profile'
+    : pendingRequests.length > 0
+      ? 'Review a new enquiry'
+      : overdueBooking
+        ? 'Review an overdue payment'
+        : primaryBooking
+          ? 'Open your next client'
+          : 'Create your first invoice';
 
   const statusColor = (status: string | null) => {
     switch (status) {
@@ -1161,27 +1191,67 @@ export default function VendorDashboard() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Your business today</p>
+          <h1 className="mt-1 font-display text-2xl font-bold text-foreground sm:text-3xl">Keep the next client step moving.</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Start with one action. Everything else stays within reach.</p>
         </div>
         <ContextualAssistantAction
           prompt="Look at my vendor workspace and tell me the one thing I should do next."
           context={`This vendor has ${bookedCount} confirmed bookings, ${contactedCount} inquiries, ${workspaceInvites.length} workspace invites, and KES ${totalRevenue.toLocaleString()} in quoted revenue.`}
+          label="Tell Zania what you need"
         />
       </div>
+
+      <section aria-labelledby="next-action-title" className="border-y border-border/70 bg-[hsl(var(--card))]">
+        <div className="grid gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Do this next</p>
+            <h2 id="next-action-title" className="mt-2 font-display text-xl font-semibold text-foreground">{primaryAction}</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              {!listing
+                ? 'Add the essentials once so clients can find and trust your business.'
+                : pendingRequests.length > 0
+                  ? `${pendingRequests.length} client ${pendingRequests.length === 1 ? 'enquiry needs' : 'enquiries need'} a clear response.`
+                  : overdueBooking
+                    ? `${primaryClientName} has an amount past its due date. Check the payment trail before following up.`
+                    : primaryBooking
+                      ? `${primaryClientName} is the next client record to review.`
+                      : 'Create one invoice to begin tracking client work and payments in one place.'}
+            </p>
+          </div>
+          <div className="flex min-w-[180px] flex-col gap-2">
+            {!listing ? (
+              <Button asChild className="w-full"><Link to="/vendor-settings">Set up business</Link></Button>
+            ) : pendingRequests.length > 0 ? (
+              <Button type="button" className="w-full" onClick={() => document.getElementById('connection-requests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Review enquiry</Button>
+            ) : primaryBooking ? (
+              <Button type="button" className="w-full" onClick={() => openBookingDetail(primaryBooking.id)}>Open client</Button>
+            ) : (
+              <Button asChild className="w-full"><Link to="/vendor-documents/invoices">Create invoice</Link></Button>
+            )}
+            <Button asChild variant="outline" className="w-full"><Link to="/vendor-documents#zania-pay">View payments</Link></Button>
+          </div>
+        </div>
+      </section>
+
+      <ProfessionalClientNextSteps role="vendor" />
+
+      <section aria-labelledby="business-snapshot-title" className="grid gap-px overflow-hidden border border-border/70 bg-border/70 sm:grid-cols-2 lg:grid-cols-4">
+        <h2 id="business-snapshot-title" className="sr-only">Business snapshot</h2>
+        <div className="bg-background px-4 py-4 sm:px-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Clients booked</p><p className="mt-2 text-2xl font-semibold text-foreground">{bookedCount}</p></div>
+        <div className="bg-background px-4 py-4 sm:px-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">New enquiries</p><p className="mt-2 text-2xl font-semibold text-foreground">{pendingRequests.length}</p></div>
+        <div className="bg-background px-4 py-4 sm:px-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Payment attention</p><p className="mt-2 text-2xl font-semibold text-foreground">{overdueBooking ? '1' : '0'}</p></div>
+        <div className="bg-background px-4 py-4 sm:px-5"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Quoted work</p><p className="mt-2 text-2xl font-semibold text-foreground">KES {totalRevenue.toLocaleString()}</p></div>
+      </section>
 
       <ProfessionalLeadInbox />
 
       <AttentionInbox showEmpty={false} maxItems={3} />
 
-      <details className="rounded-2xl border border-border/70 bg-card">
-        <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">Recent changes</summary>
-        <div className="border-t border-border/70">
-          <RecentWorkspaceChangesCard maxItems={5} />
-        </div>
-      </details>
+      <RecentWorkspaceChangesCard maxItems={5} />
 
       {claimedWorkspaceInvite && (
         <Card className="semantic-surface-success shadow-card">
@@ -1231,24 +1301,24 @@ export default function VendorDashboard() {
       )}
 
       <details className="rounded-2xl border border-border/70 bg-background/35">
-        <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">View totals</summary>
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-foreground marker:content-none sm:px-5 sm:py-4">View totals</summary>
       <section aria-labelledby="vendor-overview-title" className="border-t border-border/70">
         <h2 id="vendor-overview-title" className="sr-only">Business at a glance</h2>
-        <div className="grid sm:grid-cols-4">
-          <div className="px-1 py-4 sm:px-5">
-            <p className="text-2xl font-bold text-foreground">{bookedCount}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4">
+          <div className="px-4 py-3 sm:px-5 sm:py-4">
+            <p className="text-xl font-bold text-foreground sm:text-2xl">{bookedCount}</p>
             <p className="mt-1 text-sm text-muted-foreground">Confirmed bookings</p>
           </div>
-          <div className="border-t border-border/70 px-1 py-4 sm:border-l sm:border-t-0 sm:px-5">
-            <p className="text-2xl font-bold text-foreground">{contactedCount}</p>
+          <div className="border-l border-border/70 px-4 py-3 sm:px-5 sm:py-4">
+            <p className="text-xl font-bold text-foreground sm:text-2xl">{contactedCount}</p>
             <p className="mt-1 text-sm text-muted-foreground">Inquiries</p>
           </div>
-          <div className="border-t border-border/70 px-1 py-4 sm:border-l sm:border-t-0 sm:px-5">
-            <p className="text-2xl font-bold text-foreground">{workspaceInvites.length}</p>
+          <div className="border-t border-border/70 px-4 py-3 sm:border-l sm:px-5 sm:py-4">
+            <p className="text-xl font-bold text-foreground sm:text-2xl">{workspaceInvites.length}</p>
             <p className="mt-1 text-sm text-muted-foreground">Workspace invites</p>
           </div>
-          <div className="border-t border-border/70 px-1 py-4 sm:border-l sm:border-t-0 sm:px-5">
-            <p className="text-2xl font-bold text-foreground">
+          <div className="border-l border-t border-border/70 px-4 py-3 sm:border-t-0 sm:px-5 sm:py-4">
+            <p className="text-xl font-bold text-foreground sm:text-2xl">
               KES {totalRevenue.toLocaleString()}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">Quoted revenue</p>
@@ -1444,7 +1514,7 @@ export default function VendorDashboard() {
 
       {/* Connection Requests */}
       {fullAccess && connectionRequests.length > 0 && (
-        <Card className="shadow-card border-primary/20">
+        <Card id="connection-requests" className="shadow-card border-primary/20">
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2">
               Connection Requests
@@ -1827,6 +1897,20 @@ export default function VendorDashboard() {
                           </span>
                           {selectedBooking.email && <ExternalLink className="h-4 w-4 text-muted-foreground" />}
                         </a>
+                        {selectedBooking.phone && (
+                          <a
+                            href={buildWhatsAppUrl(selectedBooking.phone, selectedProfile?.full_name || 'there')}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex min-h-11 items-center justify-between rounded-xl border border-border/70 bg-background p-4 text-sm transition hover:border-primary/40 hover:bg-primary/5"
+                          >
+                            <span className="flex items-center gap-2">
+                              <MessageSquareText className="h-4 w-4 text-primary" />
+                              Message on WhatsApp
+                            </span>
+                            <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                          </a>
+                        )}
                         <Button
                           type="button"
                           className="w-full gap-2"

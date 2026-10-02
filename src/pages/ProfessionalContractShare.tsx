@@ -1,19 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
-  ArrowLeft,
   CheckCircle2,
-  ExternalLink,
-  Globe,
   Loader2,
-  Mail,
   PenLine,
-  Phone,
   Printer,
 } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,10 +23,18 @@ import {
 } from '@/lib/commercialDocuments';
 import { displaySafeUrl, normalizeEmailHref, normalizeExternalUrl } from '@/lib/security';
 import { PublicLinkLoading, PublicLinkUnavailable } from '@/components/PublicLinkState';
+import ContractTermsContent from '@/components/documents/ContractTermsContent';
+import DocumentBackLink from '@/components/documents/DocumentBackLink';
+import { contractPrintTitle } from '@/lib/documentPrintTitle';
+import { printDocumentElement } from '@/lib/printDocument';
 
 function safeDateLabel(value: string | null | undefined) {
   if (!value) return '—';
   return new Date(value).toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function money(currency: string, amount: number) {
+  return new Intl.NumberFormat('en-KE', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount);
 }
 
 function signatureFontStyle() {
@@ -64,7 +66,7 @@ export default function ProfessionalContractShare() {
   const [submitting, setSubmitting] = useState(false);
   const [document, setDocument] = useState<SharedProfessionalContract | null>(null);
   const [signedName, setSignedName] = useState('');
-  const [signerEmail, setSignerEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -76,7 +78,6 @@ export default function ProfessionalContractShare() {
         const data = await getSharedProfessionalContract(token);
         if (!cancelled) {
           setDocument(data);
-          setSignerEmail(data?.recipientEmail ?? '');
         }
       } catch (error) {
         console.error('Could not load shared professional contract:', error);
@@ -91,6 +92,13 @@ export default function ProfessionalContractShare() {
       cancelled = true;
     };
   }, [token]);
+
+  useEffect(() => {
+    if (!document) return;
+    const previousTitle = window.document.title;
+    window.document.title = contractPrintTitle(document.title);
+    return () => { window.document.title = previousTitle; };
+  }, [document]);
 
   const clientSigner = useMemo(
     () => document?.signers.find((signer) => signer.signerRole === 'client') ?? null,
@@ -110,6 +118,10 @@ export default function ProfessionalContractShare() {
       setFormError('Enter your full name.');
       return;
     }
+    if (!/^\d{6}$/.test(verificationCode.trim())) {
+      setFormError('Enter the 6-digit code from your email.');
+      return;
+    }
     if (!agreedToTerms) {
       setFormError('Confirm that you agree to the contract.');
       return;
@@ -120,7 +132,7 @@ export default function ProfessionalContractShare() {
       const next = await signSharedProfessionalContract({
         shareToken: token,
         signedName,
-        signerEmail,
+        verificationCode: verificationCode.trim(),
         agreedToTerms,
         signerUserAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
         signerTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -151,114 +163,83 @@ export default function ProfessionalContractShare() {
   if (!document) {
     return <PublicLinkUnavailable title="Contract unavailable" />;
   }
+  const printTitle = contractPrintTitle(document.title);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(222,92,43,0.12),transparent_32%),linear-gradient(180deg,rgba(255,249,246,0.98),rgba(255,255,255,0.98))] px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
+    <div className="min-h-screen bg-[#eee9e1] px-4 py-6 sm:px-6 lg:px-8 print:bg-white print:p-0">
+      <div className="mx-auto max-w-[900px] space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <Button asChild variant="ghost" className="gap-2">
-            <Link to="/">
-              <ArrowLeft className="h-4 w-4" />
-              Back to Zania
-            </Link>
-          </Button>
-          <Button className="gap-2" onClick={() => window.print()}>
+          <DocumentBackLink />
+          <Button className="gap-2" onClick={() => printDocumentElement('contract-document-print', printTitle)}>
             <Printer className="h-4 w-4" />
             Print contract
           </Button>
         </div>
 
-        <Card className="overflow-hidden border-primary/15 bg-[linear-gradient(135deg,rgba(230,118,73,0.12),rgba(255,255,255,0.98)_38%,rgba(255,243,237,0.9))] shadow-card print:shadow-none">
-          <CardContent className="p-6 sm:p-8">
-            <div className="space-y-5">
-              <div className="space-y-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">
-                  Shared contract
-                </p>
-                <CardTitle className="font-display text-3xl text-foreground">{document.title}</CardTitle>
-                <CardDescription className="text-sm text-muted-foreground">
-                  {professionalContractStatusLabel(document.status)}
-                </CardDescription>
+        <article id="contract-document-print" className="overflow-hidden bg-[#fffdf9] shadow-[0_24px_70px_rgba(48,38,31,0.16)] print:shadow-none">
+          <header className="bg-primary px-8 py-10 text-primary-foreground sm:px-12">
+            <div className="grid gap-9 sm:grid-cols-[1.15fr_0.85fr]">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-primary-foreground/70">Service agreement</p>
+                <h1 className="mt-3 font-display text-4xl font-semibold">{document.title}</h1>
+                <p className="mt-2 text-sm text-primary-foreground/75">{professionalContractStatusLabel(document.status)}</p>
               </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Badge variant={document.status === 'completed' ? 'success' : 'warning'}>
-                  {professionalContractStatusLabel(document.status)}
-                </Badge>
-                {document.eventDate && <Badge variant="secondary">Event {safeDateLabel(document.eventDate)}</Badge>}
-              </div>
-
-              <div className="grid gap-6 md:grid-cols-2">
-                <div className="rounded-2xl border border-white/80 bg-white/80 p-5 shadow-sm">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Issued by</p>
-                  <p className="mt-2 text-lg font-semibold text-foreground">{document.issuerName}</p>
-                  <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    {document.issuerEmail && issuerEmailHref && (
-                      <a className="flex items-center gap-2 hover:text-foreground" href={issuerEmailHref}>
-                        <Mail className="h-4 w-4 text-primary" />
-                        {document.issuerEmail}
-                      </a>
-                    )}
-                    {document.issuerPhone && (
-                      <p className="flex items-center gap-2">
-                        <Phone className="h-4 w-4 text-primary" />
-                        {document.issuerPhone}
-                      </p>
-                    )}
-                    {document.issuerWebsite && issuerWebsiteHref && (
-                      <a className="flex items-center gap-2 hover:text-foreground" href={issuerWebsiteHref} target="_blank" rel="noopener noreferrer">
-                        <Globe className="h-4 w-4 text-primary" />
-                        {displaySafeUrl(document.issuerWebsite)}
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    )}
-                    {document.issuerLocation && <p>{document.issuerLocation}</p>}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/80 bg-white/80 p-5 shadow-sm md:text-right">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Prepared for</p>
-                  <p className="mt-2 text-lg font-semibold text-foreground">{document.recipientName}</p>
-                  <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    {document.recipientEmail && <p>{document.recipientEmail}</p>}
-                    {document.recipientPhone && <p>{document.recipientPhone}</p>}
-                    {document.weddingName && <p>{document.weddingName}</p>}
-                  </div>
-                </div>
-              </div>
-
-              {document.summary && (
-                <div className="rounded-2xl border border-border/70 bg-white/80 p-5 shadow-sm">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Summary</p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-foreground">{document.summary}</p>
-                </div>
-              )}
-            </div>
-
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle className="font-display text-2xl">Contract terms</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-2xl border border-border bg-white/90 p-5">
-              <div className="whitespace-pre-wrap text-sm leading-7 text-foreground">
-                {document.terms || 'No contract terms have been added yet.'}
+              <div className="text-sm leading-6 text-primary-foreground/82 sm:text-right">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary-foreground/70">Issued by</p>
+                <p className="mt-2 font-semibold text-primary-foreground">{document.issuerName}</p>
+                {document.issuerEmail && issuerEmailHref && <a className="block hover:underline" href={issuerEmailHref}>{document.issuerEmail}</a>}
+                {document.issuerPhone && <p>{document.issuerPhone}</p>}
+                {document.issuerWebsite && issuerWebsiteHref && <a className="block hover:underline" href={issuerWebsiteHref} target="_blank" rel="noopener noreferrer">{displaySafeUrl(document.issuerWebsite)}</a>}
+                {document.issuerLocation && <p>{document.issuerLocation}</p>}
               </div>
             </div>
-          </CardContent>
-        </Card>
+            <div className="mt-10 grid gap-7 border-t border-primary-foreground/20 pt-7 sm:grid-cols-[1.15fr_0.85fr]">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-foreground/68">Agreement with</p>
+                <p className="mt-2 text-lg font-semibold">{document.recipientName}</p>
+                {document.weddingName && <p className="text-sm text-primary-foreground/78">{document.weddingName}</p>}
+                {document.recipientEmail && <p className="text-sm text-primary-foreground/78">{document.recipientEmail}</p>}
+                {document.recipientPhone && <p className="text-sm text-primary-foreground/78">{document.recipientPhone}</p>}
+              </div>
+              <div className="sm:text-right">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-primary-foreground/68">Event date</p>
+                <p className="mt-2 font-semibold">{safeDateLabel(document.eventDate)}</p>
+              </div>
+            </div>
+          </header>
 
-        <Card id="sign-contract" className="border-primary/20 shadow-card">
-          <CardHeader>
-            <CardTitle className="font-display text-2xl">{canSign ? 'Sign contract' : 'Contract signed'}</CardTitle>
-            {canSign && <CardDescription>Type your name after reading the terms above.</CardDescription>}
-          </CardHeader>
-          <CardContent>
+          <div className="space-y-10 px-8 py-10 sm:px-12">
+            {document.totalAmount != null || document.paymentSchedule.length ? (
+              <section>
+                <h2 className="font-display text-2xl">Financial terms</h2>
+                {document.totalAmount != null ? <p className="mt-3 text-lg font-semibold">Total: {money(document.currency, document.totalAmount)}</p> : null}
+                {document.depositAmount != null ? <p className="mt-1 text-sm">Deposit: {money(document.currency, document.depositAmount)}</p> : null}
+                {document.paymentSchedule.length ? (
+                  <ul className="mt-4 divide-y divide-border border-y border-border text-sm">
+                    {document.paymentSchedule.map((payment, index) => (
+                      <li key={`${payment.title}-${payment.dueDate}-${index}`} className="flex flex-wrap justify-between gap-3 py-3">
+                        <span>{payment.title} · due {safeDateLabel(payment.dueDate)}</span>
+                        <strong>{money(document.currency, payment.amount)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
+            ) : null}
+            <section>
+              <h2 className="font-display text-2xl">Agreement details</h2>
+              <div className="mt-4 text-sm leading-7 text-foreground">
+                <ContractTermsContent terms={document.terms} />
+              </div>
+            </section>
+
+            <section id="sign-contract" className="border-t border-border pt-9 print:hidden">
+              <div className="mx-auto max-w-xl">
+                <h2 className="font-display text-2xl">{canSign ? 'Sign contract' : 'Contract signed'}</h2>
+                {canSign && <p className="mt-2 text-sm text-muted-foreground">Type your name after reading the agreement.</p>}
+              </div>
             {canSign ? (
-              <div className="mx-auto max-w-xl space-y-4">
+              <div className="mx-auto mt-6 max-w-xl space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="signed-name">Full name *</Label>
                   <Input
@@ -273,16 +254,22 @@ export default function ProfessionalContractShare() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="signer-email">Email (optional)</Label>
+                  <Label htmlFor="verification-code">Email code *</Label>
                   <Input
-                    id="signer-email"
-                    type="email"
-                    value={signerEmail}
-                    onChange={(event) => setSignerEmail(event.target.value)}
-                    placeholder="you@example.com"
+                    id="verification-code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={verificationCode}
+                    onChange={(event) => {
+                      setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6));
+                      if (formError) setFormError(null);
+                    }}
+                    placeholder="6-digit code"
                   />
+                  <p className="text-xs text-muted-foreground">Use the code in the email that brought you here. No Zania account is needed.</p>
                 </div>
-                <label className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                <label className="flex items-start gap-3 border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
                   <Checkbox
                     checked={agreedToTerms}
                     onCheckedChange={(checked) => {
@@ -302,7 +289,7 @@ export default function ProfessionalContractShare() {
                 )}
               </div>
             ) : (
-              <div role="status" className="mx-auto max-w-xl rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-900">
+              <div role="status" className="mx-auto mt-6 max-w-xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-900">
                 <div className="flex items-center gap-2 font-medium">
                   <CheckCircle2 className="h-4 w-4" />
                   Signature saved
@@ -312,8 +299,9 @@ export default function ProfessionalContractShare() {
                 </p>
               </div>
             )}
-          </CardContent>
-        </Card>
+            </section>
+          </div>
+        </article>
 
         <details className="rounded-3xl border border-border/70 bg-card shadow-card">
           <summary className="cursor-pointer list-none px-6 py-4 text-sm font-semibold text-foreground marker:content-none">View signatures and history</summary>
@@ -387,6 +375,10 @@ export default function ProfessionalContractShare() {
           </Card>
         </div>
         </details>
+        <p className="pb-4 text-center text-xs text-muted-foreground">
+          Sent securely through <Link className="font-medium text-foreground hover:underline" to="/">Zania</Link>
+          {document.documentHash ? ` · Document ${document.documentHash.slice(0, 12)}` : ''}
+        </p>
       </div>
     </div>
   );

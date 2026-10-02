@@ -1,4 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
+import { retryTransientRequest } from '@/lib/requestRetry';
+import { normalizeInvokeError } from '@/lib/invokeErrors';
 
 export const commercialDocumentRoleOptions = ['vendor', 'planner'] as const;
 export type CommercialDocumentRole = (typeof commercialDocumentRoleOptions)[number];
@@ -10,7 +12,7 @@ export const commercialDocumentPaymentMethodOptions = ['mpesa', 'bank', 'cash', 
 export type CommercialDocumentPaymentMethod = (typeof commercialDocumentPaymentMethodOptions)[number];
 
 export const commercialDocumentStatuses = {
-  quote: ['draft', 'sent', 'accepted', 'rejected', 'expired'] as const,
+  quote: ['draft', 'sent', 'changes_requested', 'accepted', 'rejected', 'expired'] as const,
   invoice: ['draft', 'sent', 'part_paid', 'paid', 'void'] as const,
   receipt: ['issued', 'void'] as const,
 } as const;
@@ -19,6 +21,23 @@ export type QuoteStatus = (typeof commercialDocumentStatuses.quote)[number];
 export type InvoiceStatus = (typeof commercialDocumentStatuses.invoice)[number];
 export type ReceiptStatus = (typeof commercialDocumentStatuses.receipt)[number];
 export type CommercialDocumentStatus = QuoteStatus | InvoiceStatus | ReceiptStatus;
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Returns valid, unique copies of recipient emails, excluding the primary recipient. */
+export function normaliseAdditionalRecipientEmails(value: unknown, primaryEmail?: string | null) {
+  const primary = String(primaryEmail ?? '').trim().toLowerCase();
+  const entries = Array.isArray(value) ? value : [];
+  const emails = entries
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((email) => emailPattern.test(email) && email !== primary);
+  return [...new Set(emails)].slice(0, 10);
+}
+
+export function additionalRecipientEmailsFromMetadata(metadata: Record<string, unknown>, primaryEmail?: string | null) {
+  return normaliseAdditionalRecipientEmails(metadata.additionalRecipientEmails, primaryEmail);
+}
 
 export type CommercialDocumentRecord = {
   id: string;
@@ -39,6 +58,7 @@ export type CommercialDocumentRecord = {
   vendorListingId: string | null;
   vendorId: string | null;
   quoteSourceId: string | null;
+  payoutAccountId: string | null;
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
@@ -151,6 +171,15 @@ export type SharedCommercialDocument = {
   issuerPhone: string | null;
   issuerWebsite: string | null;
   issuerLocation: string | null;
+  paymentInstructions: string | null;
+  authorisedBy: string | null;
+  sourceInvoiceNumber: string | null;
+  sourceInvoiceTitle: string | null;
+  receiptPaymentMethod: string | null;
+  receiptPaymentReference: string | null;
+  receiptProcessingFee: number;
+  receiptZaniaServiceFee: number;
+  receiptTotalCharged: number;
   items: Array<{
     id: string;
     description: string;
@@ -177,6 +206,42 @@ export type CommercialDocumentShareState = {
   revokedAt: string | null;
   lastAccessedAt: string | null;
   accessCount: number;
+};
+
+export type CommercialDocumentEmailEvent = {
+  id: string;
+  documentId: string;
+  recipientEmail: string;
+  subject: string;
+  providerMessageId: string | null;
+  sentAt: string;
+};
+
+export type SendCommercialDocumentResult = {
+  success: true;
+  recipientEmail: string;
+  recipientEmails: string[];
+  shareUrl: string;
+  sentAt: string;
+  status: CommercialDocumentStatus;
+};
+
+export type QuoteResponseAction = 'accepted' | 'changes_requested';
+
+export type QuoteResponseRecord = {
+  id: string;
+  documentId: string | null;
+  response: QuoteResponseAction;
+  message: string | null;
+  responderName: string;
+  createdAt: string;
+};
+
+export type SharedQuoteResponseContext = {
+  available: boolean;
+  canRespond: boolean;
+  status: CommercialDocumentStatus | null;
+  latestResponse: QuoteResponseRecord | null;
 };
 
 export type CreateCommercialDocumentInput = {
@@ -251,6 +316,12 @@ export type ProfessionalContractStatus = (typeof professionalContractStatusOptio
 export const professionalTemplateTypeOptions = ['quote', 'invoice', 'receipt', 'contract'] as const;
 export type ProfessionalTemplateType = (typeof professionalTemplateTypeOptions)[number];
 
+export type ContractPaymentScheduleItem = {
+  title: string;
+  amount: number;
+  dueDate: string;
+};
+
 export type ProfessionalContractRecord = {
   id: string;
   createdAt: string;
@@ -273,7 +344,15 @@ export type ProfessionalContractRecord = {
   summary: string | null;
   notes: string | null;
   terms: string | null;
+  currency: string;
+  totalAmount: number | null;
+  depositAmount: number | null;
+  paymentSchedule: ContractPaymentScheduleItem[];
   metadata: Record<string, unknown>;
+  contentVersion: number;
+  lockedAt: string | null;
+  lockedHash: string | null;
+  lockedSnapshot: Record<string, unknown> | null;
 };
 
 export type ProfessionalContractShareState = {
@@ -304,7 +383,9 @@ export type ProfessionalContractSignerRecord = {
 export type ProfessionalContractEventType =
   | 'created'
   | 'share_link_created'
+  | 'share_link_revoked'
   | 'sent_for_signature'
+  | 'email_sent'
   | 'share_viewed'
   | 'signed_by_client'
   | 'signed_by_issuer'
@@ -343,18 +424,26 @@ export type SharedProfessionalContract = {
   summary: string | null;
   notes: string | null;
   terms: string | null;
+  currency: string;
+  totalAmount: number | null;
+  depositAmount: number | null;
+  paymentSchedule: ContractPaymentScheduleItem[];
   issuerName: string;
   issuerEmail: string | null;
   issuerPhone: string | null;
   issuerWebsite: string | null;
   issuerLocation: string | null;
   shareExpiresAt: string | null;
+  contentVersion: number;
+  documentHash: string | null;
+  lockedAt: string | null;
   signers: ProfessionalContractSignerRecord[];
   events: ProfessionalContractEventRecord[];
 };
 
 export type DocumentTemplateItem = {
   description: string;
+  content?: string;
   quantity?: number;
   unitPrice?: number;
 };
@@ -399,6 +488,10 @@ export type CreateProfessionalContractInput = {
   summary?: string | null;
   notes?: string | null;
   terms?: string | null;
+  currency?: string;
+  totalAmount?: number | null;
+  depositAmount?: number | null;
+  paymentSchedule?: ContractPaymentScheduleItem[];
   metadata?: Record<string, unknown>;
 };
 
@@ -462,6 +555,7 @@ function mapCommercialDocument(row: Record<string, unknown>): CommercialDocument
     vendorListingId: typeof row.vendor_listing_id === 'string' ? row.vendor_listing_id : null,
     vendorId: typeof row.vendor_id === 'string' ? row.vendor_id : null,
     quoteSourceId: typeof row.quote_source_id === 'string' ? row.quote_source_id : null,
+    payoutAccountId: typeof row.payout_account_id === 'string' ? row.payout_account_id : null,
     subtotal: toNumber(row.subtotal),
     discountAmount: toNumber(row.discount_amount),
     taxAmount: toNumber(row.tax_amount),
@@ -537,7 +631,26 @@ function mapProfessionalContract(row: Record<string, unknown>): ProfessionalCont
     summary: typeof row.summary === 'string' ? row.summary : null,
     notes: typeof row.notes === 'string' ? row.notes : null,
     terms: typeof row.terms === 'string' ? row.terms : null,
+    currency: typeof row.currency === 'string' ? row.currency : 'KES',
+    totalAmount: row.total_amount == null ? null : toNumber(row.total_amount),
+    depositAmount: row.deposit_amount == null ? null : toNumber(row.deposit_amount),
+    paymentSchedule: Array.isArray(row.payment_schedule)
+      ? row.payment_schedule.flatMap((item) => {
+          if (!item || typeof item !== 'object') return [];
+          const value = item as Record<string, unknown>;
+          const title = typeof value.title === 'string' ? value.title : '';
+          const dueDate = typeof value.dueDate === 'string' ? value.dueDate : '';
+          const amount = toNumber(value.amount);
+          return title && dueDate && amount > 0 ? [{ title, dueDate, amount }] : [];
+        })
+      : [],
     metadata: toObject(row.metadata),
+    contentVersion: toNumber(row.content_version),
+    lockedAt: typeof row.locked_at === 'string' ? row.locked_at : null,
+    lockedHash: typeof row.locked_hash === 'string' ? row.locked_hash : null,
+    lockedSnapshot: row.locked_snapshot && typeof row.locked_snapshot === 'object'
+      ? toObject(row.locked_snapshot)
+      : null,
   };
 }
 
@@ -560,6 +673,9 @@ function mapDocumentTemplate(row: Record<string, unknown>): ProfessionalDocument
     defaultItems: Array.isArray(row.default_items)
       ? row.default_items.map((item) => ({
           description: String((item as Record<string, unknown>).description ?? ''),
+          content: typeof (item as Record<string, unknown>).content === 'string'
+            ? String((item as Record<string, unknown>).content)
+            : undefined,
           quantity: (item as Record<string, unknown>).quantity == null ? undefined : toNumber((item as Record<string, unknown>).quantity),
           unitPrice: (item as Record<string, unknown>).unit_price == null && (item as Record<string, unknown>).unitPrice == null
             ? undefined
@@ -673,6 +789,8 @@ export function commercialDocumentStatusLabel(status: CommercialDocumentStatus |
       return 'Sent';
     case 'accepted':
       return 'Accepted';
+    case 'changes_requested':
+      return 'Changes requested';
     case 'rejected':
       return 'Rejected';
     case 'expired':
@@ -729,8 +847,12 @@ export function professionalContractEventLabel(eventType: ProfessionalContractEv
   switch (eventType) {
     case 'share_link_created':
       return 'Signing link created';
+    case 'share_link_revoked':
+      return 'Signing link revoked';
     case 'sent_for_signature':
       return 'Sent for signature';
+    case 'email_sent':
+      return 'Email sent';
     case 'share_viewed':
       return 'Opened by recipient';
     case 'signed_by_client':
@@ -763,27 +885,28 @@ export function professionalTemplateTypeLabel(type: ProfessionalTemplateType | s
 
 export async function listCommercialDocuments(filters: CommercialDocumentListFilters = {}) {
   const db = supabase as any;
-  let query = db
-    .from('commercial_documents')
-    .select('*')
-    .order('issue_date', { ascending: false })
-    .order('created_at', { ascending: false });
+  const { data, error } = await retryTransientRequest(() => {
+    let query = db
+      .from('commercial_documents')
+      .select('*')
+      .order('issue_date', { ascending: false })
+      .order('created_at', { ascending: false });
 
-  if (filters.role) query = query.eq('role', filters.role);
-  if (filters.documentType) query = query.eq('document_type', filters.documentType);
-  if (filters.status) query = query.eq('status', filters.status);
-  if (filters.clientId) query = query.eq('client_id', filters.clientId);
-  if (filters.vendorListingId) query = query.eq('vendor_listing_id', filters.vendorListingId);
-  if (filters.vendorId) query = query.eq('vendor_id', filters.vendorId);
-  if (filters.limit) query = query.limit(filters.limit);
-  if (filters.search?.trim()) {
-    const search = filters.search.trim();
-    query = query.or(
-      `document_number.ilike.%${search}%,title.ilike.%${search}%,recipient_name.ilike.%${search}%,wedding_name.ilike.%${search}%`,
-    );
-  }
-
-  const { data, error } = await query;
+    if (filters.role) query = query.eq('role', filters.role);
+    if (filters.documentType) query = query.eq('document_type', filters.documentType);
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.clientId) query = query.eq('client_id', filters.clientId);
+    if (filters.vendorListingId) query = query.eq('vendor_listing_id', filters.vendorListingId);
+    if (filters.vendorId) query = query.eq('vendor_id', filters.vendorId);
+    if (filters.limit) query = query.limit(filters.limit);
+    if (filters.search?.trim()) {
+      const search = filters.search.trim();
+      query = query.or(
+        `document_number.ilike.%${search}%,title.ilike.%${search}%,recipient_name.ilike.%${search}%,wedding_name.ilike.%${search}%`,
+      );
+    }
+    return query;
+  });
   if (error) throw error;
 
   return ((data ?? []) as Record<string, unknown>[]).map(mapCommercialDocument);
@@ -935,6 +1058,38 @@ export async function ensureCommercialDocumentShareToken(documentId: string) {
   return String(data);
 }
 
+export async function sendCommercialDocumentEmail(documentId: string) {
+  const { data, error } = await supabase.functions.invoke('send-commercial-document', {
+    body: { documentId },
+  });
+
+  if (error) {
+    const normalized = await normalizeInvokeError(error, 'Could not send the document.');
+    throw new Error(normalized.message);
+  }
+
+  return data as SendCommercialDocumentResult;
+}
+
+export async function listCommercialDocumentEmailEvents(documentId: string) {
+  const { data, error } = await (supabase as any)
+    .from('commercial_document_email_events')
+    .select('id, document_id, recipient_email, subject, provider_message_id, sent_at')
+    .eq('document_id', documentId)
+    .order('sent_at', { ascending: false });
+
+  if (error) throw error;
+
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: String(row.id),
+    documentId: String(row.document_id),
+    recipientEmail: String(row.recipient_email),
+    subject: String(row.subject),
+    providerMessageId: typeof row.provider_message_id === 'string' ? row.provider_message_id : null,
+    sentAt: String(row.sent_at),
+  } satisfies CommercialDocumentEmailEvent));
+}
+
 export async function getCommercialDocumentShareState(documentId: string) {
   const { data, error } = await (supabase as any)
     .from('commercial_document_shares')
@@ -1007,7 +1162,7 @@ export async function revokeCommercialDocumentShareToken(documentId: string) {
 }
 
 export async function getSharedCommercialDocument(shareToken: string) {
-  const { data, error } = await (supabase as any).rpc('get_shared_commercial_document', {
+  const { data, error } = await (supabase as any).rpc('get_shared_commercial_document_v2', {
     _share_token: shareToken,
   });
 
@@ -1044,6 +1199,15 @@ export async function getSharedCommercialDocument(shareToken: string) {
     issuerPhone: typeof row.issuerPhone === 'string' ? row.issuerPhone : null,
     issuerWebsite: typeof row.issuerWebsite === 'string' ? row.issuerWebsite : null,
     issuerLocation: typeof row.issuerLocation === 'string' ? row.issuerLocation : null,
+    paymentInstructions: typeof row.paymentInstructions === 'string' ? row.paymentInstructions : null,
+    authorisedBy: typeof row.authorisedBy === 'string' ? row.authorisedBy : null,
+    sourceInvoiceNumber: typeof row.sourceInvoiceNumber === 'string' ? row.sourceInvoiceNumber : null,
+    sourceInvoiceTitle: typeof row.sourceInvoiceTitle === 'string' ? row.sourceInvoiceTitle : null,
+    receiptPaymentMethod: typeof row.receiptPaymentMethod === 'string' ? row.receiptPaymentMethod : null,
+    receiptPaymentReference: typeof row.receiptPaymentReference === 'string' ? row.receiptPaymentReference : null,
+    receiptProcessingFee: toNumber(row.receiptProcessingFee),
+    receiptZaniaServiceFee: toNumber(row.receiptZaniaServiceFee),
+    receiptTotalCharged: toNumber(row.receiptTotalCharged),
     items: Array.isArray(row.items)
       ? row.items.map((item) => ({
           id: String((item as Record<string, unknown>).id ?? ''),
@@ -1075,6 +1239,59 @@ export async function getSharedCommercialDocument(shareToken: string) {
         }))
       : [],
   } satisfies SharedCommercialDocument;
+}
+
+function mapQuoteResponse(value: unknown): QuoteResponseRecord | null {
+  const row = toObject(value);
+  if (!row.id || (row.response !== 'accepted' && row.response !== 'changes_requested')) return null;
+
+  return {
+    id: String(row.id),
+    documentId: typeof row.documentId === 'string' ? row.documentId : null,
+    response: row.response,
+    message: typeof row.message === 'string' ? row.message : null,
+    responderName: String(row.responderName ?? 'Quote recipient'),
+    createdAt: String(row.createdAt ?? ''),
+  };
+}
+
+export function commercialDocumentLatestQuoteResponse(
+  document: Pick<CommercialDocumentRecord, 'metadata'>,
+) {
+  return mapQuoteResponse(toObject(document.metadata).latestQuoteResponse);
+}
+
+export async function getSharedQuoteResponseContext(
+  shareToken: string,
+): Promise<SharedQuoteResponseContext> {
+  const { data, error } = await (supabase as any).rpc('get_shared_quote_response_context', {
+    _share_token: shareToken,
+  });
+  if (error) throw error;
+
+  const row = toObject(data);
+  return {
+    available: row.available === true,
+    canRespond: row.canRespond === true,
+    status: typeof row.status === 'string' ? row.status as CommercialDocumentStatus : null,
+    latestResponse: mapQuoteResponse(row.latestResponse),
+  };
+}
+
+export async function respondToSharedQuote(
+  shareToken: string,
+  input: { response: QuoteResponseAction; message?: string | null },
+) {
+  const { data, error } = await (supabase as any).rpc('respond_to_shared_quote', {
+    _share_token: shareToken,
+    _response: input.response,
+    _message: input.message ?? null,
+  });
+  if (error) throw error;
+
+  const response = mapQuoteResponse(data);
+  if (!response) throw new Error('Zania could not save this quote response.');
+  return response;
 }
 
 import { isProductionHostname, PRIMARY_PRODUCTION_ORIGIN } from '@/lib/appDomain';
@@ -1110,7 +1327,7 @@ export function buildCommercialDocumentShareEmailDraft(input: {
     `${input.document.title}\n` +
     `Amount: KES ${input.document.totalAmount.toLocaleString()}\n` +
     dueLine +
-    `Open it here: ${shareUrl}\n\n` +
+    `Open it here: ${input.shareUrl}\n\n` +
     `Thank you.`;
 
   return {
@@ -1253,6 +1470,10 @@ export async function createProfessionalContract(input: CreateProfessionalContra
     summary: input.summary ?? null,
     notes: input.notes ?? null,
     terms: input.terms ?? null,
+    currency: input.currency ?? 'KES',
+    total_amount: input.totalAmount ?? null,
+    deposit_amount: input.depositAmount ?? null,
+    payment_schedule: input.paymentSchedule ?? [],
     metadata: input.metadata ?? {},
   };
 
@@ -1269,7 +1490,6 @@ export async function createProfessionalContract(input: CreateProfessionalContra
 export async function updateProfessionalContract(contractId: string, input: UpdateProfessionalContractInput) {
   const payload: Record<string, unknown> = {};
   if (input.title !== undefined) payload.title = input.title;
-  if (input.status !== undefined) payload.status = input.status;
   if (input.recipientName !== undefined) payload.recipient_name = input.recipientName;
   if (input.recipientEmail !== undefined) payload.recipient_email = input.recipientEmail;
   if (input.recipientPhone !== undefined) payload.recipient_phone = input.recipientPhone;
@@ -1281,18 +1501,24 @@ export async function updateProfessionalContract(contractId: string, input: Upda
   if (input.summary !== undefined) payload.summary = input.summary;
   if (input.notes !== undefined) payload.notes = input.notes;
   if (input.terms !== undefined) payload.terms = input.terms;
-  if (input.sentAt !== undefined) payload.sent_at = input.sentAt;
-  if (input.signedAt !== undefined) payload.signed_at = input.signedAt;
-  if (input.cancelledAt !== undefined) payload.cancelled_at = input.cancelledAt;
+  if (input.currency !== undefined) payload.currency = input.currency;
+  if (input.totalAmount !== undefined) payload.total_amount = input.totalAmount;
+  if (input.depositAmount !== undefined) payload.deposit_amount = input.depositAmount;
+  if (input.paymentSchedule !== undefined) payload.payment_schedule = input.paymentSchedule;
   if (input.metadata !== undefined) payload.metadata = input.metadata;
+  const { data, error } = await (supabase as any).rpc('update_professional_contract_draft', {
+    _contract_id: contractId,
+    _patch: payload,
+  });
 
-  const { data, error } = await (supabase as any)
-    .from('professional_contracts')
-    .update(payload)
-    .eq('id', contractId)
-    .select('*')
-    .single();
+  if (error) throw error;
+  return mapProfessionalContract(data as Record<string, unknown>);
+}
 
+export async function cancelProfessionalContract(contractId: string) {
+  const { data, error } = await (supabase as any).rpc('cancel_professional_contract', {
+    _contract_id: contractId,
+  });
   if (error) throw error;
   return mapProfessionalContract(data as Record<string, unknown>);
 }
@@ -1451,12 +1677,38 @@ function mapSharedProfessionalContract(row: Record<string, unknown>): SharedProf
     summary: typeof row.summary === 'string' ? row.summary : null,
     notes: typeof row.notes === 'string' ? row.notes : null,
     terms: typeof row.terms === 'string' ? row.terms : null,
+    currency: typeof row.currency === 'string' ? row.currency : 'KES',
+    totalAmount: row.totalAmount == null ? null : toNumber(row.totalAmount),
+    depositAmount: row.depositAmount == null ? null : toNumber(row.depositAmount),
+    paymentSchedule: Array.isArray(row.paymentSchedule)
+      ? row.paymentSchedule.flatMap((item) => {
+          if (!item || typeof item !== 'object') return [];
+          const payment = item as Record<string, unknown>;
+          const title = typeof payment.title === 'string' ? payment.title : '';
+          const dueDate = typeof payment.dueDate === 'string' ? payment.dueDate : '';
+          const amount = toNumber(payment.amount);
+          return title && dueDate && amount > 0 ? [{ title, dueDate, amount }] : [];
+        })
+      : [],
     issuerName: String(row.issuerName ?? ''),
     issuerEmail: typeof row.issuerEmail === 'string' ? row.issuerEmail : null,
     issuerPhone: typeof row.issuerPhone === 'string' ? row.issuerPhone : null,
     issuerWebsite: typeof row.issuerWebsite === 'string' ? row.issuerWebsite : null,
     issuerLocation: typeof row.issuerLocation === 'string' ? row.issuerLocation : null,
     shareExpiresAt: typeof row.shareExpiresAt === 'string' ? row.shareExpiresAt : null,
+    contentVersion: toNumber(row.contentVersion ?? row.content_version),
+    documentHash:
+      typeof row.documentHash === 'string'
+        ? row.documentHash
+        : typeof row.document_hash === 'string'
+          ? row.document_hash
+          : null,
+    lockedAt:
+      typeof row.lockedAt === 'string'
+        ? row.lockedAt
+        : typeof row.locked_at === 'string'
+          ? row.locked_at
+          : null,
     signers: Array.isArray(row.signers)
       ? row.signers.map((signer) => mapProfessionalContractSigner(signer as Record<string, unknown>))
       : [],
@@ -1479,7 +1731,7 @@ export async function getSharedProfessionalContract(shareToken: string) {
 export async function signSharedProfessionalContract(input: {
   shareToken: string;
   signedName: string;
-  signerEmail?: string | null;
+  verificationCode: string;
   agreedToTerms: boolean;
   signerUserAgent?: string | null;
   signerTimezone?: string | null;
@@ -1488,7 +1740,7 @@ export async function signSharedProfessionalContract(input: {
   const { data, error } = await (supabase as any).rpc('sign_shared_professional_contract', {
     _share_token: input.shareToken,
     _signed_name: input.signedName,
-    _signer_email: input.signerEmail ?? null,
+    _verification_code: input.verificationCode,
     _agreed_to_terms: input.agreedToTerms,
     _signer_user_agent: input.signerUserAgent ?? null,
     _signer_timezone: input.signerTimezone ?? null,
@@ -1498,6 +1750,18 @@ export async function signSharedProfessionalContract(input: {
   if (error) throw error;
   if (!data) return null;
   return mapSharedProfessionalContract(data as Record<string, unknown>);
+}
+
+export async function sendProfessionalContract(contractId: string) {
+  const { data, error } = await supabase.functions.invoke('send-professional-contract', {
+    body: { contractId },
+  });
+
+  if (error) {
+    const normalized = await normalizeInvokeError(error, 'Could not send the contract.');
+    throw new Error(normalized.message);
+  }
+  return data as { recipientEmail: string; shareUrl: string; expiresAt: string | null };
 }
 
 export function buildProfessionalContractShareUrl(shareToken: string, origin?: string) {
@@ -1556,6 +1820,7 @@ export async function createDocumentTemplate(input: CreateDocumentTemplateInput)
     default_terms: input.defaultTerms ?? null,
     default_items: (input.defaultItems ?? []).map((item) => ({
       description: item.description,
+      content: item.content ?? '',
       quantity: item.quantity ?? 1,
       unit_price: item.unitPrice ?? 0,
     })),
@@ -1583,6 +1848,7 @@ export async function updateDocumentTemplate(templateId: string, input: UpdateDo
   if (input.defaultItems !== undefined) {
     payload.default_items = input.defaultItems.map((item) => ({
       description: item.description,
+      content: item.content ?? '',
       quantity: item.quantity ?? 1,
       unit_price: item.unitPrice ?? 0,
     }));
@@ -1603,4 +1869,54 @@ export async function updateDocumentTemplate(templateId: string, input: UpdateDo
 export async function deleteDocumentTemplate(templateId: string) {
   const { error } = await (supabase as any).from('professional_document_templates').delete().eq('id', templateId);
   if (error) throw error;
+}
+
+export async function duplicateCommercialDocument(document: CommercialDocumentDetail) {
+  if (document.documentType === 'receipt') throw new Error('Receipts cannot be duplicated. Issue a new receipt from its payment instead.');
+  const created = await createCommercialDocument({
+    role: document.role,
+    documentType: document.documentType,
+    title: `${document.title} copy`,
+    recipientName: document.recipientName,
+    recipientEmail: document.recipientEmail,
+    recipientPhone: document.recipientPhone,
+    clientId: document.clientId,
+    vendorListingId: document.vendorListingId,
+    vendorId: document.vendorId,
+    issueDate: new Date().toISOString().slice(0, 10),
+    dueDate: document.dueDate,
+    notes: document.notes,
+    terms: document.terms,
+    weddingName: document.weddingName,
+    status: 'draft',
+    currency: document.currency,
+    metadata: { ...document.metadata, duplicatedFrom: document.id },
+  });
+  if (document.items.length) {
+    await saveCommercialDocumentItems(created.id, document.items.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      sortOrder: item.sortOrder,
+    })));
+  }
+  return getCommercialDocument(created.id);
+}
+
+export function createTemplateFromCommercialDocument(document: CommercialDocumentDetail) {
+  return createDocumentTemplate({
+    role: document.role,
+    templateType: document.documentType,
+    name: document.title,
+    description: `${commercialDocumentTypeLabel(document.documentType)} starter`,
+    defaultTitle: document.title,
+    defaultNotes: document.notes,
+    defaultTerms: document.terms,
+    defaultItems: document.items.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+    })),
+    metadata: { source: 'document_actions', sourceDocumentId: document.id, useCount: 0 },
+  });
 }

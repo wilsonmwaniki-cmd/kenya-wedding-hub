@@ -34,7 +34,7 @@ export default function ProfessionalLeadInbox() {
       setMatches(owned);
       setBriefs(Object.fromEntries(nextBriefs.map((brief) => [brief.lead_request_id, brief])));
     } catch (error: unknown) {
-      toast({ title: 'Could not load leads', description: errorMessage(error), variant: 'destructive' });
+      console.error('Could not load leads:', error);
     }
   }, [toast, user]);
 

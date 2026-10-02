@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatIntegerInput, parseIntegerInput } from '@/lib/integerInput';
+import { formatIntegerInput, parseIntegerInput, sanitizeIntegerInput } from '@/lib/integerInput';
 
 describe('integer inputs', () => {
   it('shows thousands separators for budget and guest values', () => {
@@ -10,5 +10,10 @@ describe('integer inputs', () => {
   it('turns formatted values back into numbers used by the plan', () => {
     expect(parseIntegerInput('2,500,000')).toBe(2_500_000);
     expect(parseIntegerInput('')).toBe(0);
+  });
+
+  it('keeps an integer draft unformatted while it is being edited', () => {
+    expect(sanitizeIntegerInput('2,500,000')).toBe('2500000');
+    expect(sanitizeIntegerInput('KES 125,000')).toBe('125000');
   });
 });

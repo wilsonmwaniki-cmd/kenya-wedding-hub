@@ -221,6 +221,7 @@ export const coupleEntitlementKeys = [
   'ai_wedding_assistant',
   'gift_registry',
   'guest_rsvp_management',
+  'payments_send',
 ] as const;
 
 export type CoupleEntitlementKey = (typeof coupleEntitlementKeys)[number];
@@ -230,6 +231,8 @@ export const couplePlanEntitlementMap: Record<Exclude<CouplePlanTier, 'free'>, C
     'wedding_collaboration',
     'planner_collaboration',
     'vendor_collaboration',
+    'ai_wedding_assistant',
+    'payments_send',
   ],
 };
 
@@ -249,6 +252,7 @@ export const professionalEntitlementKeys = [
   'media_portfolio',
   'advertising',
   'team_workspace',
+  'payments_accept',
 ] as const;
 
 export type ProfessionalEntitlementKey = (typeof professionalEntitlementKeys)[number];
@@ -269,8 +273,8 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
     audience: 'planner',
     tier: 'premium',
     title: 'Professional',
-    annualPriceKes: 9000,
-    monthlyPriceKes: 1000,
+    annualPriceKes: 15000,
+    monthlyPriceKes: 1500,
     bundleType: 'professional_plan',
     bundleCode: 'planner_premium_annual',
     checkoutMonthlyLookupKey: 'planner_premium_monthly',
@@ -292,7 +296,7 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
     tier: 'premium',
     title: 'Professional',
     annualPriceKes: 9000,
-    monthlyPriceKes: 1000,
+    monthlyPriceKes: 850,
     bundleType: 'professional_plan',
     bundleCode: 'vendor_premium_annual',
     checkoutMonthlyLookupKey: 'vendor_premium_monthly',
@@ -301,7 +305,7 @@ const defaultProfessionalPlanDefinitions: ProfessionalPlanDefinition[] = [
 ];
 
 export const professionalPlanEntitlementMap: Record<Exclude<ProfessionalPlanTier, 'free'>, ProfessionalEntitlementKey[]> = {
-  premium: ['booking_management', 'document_collaboration', 'media_portfolio'],
+  premium: ['booking_management', 'document_collaboration', 'media_portfolio', 'payments_accept'],
 };
 
 const defaultAudiencePlans: AudiencePlan[] = [
@@ -346,8 +350,8 @@ const defaultAudiencePlans: AudiencePlan[] = [
     paidTierName: 'Professional',
     billingCadence: 'monthly_or_annual',
     displayOneTimePriceKes: null,
-    displayMonthlyPriceKes: 1000,
-    displayAnnualPriceKes: 9000,
+    displayMonthlyPriceKes: 1500,
+    displayAnnualPriceKes: 15000,
     entitlementCode: 'booking_management',
     billingProductKey: 'planner_premium',
     checkoutMonthlyLookupKey: 'planner_premium_monthly',
@@ -363,7 +367,7 @@ const defaultAudiencePlans: AudiencePlan[] = [
     paidTierName: 'Professional',
     billingCadence: 'monthly_or_annual',
     displayOneTimePriceKes: null,
-    displayMonthlyPriceKes: 1000,
+    displayMonthlyPriceKes: 850,
     displayAnnualPriceKes: 9000,
     entitlementCode: 'booking_management',
     billingProductKey: 'vendor_premium',

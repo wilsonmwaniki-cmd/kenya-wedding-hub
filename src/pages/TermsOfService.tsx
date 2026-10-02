@@ -2,7 +2,7 @@ import BrandWordmark from "@/components/BrandWordmark";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-const LAST_UPDATED = "August 23, 2026";
+const LAST_UPDATED = "September 2, 2026";
 
 const sections = [
   {
@@ -138,6 +138,10 @@ const sections = [
     body: [
       "Some parts of Zania Weddings may be free, while others may require payment.",
       "By purchasing a paid plan or service, you agree to pay the fees shown at the time of purchase, including any applicable taxes, transaction fees, or payment processing charges.",
+      "Zania Pay is available only when the paying couple and receiving professional have eligible paid plans, the professional has connected a verified payout account, and the invoice is valid and payable.",
+      "Before a Zania Pay payment is confirmed, the couple will see the invoice amount, the payment-provider processing charge, the Zania service fee, and the total to be charged. The couple pays those disclosed charges. Zania currently charges a flat KES 50 service fee for each successful Zania Pay transaction. The professional is settled the invoice amount subject to reversals, refunds, disputes, withholding required by law, or other adjustments disclosed for the transaction. Failed, cancelled, or abandoned payment attempts do not attract the Zania service fee.",
+      "Zania Pay transactions are processed and settled by Paystack Payments Kenya Limited or another payment provider identified at checkout. Provider verification, processing, settlement timing, refunds, reversals, chargebacks, and disputes may be governed by that provider’s terms as well as these Terms.",
+      "Zania does not hold Zania Pay funds in escrow. A displayed payment status is based on information received from the payment provider and may be corrected if a transaction is reversed, disputed, refunded, or found to be invalid.",
       "We may change our prices or introduce new fees from time to time. Where required, we will give reasonable notice before material pricing changes take effect.",
       "Payment schedules, contribution records, invoices, receipts, balances, and status labels shown in Zania are record-keeping tools. Unless Zania expressly states otherwise for a particular transaction, they do not confirm cleared funds and Zania does not hold money in escrow.",
     ],

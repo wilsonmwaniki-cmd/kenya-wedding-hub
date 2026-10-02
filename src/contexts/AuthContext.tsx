@@ -135,6 +135,7 @@ interface AuthContextType {
       ownerTimezone?: string | null;
       professionalRoleLocked?: boolean | null;
       estimatorPlanDraft?: EstimatorPlanDraft | null;
+      captchaToken?: string | null;
     }
   ) => Promise<{ requiresEmailConfirmation: boolean; confirmationEmailResent: boolean }>;
   signIn: (
@@ -144,6 +145,7 @@ interface AuthContextType {
       audience?: 'couple' | 'professional' | null;
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
+      captchaToken?: string | null;
     }
   ) => Promise<void>;
   signInWithGoogle: (options?: {
@@ -151,12 +153,14 @@ interface AuthContextType {
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
+    captchaToken?: string | null;
   }) => Promise<void>;
   signInWithApple: (options?: {
     audience?: 'couple' | 'professional' | null;
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
+    captchaToken?: string | null;
   }) => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
@@ -915,6 +919,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const registerDeviceForSession = async (nextSession: Session) => {
+    if (nextSession.user.is_anonymous || nextSession.user.app_metadata?.provider === 'anonymous') {
+      setDeviceSessions([]);
+      setDeviceVerificationRequired(false);
+      setDeviceVerificationMessage(null);
+      setDeviceVerificationEmailHint(null);
+      setDeviceVerificationChallengeId(null);
+      return;
+    }
+
     const device = getCurrentDeviceProfile();
     const sessionKey = `${nextSession.user.id}:${device.deviceId}:${nextSession.access_token.slice(-12)}`;
     if (verifiedSessionKeysRef.current.has(sessionKey)) {
@@ -955,7 +968,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await sendDeviceVerificationOtp();
       setDeviceVerificationChallengeId(result.challengeId);
       setDeviceVerificationEmailHint(result.emailHint ?? deviceVerificationEmailHint);
-      setDeviceVerificationMessage('We noticed a sign-in from a new device. Enter the code sent to your email to continue.');
+      setDeviceVerificationMessage(
+        result.deliveryStatus === 'already_sent'
+          ? 'A code was recently sent. Check your email, or wait a moment before requesting another one.'
+          : 'We noticed a sign-in from a new device. Enter the code sent to your email to continue.',
+      );
     } finally {
       setDeviceVerificationSubmitting(false);
     }
@@ -1498,9 +1515,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       audience?: 'couple' | 'professional' | 'admin' | null;
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
+      captchaToken?: string | null;
     },
   ) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken: options?.captchaToken ?? undefined },
+    });
     if (error) throw error;
 
     if (data.session) {
@@ -1568,6 +1590,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mode?: 'signup' | 'signin';
       targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
       plannerType?: PlannerType | null;
+      captchaToken?: string | null;
     },
   ) => {
     const { performOAuthEntrySignIn } = await import('@/lib/authEntryFlows');
@@ -1578,6 +1601,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mode: options?.mode,
       targetRole: options?.targetRole,
       plannerType: options?.plannerType,
+      captchaToken: options?.captchaToken,
     });
   };
 
@@ -1586,6 +1610,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
+    captchaToken?: string | null;
   }) => {
     await signInWithOAuthProvider('google', options);
   };
@@ -1595,6 +1620,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mode?: 'signup' | 'signin';
     targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
     plannerType?: PlannerType | null;
+    captchaToken?: string | null;
   }) => {
     await signInWithOAuthProvider('apple', options);
   };
@@ -1605,47 +1631,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     verifiedSessionKeysRef.current.clear();
     clearPendingOAuthSignupState();
     clearPendingProfessionalSetup();
-    let globalSignOutError: Error | null = null;
 
     try {
-      const globalResult = await withTimeout(
-        supabase.auth.signOut({ scope: 'global' }),
-        2500,
-        { error: null as Error | null },
-        'Supabase global sign out',
-      );
-      const { error } = globalResult;
-      if (error && !/session/i.test(error.message)) {
-        globalSignOutError = error;
-      }
-    } catch (error: any) {
-      if (!/session/i.test(error?.message ?? '')) {
-        globalSignOutError = error;
-      }
-    }
-
-    try {
-      const localResult = await withTimeout(
+      await withTimeout(
         supabase.auth.signOut({ scope: 'local' }),
         1500,
         { error: null as Error | null },
         'Supabase local sign out',
       );
-      if (localResult.error && !/session/i.test(localResult.error.message) && !globalSignOutError) {
-        globalSignOutError = localResult.error;
-      }
     } catch (error: any) {
-      if (!/session/i.test(error?.message ?? '') && !globalSignOutError) {
-        globalSignOutError = error;
-      }
+      // The local storage clear below still signs this browser out when the
+      // network request is interrupted. Other devices are intentionally left
+      // alone; Profile settings has a separate "sign out other devices" action.
+      console.warn('Supabase local sign out did not fully complete; clearing this browser session.', error);
     } finally {
       clearStoredSupabaseAuthState();
       await syncAuthState(null);
       setLoading(false);
-    }
-
-    if (globalSignOutError) {
-      console.warn('Supabase global sign out did not fully complete, but local session was cleared.', globalSignOutError);
     }
   };
 

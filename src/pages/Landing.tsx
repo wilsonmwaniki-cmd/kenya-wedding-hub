@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ChevronDown, Trash2 } from 'lucide-react';
+import { ArrowRight, ChevronDown, Info, Trash2 } from 'lucide-react';
 import heroImage from '@/assets/hero-wedding.jpg';
 import BrandWordmark from '@/components/BrandWordmark';
 import { AnimatedCardDetails } from '@/components/AnimatedCardDetails';
@@ -16,10 +16,19 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getHomeRouteForRole } from '@/lib/roles';
 import { isPlanningExperimentEnabled } from '@/lib/featureFlags';
 import { saveEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import { formatNonNegativeNumberInputText } from '@/lib/nonNegativeNumberInput';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   buildInteractiveBudgetPlan,
-  calculatePercentage,
-  calculatePlannedAmount,
   getBudgetUtilizationPercentage,
   getBudgetUtilizationStatus,
   getCoreGuestCost,
@@ -42,6 +51,14 @@ function formatIntegerInput(value: string) {
   return digits ? Number(digits).toLocaleString('en-KE') : '';
 }
 
+function sanitizeIntegerInput(value: string) {
+  return value.replace(/\D/g, '');
+}
+
+function keepEditingKeysInsideField(event: KeyboardEvent<HTMLInputElement>) {
+  if (event.key === 'Backspace' || event.key === 'Delete') event.stopPropagation();
+}
+
 function allocationDomId(name: string) {
   return `estimator-allocation-${name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase()}`;
 }
@@ -53,6 +70,7 @@ export default function Landing() {
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [selectedAllocationName, setSelectedAllocationName] = useState<string | null>(null);
   const [allocationDraft, setAllocationDraft] = useState<{ amount: string; percentage: string; lastEditedField: 'amount' | 'percentage' } | null>(null);
+  const [pendingRemovalName, setPendingRemovalName] = useState<string | null>(null);
   const [pendingTotalBudget, setPendingTotalBudget] = useState<number | null>(null);
   const [resetAllOpen, setResetAllOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -62,29 +80,10 @@ export default function Landing() {
   const navigate = useNavigate();
   const { user, profile, loading } = useAuth();
 
-  const previewPlan = useMemo(() => {
-    if (!plan || !selectedAllocationName || !allocationDraft) return plan;
-    const rawValue = allocationDraft[allocationDraft.lastEditedField].replace(/,/g, '');
-    const nextValue = Number(rawValue);
-    if (!Number.isFinite(nextValue) || nextValue < 0) return plan;
-    const originalAllocation = plan.allocations.find((allocation) => allocation.name === selectedAllocationName);
-    const nextPlan = allocationDraft.lastEditedField === 'amount'
-      ? updateInteractiveBudgetAllocation(plan, selectedAllocationName, nextValue)
-      : updateInteractiveBudgetPercentage(plan, selectedAllocationName, nextValue);
-    if (!originalAllocation) return nextPlan;
-    return {
-      ...nextPlan,
-      allocations: nextPlan.allocations.map((allocation) => {
-        if (allocation.name !== selectedAllocationName) return allocation;
-        const hasDraftChange = allocation.amount !== originalAllocation.amount;
-        return {
-          ...allocation,
-          isManuallyEdited: originalAllocation.isManuallyEdited || hasDraftChange,
-          lastEditedField: hasDraftChange ? allocationDraft.lastEditedField : originalAllocation.lastEditedField,
-        };
-      }),
-    };
-  }, [allocationDraft, plan, selectedAllocationName]);
+  // Editing is deliberately local. The budget summary and category list only
+  // change when the person explicitly presses Apply, so ordinary typing never
+  // makes cards jump, disappear, or change position.
+  const previewPlan = plan;
 
   const coreGuestCost = useMemo(
     () => previewPlan ? getCoreGuestCost(previewPlan) : 0,
@@ -117,10 +116,17 @@ export default function Landing() {
   const visibleAllocations = useMemo(() => {
     if (!previewPlan) return [];
     if (showAllCategories) return previewPlan.allocations;
-    return [...previewPlan.allocations]
+    const allocated = [...previewPlan.allocations]
       .filter((allocation) => allocation.amount > 0)
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 6);
+    // Any category someone has edited is still part of their working plan.
+    // Keep it available below the essentials, even when its new amount is
+    // smaller (or zero), rather than making it seem deleted.
+    const edited = previewPlan.allocations.filter((allocation) => (
+      allocation.isManuallyEdited && !allocated.some((item) => item.name === allocation.name)
+    ));
+    return [...allocated, ...edited];
   }, [previewPlan, showAllCategories]);
 
   const persistPlanDraft = (nextPlan: InteractiveBudgetPlan) => {
@@ -198,35 +204,14 @@ export default function Landing() {
       : updateInteractiveBudgetPercentage(plan, category, nextValue);
     setPlan(nextPlan);
     persistPlanDraft(nextPlan);
-    const updated = nextPlan.allocations.find((allocation) => allocation.name === category);
-    if (updated) {
-      setAllocationDraft({
-        amount: String(updated.amount),
-        percentage: updated.percentage.toFixed(1),
-        lastEditedField: field,
-      });
-    }
+    setSelectedAllocationName(null);
+    setAllocationDraft(null);
   };
 
   const handleAllocationDraftChange = (value: string, field: 'amount' | 'percentage') => {
-    if (!plan) return;
-    const nextValue = Number(value.replace(/,/g, ''));
     setAllocationDraft((current) => {
       const fallback = current ?? { amount: '', percentage: '', lastEditedField: field };
-      if (!Number.isFinite(nextValue) || nextValue < 0 || value.trim() === '') {
-        return { ...fallback, [field]: value, lastEditedField: field };
-      }
-      return field === 'amount'
-        ? {
-            amount: value,
-            percentage: calculatePercentage(nextValue, plan.totalBudget).toFixed(1),
-            lastEditedField: field,
-          }
-        : {
-            amount: String(Math.round(calculatePlannedAmount(nextValue, plan.totalBudget))),
-            percentage: value,
-            lastEditedField: field,
-          };
+      return { ...fallback, [field]: value, lastEditedField: field };
     });
   };
 
@@ -297,13 +282,17 @@ export default function Landing() {
     });
   };
 
+  const closeAllocation = () => {
+    setSelectedAllocationName(null);
+    setAllocationDraft(null);
+  };
+
   const resetAllocation = (name: string) => {
     if (!plan) return;
     const nextPlan = resetInteractiveBudgetAllocation(plan, name);
     setPlan(nextPlan);
     persistPlanDraft(nextPlan);
-    const updated = nextPlan.allocations.find((allocation) => allocation.name === name);
-    if (updated) setAllocationDraft({ amount: String(updated.amount), percentage: updated.percentage.toFixed(1), lastEditedField: 'amount' });
+    closeAllocation();
   };
 
   const handleSavePlan = async () => {
@@ -389,19 +378,23 @@ export default function Landing() {
             className="max-w-xl text-center lg:text-left"
           >
             <h1 className="font-display text-3xl font-semibold leading-[1.1] tracking-tight text-primary-foreground sm:text-5xl lg:text-6xl">
-              Plan your wedding budget.
+              See your wedding come together.
             </h1>
             <p className="mx-auto mt-4 max-w-lg text-base leading-7 text-primary-foreground/80 sm:mt-5 sm:text-xl sm:leading-8 lg:mx-0">
-              Set a starting budget and guest count for a Kenyan wedding anywhere in the world.
+              Explore one calm place for your tasks, vendors, documents and budget—then personalise it when you are ready.
             </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">
+              <Button asChild size="lg" className="font-semibold"><Link to="/explore">Explore Zania <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+              <Button asChild size="lg" variant="outline" className="border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground"><a href="#budget-builder">Try the budget tool</a></Button>
+            </div>
           </motion.div>
 
           <Card id="budget-builder" className="w-full border-border/80 bg-card/95 text-card-foreground shadow-card backdrop-blur-md">
             <CardContent className="p-4 sm:p-8">
               <div className="flex items-center justify-between gap-4 border-b border-border pb-4">
                 <div>
-                  <p className="text-base font-semibold text-foreground sm:text-lg">Budget estimate</p>
-                  <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{plan ? 'Adjust your plan below.' : 'Enter two numbers to begin.'}</p>
+                  <p className="text-base font-semibold text-foreground sm:text-lg">Optional budget estimate</p>
+                  <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{plan ? 'Adjust your plan below.' : 'Use this now—or explore first and return later.'}</p>
                 </div>
                 <span className="max-w-24 text-right text-xs font-semibold text-muted-foreground sm:max-w-none sm:text-sm">No sign-up required</span>
               </div>
@@ -416,7 +409,9 @@ export default function Landing() {
                       type="text"
                       inputMode="numeric"
                       value={budgetInput}
-                      onChange={(event) => setBudgetInput(formatIntegerInput(event.target.value))}
+                      onFocus={() => setBudgetInput((current) => sanitizeIntegerInput(current))}
+                      onChange={(event) => setBudgetInput(sanitizeIntegerInput(event.target.value))}
+                      onBlur={() => setBudgetInput((current) => formatIntegerInput(current))}
                       className="h-11 bg-background pl-14 text-sm font-semibold sm:h-12 sm:text-base"
                     />
                   </div>
@@ -428,7 +423,9 @@ export default function Landing() {
                     type="text"
                     inputMode="numeric"
                     value={guestInput}
-                    onChange={(event) => setGuestInput(formatIntegerInput(event.target.value))}
+                    onFocus={() => setGuestInput((current) => sanitizeIntegerInput(current))}
+                    onChange={(event) => setGuestInput(sanitizeIntegerInput(event.target.value))}
+                    onBlur={() => setGuestInput((current) => formatIntegerInput(current))}
                     className="h-11 bg-background text-sm font-semibold sm:h-12 sm:text-base"
                   />
                 </div>
@@ -438,13 +435,20 @@ export default function Landing() {
                 Get estimate
               </Button>
 
+              <div className="mt-4 flex gap-3 rounded-lg border border-border bg-muted/35 p-3 text-left" role="note">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                <p className="text-xs leading-5 text-muted-foreground sm:text-sm">
+                  This is a planning estimate based on the total budget you enter. It is not a vendor quote: actual service prices can change with the vendor, location, wedding date, guest count and availability.
+                </p>
+              </div>
+
               {!user ? (
                 <p className="mt-3 text-center text-xs text-muted-foreground sm:text-sm">
                   <Link
-                    to="/auth?mode=signup&audience=couple&role=couple"
+                    to="/explore"
                     className="font-semibold text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    Create an account instead
+                    Explore what’s inside
                   </Link>
                 </p>
               ) : null}
@@ -476,8 +480,12 @@ export default function Landing() {
                     type="text"
                     inputMode="numeric"
                     value={budgetInput}
-                    onChange={(event) => setBudgetInput(formatIntegerInput(event.target.value))}
-                    onBlur={handleBudgetGoalChange}
+                    onFocus={() => setBudgetInput((current) => sanitizeIntegerInput(current))}
+                    onChange={(event) => setBudgetInput(sanitizeIntegerInput(event.target.value))}
+                    onBlur={() => {
+                      setBudgetInput((current) => formatIntegerInput(current));
+                      handleBudgetGoalChange();
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') event.currentTarget.blur();
                     }}
@@ -521,8 +529,12 @@ export default function Landing() {
                   type="text"
                   inputMode="numeric"
                   value={guestInput}
-                  onChange={(event) => setGuestInput(formatIntegerInput(event.target.value))}
-                  onBlur={handleGuestCountChange}
+                  onFocus={() => setGuestInput((current) => sanitizeIntegerInput(current))}
+                  onChange={(event) => setGuestInput(sanitizeIntegerInput(event.target.value))}
+                  onBlur={() => {
+                    setGuestInput((current) => formatIntegerInput(current));
+                    handleGuestCountChange();
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') event.currentTarget.blur();
                   }}
@@ -538,7 +550,7 @@ export default function Landing() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
                   <div>
                     <h2 id="budget-plan-heading" className="text-xl font-semibold tracking-tight sm:text-2xl">Your budget estimate</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Select a category to change it.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">A suggested split of your overall budget—not confirmed vendor pricing.</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-xs font-semibold text-muted-foreground sm:text-sm">{plan.allocations.length} items</span>
@@ -546,6 +558,13 @@ export default function Landing() {
                       <button type="button" onClick={() => setResetAllOpen(true)} className="text-xs font-semibold text-primary underline-offset-4 hover:underline">Reset all</button>
                     ) : null}
                   </div>
+                </div>
+
+                <div className="mt-4 flex gap-3 rounded-lg border border-border bg-muted/35 p-3" role="note">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                  <p className="text-xs leading-5 text-muted-foreground sm:text-sm">
+                    Treat these amounts as a starting point. Actual service costs may be higher or lower, so confirm pricing directly with each vendor before making a booking or payment.
+                  </p>
                 </div>
 
                 <div id="budget-category-list" className="mt-4 space-y-2 sm:mt-6">
@@ -578,9 +597,11 @@ export default function Landing() {
                                   <p className="truncate text-sm font-semibold">{allocation.name}</p>
                                   {allocation.isManuallyEdited ? <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-primary">Edited</span> : null}
                                 </div>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {isSelected ? 'Hide details' : 'View details'}
+                                <p className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  <span>{isSelected ? 'Hide details' : 'View details'}
                                   {perGuestAmount == null ? '' : ` · ${formatCurrency(perGuestAmount)} per guest`}
+                                  </span>
+                                  <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 motion-reduce:transition-none ${isSelected ? 'rotate-180' : ''}`} aria-hidden="true" />
                                 </p>
                               </div>
                               <div className="shrink-0 text-right">
@@ -603,11 +624,11 @@ export default function Landing() {
                                     <Input
                                       id={`${allocationDomId(allocation.name)}-amount`}
                                       aria-label={`Edit planned allocation for ${allocation.name}`}
-                                      type="number"
-                                      min="0"
+                                      type="text"
                                       inputMode="numeric"
                                       value={allocationDraft?.amount ?? String(allocation.amount)}
-                                      onChange={(event) => handleAllocationDraftChange(event.target.value, 'amount')}
+                                      onChange={(event) => handleAllocationDraftChange(formatNonNegativeNumberInputText(event.target.value), 'amount')}
+                                      onKeyDown={keepEditingKeysInsideField}
                                       className="pl-12"
                                     />
                                   </div>
@@ -618,12 +639,11 @@ export default function Landing() {
                                     <Input
                                       id={`${allocationDomId(allocation.name)}-percentage`}
                                       aria-label={`Edit percentage allocation for ${allocation.name}`}
-                                      type="number"
-                                      min="0"
-                                      step="0.1"
+                                      type="text"
                                       inputMode="decimal"
                                       value={allocationDraft?.percentage ?? allocation.percentage.toFixed(1)}
-                                      onChange={(event) => handleAllocationDraftChange(event.target.value, 'percentage')}
+                                      onChange={(event) => handleAllocationDraftChange(formatNonNegativeNumberInputText(event.target.value), 'percentage')}
+                                      onKeyDown={keepEditingKeysInsideField}
                                       className="pr-9"
                                     />
                                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">%</span>
@@ -633,7 +653,7 @@ export default function Landing() {
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="flex items-center gap-2">
                                   <Button type="button" size="sm" onClick={() => allocationDraft && handleAllocationChange(allocation.name, allocationDraft[allocationDraft.lastEditedField], allocationDraft.lastEditedField)}>Apply</Button>
-                                  <Button type="button" size="sm" variant="outline" onClick={() => openAllocation(allocation.name)}>Cancel</Button>
+                                  <Button type="button" size="sm" variant="outline" onClick={closeAllocation}>Cancel</Button>
                                   {allocation.isManuallyEdited ? <Button type="button" size="sm" variant="link" onClick={() => resetAllocation(allocation.name)}>Reset</Button> : null}
                                 </div>
                                 <Button
@@ -641,7 +661,7 @@ export default function Landing() {
                                   variant="ghost"
                                   size="icon"
                                   disabled={plan.allocations.length <= 1}
-                                  onClick={() => handleRemoveCategory(allocation.name)}
+                                  onClick={() => setPendingRemovalName(allocation.name)}
                                   className="text-destructive hover:text-destructive"
                                   aria-label={`Remove ${allocation.name}`}
                                   title={`Remove ${allocation.name}`}
@@ -656,6 +676,31 @@ export default function Landing() {
                     })}
                   </AnimatePresence>
                 </div>
+
+                <AlertDialog open={Boolean(pendingRemovalName)} onOpenChange={(open) => {
+                  if (!open) setPendingRemovalName(null);
+                }}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove this category?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {pendingRemovalName ? `${pendingRemovalName} will be removed from this estimate. You can add it back later.` : ''}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Keep category</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={() => {
+                          if (pendingRemovalName) handleRemoveCategory(pendingRemovalName);
+                          setPendingRemovalName(null);
+                        }}
+                      >
+                        Remove category
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
 
                 <Button
                   variant="outline"

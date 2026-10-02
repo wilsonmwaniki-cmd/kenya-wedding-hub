@@ -29,6 +29,7 @@ export type DeviceVerificationSendResult = {
   expiresAt: string;
   retryAfterSeconds: number;
   emailHint?: string | null;
+  deliveryStatus?: 'sent' | 'already_sent';
 };
 
 export type DeviceVerificationResult = {

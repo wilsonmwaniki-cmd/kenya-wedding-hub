@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { deriveVendorPaymentStatus } from '@/lib/vendorPayments';
 
 export type PlannerChangeTargetTable =
   | 'guests'
@@ -9,7 +10,10 @@ export type PlannerChangeTargetTable =
   | 'tasks'
   | 'vendors'
   | 'timelines'
-  | 'timeline_events';
+  | 'timeline_events'
+  | 'vendor_enquiries'
+  | 'document_requests'
+  | 'commercial_quote_responses';
 export type PlannerChangeType = 'create' | 'update' | 'delete';
 export type PlannerChangeStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
@@ -29,6 +33,7 @@ export type PlannerChangeRequestRow = {
   reviewed_by: string | null;
   created_at: string;
   updated_at: string;
+  gateway_idempotency_key?: string | null;
   target_label?: string | null;
 };
 
@@ -132,6 +137,30 @@ function getApprovalInsertPayload(request: PlannerChangeRequestRow) {
 }
 
 async function applyPlannerChangeRequest(request: PlannerChangeRequestRow) {
+  if (request.target_table === 'commercial_quote_responses') {
+    if (request.change_type !== 'create') throw new Error('Formal quote response moderation supports create requests only.');
+    const proposed = request.proposed_payload ?? {};
+    const { error } = await (supabase as any).rpc('request_formal_quote_changes', {
+      target_document_id: proposed.quote_document_id,
+      change_message: proposed.message,
+      gateway_idempotency_key_input: request.gateway_idempotency_key,
+    });
+    if (error) throw error;
+    return;
+  }
+
+  if (request.target_table === 'document_requests') {
+    if (request.change_type !== 'create') throw new Error('Formal quote moderation supports create requests only.');
+    const proposed = request.proposed_payload ?? {};
+    const { error } = await (supabase as any).rpc('request_vendor_quote', {
+      target_vendor_id: proposed.target_vendor_id,
+      request_message: proposed.request_message ?? null,
+      request_budget_amount: null,
+    });
+    if (error) throw error;
+    return;
+  }
+
   if (request.target_table === 'guests') {
     if (request.change_type === 'create') {
       const { error } = await supabase.from('guests').insert(getApprovalInsertPayload(request) as never);
@@ -176,11 +205,22 @@ async function applyPlannerChangeRequest(request: PlannerChangeRequestRow) {
     if (request.change_type !== 'create') throw new Error('Budget payment moderation currently supports create requests only.');
 
     const payload = getApprovalInsertPayload(request) as Record<string, any>;
-    const { error } = await supabase.from('budget_payments').insert(payload as never);
+    const {
+      vendor_amount_paid: _legacyVendorAmountPaid,
+      vendor_payment_status: _legacyVendorPaymentStatus,
+      ...paymentPayload
+    } = payload;
+    const { error } = await supabase.from('budget_payments').insert(paymentPayload as never);
     if (error) throw error;
 
     if (payload.budget_category_id && typeof payload.amount === 'number') {
-      const currentSpent = Number((request.current_payload?.category_spent as number | undefined) ?? 0);
+      const { data: category, error: categoryReadError } = await supabase
+        .from('budget_categories')
+        .select('spent')
+        .eq('id', payload.budget_category_id)
+        .single();
+      if (categoryReadError) throw categoryReadError;
+      const currentSpent = Number(category?.spent ?? 0);
       const { error: updateCategoryError } = await supabase
         .from('budget_categories')
         .update({ spent: currentSpent + payload.amount } as never)
@@ -188,12 +228,28 @@ async function applyPlannerChangeRequest(request: PlannerChangeRequestRow) {
       if (updateCategoryError) throw updateCategoryError;
     }
 
-    if (payload.vendor_id && typeof payload.vendor_amount_paid === 'number') {
+    if (payload.vendor_id) {
+      const [{ data: payments, error: paymentsError }, { data: vendor, error: vendorReadError }] = await Promise.all([
+        supabase.from('budget_payments').select('amount,payment_date').eq('vendor_id', payload.vendor_id),
+        supabase.from('vendors').select('price,deposit_amount').eq('id', payload.vendor_id).single(),
+      ]);
+      if (paymentsError) throw paymentsError;
+      if (vendorReadError) throw vendorReadError;
+      const amountPaid = (payments ?? []).reduce((total, payment) => total + Number(payment.amount ?? 0), 0);
       const vendorUpdate: Record<string, unknown> = {
-        amount_paid: payload.vendor_amount_paid,
+        amount_paid: amountPaid,
+        payment_status: deriveVendorPaymentStatus({
+          totalCost: vendor?.price,
+          depositRequired: vendor?.deposit_amount,
+          totalPaid: amountPaid,
+        }),
       };
-      if (payload.vendor_payment_status) vendorUpdate.payment_status = payload.vendor_payment_status;
-      if (payload.payment_date) vendorUpdate.last_payment_at = payload.payment_date;
+      const lastPaymentAt = (payments ?? [])
+        .map((payment) => payment.payment_date)
+        .filter((paymentDate): paymentDate is string => typeof paymentDate === 'string' && paymentDate.length > 0)
+        .sort()
+        .at(-1);
+      if (lastPaymentAt) vendorUpdate.last_payment_at = lastPaymentAt;
       const { error: updateVendorError } = await supabase.from('vendors').update(vendorUpdate as never).eq('id', payload.vendor_id);
       if (updateVendorError) throw updateVendorError;
     }
@@ -338,8 +394,20 @@ async function markPlannerChangeRequestStatus(
 }
 
 export async function approvePlannerChangeRequest(request: PlannerChangeRequestRow, reviewedBy: string) {
+  if (request.target_table === 'vendor_enquiries') {
+    const { data, error } = await supabase.functions.invoke('review-planner-vendor-enquiry', {
+      body: { requestId: request.id },
+    });
+    if (error) throw error;
+    if (!data?.success) throw new Error(data?.error || 'The approved enquiry could not be delivered.');
+    return {
+      deliveryStatus: data?.enquiry?.delivery_status as 'sent' | 'failed' | undefined,
+      message: typeof data?.message === 'string' ? data.message : null,
+    };
+  }
   await applyPlannerChangeRequest(request);
   await markPlannerChangeRequestStatus(request.id, 'approved', reviewedBy);
+  return null;
 }
 
 export async function rejectPlannerChangeRequest(requestId: string, reviewedBy: string) {
@@ -369,6 +437,12 @@ export function describePlannerChangeRequest(request: PlannerChangeRequestRow) {
             ? 'task'
             : request.target_table === 'vendors'
               ? 'vendor'
+              : request.target_table === 'vendor_enquiries'
+                ? 'vendor enquiry'
+              : request.target_table === 'document_requests'
+                ? 'formal quote request'
+              : request.target_table === 'commercial_quote_responses'
+                ? 'formal quote change request'
               : request.target_table === 'timelines'
                 ? 'timeline'
                 : request.target_table === 'timeline_events'
@@ -389,6 +463,19 @@ export function describePlannerChangeRequest(request: PlannerChangeRequestRow) {
 export function describePlannerChangeDetails(request: PlannerChangeRequestRow) {
   const current = request.current_payload ?? {};
   const proposed = request.proposed_payload ?? {};
+
+  if (request.target_table === 'vendor_enquiries') {
+    return `To ${String(proposed.recipient_name ?? 'vendor')} at ${String(proposed.recipient_email ?? 'unknown email')}. Subject: “${String(proposed.subject ?? '')}”. Message: “${String(proposed.message ?? '')}”`;
+  }
+
+
+  if (request.target_table === 'document_requests') {
+    return `From ${String(proposed.vendor_name ?? 'vendor')}. Message: “${String(proposed.request_message ?? '')}” The vendor receives this only after approval.`;
+  }
+
+  if (request.target_table === 'commercial_quote_responses') {
+    return `For ${String(proposed.document_number ?? 'formal quote')} from ${String(proposed.vendor_name ?? 'vendor')}: “${String(proposed.message ?? '')}” The vendor sees these requested changes only after approval.`;
+  }
 
   if (request.target_table === 'tasks' && typeof proposed.completed === 'boolean') {
     return proposed.completed ? 'Mark this task as done.' : 'Mark this task as not done.';

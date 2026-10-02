@@ -101,6 +101,8 @@ import {
 import { requestVendorQuote } from '@/lib/documentRequests';
 import { recalculatePlanningExperiment } from '@/lib/planningExperimentService';
 import CoupleLeadMarketplace from '@/components/leads/CoupleLeadMarketplace';
+import { deduplicateVendorDirectory } from '@/lib/vendorDirectory';
+import { vendorEnquiryResponseLabel } from '@/lib/vendorEnquiryResponses';
 
 interface Vendor {
   amount_paid: number;
@@ -126,12 +128,15 @@ interface Vendor {
 
 interface DirectoryVendor {
   id: string;
+  user_id: string | null;
   business_name: string;
   category: string;
   phone: string | null;
   email: string | null;
   location: string | null;
   is_verified: boolean;
+  profile_kind: string | null;
+  updated_at: string | null;
 }
 
 interface PaymentDraft {
@@ -183,6 +188,29 @@ interface VendorPaymentForm {
   paymentDate: string;
   reference: string;
   notes: string;
+}
+
+interface VendorEnquiry {
+  id: string;
+  recipient_name: string;
+  recipient_email: string;
+  subject: string;
+  message: string;
+  delivery_status: 'sending' | 'sent' | 'failed';
+  provider_message_id: string | null;
+  approved_at: string | null;
+  sent_at: string | null;
+  created_at: string;
+  response_status: 'awaiting_response' | 'available' | 'unavailable' | 'needs_details';
+  responded_at: string | null;
+  vendor_enquiry_responses: Array<{
+    response: 'available' | 'unavailable' | 'needs_details';
+    message: string | null;
+    quote_amount: number | null;
+    quote_currency: string | null;
+    quote_valid_until: string | null;
+    created_at: string;
+  }>;
 }
 
 interface VendorsWorkspaceData {
@@ -526,6 +554,8 @@ export default function Vendors() {
   });
   const [vendorTaskTemplateKey, setVendorTaskTemplateKey] = useState('none');
   const [workspaceVendorInvites, setWorkspaceVendorInvites] = useState<Record<string, WorkspaceVendorInvite[]>>({});
+  const [vendorEnquiries, setVendorEnquiries] = useState<Record<string, VendorEnquiry[]>>({});
+  const [vendorEnquiriesLoadingId, setVendorEnquiriesLoadingId] = useState<string | null>(null);
   const [workspaceInviteLoadingVendorId, setWorkspaceInviteLoadingVendorId] = useState<string | null>(null);
   const [workspaceInviteSubmittingVendorId, setWorkspaceInviteSubmittingVendorId] = useState<string | null>(null);
   const [workspaceInviteError, setWorkspaceInviteError] = useState<string | null>(null);
@@ -563,7 +593,7 @@ export default function Vendors() {
   });
 
   useEffect(() => {
-    if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
+    if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/vendor-candidates');
   }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
 
   const activeWeddingId = isPlanner
@@ -1036,12 +1066,12 @@ export default function Vendors() {
       try {
         const { data } = await supabase
           .from('vendor_listings')
-          .select('id, business_name, category, phone, email, location, is_verified')
+          .select('id, user_id, business_name, category, phone, email, location, is_verified, profile_kind, updated_at')
           .eq('is_approved', true)
           .order('business_name')
           .limit(200);
 
-        if (active) setDirectoryPool((data as DirectoryVendor[]) || []);
+        if (active) setDirectoryPool(deduplicateVendorDirectory((data as DirectoryVendor[]) || []));
       } finally {
         if (active) setDirLoading(false);
       }
@@ -1777,9 +1807,12 @@ export default function Vendors() {
       });
     } catch (error) {
       console.error('Could not request vendor quote:', error);
+      const description = error && typeof error === 'object' && 'message' in error
+        ? String(error.message)
+        : 'Please try again.';
       toast({
         title: 'Could not request quote',
-        description: error instanceof Error ? error.message : 'Please try again.',
+        description,
         variant: 'destructive',
       });
     } finally {
@@ -2178,6 +2211,10 @@ export default function Vendors() {
     if (!selectedVendorId) return [];
     return workspaceVendorInvites[selectedVendorId] ?? [];
   }, [selectedVendorId, workspaceVendorInvites]);
+  const selectedVendorEnquiries = useMemo(() => {
+    if (!selectedVendorId) return [];
+    return vendorEnquiries[selectedVendorId] ?? [];
+  }, [selectedVendorId, vendorEnquiries]);
   const selectedVendorActiveInvite = useMemo(
     () => selectedVendorInvites.find((invite) => ['draft', 'pending', 'sent', 'opened'].includes(invite.invite_status)) ?? null,
     [selectedVendorInvites],
@@ -2512,6 +2549,29 @@ export default function Vendors() {
       cancelled = true;
     };
   }, [selectedVendor]);
+
+  useEffect(() => {
+    if (!selectedVendor) return;
+    let active = true;
+    setVendorEnquiriesLoadingId(selectedVendor.id);
+    void (supabase as any).from('vendor_enquiries')
+      .select('id,recipient_name,recipient_email,subject,message,delivery_status,provider_message_id,approved_at,sent_at,created_at,response_status,responded_at,vendor_enquiry_responses(response,message,quote_amount,quote_currency,quote_valid_until,created_at)')
+      .eq('vendor_id', selectedVendor.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+      .then(({ data, error }: { data: VendorEnquiry[] | null; error: any }) => {
+        if (!active) return;
+        if (error) {
+          toast({ title: 'Could not load vendor enquiries', description: error.message, variant: 'destructive' });
+          return;
+        }
+        setVendorEnquiries((current) => ({ ...current, [selectedVendor.id]: data ?? [] }));
+      })
+      .finally(() => {
+        if (active) setVendorEnquiriesLoadingId((current) => current === selectedVendor.id ? null : current);
+      });
+    return () => { active = false; };
+  }, [selectedVendor, toast]);
 
   useEffect(() => {
     if (!selectedVendor || selectedVendor.vendor_listing_id) return;
@@ -3174,7 +3234,10 @@ export default function Vendors() {
               <div className="shrink-0 text-left sm:text-right">
                 <p className="text-lg font-semibold text-foreground">{formatCurrency(vendor.price)}</p>
                 <p className="mt-1 text-sm text-muted-foreground">{vendorPaymentStatusLabel(vendor.payment_status)}</p>
-                <p className="mt-1 text-sm font-medium text-primary">{isActive ? 'Hide details' : 'View details'}</p>
+                <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-primary">
+                  {isActive ? 'Hide details' : 'View details'}
+                  <ChevronDown className={`h-4 w-4 transition-transform duration-200 motion-reduce:transition-none ${isActive ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </p>
               </div>
             </div>
             <div className="mt-4 h-1 overflow-hidden rounded-full bg-accent/60">
@@ -3255,6 +3318,58 @@ export default function Vendors() {
                     Save vendor details
                   </Button>
                 </div>
+              </details>
+
+              <details className="rounded-xl border border-border/80 bg-card/70 p-4">
+                <summary className="cursor-pointer list-none font-semibold text-foreground">Enquiry history</summary>
+                <p className="mt-1 text-sm text-muted-foreground">Messages sent through Zania remain enquiries until a separate quote or booking action is completed.</p>
+                {vendorEnquiriesLoadingId === vendor.id ? (
+                  <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading enquiries...
+                  </div>
+                ) : selectedVendorEnquiries.length === 0 ? (
+                  <p className="mt-3 text-sm text-muted-foreground">No conversational enquiries have been sent to this vendor.</p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {selectedVendorEnquiries.map((enquiry) => (
+                      <div key={enquiry.id} className="rounded-lg border border-border/70 bg-background/80 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium text-foreground">{enquiry.subject}</p>
+                          <Badge variant={enquiry.delivery_status === 'sent' ? 'default' : enquiry.delivery_status === 'failed' ? 'destructive' : 'secondary'}>
+                            {enquiry.delivery_status === 'sent' ? 'Sent' : enquiry.delivery_status === 'failed' ? 'Delivery failed' : 'Sending'}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">To {enquiry.recipient_name} · {enquiry.recipient_email}</p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{enquiry.message}</p>
+                        {enquiry.delivery_status === 'sent' ? (
+                          <div className="mt-3 rounded-lg border border-border/70 bg-card p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-medium text-foreground">Vendor response</p>
+                              <Badge variant={enquiry.response_status === 'available' ? 'default' : enquiry.response_status === 'unavailable' ? 'destructive' : 'secondary'}>
+                                {vendorEnquiryResponseLabel(enquiry.response_status)}
+                              </Badge>
+                            </div>
+                            {enquiry.vendor_enquiry_responses?.[0]?.message ? (
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{enquiry.vendor_enquiry_responses[0].message}</p>
+                            ) : null}
+                            {enquiry.vendor_enquiry_responses?.[0]?.quote_amount != null ? (
+                              <p className="mt-2 text-sm font-medium text-foreground">
+                                Indicative amount: {enquiry.vendor_enquiry_responses[0].quote_currency ?? 'KES'} {Number(enquiry.vendor_enquiry_responses[0].quote_amount).toLocaleString('en-KE')}
+                                {enquiry.vendor_enquiry_responses[0].quote_valid_until ? ` · valid until ${new Date(enquiry.vendor_enquiry_responses[0].quote_valid_until).toLocaleDateString('en-KE')}` : ''}
+                              </p>
+                            ) : null}
+                            {enquiry.response_status !== 'awaiting_response' ? (
+                              <p className="mt-2 text-xs text-muted-foreground">This is a response only. It has not changed the vendor's quote or booking status.</p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {enquiry.sent_at ? `Sent ${new Date(enquiry.sent_at).toLocaleString('en-KE')}` : `Prepared ${new Date(enquiry.created_at).toLocaleString('en-KE')}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </details>
 
               <div className="grid gap-5 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
@@ -3681,6 +3796,7 @@ export default function Vendors() {
                 </CardContent>
               )}
             </Card>
+            </div>
 
             <Card className="rounded-lg border-border shadow-none">
               <CardContent className="p-2.5 sm:p-3">
@@ -3990,7 +4106,6 @@ export default function Vendors() {
                 )}
               </div>
             </details>
-            </div>
           </>
         ) : (
           <>
@@ -4678,12 +4793,9 @@ export default function Vendors() {
                           </DialogHeader>
                           <form onSubmit={submitVendorPayment} className="space-y-4">
                             <FormSubmitError message={vendorPaymentSubmitError} />
-                            <div className="rounded-lg border border-border/70 bg-muted/30 p-4">
-                              <p className="text-sm font-medium text-foreground">This payment will update the vendor ledger, budget, and paid/balance totals.</p>
-                              <p className="mt-1 text-sm text-muted-foreground">
-                                Category: {selectedVendor.category} · Vendor: {selectedVendor.name}
-                              </p>
-                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {selectedVendor.name} · {selectedVendor.category}
+                            </p>
                             <div className="space-y-2">
                               <Label>Payee name</Label>
                               <Input
@@ -4732,13 +4844,13 @@ export default function Vendors() {
                               </div>
                             </div>
                             <div className="space-y-2">
-                              <Label>Reference</Label>
+                              <Label>Payment reference (optional)</Label>
                               <Input
                                 value={vendorPaymentForm.reference}
                                 onChange={(event) =>
                                   setVendorPaymentForm((prev) => ({ ...prev, reference: event.target.value }))
                                 }
-                                placeholder="e.g. MPESA Ref: ET546GFDC"
+                                placeholder="e.g. receipt or transaction number"
                               />
                             </div>
                             <div className="space-y-2">
@@ -4748,7 +4860,7 @@ export default function Vendors() {
                                 onChange={(event) =>
                                   setVendorPaymentForm((prev) => ({ ...prev, notes: event.target.value }))
                                 }
-                                placeholder="Deposit, second payment, balance, or delivery notes..."
+                                placeholder="Deposit, balance, or delivery note"
                               />
                             </div>
                             <Button type="submit" className="w-full gap-2" disabled={recordingVendorPayment}>

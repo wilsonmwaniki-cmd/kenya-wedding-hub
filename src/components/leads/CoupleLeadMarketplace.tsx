@@ -115,7 +115,7 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
     setCreating(true);
     try {
       await createLeadRequest(weddingId, suggestion.category === 'Wedding Planner / Planning Team' ? 'planner' : 'vendor', suggestion.category);
-      toast({ title: 'Search started', description: 'Zania is checking up to five suitable providers.' });
+      toast({ title: 'Search started', description: 'Zania is checking available providers.' });
       await load();
     } catch (error: unknown) {
       toast({ title: 'Could not start the search', description: errorMessage(error), variant: 'destructive' });
@@ -173,7 +173,7 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Provider matching</p>
-          <h2 id="matching-help-title" className="mt-1 font-display text-lg font-semibold text-foreground">Find help within your budget</h2>
+          <h2 id="matching-help-title" className="mt-1 font-display text-lg font-semibold text-foreground">Find vendor matches</h2>
         </div>
         {activeRequests.length > 0 && (
           <button
@@ -203,12 +203,12 @@ export default function CoupleLeadMarketplace({ weddingId }: CoupleLeadMarketpla
                 <p className="font-medium text-foreground">{request.category_key}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {request.status === 'no_match'
-                    ? 'No suitable subscribed provider is available yet. We will not share your details.'
+                    ? 'No matches yet. Your details are still private.'
                     : requestMatches.length
                       ? `${requestMatches.length} provider${requestMatches.length === 1 ? ' is' : 's are'} ready to talk.`
                       : pendingMatchCount > 0
-                        ? `${pendingMatchCount} suitable provider${pendingMatchCount === 1 ? ' has' : 's have'} been invited to reply.`
-                        : 'Up to five suitable providers have been invited.'}
+                        ? `${pendingMatchCount} provider${pendingMatchCount === 1 ? ' has' : 's have'} been invited to reply.`
+                        : 'Available providers have been invited.'}
                 </p>
                 {requestMatches.map((match) => (
                   <Link key={match.id} to={`/matches/${match.id}`} className="mt-3 flex min-h-11 items-center justify-between border-t border-border pt-3 text-sm font-medium text-primary">

@@ -31,7 +31,7 @@ const TonalCard = React.forwardRef<HTMLDivElement, TonalCardProps>(
     <div
       ref={ref}
       className={cn(
-        'overflow-hidden rounded-[1.25rem] border shadow-[0_1px_1px_rgba(42,34,29,0.025),0_12px_32px_-28px_rgba(42,34,29,0.28)]',
+        'overflow-hidden rounded-2xl border shadow-[0_1px_1px_rgba(42,34,29,0.025),0_12px_32px_-28px_rgba(42,34,29,0.28)] sm:rounded-[1.25rem]',
         tonalCardTones[tone],
         className,
       )}
@@ -43,7 +43,7 @@ TonalCard.displayName = 'TonalCard';
 
 const TonalCardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('space-y-2 px-5 pb-4 pt-5 sm:px-7 sm:pt-7', className)} {...props} />
+    <div ref={ref} className={cn('space-y-1.5 px-4 pb-3 pt-4 sm:space-y-2 sm:px-7 sm:pb-4 sm:pt-7', className)} {...props} />
   ),
 );
 TonalCardHeader.displayName = 'TonalCardHeader';
@@ -52,7 +52,7 @@ const TonalCardTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes
   ({ className, ...props }, ref) => (
     <h3
       ref={ref}
-      className={cn('font-editorial text-[1.55rem] font-semibold leading-tight tracking-[-0.025em]', className)}
+      className={cn('font-editorial text-xl font-semibold leading-tight tracking-[-0.025em] sm:text-[1.55rem]', className)}
       {...props}
     />
   ),
@@ -61,14 +61,14 @@ TonalCardTitle.displayName = 'TonalCardTitle';
 
 const TonalCardDescription = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
   ({ className, ...props }, ref) => (
-    <p ref={ref} className={cn('max-w-2xl text-sm leading-6 text-current/65', className)} {...props} />
+    <p ref={ref} className={cn('max-w-2xl text-xs leading-5 text-current/65 sm:text-sm sm:leading-6', className)} {...props} />
   ),
 );
 TonalCardDescription.displayName = 'TonalCardDescription';
 
 const TonalCardBody = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('px-5 pb-5 sm:px-7 sm:pb-7', className)} {...props} />
+    <div ref={ref} className={cn('px-4 pb-4 sm:px-7 sm:pb-7', className)} {...props} />
   ),
 );
 TonalCardBody.displayName = 'TonalCardBody';

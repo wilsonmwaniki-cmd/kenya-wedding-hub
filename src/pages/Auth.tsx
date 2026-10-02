@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Briefcase, Copy, Eye, EyeOff, Loader2, RefreshCw, ShieldCheck, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { setRememberSession, shouldRememberSession, supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -40,9 +40,15 @@ import { FormFieldError, FormSubmitError } from '@/components/FormFeedback';
 import AppleAuthButton from '@/components/AppleAuthButton';
 import { normalizeHumanName, normalizeHumanNameInput } from '@/lib/names';
 import { isAppleAuthEnabled, isPlanningExperimentEnabled } from '@/lib/featureFlags';
-import { isEstimatorCoupleSignupEntry } from '@/lib/authEntryFlows';
+import {
+  isEstimatorCoupleSignupEntry,
+  isLockedSignupEntry,
+  resolveAuthSignInAudience,
+  resolveSignupEntryStep,
+} from '@/lib/authEntryFlows';
 import { PublicPageSkeleton } from '@/components/AppLoadingSkeletons';
 import PublicSiteFooter from '@/components/PublicSiteFooter';
+import TurnstileChallenge from '@/components/TurnstileChallenge';
 
 type AuthEntryState = {
   mode?: 'signup' | 'signin';
@@ -211,6 +217,10 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => shouldRememberSession());
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaError, setCaptchaError] = useState<string | null>(null);
+  const [captchaChallengeKey, setCaptchaChallengeKey] = useState(0);
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -240,6 +250,20 @@ export default function Auth() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const appleAuthEnabled = isAppleAuthEnabled();
+  const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() ?? '';
+  const requiresCaptcha = Boolean(turnstileSiteKey);
+  const resetCaptcha = useCallback(() => {
+    if (!requiresCaptcha) return;
+    setCaptchaToken(null);
+    setCaptchaChallengeKey((current) => current + 1);
+  }, [requiresCaptcha]);
+  const handleCaptchaToken = useCallback((token: string | null) => {
+    setCaptchaToken(token);
+    if (token) setCaptchaError(null);
+  }, []);
+  const handleCaptchaError = useCallback((message: string | null) => {
+    setCaptchaError(message);
+  }, []);
 
   const hasHomepageCarryover = Boolean(entryState?.role);
   const audience: AuthAudience | null = selectedAudience;
@@ -258,11 +282,12 @@ export default function Auth() {
   const isSignupAccountStep = isSignUp && signupStep === 'account';
   const isSignupRoleStep = isSignUp && signupStep === 'role';
   const isSignupSuccessStep = isSignUp && signupStep === 'success' && !!signupSuccess;
-  const hasLockedSignupTrack = isSignUp && (
-    (requestedFlow === 'join_wedding')
-    || (requestedAudience === 'professional' && (requestedRole === 'planner' || requestedRole === 'vendor'))
-    || isEstimatorCoupleEntry
-  );
+  const hasLockedSignupTrack = isSignUp && isLockedSignupEntry({
+    mode: requestedMode,
+    flow: requestedFlow,
+    audience: requestedAudience,
+    role: requestedRole,
+  });
   const showGenericModeChooser = false;
   const showGenericAudienceChooser = false;
   const signupProgressStep = isSignupRoleStep ? 3 : isSignupAccountStep ? 2 : 1;
@@ -374,8 +399,13 @@ export default function Auth() {
       setIsForgot(false);
       setPostSignupMessage(null);
       setSignupSuccess(null);
-      setSelectedAudience(null);
-      setSignupPath(null);
+      const signInAudience = resolveAuthSignInAudience(audienceParam);
+      setSelectedAudience(signInAudience);
+      setSignupPath(signInAudience === 'couple'
+        ? 'create_wedding'
+        : signInAudience === 'professional'
+          ? 'professional'
+          : null);
       setProfessionalSignupRole(null);
       setSignupMethod('email');
       setSignupStep('account');
@@ -449,12 +479,14 @@ export default function Auth() {
       setSelectedAudience(audienceParam);
       setSignupPath(audienceParam === 'couple' ? (flow === 'join_wedding' ? 'join_wedding' : 'create_wedding') : 'professional');
       if (mode === 'signup') {
-        setSignupMethod('email');
-        setSignupStep((flow === 'join_wedding'
-          || (flow === 'estimator' && audienceParam === 'couple' && roleParam === 'couple')
-          || (audienceParam === 'professional' && (roleParam === 'planner' || roleParam === 'vendor')))
-          ? 'account'
-          : 'role');
+        const entryStep = resolveSignupEntryStep({
+          mode,
+          flow,
+          audience: audienceParam,
+          role: roleParam,
+        });
+        setSignupMethod(entryStep === 'account' ? 'email' : null);
+        setSignupStep(entryStep);
       }
     }
 
@@ -531,10 +563,6 @@ export default function Auth() {
 
           if (seeded && active) {
             setRedirecting(true);
-            toast({
-              title: 'Estimate added',
-              description: 'Confirm three priorities and Zania will build your first plan.',
-            });
             navigate(
               isPlanningExperimentEnabled()
                 ? '/plan'
@@ -547,7 +575,10 @@ export default function Auth() {
 
         if (active) {
           setRedirecting(true);
-          navigate(getHomeRouteForRole(profile.role, profile.planner_type), { replace: true });
+          const safeRequestedPath = requestedPath?.startsWith('/') && !requestedPath.startsWith('//')
+            ? requestedPath
+            : null;
+          navigate(safeRequestedPath || getHomeRouteForRole(profile.role, profile.planner_type), { replace: true });
         }
       } catch (err: any) {
         if (!active) return;
@@ -565,7 +596,7 @@ export default function Auth() {
     return () => {
       active = false;
     };
-  }, [loading, navigate, profile?.planner_type, profile?.role, redirecting, toast, user]);
+  }, [loading, navigate, profile?.planner_type, profile?.role, redirecting, requestedPath, toast, user]);
 
   const createGeneratedPassword = () => {
     const nextPassword = createSecurePassword();
@@ -745,11 +776,16 @@ export default function Auth() {
     setForgotErrors(nextErrors);
     setForgotSubmitError(null);
     if (Object.keys(nextErrors).length > 0) return;
+    if (requiresCaptcha && !captchaToken) {
+      setForgotSubmitError('Complete the quick security check before continuing.');
+      return;
+    }
 
     setSubmitting(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
         redirectTo: `${window.location.origin}/reset-password?type=recovery`,
+        captchaToken: captchaToken ?? undefined,
       });
       if (error) throw error;
       toast({ title: 'Reset link sent!', description: 'Check your email for the password reset link.' });
@@ -760,6 +796,7 @@ export default function Auth() {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
+      resetCaptcha();
     }
   };
 
@@ -801,6 +838,10 @@ export default function Auth() {
     setFormErrors(nextErrors);
     setSubmitError(null);
     if (Object.keys(nextErrors).length > 0) return;
+    if (requiresCaptcha && !captchaToken) {
+      setSubmitError('Complete the quick security check before continuing.');
+      return;
+    }
 
     setSubmitting(true);
 
@@ -821,6 +862,7 @@ export default function Auth() {
             signupIntent: 'create_wedding',
             accountPurpose,
             estimatorPlanDraft: requestedFlow === 'estimator' ? getEstimatorPlanDraft() : null,
+            captchaToken,
           });
           setSignupSuccess({
             title: 'Welcome to Zania',
@@ -842,6 +884,7 @@ export default function Auth() {
             signupIntent: 'join_wedding',
             accountPurpose,
             weddingCode: normalizeJoinCode(weddingCode),
+            captchaToken,
           });
           setSignupSuccess({
             title: 'You are in',
@@ -864,6 +907,7 @@ export default function Auth() {
             signupIntent: 'professional',
             accountPurpose,
             professionalRoleLocked: true,
+            captchaToken,
           });
           setSignupSuccess({
             title: 'You joined the atelier',
@@ -878,19 +922,33 @@ export default function Auth() {
         }
       } else {
         persistWeddingIntentIfNeeded();
-        await signIn(email, password, adminEntry ? { audience: 'admin' } : undefined);
+        setRememberSession(rememberMe);
+        await signIn(
+          email,
+          password,
+          adminEntry
+            ? { audience: 'admin', captchaToken }
+            : audience
+              ? { audience, captchaToken }
+              : { captchaToken },
+        );
       }
     } catch (err: any) {
       setSubmitError(err.message || 'We could not complete that request right now.');
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
+      resetCaptcha();
     }
   };
 
   const handleOAuthSignIn = async (provider: 'google' | 'apple') => {
     setOauthSubmittingProvider(provider);
     try {
+      if (requiresCaptcha && !captchaToken) {
+        throw new Error('Complete the quick security check before continuing.');
+      }
+      setRememberSession(rememberMe);
       validateOAuthIntent();
       persistWeddingIntentIfNeeded();
       const pendingVendorClaim = readPendingVendorClaim();
@@ -934,6 +992,7 @@ export default function Auth() {
         ? {
             audience: 'admin' as const,
             mode: 'signin' as const,
+            captchaToken,
           }
         : audience
           ? {
@@ -941,9 +1000,11 @@ export default function Auth() {
               mode: isSignUp ? 'signup' : 'signin',
               targetRole: audience === 'professional' ? (isSignUp ? professionalSignupRole : null) : 'couple',
               plannerType: null,
+              captchaToken,
             }
           : {
               mode: 'signin' as const,
+              captchaToken,
             };
 
       if (provider === 'google') {
@@ -954,6 +1015,7 @@ export default function Auth() {
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
       setOauthSubmittingProvider(null);
+      resetCaptcha();
     }
   };
 
@@ -1035,6 +1097,29 @@ export default function Auth() {
           </CardDescription> : null}
         </CardHeader>
         <CardContent className={isEstimatorCoupleEntry ? 'pb-4' : undefined}>
+          {requiresCaptcha && !isSignupSuccessStep ? (
+            <div className="mb-5 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-left">
+              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <ShieldCheck className="h-4 w-4 text-success" aria-hidden="true" />
+                {captchaToken ? 'Security check completed automatically' : 'Quick security check'}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {captchaToken ? 'No action was needed. You can continue securely.' : 'This protects your account from automated sign-ins.'}
+              </p>
+              {captchaError ? <FormFieldError message={captchaError} /> : null}
+              {!captchaToken ? (
+                <div className="mt-3">
+                  <TurnstileChallenge
+                    key={captchaChallengeKey}
+                    action="authenticate"
+                    siteKey={turnstileSiteKey}
+                    onVerify={handleCaptchaToken}
+                    onError={handleCaptchaError}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {isForgot ? (
             <form onSubmit={handleForgotPassword} className="space-y-4">
               <FormSubmitError message={forgotSubmitError} />
@@ -1054,7 +1139,7 @@ export default function Auth() {
                 />
                 <FormFieldError message={forgotErrors.email} />
               </div>
-              <Button type="submit" className="w-full" disabled={submitting}>
+              <Button type="submit" className="w-full" disabled={submitting || (requiresCaptcha && !captchaToken)}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Send Reset Link
               </Button>
@@ -1211,14 +1296,14 @@ export default function Auth() {
                       <div className="grid gap-3">
                         <GoogleAuthButton
                           loading={oauthSubmittingProvider === 'google'}
-                          disabled={submitting || oauthSubmitting}
+                          disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}
                           onClick={() => chooseSignupMethod('google')}
                           text="Start with Google"
                         />
                         {appleAuthEnabled ? (
                           <AppleAuthButton
                             loading={oauthSubmittingProvider === 'apple'}
-                            disabled={submitting || oauthSubmitting}
+                            disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}
                             onClick={() => chooseSignupMethod('apple')}
                             text="Start with Apple"
                           />
@@ -1257,7 +1342,7 @@ export default function Auth() {
                           />
                           <GoogleAuthButton
                             loading={oauthSubmittingProvider === 'google'}
-                            disabled={submitting || oauthSubmitting || !acceptedTerms}
+                            disabled={submitting || oauthSubmitting || !acceptedTerms || (requiresCaptcha && !captchaToken)}
                             onClick={handleGoogleSignIn}
                             text="Continue with Google"
                           />
@@ -1483,7 +1568,7 @@ export default function Auth() {
                           Back
                         </Button>
                         {hasLockedSignupTrack ? (
-                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting}>
+                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}>
                             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {signupPath === 'join_wedding'
                               ? 'Create account and join'
@@ -1618,7 +1703,7 @@ export default function Auth() {
                           Back
                         </Button>
                         {signupMethod === 'email' ? (
-                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath}>
+                          <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath || (requiresCaptcha && !captchaToken)}>
                             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {signupPath === 'create_wedding'
                               ? 'Create couple account'
@@ -1631,14 +1716,14 @@ export default function Auth() {
                         ) : signupMethod === 'google' ? (
                           <GoogleAuthButton
                             loading={oauthSubmittingProvider === 'google'}
-                            disabled={submitting || oauthSubmitting || !hasChosenPath}
+                            disabled={submitting || oauthSubmitting || !hasChosenPath || (requiresCaptcha && !captchaToken)}
                             onClick={handleGoogleSignIn}
                             text="Continue with Google"
                           />
                         ) : appleAuthEnabled ? (
                           <AppleAuthButton
                             loading={oauthSubmittingProvider === 'apple'}
-                            disabled={submitting || oauthSubmitting || !hasChosenPath}
+                            disabled={submitting || oauthSubmitting || !hasChosenPath || (requiresCaptcha && !captchaToken)}
                             onClick={handleAppleSignIn}
                             text="Continue with Apple"
                           />
@@ -1652,14 +1737,14 @@ export default function Auth() {
                     <div className="space-y-3">
                       <GoogleAuthButton
                         loading={oauthSubmittingProvider === 'google' && !submitting}
-                        disabled={submitting || oauthSubmitting}
+                        disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}
                         onClick={handleGoogleSignIn}
                         text="Continue with Google"
                       />
                       {!adminEntry && appleAuthEnabled ? (
                           <AppleAuthButton
                             loading={oauthSubmittingProvider === 'apple' && !submitting}
-                            disabled={submitting || oauthSubmitting}
+                            disabled={submitting || oauthSubmitting || (requiresCaptcha && !captchaToken)}
                             onClick={handleAppleSignIn}
                             text="Continue with Apple"
                           />
@@ -1735,9 +1820,21 @@ export default function Auth() {
                           {showPassword ? 'Hide' : 'Show'}
                         </Button>
                       </div>
+                      <div className="flex items-start gap-3 pt-1">
+                        <Checkbox
+                          id="remember-me"
+                          checked={rememberMe}
+                          onCheckedChange={(checked) => setRememberMe(Boolean(checked))}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <Label htmlFor="remember-me" className="text-sm font-medium">Keep me signed in</Label>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">Leave this unchecked on a shared device.</p>
+                        </div>
+                      </div>
                     </div>
 
-                    <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath}>
+                    <Button type="submit" className="w-full" disabled={submitting || oauthSubmitting || !hasChosenPath || (requiresCaptcha && !captchaToken)}>
                       {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       {adminEntry ? 'Sign in to admin' : 'Sign in'}
                     </Button>

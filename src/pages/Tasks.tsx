@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Download, Link2, Trash2 } from 'lucide-react';
+import { ChevronDown, Download, Link2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { buildGoogleCalendarUrl } from '@/lib/googleCalendar';
@@ -53,6 +53,7 @@ interface Task {
   recommended_role: string | null;
   priority_level: number | null;
   wedding_id: string | null;
+  template_key: string | null;
 }
 
 interface VendorOption {
@@ -238,9 +239,13 @@ export default function Tasks() {
   const taskSuccessTimerRef = useRef<number | null>(null);
   const [taskFormErrors, setTaskFormErrors] = useState<{ title?: string }>({});
   const [taskSubmitError, setTaskSubmitError] = useState<string | null>(null);
+  const reconciledWeddingDateTasksRef = useRef(new Set<string>());
   const requestedTaskId = searchParams.get('task');
 
-  const tasksQueryKey = ['tasks', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null];
+  const tasksQueryKey = useMemo(
+    () => ['tasks', user?.id ?? null, selectedClient?.id ?? null, dataOrFilter ?? null],
+    [dataOrFilter, selectedClient?.id, user?.id],
+  );
   const tasksQuery = useQuery({
     queryKey: tasksQueryKey,
     queryFn: () => loadTasksWorkspace(dataOrFilter!),
@@ -251,13 +256,49 @@ export default function Tasks() {
   useEffect(() => () => {
     if (taskSuccessTimerRef.current != null) window.clearTimeout(taskSuccessTimerRef.current);
   }, []);
-  const tasks = tasksQuery.data?.tasks ?? [];
-  const vendorOptions = tasksQuery.data?.vendorOptions ?? [];
-  const budgetCategories = tasksQuery.data?.budgetCategories ?? [];
+  const tasks = useMemo(() => tasksQuery.data?.tasks ?? [], [tasksQuery.data?.tasks]);
+  const vendorOptions = useMemo(() => tasksQuery.data?.vendorOptions ?? [], [tasksQuery.data?.vendorOptions]);
+  const budgetCategories = useMemo(
+    () => tasksQuery.data?.budgetCategories ?? [],
+    [tasksQuery.data?.budgetCategories],
+  );
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) navigate('/clients');
   }, [isPlanner, plannerClientHydrating, selectedClient, navigate]);
+
+  useEffect(() => {
+    const weddingDate = selectedClient?.wedding_date ?? profile?.wedding_date;
+    if (!weddingDate || plannerNeedsApproval) return;
+
+    const redundantTasks = tasks.filter((task) => (
+      !task.completed
+      && (
+        task.template_key === 'couples-tasks-decide-on-a-wedding-date'
+        || task.title.trim().toLowerCase() === 'decide on a wedding date'
+      )
+      && !reconciledWeddingDateTasksRef.current.has(task.id)
+    ));
+    if (!redundantTasks.length) return;
+
+    redundantTasks.forEach((task) => reconciledWeddingDateTasksRef.current.add(task.id));
+    queryClient.setQueryData<TasksWorkspaceData>(tasksQueryKey, (current) => current ? {
+      ...current,
+      tasks: current.tasks.map((task) => (
+        redundantTasks.some((redundantTask) => redundantTask.id === task.id)
+          ? { ...task, completed: true }
+          : task
+      )),
+    } : current);
+
+    void Promise.all(redundantTasks.map(async (task) => {
+      const { error } = await supabase.from('tasks').update({ completed: true }).eq('id', task.id);
+      if (error) throw error;
+    })).catch(async () => {
+      redundantTasks.forEach((task) => reconciledWeddingDateTasksRef.current.delete(task.id));
+      await queryClient.invalidateQueries({ queryKey: tasksQueryKey });
+    });
+  }, [plannerNeedsApproval, profile?.wedding_date, queryClient, selectedClient?.wedding_date, tasks, tasksQueryKey]);
 
   const vendorLookup = useMemo(
     () => Object.fromEntries(vendorOptions.map((vendor) => [vendor.id, vendor])),
@@ -856,6 +897,17 @@ export default function Tasks() {
     });
   }, [requestedTaskId, tasksQuery.data?.tasks, tasksQuery.isLoading]);
 
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    const selectedGroup = taskGroups.find((group) => group.tasks.some((task) => task.id === selectedTaskId));
+    if (!selectedGroup) return;
+    setExpandedTaskGroups((current) => (
+      current[selectedGroup.label]
+        ? current
+        : { ...current, [selectedGroup.label]: true }
+    ));
+  }, [selectedTaskId, taskGroups]);
+
   if (isPlanner && (plannerClientHydrating || !selectedClient)) return <WorkspacePageSkeleton compact />;
   if (tasksQuery.isLoading) return <WorkspacePageSkeleton compact />;
 
@@ -949,8 +1001,9 @@ export default function Tasks() {
                   </div>
                 </div>
               </div>
-              <span className={cn('mt-0.5 hidden shrink-0 text-xs font-semibold sm:inline', active ? 'text-primary' : 'text-muted-foreground')}>
+              <span className={cn('mt-0.5 hidden shrink-0 items-center gap-1 text-xs font-semibold sm:inline-flex', active ? 'text-primary' : 'text-muted-foreground')}>
                 {active ? 'Hide details' : 'View details'}
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200 motion-reduce:transition-none', active && 'rotate-180')} aria-hidden="true" />
               </span>
             </div>
 
@@ -1009,6 +1062,10 @@ export default function Tasks() {
             className="group min-w-0 bg-primary/5 px-4 py-3 text-left transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset sm:px-5"
             onClick={() => {
               if (nextPendingTask) {
+                setTaskSearch('');
+                setTaskScopeFilter('all');
+                setTaskViewMode('by_date');
+                setSelectedTaskId(nextPendingTask.id);
                 navigate(`/tasks?task=${encodeURIComponent(nextPendingTask.id)}`);
                 return;
               }

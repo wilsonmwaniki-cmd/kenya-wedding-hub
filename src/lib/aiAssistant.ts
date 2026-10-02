@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { limitAiRequestMessages } from '@/lib/aiMessageWindow';
 import { describeAiInvokeError, normalizeInvokeError } from '@/lib/invokeErrors';
 
 export interface AiAssistantMessage {
@@ -33,11 +34,14 @@ export interface WeddingAiInvokeParams {
   selectedClientId?: string | null;
   allowWriteActions?: boolean;
   confirmedActions?: PendingWriteAction[];
+  revokedActions?: PendingWriteAction[];
   page?: string | null;
   surface?: string | null;
   contextSource?: string | null;
   entityId?: string | null;
   starterPrompt?: string | null;
+  conversationId?: string | null;
+  clientRequestId?: string | null;
 }
 
 export interface WeddingAiInvokeResult {
@@ -45,6 +49,7 @@ export interface WeddingAiInvokeResult {
   usage: AiUsageStatus | null;
   pendingActions: PendingWriteAction[];
   assistantRole: string | null;
+  conversationId: string | null;
 }
 
 export class WeddingAiInvokeError extends Error {
@@ -75,15 +80,18 @@ export async function invokeWeddingAiChat(
 ): Promise<WeddingAiInvokeResult> {
   const { data, error } = await supabase.functions.invoke('wedding-ai-chat', {
     body: {
-      messages: params.messages,
+      messages: limitAiRequestMessages(params.messages),
       selectedClientId: params.selectedClientId ?? null,
       allowWriteActions: params.allowWriteActions ?? false,
       confirmedActions: params.confirmedActions ?? [],
+      revokedActions: params.revokedActions ?? [],
       page: params.page ?? null,
       surface: params.surface ?? null,
       contextSource: params.contextSource ?? null,
       entityId: params.entityId ?? null,
       starterPrompt: params.starterPrompt ?? null,
+      conversationId: params.conversationId ?? null,
+      clientRequestId: params.clientRequestId ?? crypto.randomUUID(),
     },
   });
 
@@ -104,5 +112,6 @@ export async function invokeWeddingAiChat(
     usage: data?.usage ?? null,
     pendingActions: Array.isArray(data?.pendingActions) ? (data.pendingActions as PendingWriteAction[]) : [],
     assistantRole: typeof data?.assistantRole === 'string' ? data.assistantRole : null,
+    conversationId: typeof data?.conversationId === 'string' ? data.conversationId : null,
   };
 }

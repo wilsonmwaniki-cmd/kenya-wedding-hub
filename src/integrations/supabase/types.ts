@@ -272,6 +272,7 @@ export type Database = {
           committee_role_in_charge: string | null
           contract_status: string
           created_at: string
+          created_via: string
           id: string
           name: string
           spent: number
@@ -290,6 +291,7 @@ export type Database = {
           committee_role_in_charge?: string | null
           contract_status?: string
           created_at?: string
+          created_via?: string
           id?: string
           name: string
           spent?: number
@@ -308,6 +310,7 @@ export type Database = {
           committee_role_in_charge?: string | null
           contract_status?: string
           created_at?: string
+          created_via?: string
           id?: string
           name?: string
           spent?: number
@@ -4223,6 +4226,7 @@ export type Database = {
           created_at: string
           deposit_amount: number
           email: string | null
+          gateway_idempotency_key: string | null
           id: string
           last_payment_at: string | null
           name: string
@@ -4233,6 +4237,7 @@ export type Database = {
           price: number | null
           selection_status: string
           selection_updated_at: string
+          source_vendor_candidate_id: string | null
           status: string | null
           user_id: string
           vendor_calendar_synced_at: string | null
@@ -4249,6 +4254,7 @@ export type Database = {
           created_at?: string
           deposit_amount?: number
           email?: string | null
+          gateway_idempotency_key?: string | null
           id?: string
           last_payment_at?: string | null
           name: string
@@ -4259,6 +4265,7 @@ export type Database = {
           price?: number | null
           selection_status?: string
           selection_updated_at?: string
+          source_vendor_candidate_id?: string | null
           status?: string | null
           user_id: string
           vendor_calendar_synced_at?: string | null
@@ -4275,6 +4282,7 @@ export type Database = {
           created_at?: string
           deposit_amount?: number
           email?: string | null
+          gateway_idempotency_key?: string | null
           id?: string
           last_payment_at?: string | null
           name?: string
@@ -4285,6 +4293,7 @@ export type Database = {
           price?: number | null
           selection_status?: string
           selection_updated_at?: string
+          source_vendor_candidate_id?: string | null
           status?: string | null
           user_id?: string
           vendor_calendar_synced_at?: string | null
@@ -4298,6 +4307,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "planner_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendors_source_vendor_candidate_id_fkey"
+            columns: ["source_vendor_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "vendor_candidates"
             referencedColumns: ["id"]
           },
           {
@@ -5773,6 +5789,7 @@ export type Database = {
         Returns: {
           open_link_requests: number
           pending_vendor_approvals: number
+          total_real_users: number
           total_admins: number
           total_budget_items: number
           total_clients: number

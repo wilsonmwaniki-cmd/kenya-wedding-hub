@@ -1,6 +1,8 @@
 # Paystack Cutover Runbook
 
-Paystack is implemented alongside Pesapal. Pesapal remains the default until the Paystack secret, webhook, and live checkout have been verified.
+Paystack is Zania's only provider for new subscription checkouts. Legacy Pesapal
+callback and sync functions remain solely for historical transaction
+reconciliation and must not initiate new payments.
 
 ## Configuration
 
@@ -15,11 +17,7 @@ Optional server-only settings:
 
 Never expose the Paystack secret as a `VITE_` variable or commit it to the repository.
 
-Set this frontend variable in Vercel only after verification:
-
-- `VITE_BILLING_PROVIDER=paystack`
-
-If this variable is absent or has another value, the application safely defaults to Pesapal.
+The frontend has no provider switch: it always initiates Paystack checkout.
 
 ## Paystack Dashboard
 
@@ -38,7 +36,7 @@ Enable the payment channels approved for the business, including cards for overs
 5. Deploy `paystack-webhook` with JWT verification disabled in `supabase/config.toml`.
 6. Add `PAYSTACK_SECRET_KEY` to Supabase secrets.
 7. Register the webhook URL in Paystack.
-8. Test in Paystack test mode before switching the Vercel provider variable.
+8. Test in Paystack test mode before enabling production checkout.
 
 ## Verification
 
@@ -51,6 +49,9 @@ Run at least one successful and one failed/cancelled checkout. Confirm that:
 - couple and professional entitlements activate once and remain idempotent on refresh.
 - a forged callback or webhook signature does not activate access.
 
-## Cutover And Rollback
+## Historical Pesapal payments
 
-To cut over, set `VITE_BILLING_PROVIDER=paystack` for Vercel Production and redeploy. To roll back, set it to `pesapal` and redeploy. Existing callback URLs carry their provider, so in-flight payments continue to synchronize through the provider that created them.
+Do not route new checkout attempts to Pesapal. Existing callback URLs carry
+their provider, so historical or in-flight Pesapal payments can still be
+reconciled through the legacy sync functions without reopening Pesapal for new
+sales.

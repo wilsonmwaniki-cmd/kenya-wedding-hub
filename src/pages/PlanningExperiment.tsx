@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useAuth } from '@/contexts/AuthContext';
-import { formatIntegerInput, parseIntegerInput } from '@/lib/integerInput';
+import { formatIntegerInput, parseIntegerInput, sanitizeIntegerInput } from '@/lib/integerInput';
 import type { PlanningInput } from '@/lib/planningExperiment';
 import {
   loadPlanningExperiment,
@@ -56,6 +56,14 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function getPlanningSaveErrorMessage(error: unknown) {
+  const message = getErrorMessage(error, "We couldn't save your plan. Try again.");
+  if (message.toLowerCase().includes('planning catalog')) {
+    return "We couldn't match part of your budget. Please try again.";
+  }
+  return message;
+}
+
 export default function PlanningExperiment() {
   const { user, updateProfile } = useAuth();
   const { weddingId, loading: weddingLoading } = useWeddingEntitlements();
@@ -67,6 +75,18 @@ export default function PlanningExperiment() {
   const [saving, setSaving] = useState(false);
   const [taskSavingId, setTaskSavingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [budgetDraft, setBudgetDraft] = useState('');
+  const [guestDraft, setGuestDraft] = useState('');
+  const editingBudgetRef = useRef(false);
+  const editingGuestsRef = useRef(false);
+
+  useEffect(() => {
+    if (!editingBudgetRef.current) setBudgetDraft(formatIntegerInput(input.estimatedBudget));
+  }, [input.estimatedBudget]);
+
+  useEffect(() => {
+    if (!editingGuestsRef.current) setGuestDraft(formatIntegerInput(input.estimatedGuestCount));
+  }, [input.estimatedGuestCount]);
 
   useEffect(() => {
     if (weddingLoading) return;
@@ -112,6 +132,13 @@ export default function PlanningExperiment() {
     && input.priorities.length === 3
   ), [input]);
 
+  const prioritiesRemaining = Math.max(0, 3 - input.priorities.length);
+
+  const updateInput = (update: (current: PlanningInput) => PlanningInput) => {
+    setErrorMessage(null);
+    setInput(update);
+  };
+
   const save = async () => {
     if (!user || !weddingId || !formReady) return;
     setSaving(true);
@@ -130,7 +157,7 @@ export default function PlanningExperiment() {
         description: 'Your budget, first tasks, and next action are ready to use.',
       });
     } catch (error: unknown) {
-      const message = getErrorMessage(error, "We couldn't save your plan. Try again.");
+      const message = getPlanningSaveErrorMessage(error);
       setErrorMessage(message);
       toast({ title: 'Plan not saved', description: message, variant: 'destructive' });
     } finally {
@@ -200,21 +227,59 @@ export default function PlanningExperiment() {
         <CardContent className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="plan-wedding-date">Wedding date</Label>
-            <Input id="plan-wedding-date" type="date" value={input.weddingDate} onChange={(event) => setInput((current) => ({ ...current, weddingDate: event.target.value }))} />
+            <Input id="plan-wedding-date" type="date" value={input.weddingDate} onChange={(event) => updateInput((current) => ({ ...current, weddingDate: event.target.value }))} />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="plan-budget">Estimated budget (KES)</Label>
-              <Input id="plan-budget" inputMode="numeric" type="text" autoComplete="off" value={formatIntegerInput(input.estimatedBudget)} onChange={(event) => setInput((current) => ({ ...current, estimatedBudget: parseIntegerInput(event.target.value) }))} />
+              <Input
+                id="plan-budget"
+                inputMode="numeric"
+                type="text"
+                autoComplete="off"
+                value={budgetDraft}
+                onFocus={() => {
+                  editingBudgetRef.current = true;
+                  setBudgetDraft((current) => sanitizeIntegerInput(current));
+                }}
+                onChange={(event) => {
+                  const next = sanitizeIntegerInput(event.target.value);
+                  setBudgetDraft(next);
+                  updateInput((current) => ({ ...current, estimatedBudget: parseIntegerInput(next) }));
+                }}
+                onBlur={() => {
+                  editingBudgetRef.current = false;
+                  setBudgetDraft((current) => formatIntegerInput(parseIntegerInput(current)));
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="plan-guests">Estimated guests</Label>
-              <Input id="plan-guests" inputMode="numeric" type="text" autoComplete="off" value={formatIntegerInput(input.estimatedGuestCount)} onChange={(event) => setInput((current) => ({ ...current, estimatedGuestCount: parseIntegerInput(event.target.value) }))} />
+              <Input
+                id="plan-guests"
+                inputMode="numeric"
+                type="text"
+                autoComplete="off"
+                value={guestDraft}
+                onFocus={() => {
+                  editingGuestsRef.current = true;
+                  setGuestDraft((current) => sanitizeIntegerInput(current));
+                }}
+                onChange={(event) => {
+                  const next = sanitizeIntegerInput(event.target.value);
+                  setGuestDraft(next);
+                  updateInput((current) => ({ ...current, estimatedGuestCount: parseIntegerInput(next) }));
+                }}
+                onBlur={() => {
+                  editingGuestsRef.current = false;
+                  setGuestDraft((current) => formatIntegerInput(parseIntegerInput(current)));
+                }}
+              />
             </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="plan-type">Wedding type</Label>
-            <select id="plan-type" className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm" value={input.weddingType} onChange={(event) => setInput((current) => ({ ...current, weddingType: event.target.value }))}>
+            <select id="plan-type" className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm" value={input.weddingType} onChange={(event) => updateInput((current) => ({ ...current, weddingType: event.target.value }))}>
               {WEDDING_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
           </div>
@@ -223,9 +288,14 @@ export default function PlanningExperiment() {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {PRIORITIES.map((item) => {
                 const selected = input.priorities.includes(item);
-                return <Button key={item} type="button" variant={selected ? 'default' : 'outline'} className="justify-start" aria-pressed={selected} onClick={() => setInput((current) => ({ ...current, priorities: toggleValue(item, current.priorities, 3) }))}>{selected ? <Check className="mr-2 h-4 w-4" /> : null}{item}</Button>;
+                return <Button key={item} type="button" variant={selected ? 'default' : 'outline'} className="justify-start" aria-pressed={selected} onClick={() => updateInput((current) => ({ ...current, priorities: toggleValue(item, current.priorities, 3) }))}>{selected ? <Check className="mr-2 h-4 w-4" /> : null}{item}</Button>;
               })}
             </div>
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {prioritiesRemaining > 0
+                ? `Select ${prioritiesRemaining} more ${prioritiesRemaining === 1 ? 'priority' : 'priorities'} to continue.`
+                : 'Three priorities selected.'}
+            </p>
           </fieldset>
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">What is already booked?</legend>
@@ -233,15 +303,24 @@ export default function PlanningExperiment() {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {BOOKABLE_CATEGORIES.map((item) => {
                 const selected = input.bookedCategories.includes(item);
-                return <Button key={item} type="button" size="sm" variant={selected ? 'secondary' : 'outline'} className="justify-start" aria-pressed={selected} onClick={() => setInput((current) => ({ ...current, bookedCategories: toggleValue(item, current.bookedCategories) }))}>{selected ? <Check className="mr-2 h-4 w-4" /> : null}{item}</Button>;
+                return <Button key={item} type="button" size="sm" variant={selected ? 'secondary' : 'outline'} className="justify-start" aria-pressed={selected} onClick={() => updateInput((current) => ({ ...current, bookedCategories: toggleValue(item, current.bookedCategories) }))}>{selected ? <Check className="mr-2 h-4 w-4" /> : null}{item}</Button>;
               })}
             </div>
           </fieldset>
 
           {errorMessage ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{errorMessage}</p> : null}
           <Button className="h-12 w-full text-base" disabled={saving || !formReady} onClick={() => void save()}>
-            {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Building your plan…</> : (plan ? 'Update my plan' : 'Build my plan')}
+            {saving
+              ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Building your plan…</>
+              : prioritiesRemaining > 0
+                ? `Select ${prioritiesRemaining} more ${prioritiesRemaining === 1 ? 'priority' : 'priorities'}`
+                : (plan ? 'Update my plan' : 'Build my plan')}
           </Button>
+          {!plan ? (
+            <Button type="button" variant="ghost" className="w-full text-muted-foreground" onClick={() => navigate('/dashboard')}>
+              Skip for now and explore Zania
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
 

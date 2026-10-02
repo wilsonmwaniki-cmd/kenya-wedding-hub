@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 
-export function DeviceVerificationGate() {
+export function DeviceVerificationGate({ inline = false }: { inline?: boolean }) {
   const {
     deviceVerificationMessage,
     deviceVerificationEmailHint,
@@ -16,6 +16,7 @@ export function DeviceVerificationGate() {
   } = useAuth();
   const [otpCode, setOtpCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const deliveryNeedsRetry = /request a verification code/i.test(deviceVerificationMessage ?? '');
 
   const handleVerify = async () => {
     setError(null);
@@ -40,14 +41,16 @@ export function DeviceVerificationGate() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-background px-6 py-10">
-      <div className="mx-auto max-w-lg">
-        <Card className="shadow-card">
+  const verificationCard = (
+    <Card className={inline ? 'border-[#ded7cf] shadow-none' : 'shadow-card'}>
           <CardHeader>
-            <CardTitle>Verify this device</CardTitle>
+            <CardTitle>{inline ? 'Confirm this device to pay' : 'Verify this device'}</CardTitle>
             <CardDescription>
-              {deviceVerificationMessage ?? 'We noticed a sign-in from a new device. Enter the code sent to your email to continue.'}
+              {inline
+                ? deliveryNeedsRetry
+                  ? 'We could not send the code. Tap “Send code again” to try once more. Your invoice and M-Pesa number will stay here.'
+                  : 'For your security, enter the six-digit code we sent to your email. Your invoice and M-Pesa number will stay here while you confirm.'
+                : deviceVerificationMessage ?? 'We noticed a sign-in from a new device. Enter the code sent to your email to continue.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -63,7 +66,7 @@ export function DeviceVerificationGate() {
                   ))}
                 </InputOTPGroup>
               </InputOTP>
-              {error ? <p className="text-sm text-destructive">{error}</p> : null}
+              {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -72,7 +75,7 @@ export function DeviceVerificationGate() {
                 Verify device
               </Button>
               <Button type="button" variant="outline" onClick={() => void handleResend()} disabled={deviceVerificationSubmitting}>
-                Resend code
+                {deliveryNeedsRetry ? 'Send code again' : 'Resend code'}
               </Button>
             </div>
 
@@ -80,7 +83,15 @@ export function DeviceVerificationGate() {
               Sign out instead
             </Button>
           </CardContent>
-        </Card>
+    </Card>
+  );
+
+  if (inline) return verificationCard;
+
+  return (
+    <div className="min-h-screen bg-background px-6 py-10">
+      <div className="mx-auto max-w-lg">
+        {verificationCard}
       </div>
     </div>
   );

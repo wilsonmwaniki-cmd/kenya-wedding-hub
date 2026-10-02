@@ -31,17 +31,17 @@ export default function DocumentActionOverview({
     document.status === 'sent' || document.status === 'part_paid',
   );
   return (
-    <section className="space-y-4" aria-labelledby="document-action-heading">
-      <h2 id="document-action-heading" className="font-display text-2xl font-semibold text-foreground">Needs attention</h2>
+    <section className="space-y-3 rounded-2xl border border-border/70 bg-card p-4 shadow-card sm:space-y-4 sm:p-5" aria-labelledby="document-action-heading">
+      <h2 id="document-action-heading" className="font-display text-base font-semibold text-foreground sm:text-lg">Needs attention</h2>
 
       {loading ? (
-        <Card className="border-border/70 shadow-card">
+        <Card className="border-border/70 shadow-none">
           <CardContent className="flex min-h-32 items-center justify-center text-sm text-muted-foreground">
             Opening your document desk...
           </CardContent>
         </Card>
       ) : needsAction.length > 0 ? (
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid gap-3">
           {needsAction.slice(0, 4).map((request, index) => (
             <Card
               key={request.id}
@@ -89,9 +89,9 @@ export default function DocumentActionOverview({
             </Card>
           ))}
         </div>
-      ) : (
-        <Card className="border-[#b9dec7] bg-[#f1fbf4] shadow-card">
-          <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
+      ) : waitingDocuments.length === 0 ? (
+        <Card className="border-[#b9dec7] bg-[#f1fbf4] shadow-none">
+          <CardContent className="flex items-center gap-3 p-3 sm:p-5">
             <div className="border-l-2 border-[#247b47] pl-2 text-[#247b47]">
               <CheckCircle2 className="h-5 w-5" />
             </div>
@@ -100,12 +100,12 @@ export default function DocumentActionOverview({
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       {waitingDocuments.length > 0 && (
         <div>
           <Card className="border-[#c8d8eb] bg-[#f3f7fc] shadow-none">
-            <CardContent className="p-5">
+            <CardContent className="p-3 sm:p-5">
               <div className="flex items-center gap-2 text-[#315f92]">
                 <Clock3 className="h-4 w-4" />
                 <h3 className="font-semibold">Waiting for client</h3>

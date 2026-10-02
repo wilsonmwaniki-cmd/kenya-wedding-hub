@@ -9,6 +9,7 @@ type WeddingEntitlementsState = {
   entitlements: Partial<Record<CoupleEntitlementKey, boolean>>;
   couplePlanTier: CouplePlanTier;
   loading: boolean;
+  unavailable: boolean;
 };
 
 const COLLABORATION_KEYS: CoupleEntitlementKey[] = [
@@ -34,6 +35,7 @@ export function useWeddingEntitlements() {
     entitlements: {},
     couplePlanTier: 'free',
     loading: true,
+    unavailable: false,
   });
 
   const shouldLoad = useMemo(
@@ -54,18 +56,18 @@ export function useWeddingEntitlements() {
         entitlements: {},
         couplePlanTier: 'free',
         loading: false,
+        unavailable: false,
       });
       return;
     }
 
-    setState((current) => ({ ...current, loading: true }));
+    setState((current) => ({ ...current, loading: true, unavailable: false }));
 
     try {
-      const db = supabase as any;
       let activeWeddingId: string | null = null;
 
       if (isPlanner && selectedClient) {
-        const { data: plannerClientRow, error: plannerClientError } = await db
+        const { data: plannerClientRow, error: plannerClientError } = await supabase
           .from('planner_clients')
           .select('wedding_id')
           .eq('id', selectedClient.id)
@@ -76,7 +78,7 @@ export function useWeddingEntitlements() {
       }
 
       if (!activeWeddingId) {
-        const { data: memberships, error: membershipError } = await db
+        const { data: memberships, error: membershipError } = await supabase
           .from('wedding_memberships')
           .select('wedding_id, role, is_owner, membership_status, created_at')
           .eq('user_id', user.id)
@@ -88,7 +90,7 @@ export function useWeddingEntitlements() {
         if (membershipError) throw membershipError;
         const weddingIds = (memberships ?? []).map((row: { wedding_id: string }) => row.wedding_id);
         if (weddingIds.length > 0) {
-          const { data: weddings, error: weddingsError } = await db
+          const { data: weddings, error: weddingsError } = await supabase
             .from('weddings')
             .select('id, status, deleted_at')
             .in('id', weddingIds);
@@ -107,11 +109,12 @@ export function useWeddingEntitlements() {
           entitlements: {},
           couplePlanTier: 'free',
           loading: false,
+          unavailable: false,
         });
         return;
       }
 
-      const { data: entitlementRows, error: entitlementError } = await db
+      const { data: entitlementRows, error: entitlementError } = await supabase
         .from('wedding_entitlements')
         .select('feature_key, status, effective_from, effective_to')
         .eq('wedding_id', activeWeddingId)
@@ -137,15 +140,15 @@ export function useWeddingEntitlements() {
         entitlements,
         couplePlanTier: inferCouplePlanTier(entitlements),
         loading: false,
+        unavailable: false,
       });
     } catch (error) {
       console.error('Could not load wedding entitlements:', error);
-      setState({
-        weddingId: null,
-        entitlements: {},
-        couplePlanTier: 'free',
+      setState((current) => ({
+        ...current,
         loading: false,
-      });
+        unavailable: true,
+      }));
     }
   }, [isPlanner, selectedClient, shouldLoad, user]);
 

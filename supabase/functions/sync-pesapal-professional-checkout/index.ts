@@ -6,6 +6,7 @@ import { loadPricingCheckoutConfig } from '../_shared/pricingCatalog.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
 import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from '../_shared/demoGuard.ts';
 
 serve(async (req) => {
   const corsHeaders = createCorsHeaders(req);
@@ -79,6 +80,9 @@ serve(async (req) => {
 
     if (userError || !user) {
       return await respondWithError(401, 'You must be signed in before checkout sync can run.', 'user_missing');
+    }
+    if (isTemporaryDemoUser(user)) {
+      return await respondWithError(403, DEMO_EXTERNAL_ACTION_MESSAGE, 'demo_action_blocked');
     }
 
     await assertActiveAuthSession(serviceClient, authHeader, user.id);

@@ -8,6 +8,7 @@ type ProfessionalEntitlementsState = {
   entitlements: Partial<Record<ProfessionalEntitlementKey, boolean>>;
   teamSeatLimit: number;
   loading: boolean;
+  unavailable: boolean;
 };
 
 export function useProfessionalEntitlements(audienceOverride?: ProfessionalAudience | null) {
@@ -17,6 +18,7 @@ export function useProfessionalEntitlements(audienceOverride?: ProfessionalAudie
     entitlements: {},
     teamSeatLimit: 0,
     loading: true,
+    unavailable: false,
   });
 
   useEffect(() => {
@@ -41,6 +43,7 @@ export function useProfessionalEntitlements(audienceOverride?: ProfessionalAudie
             entitlements: {},
             teamSeatLimit: 0,
             loading: false,
+            unavailable: false,
           });
         }
         return;
@@ -53,16 +56,16 @@ export function useProfessionalEntitlements(audienceOverride?: ProfessionalAudie
             entitlements: {},
             teamSeatLimit: 0,
             loading: false,
+            unavailable: false,
           });
         }
         return;
       }
 
-      setState((current) => ({ ...current, audience: resolvedAudience, loading: true }));
+      setState((current) => ({ ...current, audience: resolvedAudience, loading: true, unavailable: false }));
 
       try {
-        const db = supabase as any;
-        const { data: rows, error } = await db
+        const { data: rows, error } = await supabase
           .from('professional_entitlements')
           .select('feature_key, status, effective_from, effective_to, seat_limit')
           .eq('user_id', user.id)
@@ -103,17 +106,18 @@ export function useProfessionalEntitlements(audienceOverride?: ProfessionalAudie
             entitlements,
             teamSeatLimit,
             loading: false,
+            unavailable: false,
           });
         }
       } catch (error) {
         console.error('Could not load professional entitlements:', error);
         if (!cancelled) {
-          setState({
+          setState((current) => ({
+            ...current,
             audience: resolvedAudience,
-            entitlements: {},
-            teamSeatLimit: 0,
             loading: false,
-          });
+            unavailable: true,
+          }));
         }
       }
     };

@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { getSafeAuthRouteTarget } from '@/lib/authRouting';
+import { consumeOAuthConsentReturn } from '@/lib/oauthConsent';
 import { getHomeRouteForRole, isProfessionalSetupPending, type AppRole, type PlannerType } from '@/lib/roles';
 import { hasPendingEstimatorPlanDraft } from '@/lib/estimatorPlanSeed';
 import {
@@ -529,7 +530,7 @@ export default function AuthCallback() {
           return;
         }
 
-        navigate(getHomeRouteForRole(role, plannerType), { replace: true });
+        navigate(consumeOAuthConsentReturn() || getHomeRouteForRole(role, plannerType), { replace: true });
       } catch (error) {
         console.error('Failed to complete auth callback:', error);
         if (active) setStatus('failed');

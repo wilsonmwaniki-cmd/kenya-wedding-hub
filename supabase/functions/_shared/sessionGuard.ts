@@ -29,7 +29,7 @@ function decodeBase64Url(value: string) {
   return atob(padded);
 }
 
-function getSessionIdFromAccessToken(authHeader: string | null) {
+function getAccessTokenClaims(authHeader: string | null) {
   const token = extractBearerToken(authHeader);
   if (!token) return null;
 
@@ -37,25 +37,28 @@ function getSessionIdFromAccessToken(authHeader: string | null) {
   if (!payload) return null;
 
   try {
-    const decoded = JSON.parse(decodeBase64Url(payload)) as { session_id?: unknown };
-    return typeof decoded.session_id === 'string' && decoded.session_id.trim()
-      ? decoded.session_id
-      : null;
+    const decoded = JSON.parse(decodeBase64Url(payload)) as {
+      session_id?: unknown;
+      client_id?: unknown;
+    };
+    return {
+      sessionId: typeof decoded.session_id === 'string' && decoded.session_id.trim()
+        ? decoded.session_id
+        : null,
+      clientId: typeof decoded.client_id === 'string' && decoded.client_id.trim()
+        ? decoded.client_id
+        : null,
+    };
   } catch {
     return null;
   }
 }
 
-export async function assertActiveAuthSession(
+async function assertSessionRecordActive(
   adminClient: SupabaseAdminClient,
-  authHeader: string | null,
+  sessionId: string,
   userId: string,
 ) {
-  const sessionId = getSessionIdFromAccessToken(authHeader);
-  if (!sessionId) {
-    throw new AuthSessionError();
-  }
-
   const { data, error } = await adminClient.rpc('is_active_auth_session', {
     target_session_id: sessionId,
     target_user_id: userId,
@@ -69,6 +72,19 @@ export async function assertActiveAuthSession(
   if (data !== true) {
     throw new AuthSessionError();
   }
+}
+
+export async function assertActiveAuthSession(
+  adminClient: SupabaseAdminClient,
+  authHeader: string | null,
+  userId: string,
+) {
+  const sessionId = getAccessTokenClaims(authHeader)?.sessionId;
+  if (!sessionId) {
+    throw new AuthSessionError();
+  }
+
+  await assertSessionRecordActive(adminClient, sessionId, userId);
 
   const trustedResult = await adminClient.rpc('is_current_trusted_auth_session', {
     target_session_id: sessionId,
@@ -85,4 +101,13 @@ export async function assertActiveAuthSession(
   }
 
   return { sessionId };
+}
+
+export function assertOAuthClientAccessToken(authHeader: string | null) {
+  const claims = getAccessTokenClaims(authHeader);
+  if (!claims?.sessionId || !claims.clientId) {
+    throw new AuthSessionError();
+  }
+
+  return { sessionId: claims.sessionId, clientId: claims.clientId };
 }

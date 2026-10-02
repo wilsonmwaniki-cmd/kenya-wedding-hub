@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getDefaultModelPricing, selectAiModelRoute } from '../../supabase/functions/_shared/aiModelRouting';
+import { estimateModelCostUsd, getDefaultModelPricing, selectAiModelRoute } from '../../supabase/functions/_shared/aiModelRouting';
 
 const models = {
   routine: 'gpt-5.6-luna',
@@ -40,6 +40,12 @@ describe('AI model routing', () => {
   });
 
   it('uses current per-model cache pricing defaults', () => {
+    expect(getDefaultModelPricing('gpt-5.5')).toEqual({
+      input: 5,
+      cachedInput: 0.5,
+      cacheWrite: 5,
+      output: 30,
+    });
     expect(getDefaultModelPricing('gpt-5.6-luna')).toEqual({
       input: 0.2,
       cachedInput: 0.02,
@@ -52,5 +58,12 @@ describe('AI model routing', () => {
       cacheWrite: 6.25,
       output: 30,
     });
+  });
+
+  it('adds hosted-tool charges to token cost estimates', () => {
+    expect(estimateModelCostUsd({
+      model: 'gpt-5.5', inputTokens: 2000, cachedInputTokens: 500, outputTokens: 100,
+      additionalCostUsd: 0.01,
+    })).toBeCloseTo(0.02075, 8);
   });
 });

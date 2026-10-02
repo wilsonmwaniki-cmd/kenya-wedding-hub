@@ -128,7 +128,23 @@ export async function activateProfessionalCheckout(
   const audience = transaction.audience;
   if (audience !== 'planner' && audience !== 'vendor') throw new Error('Invalid professional payment audience.');
   const billingCycle = transaction.lookup_key.endsWith('_monthly') ? 'monthly' : 'annual';
-  const accessExpiresAt = calculateAccessExpiry(payment.paidAt, billingCycle);
+  const { data: currentEntitlements, error: currentEntitlementsError } = await serviceClient
+    .from('professional_entitlements')
+    .select('effective_to, metadata')
+    .eq('user_id', transaction.user_id)
+    .eq('audience', audience);
+  if (currentEntitlementsError) throw currentEntitlementsError;
+
+  const alreadyApplied = (currentEntitlements ?? []).find((entitlement) => {
+    const metadata = entitlement.metadata as Record<string, unknown> | null;
+    return metadata?.provider_reference === payment.reference;
+  });
+  const latestFutureExpiry = (currentEntitlements ?? [])
+    .map((entitlement) => typeof entitlement.effective_to === 'string' ? entitlement.effective_to : null)
+    .filter((value): value is string => Boolean(value) && new Date(value).getTime() > new Date(payment.paidAt).getTime())
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null;
+  const accessExpiresAt = alreadyApplied?.effective_to
+    ?? calculateAccessExpiry(latestFutureExpiry ?? payment.paidAt, billingCycle);
 
   const activatedFeatures = await Promise.all(mapping.features.map(async (featureKey) => {
     const { data: existing, error: existingError } = await serviceClient

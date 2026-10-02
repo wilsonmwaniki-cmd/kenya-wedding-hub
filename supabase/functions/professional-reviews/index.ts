@@ -5,6 +5,7 @@ import { createCorsHeaders } from '../_shared/cors.ts';
 import { AbuseProtectionError, assertRecentFunctionEventLimit } from '../_shared/abuseProtection.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from '../_shared/demoGuard.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -145,6 +146,7 @@ serve(async (req) => {
     });
     const { data: authData, error: authError } = await authClient.auth.getUser();
     if (authError || !authData.user) return jsonResponse({ error: 'Unauthorized' }, 401);
+    if (isTemporaryDemoUser(authData.user)) return jsonResponse({ error: DEMO_EXTERNAL_ACTION_MESSAGE, code: 'demo_action_blocked' }, 403);
 
     await assertActiveAuthSession(adminClient, authHeader, authData.user.id);
 

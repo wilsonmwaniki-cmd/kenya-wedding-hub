@@ -12,6 +12,7 @@ import type {
 } from '@/lib/pendingWeddingSetup';
 
 export interface AuthEntrySignUpOptions {
+  captchaToken?: string | null;
   signupIntent?: WeddingSignupIntent | null;
   accountPurpose?: 'planning_my_own_wedding' | 'helping_family_or_friend' | 'professional_planner' | 'vendor' | 'other' | null;
   weddingOwnerRole?: WeddingOwnerRole | null;
@@ -50,6 +51,33 @@ export function isEstimatorCoupleSignupEntry(input: {
     && input.role === 'couple';
 }
 
+export function isLockedSignupEntry(input: {
+  mode?: string | null;
+  flow?: string | null;
+  audience?: string | null;
+  role?: string | null;
+}) {
+  if (input.mode !== 'signup') return false;
+
+  return input.flow === 'join_wedding'
+    || input.flow === 'vendor_claim'
+    || isEstimatorCoupleSignupEntry(input)
+    || (input.audience === 'professional' && (input.role === 'planner' || input.role === 'vendor'));
+}
+
+export function resolveSignupEntryStep(input: {
+  mode?: string | null;
+  flow?: string | null;
+  audience?: string | null;
+  role?: string | null;
+}) {
+  return isLockedSignupEntry(input) ? 'account' : 'method';
+}
+
+export function resolveAuthSignInAudience(value?: string | null) {
+  return value === 'couple' || value === 'professional' ? value : null;
+}
+
 export async function performAuthEntrySignUp(input: {
   email: string;
   password: string;
@@ -81,6 +109,7 @@ export async function performAuthEntrySignUp(input: {
     email: normalizedEmail,
     password: input.password,
     options: {
+      captchaToken: input.options?.captchaToken ?? undefined,
       data: {
         full_name: normalizedFullName,
         role: isCommittee ? 'planner' : input.role,
@@ -165,6 +194,7 @@ export async function performOAuthEntrySignIn(input: {
   mode?: 'signup' | 'signin';
   targetRole?: Extract<SignupRole, 'couple' | 'planner' | 'vendor'> | null;
   plannerType?: PlannerType | null;
+  captchaToken?: string | null;
 }) {
   if (input.provider === 'apple' && !isAppleAuthEnabled()) {
     throw new Error('Apple sign-in is not available yet. Please continue with Google or email for now.');
@@ -194,6 +224,7 @@ export async function performOAuthEntrySignIn(input: {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: input.provider,
     options: {
+      captchaToken: input.captchaToken ?? undefined,
       redirectTo: redirectUrl.toString(),
       queryParams: input.provider === 'google' ? { prompt: 'select_account' } : undefined,
     },

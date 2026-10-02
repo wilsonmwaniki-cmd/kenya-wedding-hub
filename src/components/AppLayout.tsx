@@ -12,15 +12,19 @@ import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getHomeRouteForRole, isProfessionalSetupPending, type PlannerType } from '@/lib/roles';
-import { AssistantPanelProvider, useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { resetBundleRecoveryAttempt } from '@/lib/bundleRecovery';
+import { AssistantPanelProvider } from '@/contexts/AssistantPanelContext';
 import BrandWordmark from '@/components/BrandWordmark';
 import AccountReviewBanner from '@/components/AccountReviewBanner';
-import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isLaunchFeatureEnabled, isProfessionalNetworkEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
+import { getLabsPath, getProfessionalNetworkPath, getSpaceTablePlanPath, isLaunchFeatureEnabled, isPlanningExperimentEnabled, isProfessionalNetworkEnabled, isSpaceTablePlanEnabled } from '@/lib/featureFlags';
 import { useWeddingEntitlements } from '@/hooks/useWeddingEntitlements';
 import { useProfessionalEntitlements } from '@/hooks/useProfessionalEntitlements';
 import { professionalPlanEntitlementMap } from '@/lib/pricingPlans';
 import SupportFeedbackDialog from '@/components/SupportFeedbackDialog';
 import { SegmentedNav } from '@/components/SegmentedNav';
+import ServiceStatusBanner from '@/components/ServiceStatusBanner';
+import DemoModeBanner from '@/components/DemoModeBanner';
+import { useDemoSession } from '@/contexts/DemoSessionContext';
 
 const AssistantPanel = lazy(() => import('@/components/AssistantPanel'));
 
@@ -47,10 +51,12 @@ type NavItem = {
 
 const coupleNavItems: NavItem[] = [
   { path: '/dashboard', label: 'Wedding Home', icon: LayoutDashboard },
+  { path: '/plan', label: 'Build your plan', icon: Map },
   { path: '/budget', label: 'Budget', icon: Wallet },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
   { path: '/guests', label: 'Guests', icon: Users },
   { path: '/vendors', label: 'Vendors', icon: Store },
+  { path: '/received-documents', label: 'Documents', icon: NotebookPen },
   {
     path: '/more',
     label: 'More',
@@ -67,6 +73,8 @@ const coupleNavItems: NavItem[] = [
 
 const plannerNavItems: NavItem[] = [
   { path: '/clients', label: 'Weddings', icon: Briefcase },
+  { path: '/vendor-candidates', label: 'Vendor candidates', icon: Store },
+  { path: '/contacts', label: 'Contacts', icon: Users },
   { path: '/reviews', label: 'Reviews', icon: Star },
   {
     path: '/planner-documents',
@@ -86,24 +94,33 @@ const plannerNavItems: NavItem[] = [
 ];
 
 const vendorNavItems: NavItem[] = [
-  { path: '/vendor-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/vendor-dashboard', label: 'Today', icon: LayoutDashboard },
+  { path: '/contacts', label: 'Clients', icon: Users },
   { path: '/reviews', label: 'Reviews', icon: Star },
   {
     path: '/vendor-documents',
-    label: 'Documents',
+    label: 'Finance',
     icon: NotebookPen,
     professional: true,
     children: [
-      { path: '/vendor-documents', label: 'Overview' },
+      { path: '/vendor-documents', label: 'Finance home' },
       { path: '/vendor-documents/quotes', label: 'Quotes' },
       { path: '/vendor-documents/invoices', label: 'Invoices' },
+      { path: '/vendor-documents#zania-pay', label: 'Payments' },
       { path: '/vendor-documents/receipts', label: 'Receipts' },
       { path: '/vendor-documents/contracts', label: 'Contracts' },
       { path: '/vendor-documents/templates', label: 'Templates' },
     ],
   },
-  { path: '/vendor-settings', label: 'Listing', icon: Store },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  {
+    path: '/vendor-settings',
+    label: 'Settings',
+    icon: Settings,
+    children: [
+      { path: '/vendor-settings', label: 'Business profile' },
+      { path: '/settings', label: 'Account settings' },
+    ],
+  },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -117,9 +134,10 @@ const professionalSetupNavItems: NavItem[] = [
 
 const mobileNavLabels: Record<string, string> = {
   '/dashboard': 'Home',
-  '/clients': 'Weddings',
-  '/vendor-dashboard': 'Home',
-  '/vendor-settings': 'Listing',
+  '/clients': 'Clients',
+  '/vendor-dashboard': 'Today',
+  '/vendor-documents': 'Finance',
+  '/vendor-settings': 'Settings',
 };
 
 function AssistantPanelSlot({
@@ -129,12 +147,6 @@ function AssistantPanelSlot({
   role?: string | null;
   plannerType?: PlannerType | null;
 }) {
-  const assistantPanel = useAssistantPanel();
-
-  if (!assistantPanel?.open && !assistantPanel?.launchRequest) {
-    return null;
-  }
-
   return (
     <Suspense fallback={null}>
       <AssistantPanel role={role} plannerType={plannerType} />
@@ -210,6 +222,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut, profile, baseProfile, isSuperAdmin, rolePreview, setRolePreview } = useAuth();
   const { isPlanner, selectedClient, selectClient, plannerClientHydrating } = usePlanner();
   const { vendorRequestCount, plannerRequestCount, unreadAttentionCount } = useNotifications();
+  const { isDemo } = useDemoSession();
 
   const professionalNetworkEnabled = isProfessionalNetworkEnabled();
   const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
@@ -224,18 +237,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   );
   const accountPlan = isCouple
     ? {
-        label: weddingPlan.couplePlanTier === 'collaborative' ? 'Collaborative' : 'Free',
+        label: isDemo ? 'Demo' : weddingPlan.unavailable ? 'Unavailable' : weddingPlan.couplePlanTier === 'collaborative' ? 'Collaborative' : 'Free',
         paid: weddingPlan.couplePlanTier === 'collaborative',
         loading: weddingPlan.loading,
       }
     : isPlanner || isVendor
       ? {
-          label: professionalPaid ? 'Professional' : 'Free',
+          label: isDemo ? 'Demo' : professionalPlan.unavailable ? 'Unavailable' : professionalPaid ? 'Professional' : 'Free',
           paid: professionalPaid,
           loading: professionalPlan.loading,
         }
       : null;
   const professionalSetupPending = isProfessionalSetupPending(user?.user_metadata ?? null, profile?.role, user?.email ?? null);
+  const planningExperimentEnabled = isPlanningExperimentEnabled();
   const navItems = useMemo<NavItem[]>(() => {
     const previewNavItems: NavItem[] = [];
 
@@ -255,6 +269,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       .map((item) => item.children
         ? { ...item, children: item.children.filter((child) => isLaunchFeatureEnabled(child.path)) }
         : item)
+      .filter((item) => item.path !== '/plan' || planningExperimentEnabled)
       .filter((item) => item.children ? item.children.length > 0 : isLaunchFeatureEnabled(item.path));
     const coupleSettingsItem = releaseAwareCoupleNavItems.find((item) => item.path === '/settings');
     const resolvedCoupleNavItems = [
@@ -265,10 +280,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     if (professionalSetupPending) return professionalSetupNavItems;
     if (isAdmin) return adminNavItems;
-    if (isVendor) return [...vendorNavItems.slice(0, 2), ...previewNavItems, ...vendorNavItems.slice(2)];
+    if (isVendor) {
+      return [...vendorNavItems.slice(0, 2), ...previewNavItems, ...vendorNavItems.slice(2)]
+        .filter((item) => Boolean(item.children?.length) || isLaunchFeatureEnabled(item.path));
+    }
     if (isPlanner) {
       if (selectedClient) return resolvedCoupleNavItems;
-      return plannerNavItems;
+      return plannerNavItems.filter((item) => Boolean(item.children?.length) || isLaunchFeatureEnabled(item.path));
     }
     return resolvedCoupleNavItems;
   }, [
@@ -278,6 +296,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     labsEnabled,
     professionalNetworkEnabled,
     professionalSetupPending,
+    planningExperimentEnabled,
     selectedClient,
     spaceTablePlanEnabled,
   ]);
@@ -287,7 +306,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       : isAdmin
         ? ['/admin', '/settings']
         : isVendor
-          ? ['/vendor-dashboard', '/reviews', '/vendor-settings', '/settings']
+          ? ['/vendor-dashboard', '/contacts', '/vendor-documents', '/vendor-settings']
           : isPlanner && !selectedClient
             ? ['/clients', '/reviews', '/planner-documents', '/settings']
             : ['/dashboard', '/budget', '/tasks', '/vendors', '/settings'];
@@ -355,7 +374,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Sign out failed, forcing navigation to auth entry point:', error);
     } finally {
-      window.location.assign('/sign-in');
+      // Start the unauthenticated entry point with a clean bundle-recovery
+      // allowance. This avoids an old failed import on the workspace page
+      // surfacing as an error screen immediately after sign-out.
+      resetBundleRecoveryAttempt();
+      window.location.replace('/sign-in');
     }
   };
 
@@ -560,14 +583,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           Soon
                         </span>
                       ) : null}
-                      {item.professional && !professionalPaid && !professionalPlan.loading ? (
+                      {item.professional && !professionalPaid && !professionalPlan.loading && !professionalPlan.unavailable ? (
                         <span className="relative z-10 rounded-full border border-[#d4bb7d]/35 bg-[#d4bb7d]/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#ead8aa]">
                           Professional
                         </span>
                       ) : null}
                       {(badgeCounts[item.path] || 0) > 0 && (
                         <span
-                          className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-info/30 bg-info/15 px-1.5 text-[10px] font-bold text-info"
+                          className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-primary/80 bg-primary px-1.5 text-[10px] font-bold text-primary-foreground shadow-[0_3px_10px_hsl(var(--primary)/0.28)]"
                           aria-label={`${badgeCounts[item.path]} new ${item.label.toLowerCase()} notification${badgeCounts[item.path] === 1 ? '' : 's'}`}
                         >
                           {badgeCounts[item.path]}
@@ -605,14 +628,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           Soon
                         </span>
                       ) : null}
-                      {item.professional && !professionalPaid && !professionalPlan.loading ? (
+                      {item.professional && !professionalPaid && !professionalPlan.loading && !professionalPlan.unavailable ? (
                         <span className="relative z-10 ml-auto rounded-full border border-[#d4bb7d]/35 bg-[#d4bb7d]/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#ead8aa]">
                           Professional
                         </span>
                       ) : null}
                       {(badgeCounts[item.path] || 0) > 0 && (
                         <span
-                          className="relative z-10 ml-auto flex h-5 min-w-5 items-center justify-center rounded-full border border-info/30 bg-info/15 px-1.5 text-[10px] font-bold text-info"
+                          className="relative z-10 ml-auto flex h-5 min-w-5 items-center justify-center rounded-full border border-primary/80 bg-primary px-1.5 text-[10px] font-bold text-primary-foreground shadow-[0_3px_10px_hsl(var(--primary)/0.28)]"
                           aria-label={`${badgeCounts[item.path]} new ${item.label.toLowerCase()} notification${badgeCounts[item.path] === 1 ? '' : 's'}`}
                         >
                           {badgeCounts[item.path]}
@@ -632,7 +655,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       className="space-y-1 overflow-hidden pl-4 motion-reduce:transition-none"
                     >
                       {item.children.map((child) => {
-                        const childActive = location.pathname === child.path;
+                        const [childPath, childHash] = child.path.split('#');
+                        const childActive = location.pathname === childPath
+                          && (childHash ? location.hash === `#${childHash}` : !location.hash);
                         return (
                           <Link
                             key={child.path}
@@ -682,7 +707,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main id="main-content" tabIndex={-1} className="flex min-h-screen w-full min-w-0 flex-1 flex-col overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(227,144,100,0.08),transparent_18%),linear-gradient(180deg,rgba(255,255,255,0.9),rgba(249,244,237,0.96))]">
-        <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-[#eadbca] bg-[linear-gradient(180deg,rgba(255,251,247,0.96),rgba(248,241,232,0.92))] px-4 py-3 shadow-[0_10px_30px_rgba(28,22,18,0.04)] backdrop-blur-sm lg:hidden">
+        <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-[#eadbca] bg-[linear-gradient(180deg,rgba(255,251,247,0.96),rgba(248,241,232,0.92))] px-3 py-2 shadow-[0_10px_30px_rgba(28,22,18,0.04)] backdrop-blur-sm sm:gap-3 sm:px-4 sm:py-3 lg:hidden">
           <Button
             ref={menuButtonRef}
             type="button"
@@ -713,7 +738,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <LifeBuoy className="h-5 w-5" />
           </Button>
         </header>
-        <div className="min-w-0 flex-1 p-4 pb-28 sm:p-6 sm:pb-32 lg:p-8 lg:pb-36">
+        <div className="min-w-0 flex-1 px-3 py-3 pb-24 sm:p-6 sm:pb-32 lg:p-8 lg:pb-36">
+          <DemoModeBanner />
+          <ServiceStatusBanner />
           {isSuperAdmin && (
             <div className="mb-6 rounded-[26px] border border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(227,144,100,0.16),transparent_28%),linear-gradient(180deg,rgba(255,251,247,0.95),rgba(250,244,236,0.92))] px-4 py-4 shadow-[0_18px_42px_rgba(28,22,18,0.06)]">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -757,7 +784,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <nav
         aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/55 bg-background/96 px-2 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-8px_24px_rgba(55,35,26,0.035),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-md lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/55 bg-background/96 px-1.5 pt-1.5 pb-[max(env(safe-area-inset-bottom),0.35rem)] shadow-[0_-8px_24px_rgba(55,35,26,0.035),inset_0_1px_0_rgba(255,255,255,0.72)] backdrop-blur-md sm:px-2 sm:pt-2 sm:pb-[max(env(safe-area-inset-bottom),0.5rem)] lg:hidden"
       >
         <SegmentedNav
           ariaLabel="Primary mobile navigation"
@@ -787,6 +814,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 itemBadgeCount > 0
                   ? `${itemBadgeCount} new ${mobileLabel.toLowerCase()} notification${itemBadgeCount === 1 ? '' : 's'}`
                   : undefined,
+              badgeClassName: 'bg-primary text-primary-foreground shadow-[0_3px_10px_hsl(var(--primary)/0.28)] ring-1 ring-primary/20',
             };
           })}
         />

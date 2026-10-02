@@ -166,7 +166,10 @@ export function getEstimatorPlanDraftFromUserMetadata(
 export function getPendingEstimatorPlanDraft(
   userMetadata?: Record<string, unknown> | null,
 ) {
-  return getEstimatorPlanDraft() ?? getEstimatorPlanDraftFromUserMetadata(userMetadata);
+  // Once an account exists, its stored draft is the source of truth. This
+  // prevents an old browser-only estimate from being applied to the wrong
+  // signed-in person's wedding.
+  return getEstimatorPlanDraftFromUserMetadata(userMetadata) ?? getEstimatorPlanDraft();
 }
 
 export function hasPendingEstimatorPlanDraft(userMetadata?: Record<string, unknown> | null) {

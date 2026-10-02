@@ -65,20 +65,9 @@ The AI assistant routes requests by complexity with these defaults:
 
 Each model can be overridden with the corresponding secret above. Routed requests use a stable explicit prompt-cache prefix and record cache reads, cache writes, token usage, the selected model, and estimated cost. If a custom model has different pricing, set `OPENAI_<TIER>_INPUT_COST_PER_MILLION_USD`, `OPENAI_<TIER>_CACHED_INPUT_COST_PER_MILLION_USD`, `OPENAI_<TIER>_CACHE_WRITE_COST_PER_MILLION_USD`, and `OPENAI_<TIER>_OUTPUT_COST_PER_MILLION_USD`, where `<TIER>` is `ROUTINE`, `BALANCED`, or `COMPLEX`.
 
-Optional client/server billing provider switch while migrating:
-
-- `VITE_BILLING_PROVIDER=pesapal|paystack`
-
-Pesapal server configuration:
-
-- `PESAPAL_ENVIRONMENT=sandbox|production`
-- `PESAPAL_CONSUMER_KEY`
-- `PESAPAL_CONSUMER_SECRET`
-- `PESAPAL_AUTH_URL`
-- `PESAPAL_NOTIFICATION_ID`
-- `PESAPAL_SUBMIT_ORDER_URL` optional override
-- `PESAPAL_TRANSACTION_STATUS_URL` optional override
-- `PESAPAL_IPN_URL` optional
+New billing checkouts use Paystack exclusively. The legacy Pesapal callback and
+sync functions remain available only to reconcile historical transactions; the
+Pesapal checkout function rejects new payment initiation.
 
 ## Production launch
 

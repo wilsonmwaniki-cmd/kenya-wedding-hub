@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Plus, Copy, ExternalLink, AlertTriangle, UserCog, Phone, BriefcaseBusiness, Store, CheckCircle2 } from 'lucide-react';
+import { Loader2, X, Plus, Copy, CreditCard, ExternalLink, AlertTriangle, UserCog, Phone, BriefcaseBusiness, Store, CheckCircle2 } from 'lucide-react';
 import AvatarUpload from '@/components/AvatarUpload';
 import { committeeResponsibilityOptions } from '@/lib/committeeRoles';
 import { isCommitteePlanner, plannerAccessMessage, plannerHasActiveSubscription, plannerHasFullAccess } from '@/lib/plannerAccess';
@@ -1196,6 +1196,9 @@ export default function ProfileSettings() {
                   Subscription expiry: {new Date(profile.planner_subscription_expires_at).toLocaleDateString()}
                 </p>
               )}
+              {profile.planner_subscription_status === 'active' && !profile.planner_subscription_expires_at && (
+                <p className="mt-1 text-xs">No renewal date has been set for this legacy subscription.</p>
+              )}
               {profile.planner_verification_requested_at && !profile.planner_verified && (
                 <p className="mt-1 text-xs">
                   Verification requested on {new Date(profile.planner_verification_requested_at).toLocaleDateString()}
@@ -1212,6 +1215,16 @@ export default function ProfileSettings() {
                 {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {profile.planner_verified ? 'Already Verified' : profile.planner_verification_requested ? 'Verification Requested' : 'Request Verification'}
               </Button>
+              {!isCommittee && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => navigate('/pricing?audience=planner&plan=planner_premium&feature=booking_management')}
+                >
+                  <CreditCard className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Renew with Paystack
+                </Button>
+              )}
               {!plannerSubscriptionActive && (
                 <div className="semantic-surface-warning flex w-full items-start gap-2 rounded-md border px-3 py-2 text-sm leading-5 text-warning sm:w-auto">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />

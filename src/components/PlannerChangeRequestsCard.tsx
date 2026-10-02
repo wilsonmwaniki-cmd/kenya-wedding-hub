@@ -96,11 +96,18 @@ export default function PlannerChangeRequestsCard({
     if (!user) return;
     setActingId(request.id);
     try {
-      await approvePlannerChangeRequest(request, user.id);
+      const result = await approvePlannerChangeRequest(request, user.id);
       setRequests((current) => current.filter((row) => row.id !== request.id));
       toast({
-        title: 'Planner change approved',
-        description: 'The requested update is now live in your wedding workspace.',
+        title: request.target_table === 'vendor_enquiries'
+          ? result?.deliveryStatus === 'sent' ? 'Vendor enquiry sent' : 'Enquiry delivery failed'
+          : 'Planner change approved',
+        description: request.target_table === 'vendor_enquiries'
+          ? result?.message || 'The reviewed enquiry attempt has been recorded. No booking or quote was created.'
+          : 'The requested update is now live in your wedding workspace.',
+        variant: request.target_table === 'vendor_enquiries' && result?.deliveryStatus === 'failed'
+          ? 'destructive'
+          : 'default',
       });
     } catch (error: any) {
       toast({
@@ -141,7 +148,7 @@ export default function PlannerChangeRequestsCard({
     <Card
       id="planner-change-requests"
       tabIndex={-1}
-      className="scroll-mt-24 border-border bg-card shadow-card outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="scroll-mt-24 overflow-hidden border-border bg-card shadow-card outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <CardHeader className="border-b border-border pb-4">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
@@ -163,6 +170,8 @@ export default function PlannerChangeRequestsCard({
             {requests.slice(0, 8).map((request) => {
               const busy = actingId === request.id;
               const highlighted = highlightedId === request.id;
+              const isVendorEnquiry = request.target_table === 'vendor_enquiries';
+              const enquiry = request.proposed_payload;
 
               return (
                 <div
@@ -181,9 +190,18 @@ export default function PlannerChangeRequestsCard({
                       <h3 className="mt-1.5 text-base font-semibold leading-6 text-foreground">
                         {requestTitle(request)}
                       </h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {describePlannerChangeDetails(request)}
-                      </p>
+                      {isVendorEnquiry ? (
+                        <div className="mt-3 space-y-2 rounded-lg border border-border bg-muted/35 p-3 text-sm">
+                          <p><span className="font-semibold text-foreground">To:</span> {String(enquiry.recipient_name)} &lt;{String(enquiry.recipient_email)}&gt;</p>
+                          <p><span className="font-semibold text-foreground">Subject:</span> {String(enquiry.subject)}</p>
+                          <p className="whitespace-pre-wrap text-muted-foreground"><span className="font-semibold text-foreground">Message:</span> {String(enquiry.message)}</p>
+                          <p className="text-xs text-muted-foreground">Approving sends this external email. It does not book the vendor or accept a quote.</p>
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {describePlannerChangeDetails(request)}
+                        </p>
+                      )}
                       <p className="mt-2 text-xs text-muted-foreground">Requested {requestDate(request.created_at)}</p>
                     </div>
                     <div className="relative z-10 grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
@@ -195,7 +213,7 @@ export default function PlannerChangeRequestsCard({
                         disabled={busy}
                       >
                         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                        Approve
+                        {isVendorEnquiry ? 'Approve & send' : 'Approve'}
                       </Button>
                       <Button
                         type="button"

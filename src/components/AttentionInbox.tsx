@@ -121,15 +121,29 @@ export default function AttentionInbox({
   }
 
   const openBriefing = () => {
+    const briefingActions = visibleItems.flatMap((item) => (
+      item.actionLabel && item.actionPath?.startsWith('/')
+        ? [{ label: item.actionLabel, path: item.actionPath }]
+        : []
+    ));
+
     assistantPanel?.openAssistant(
-      'Brief me on these attention items. Put the most urgent first and give me a short next-action list.',
+      [
+        'Brief me on these verified attention items now.',
+        'Start with what needs my attention first and explain why in plain language.',
+        'Give me a short, prioritised next-action list, tell me what can wait, and do not ask a follow-up question.',
+      ].join(' '),
       `These are verified Zania attention items for the signed-in user:\n${buildAttentionBrief(visibleItems)}`,
+      {
+        autoSubmit: true,
+        actions: briefingActions,
+      },
     );
   };
 
   return (
     <TonalCard tone="porcelain" className={className} aria-labelledby="zania-attention-heading">
-      <TonalCardHeader className={cn('flex flex-col gap-3 space-y-0 sm:flex-row sm:items-start sm:justify-between', compact && 'p-4 pb-3')}>
+      <TonalCardHeader className={cn('grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 space-y-0 sm:flex sm:gap-3', compact && 'p-4 pb-3')}>
         <div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-primary">Zania attention</p>
@@ -143,11 +157,11 @@ export default function AttentionInbox({
           </div>
           <h2
             id="zania-attention-heading"
-            className={cn('mt-1 font-editorial font-semibold leading-tight tracking-[-0.025em]', compact ? 'text-lg' : 'text-xl')}
+            className={cn('mt-1 font-editorial text-lg font-semibold leading-tight tracking-[-0.025em] sm:text-xl', compact && 'sm:text-lg')}
           >
             What needs you now
           </h2>
-          <TonalCardDescription className="mt-1">
+          <TonalCardDescription className="mt-1 line-clamp-1 sm:line-clamp-none">
             Verified requests and updates, ordered by importance.
           </TonalCardDescription>
         </div>
@@ -166,7 +180,7 @@ export default function AttentionInbox({
             key={item.id}
             className={cn(
               'flex flex-col border-b border-l-[3px] border-b-current/10 last:border-b-0 sm:flex-row sm:items-center',
-              compact ? 'gap-2 px-4 py-3' : 'gap-3 px-5 py-4 sm:px-7',
+              compact ? 'gap-2 px-4 py-3' : 'gap-2 px-4 py-3 sm:gap-3 sm:px-7 sm:py-4',
               tone.rail,
               tone.surface,
             )}>
@@ -182,11 +196,11 @@ export default function AttentionInbox({
                     </span>
                   )}
                 </div>
-                <h3 className={cn('font-semibold text-current', compact ? 'mt-1 line-clamp-2 text-sm' : 'mt-2 text-sm sm:text-base')}>
+                <h3 className={cn('mt-1 line-clamp-2 text-sm font-semibold text-current sm:mt-2 sm:text-base', compact && 'sm:mt-1 sm:text-sm')}>
                   {item.title}
                 </h3>
                 {item.summary && (
-                  <p className={cn('text-current/60', compact ? 'mt-0.5 line-clamp-1 text-xs' : 'mt-1 text-sm')}>
+                  <p className={cn('mt-0.5 line-clamp-1 text-xs text-current/60 sm:mt-1 sm:text-sm', compact && 'sm:mt-0.5 sm:text-xs')}>
                     {item.summary}
                   </p>
                 )}
@@ -203,7 +217,7 @@ export default function AttentionInbox({
                     <Link
                       to={item.actionPath}
                       onClick={() => {
-                        if (item.status === 'unread') void updateAttentionState(item.id, 'read');
+                        void updateAttentionState(item.id, 'completed');
                       }}
                     >
                       {item.actionLabel}

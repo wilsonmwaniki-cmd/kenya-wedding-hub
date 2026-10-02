@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import ContractTermsContent from '@/components/documents/ContractTermsContent';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -13,10 +14,16 @@ import {
   type ProfessionalContractRecord,
   type VendorListingOption,
 } from '@/lib/commercialDocuments';
+import { contractPrintTitle } from '@/lib/documentPrintTitle';
+import { printDocumentElement } from '@/lib/printDocument';
 
 function dateLabel(value: string | null | undefined) {
   if (!value) return '—';
   return new Intl.DateTimeFormat('en-GB').format(new Date(`${value.slice(0, 10)}T00:00:00`));
+}
+
+function money(currency: string, amount: number) {
+  return new Intl.NumberFormat('en-KE', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount);
 }
 
 export default function ProfessionalContractPreview() {
@@ -54,6 +61,13 @@ export default function ProfessionalContractPreview() {
     return () => { cancelled = true; };
   }, [contractId, toast]);
 
+  useEffect(() => {
+    if (!contract) return;
+    const previousTitle = window.document.title;
+    window.document.title = contractPrintTitle(contract.title);
+    return () => { window.document.title = previousTitle; };
+  }, [contract]);
+
   const issuerSigner = useMemo(() => activity?.signers.find((item) => item.signerRole === 'issuer') ?? null, [activity]);
   const clientSigner = useMemo(() => activity?.signers.find((item) => item.signerRole === 'client') ?? null, [activity]);
 
@@ -69,16 +83,17 @@ export default function ProfessionalContractPreview() {
     : vendorListing?.label || profile?.company_name || profile?.full_name || 'Zania vendor workspace';
   const issuerEmail = contract.role === 'planner' ? profile?.company_email || user?.email : vendorListing?.email || profile?.company_email || user?.email;
   const issuerPhone = contract.role === 'planner' ? profile?.company_phone : vendorListing?.phone || profile?.company_phone;
+  const printTitle = contractPrintTitle(contract.title);
 
   return (
     <main className="min-h-screen bg-[#eee9e1] px-4 py-6 text-foreground sm:px-8 print:bg-white print:p-0">
       <div className="mx-auto max-w-[900px]">
         <div className="mb-5 flex items-center justify-between print:hidden">
           <Button asChild variant="ghost" className="gap-2"><Link to={backPath}><ArrowLeft className="h-4 w-4" />Back to contracts</Link></Button>
-          <Button className="gap-2" onClick={() => window.print()}><Printer className="h-4 w-4" />Print or save PDF</Button>
+          <Button className="gap-2" onClick={() => printDocumentElement('contract-document-print', printTitle)}><Printer className="h-4 w-4" />Print or save PDF</Button>
         </div>
 
-        <article className="min-h-[1120px] overflow-hidden bg-[#fffdf9] shadow-[0_24px_70px_rgba(48,38,31,0.18)] print:min-h-0 print:shadow-none">
+        <article id="contract-document-print" className="min-h-[1120px] overflow-hidden bg-[#fffdf9] shadow-[0_24px_70px_rgba(48,38,31,0.18)] print:min-h-0 print:shadow-none">
           <header className="bg-primary px-8 py-10 text-primary-foreground sm:px-12">
             <div className="grid gap-9 sm:grid-cols-[1.15fr_0.85fr]">
               <div><p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-primary-foreground/70">Service agreement</p><h1 className="mt-3 font-display text-4xl font-semibold">{contract.title}</h1><p className="mt-2 text-sm text-primary-foreground/75">Prepared by {issuerName}</p></div>
@@ -91,8 +106,24 @@ export default function ProfessionalContractPreview() {
           </header>
 
           <div className="space-y-10 px-8 py-10 sm:px-12">
-            <section><h2 className="font-display text-2xl">What we are agreeing to</h2><p className="mt-4 whitespace-pre-wrap text-sm leading-7">{contract.summary || 'No service summary has been added yet.'}</p></section>
-            <section className="border-t border-border pt-9"><h2 className="font-display text-2xl">Agreement details</h2><p className="mt-4 whitespace-pre-wrap text-sm leading-7">{contract.terms || 'No agreement details have been added yet.'}</p></section>
+            {contract.totalAmount != null || contract.paymentSchedule.length ? (
+              <section>
+                <h2 className="font-display text-2xl">Financial terms</h2>
+                {contract.totalAmount != null ? <p className="mt-3 text-lg font-semibold">Total: {money(contract.currency, contract.totalAmount)}</p> : null}
+                {contract.depositAmount != null ? <p className="mt-1 text-sm">Deposit: {money(contract.currency, contract.depositAmount)}</p> : null}
+                {contract.paymentSchedule.length ? (
+                  <ul className="mt-4 divide-y divide-border border-y border-border text-sm">
+                    {contract.paymentSchedule.map((payment, index) => (
+                      <li key={`${payment.title}-${payment.dueDate}-${index}`} className="flex flex-wrap justify-between gap-3 py-3">
+                        <span>{payment.title} · due {dateLabel(payment.dueDate)}</span>
+                        <strong>{money(contract.currency, payment.amount)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </section>
+            ) : null}
+            <section><h2 className="font-display text-2xl">Agreement details</h2><div className="mt-4 text-sm leading-7"><ContractTermsContent terms={contract.terms} /></div></section>
             <section className="border-t border-border pt-9">
               <div className="grid gap-8 sm:grid-cols-2">
                 {[{ label: contract.role === 'planner' ? 'Planner' : 'Vendor', signer: issuerSigner, fallback: issuerName }, { label: 'Client', signer: clientSigner, fallback: contract.recipientName }].map(({ label, signer, fallback }) => (
@@ -100,7 +131,10 @@ export default function ProfessionalContractPreview() {
                 ))}
               </div>
             </section>
-            <p className="border-t border-border pt-5 text-xs text-muted-foreground">Agreement stage: {professionalContractStatusLabel(contract.status)}</p>
+            <p className="border-t border-border pt-5 text-xs text-muted-foreground">
+              Agreement stage: {professionalContractStatusLabel(contract.status)}
+              {contract.lockedHash ? ` · Document ${contract.lockedHash.slice(0, 12)} · Version ${contract.contentVersion}` : ''}
+            </p>
           </div>
         </article>
       </div>

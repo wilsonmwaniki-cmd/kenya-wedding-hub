@@ -39,6 +39,21 @@ export function tryRecoverFromBundleError(error: unknown) {
   return true;
 }
 
+/**
+ * Gives a deliberate navigation (such as signing out) its own one-time bundle
+ * recovery attempt. A failed import from an earlier page should not prevent the
+ * next page from recovering itself.
+ */
+export function resetBundleRecoveryAttempt() {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.sessionStorage.removeItem(BUNDLE_RECOVERY_KEY);
+  } catch {
+    // Storage can be unavailable in hardened browsing modes.
+  }
+}
+
 export function installBundleRecovery() {
   if (typeof window === 'undefined') return () => undefined;
 

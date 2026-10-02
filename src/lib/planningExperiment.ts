@@ -54,16 +54,16 @@ export function toSimplePlanningCategory(category: string) {
 }
 
 const BASE_CATEGORY_WEIGHTS: Array<[string, number]> = [
-  ['Venue', 0.22],
-  ['Catering', 0.24],
-  ['Photography', 0.1],
-  ['Attire', 0.09],
-  ['Décor', 0.08],
+  ['Venue', 0.23],
+  ['Catering', 0.25],
+  ['Photography', 0.11],
+  ['Attire', 0.1],
+  ['Décor', 0.09],
   ['Entertainment', 0.06],
   ['Planning', 0.05],
   ['Transport', 0.04],
   ['Beauty', 0.03],
-  ['Contingency', 0.09],
+  ['Invitations', 0.04],
 ];
 
 const PRIORITY_CATEGORIES: Record<string, string[]> = {

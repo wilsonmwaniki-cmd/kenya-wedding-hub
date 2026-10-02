@@ -65,6 +65,18 @@ export function loadPaystackConfig(): PaystackConfig {
   };
 }
 
+export function loadPaystackTestConfig(): PaystackConfig {
+  const secretKey = requireEnv('PAYSTACK_TEST_SECRET_KEY');
+  if (!secretKey.startsWith('sk_test_')) {
+    throw new Error('PAYSTACK_TEST_SECRET_KEY must be a Paystack test secret key.');
+  }
+  return {
+    secretKey,
+    apiBaseUrl: Deno.env.get('PAYSTACK_API_BASE_URL')?.trim() || defaultApiBaseUrl,
+    currency: Deno.env.get('PAYSTACK_CURRENCY')?.trim().toUpperCase() || 'KES',
+  };
+}
+
 export function buildPaystackReference(prefix = 'pzania') {
   const timestamp = Date.now().toString(36);
   const random = crypto.randomUUID().replace(/-/g, '').slice(0, 16);

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, ShieldCheck, Users, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning, Calculator, BadgeDollarSign, History, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Loader2, RefreshCw, ShieldCheck, Users, UserCheck, Store, CheckSquare, UserCog, AlertTriangle, MessageSquareWarning, Calculator, BadgeDollarSign, History, RotateCcw, CircleDollarSign, Clock3, BadgeCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/lib/roles";
 import type { Json } from "@/integrations/supabase/types";
@@ -16,9 +16,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { WorkspacePageSkeleton } from "@/components/AppLoadingSkeletons";
 import { weddingVendorCategoryNames } from "@/lib/vendorCategories";
+import AdminZaniaPayQueue from "@/components/admin/AdminZaniaPayQueue";
+import AdminZaniaPayLedger from "@/components/admin/AdminZaniaPayLedger";
 
 interface AdminDashboardMetrics {
   total_users: number;
+  total_real_users: number;
   total_couples: number;
   total_planners: number;
   total_vendors: number;
@@ -30,6 +33,28 @@ interface AdminDashboardMetrics {
   total_budget_items: number;
   total_clients: number;
   open_link_requests: number;
+  paid_active_users: number;
+  expiring_soon_users: number;
+  expired_access_users: number;
+  free_users: number;
+  pending_verification_requests: number;
+  verified_professionals: number;
+  paid_couples: number;
+  free_couples: number;
+  couples_needing_renewal: number;
+  paid_vendors: number;
+  free_vendors: number;
+  vendors_needing_renewal: number;
+}
+
+interface AdminDemoActivityMetrics {
+  total_demo_visitors: number;
+  demo_starts_last_7_days: number;
+  active_demo_sessions: number;
+  couple_demo_visitors: number;
+  vendor_demo_visitors: number;
+  planner_demo_visitors: number;
+  demo_resets: number;
 }
 
 interface AdminUserRow {
@@ -41,6 +66,11 @@ interface AdminUserRow {
   role: AppRole;
   company_name: string | null;
   wedding_date: string | null;
+  is_demo: boolean;
+  access_plan: string;
+  subscription_status: "inactive" | "active" | "past_due" | "cancelled" | "not_applicable";
+  subscription_expires_at: string | null;
+  verification_status: "verified" | "requested" | "not_requested" | "not_applicable";
 }
 
 interface AdminVendorRow {
@@ -107,6 +137,7 @@ interface AdminCouplePassRow {
   planning_pass_expires_at: string | null;
   updated_at: string;
   email: string | null;
+  is_demo: boolean;
 }
 
 interface AdminFreeTierRiskSummary {
@@ -534,6 +565,103 @@ function countLabel(value?: number) {
   return Number(value ?? 0).toLocaleString();
 }
 
+type SubscriptionHealth = "paid" | "expiring" | "expired" | "free" | "not_applicable";
+
+function getSubscriptionHealth(
+  status: string | null | undefined,
+  expiresAt: string | null | undefined,
+): SubscriptionHealth {
+  if (!status || status === "not_applicable") return "not_applicable";
+  if (status === "inactive") return "free";
+  if (status === "past_due" || status === "cancelled") return "expired";
+
+  const expiry = expiresAt ? new Date(expiresAt) : null;
+  if (!expiry || Number.isNaN(expiry.getTime())) return "paid";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const lastActiveDay = new Date(expiry);
+  lastActiveDay.setHours(0, 0, 0, 0);
+  if (lastActiveDay < today) return "expired";
+
+  const sevenDaysFromNow = new Date(today);
+  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+  return lastActiveDay <= sevenDaysFromNow ? "expiring" : "paid";
+}
+
+function subscriptionHealthLabel(health: SubscriptionHealth) {
+  switch (health) {
+    case "paid": return "Paid · active";
+    case "expiring": return "Paid · ending soon";
+    case "expired": return "Expired / past due";
+    case "free": return "Free";
+    default: return "Not applicable";
+  }
+}
+
+function formatExpiry(expiresAt: string | null | undefined) {
+  if (!expiresAt) return "No expiry recorded";
+  const expiry = new Date(expiresAt);
+  if (Number.isNaN(expiry.getTime())) return "Expiry not recorded";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiryDay = new Date(expiry);
+  expiryDay.setHours(0, 0, 0, 0);
+  const days = Math.round((expiryDay.getTime() - today.getTime()) / 86_400_000);
+
+  if (days < 0) return `Ended ${expiry.toLocaleDateString()}`;
+  if (days === 0) return "Ends today";
+  if (days === 1) return "Ends tomorrow";
+  if (days <= 7) return `Ends in ${days} days`;
+  return `Ends ${expiry.toLocaleDateString()}`;
+}
+
+function verificationLabel(status: string | null | undefined) {
+  switch (status) {
+    case "verified": return "Verified";
+    case "requested": return "Verification requested";
+    case "not_requested": return "Not verified";
+    default: return "—";
+  }
+}
+
+function accessPlanLabel(accessPlan: string | null | undefined) {
+  switch (accessPlan) {
+    case "Wedding Planning Pass": return "Collaborative plan";
+    case "Vendor subscription": return "Professional vendor plan";
+    case "Planner subscription": return "Professional planner plan";
+    case "Committee subscription": return "Committee pass";
+    default: return accessPlan || "Plan not recorded";
+  }
+}
+
+type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
+
+function StatusLine({ tone = "neutral", children }: { tone?: StatusTone; children: ReactNode }) {
+  const dotClass = {
+    neutral: "bg-muted-foreground/55",
+    success: "bg-success",
+    warning: "bg-warning",
+    danger: "bg-destructive",
+    info: "bg-info",
+  }[tone];
+
+  return (
+    <p className="flex items-center gap-2 text-sm text-foreground">
+      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+function accessHealthTone(health: SubscriptionHealth): StatusTone {
+  if (health === "paid") return "success";
+  if (health === "expiring") return "warning";
+  if (health === "expired") return "danger";
+  return "neutral";
+}
+
 function formatAccountPurposeLabel(value: string | null | undefined) {
   if (!value) return "purpose not set";
   return value.replace(/_/g, " ");
@@ -626,6 +754,7 @@ export default function AdminPortal() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [metrics, setMetrics] = useState<AdminDashboardMetrics | null>(null);
+  const [demoActivity, setDemoActivity] = useState<AdminDemoActivityMetrics | null>(null);
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [vendors, setVendors] = useState<AdminVendorRow[]>([]);
   const [planners, setPlanners] = useState<AdminPlannerRow[]>([]);
@@ -721,10 +850,18 @@ export default function AdminPortal() {
     setMetrics((row ?? null) as unknown as AdminDashboardMetrics | null);
   };
 
+  const loadDemoActivity = async () => {
+    const { data, error } = await supabase.rpc("admin_demo_activity_metrics" as any);
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    setDemoActivity((row ?? null) as unknown as AdminDemoActivityMetrics | null);
+  };
+
   const loadUsers = async () => {
     const { data, error } = await supabase.rpc("admin_list_users" as any, {
       search_query: userSearch.trim() || null,
       role_filter: userRoleFilter === "all" ? null : userRoleFilter,
+      workspace_filter: "real",
       limit_rows: 100,
       offset_rows: 0,
     });
@@ -869,6 +1006,7 @@ export default function AdminPortal() {
     const { data, error } = await supabase.rpc("admin_list_couple_planning_passes" as any, {
       search_query: coupleSearch.trim() || null,
       status_filter: planningPassFilter,
+      workspace_filter: "real",
       limit_rows: 100,
       offset_rows: 0,
     });
@@ -1061,6 +1199,7 @@ export default function AdminPortal() {
     try {
       await Promise.all([
         loadMetrics(),
+        loadDemoActivity(),
         loadUsers(),
         loadVendors(),
         loadVendorSuggestions(),
@@ -1203,6 +1342,17 @@ export default function AdminPortal() {
 
     return { missingNames, pendingVendorCount, noLocationCount, flaggedReviews };
   }, [users, vendors, reputationMetrics]);
+
+  const overviewAttention = useMemo(
+    () => [
+      healthSummary.missingNames > 0 ? { tone: "danger" as const, label: `${healthSummary.missingNames} profile${healthSummary.missingNames === 1 ? "" : "s"} need${healthSummary.missingNames === 1 ? "s" : ""} a name` } : null,
+      healthSummary.pendingVendorCount > 0 ? { tone: "warning" as const, label: `${healthSummary.pendingVendorCount} vendor listing${healthSummary.pendingVendorCount === 1 ? "" : "s"} awaiting approval` } : null,
+      healthSummary.noLocationCount > 0 ? { tone: "warning" as const, label: `${healthSummary.noLocationCount} vendor listing${healthSummary.noLocationCount === 1 ? "" : "s"} need${healthSummary.noLocationCount === 1 ? "s" : ""} a location` } : null,
+      healthSummary.flaggedReviews > 0 ? { tone: "danger" as const, label: `${healthSummary.flaggedReviews} reputation review${healthSummary.flaggedReviews === 1 ? "" : "s"} need${healthSummary.flaggedReviews === 1 ? "s" : ""} review` } : null,
+      metrics?.pending_verification_requests ? { tone: "warning" as const, label: `${metrics.pending_verification_requests} verification request${metrics.pending_verification_requests === 1 ? "" : "s"} waiting` } : null,
+    ].filter((item): item is { tone: StatusTone; label: string } => item !== null),
+    [healthSummary, metrics?.pending_verification_requests],
+  );
 
   const selectedRiskAccount = useMemo(
     () => freeTierRiskAccounts.find((item) => item.user_id === selectedRiskUserId) ?? null,
@@ -1931,70 +2081,51 @@ export default function AdminPortal() {
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Total Users</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(metrics?.total_users)}</p>
-            <Users className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Pending Vendor Reviews</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(metrics?.pending_vendor_approvals)}</p>
-            <Store className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Open Link Requests</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(metrics?.open_link_requests)}</p>
-            <UserCog className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Total Tasks</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(metrics?.total_tasks)}</p>
-            <CheckSquare className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Flagged Scorecards</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(reputationMetrics?.flagged_reviews)}</p>
-            <MessageSquareWarning className="h-5 w-5 text-primary" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">AI Messages This Month</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between">
-            <p className="text-2xl font-semibold">{countLabel(aiUsageMetrics?.total_messages)}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader className="pb-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Operations overview</p>
+          <CardTitle>What needs your attention</CardTitle>
+          <CardDescription>Start with access and verification. Activity metrics stay in their dedicated tabs.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid divide-y border-t md:grid-cols-3 md:divide-x md:divide-y-0">
+          <section className="py-5 md:pr-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Audience</p>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-baseline justify-between gap-4"><span className="text-sm">Real accounts</span><strong className="text-2xl">{countLabel(metrics?.total_real_users)}</strong></div>
+              <div className="flex items-baseline justify-between gap-4 text-muted-foreground"><span className="text-sm">Demo visitors, tracked separately</span><span>{countLabel(demoActivity?.total_demo_visitors)}</span></div>
+              <div className="flex items-baseline justify-between gap-4 text-muted-foreground"><span className="text-sm">Pending vendor reviews</span><span>{countLabel(metrics?.pending_vendor_approvals)}</span></div>
+            </div>
+          </section>
+          <section className="py-5 md:px-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Access</p>
+            <div className="mt-4 space-y-3">
+              <StatusLine tone="success">{countLabel(metrics?.paid_active_users)} paid and active</StatusLine>
+              <StatusLine tone="neutral">{countLabel(metrics?.free_users)} free accounts</StatusLine>
+              <StatusLine tone="warning">{countLabel(metrics?.expiring_soon_users)} ending within 7 days</StatusLine>
+              <StatusLine tone="danger">{countLabel(metrics?.expired_access_users)} expired or past due</StatusLine>
+            </div>
+          </section>
+          <section className="py-5 md:pl-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Follow-up</p>
+            <div className="mt-4 space-y-3">
+              <StatusLine tone={metrics?.pending_verification_requests ? "warning" : "neutral"}>{countLabel(metrics?.pending_verification_requests)} verification requests</StatusLine>
+              <StatusLine tone="success">{countLabel(metrics?.verified_professionals)} verified professionals</StatusLine>
+              <StatusLine tone={metrics?.open_link_requests ? "warning" : "neutral"}>{countLabel(metrics?.open_link_requests)} open link requests</StatusLine>
+            </div>
+          </section>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="h-auto w-full flex-wrap justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="ops">Ops & Beta</TabsTrigger>
+          <TabsTrigger value="payouts">Payouts</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
           <TabsTrigger value="estimator">Estimator Seeding</TabsTrigger>
           <TabsTrigger value="users">Users & Roles</TabsTrigger>
           <TabsTrigger value="couples">Wedding Plans</TabsTrigger>
+          <TabsTrigger value="demos">Demo Activity</TabsTrigger>
           <TabsTrigger value="risk">Free-tier Risk</TabsTrigger>
           <TabsTrigger value="planners">Planner Moderation</TabsTrigger>
           <TabsTrigger value="vendors">Vendor Moderation</TabsTrigger>
@@ -2003,78 +2134,117 @@ export default function AdminPortal() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Role Distribution</CardTitle>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Your platform</p>
+                <CardTitle>Customers and active work</CardTitle>
+                <CardDescription>The live account base and the work they are building in Zania.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span>Couples</span><span>{countLabel(metrics?.total_couples)}</span></div>
-                <div className="flex justify-between"><span>Planners</span><span>{countLabel(metrics?.total_planners)}</span></div>
-                <div className="flex justify-between"><span>Vendors</span><span>{countLabel(metrics?.total_vendors)}</span></div>
-                <div className="flex justify-between"><span>Admins</span><span>{countLabel(metrics?.total_admins)}</span></div>
+              <CardContent className="grid border-t md:grid-cols-2">
+                <section className="py-5 md:pr-8">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Customer conversion</p>
+                  <p className="mt-2 text-3xl font-semibold">{countLabel(metrics?.total_real_users)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Real accounts, excluding demos</p>
+                  <div className="mt-5 grid grid-cols-[1fr_auto_auto_auto] gap-x-4 gap-y-3 text-sm">
+                    <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Account</span>
+                    <span className="text-right text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Free</span>
+                    <span className="text-right text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Paying</span>
+                    <span className="text-right text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Renewal</span>
+                    <span>Couples</span>
+                    <span className="text-right text-muted-foreground">{countLabel(metrics?.free_couples)}</span>
+                    <span className="text-right font-semibold text-success">{countLabel(metrics?.paid_couples)}</span>
+                    <span className="text-right text-warning">{countLabel(metrics?.couples_needing_renewal)}</span>
+                    <span>Vendors</span>
+                    <span className="text-right text-muted-foreground">{countLabel(metrics?.free_vendors)}</span>
+                    <span className="text-right font-semibold text-success">{countLabel(metrics?.paid_vendors)}</span>
+                    <span className="text-right text-warning">{countLabel(metrics?.vendors_needing_renewal)}</span>
+                  </div>
+                </section>
+                <section className="border-t py-5 md:border-l md:border-t-0 md:pl-8">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Work in progress</p>
+                  <div className="mt-4 space-y-3 text-sm">
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Planner client spaces</span><span>{countLabel(metrics?.total_clients)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Vendor listings</span><span>{countLabel(metrics?.total_vendor_listings)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Budget items planned</span><span>{countLabel(metrics?.total_budget_items)}</span></div>
+                    <div className="flex justify-between gap-4"><span className="text-muted-foreground">Guests being managed</span><span>{countLabel(metrics?.total_guests)}</span></div>
+                  </div>
+                </section>
               </CardContent>
             </Card>
+
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Planning Data</CardTitle>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Action queue</p>
+                <CardTitle>Needs your attention</CardTitle>
+                <CardDescription>Only items requiring an owner decision appear here.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span>Planner Clients</span><span>{countLabel(metrics?.total_clients)}</span></div>
-                <div className="flex justify-between"><span>Budget Categories</span><span>{countLabel(metrics?.total_budget_items)}</span></div>
-                <div className="flex justify-between"><span>Guests</span><span>{countLabel(metrics?.total_guests)}</span></div>
-                <div className="flex justify-between"><span>Vendor Listings</span><span>{countLabel(metrics?.total_vendor_listings)}</span></div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Data Health</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span>Profiles missing names</span>
-                  <Badge variant={healthSummary.missingNames > 0 ? "destructive" : "success"}>
-                    {healthSummary.missingNames}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Listings pending approval</span>
-                  <Badge variant={healthSummary.pendingVendorCount > 0 ? "warning" : "success"}>
-                    {healthSummary.pendingVendorCount}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Listings without location</span>
-                  <Badge variant={healthSummary.noLocationCount > 0 ? "warning" : "success"}>
-                    {healthSummary.noLocationCount}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Flagged reputation reviews</span>
-                  <Badge variant={healthSummary.flaggedReviews > 0 ? "destructive" : "success"}>
-                    {healthSummary.flaggedReviews}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Beta Readiness</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span>Active beta trials</span><span>{countLabel(betaSnapshot?.active_beta_trials)}</span></div>
-                <div className="flex justify-between"><span>Recent failed syncs</span><span>{countLabel(betaSnapshot?.recent_failed_syncs)}</span></div>
-                <div className="flex justify-between"><span>Recent AI failures</span><span>{countLabel(betaSnapshot?.recent_ai_failures)}</span></div>
-                <div className="flex justify-between"><span>Wedding entitlements</span><span>{countLabel(betaSnapshot?.active_wedding_entitlements)}</span></div>
+              <CardContent className="space-y-3 border-t pt-5">
+                {overviewAttention.length > 0 ? (
+                  overviewAttention.map((item) => <StatusLine key={item.label} tone={item.tone}>{item.label}</StatusLine>)
+                ) : (
+                  <StatusLine tone="success">Nothing needs review right now</StatusLine>
+                )}
               </CardContent>
             </Card>
           </div>
-          <Card className="border-primary/20 bg-primary/5">
-            <CardContent className="py-4">
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <ShieldCheck className="h-4 w-4 text-primary" />
-                Admin actions are executed through secure RPCs and blocked for non-admin users at the database layer.
-              </p>
+
+          <Card>
+            <CardHeader>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Platform health</p>
+              <CardTitle>System and beta status</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-5 border-t pt-5 sm:grid-cols-2 lg:grid-cols-4">
+              <StatusLine tone={betaSnapshot?.recent_failed_syncs ? "danger" : "success"}>{countLabel(betaSnapshot?.recent_failed_syncs)} failed syncs recently</StatusLine>
+              <StatusLine tone={betaSnapshot?.recent_ai_failures ? "danger" : "success"}>{countLabel(betaSnapshot?.recent_ai_failures)} AI failures recently</StatusLine>
+              <StatusLine tone="info">{countLabel(betaSnapshot?.active_beta_trials)} active beta trials</StatusLine>
+              <StatusLine tone="info">{countLabel(betaSnapshot?.active_wedding_entitlements)} active wedding entitlements</StatusLine>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="demos" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Product curiosity</p>
+              <CardTitle>Demo activity</CardTitle>
+              <CardDescription>
+                Demo workspaces are isolated from customer operations. This view keeps only the anonymous interest signal.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid divide-y border-t sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+              <section className="py-5 sm:pr-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Unique visitors</p>
+                <p className="mt-2 text-3xl font-semibold">{countLabel(demoActivity?.total_demo_visitors)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">People who have started a demo</p>
+              </section>
+              <section className="py-5 sm:px-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">This week</p>
+                <p className="mt-2 text-3xl font-semibold">{countLabel(demoActivity?.demo_starts_last_7_days)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">New demo visitors in seven days</p>
+              </section>
+              <section className="py-5 sm:px-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Open now</p>
+                <p className="mt-2 text-3xl font-semibold">{countLabel(demoActivity?.active_demo_sessions)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">Active, short-lived sessions</p>
+              </section>
+              <section className="py-5 sm:pl-6">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Resets</p>
+                <p className="mt-2 text-3xl font-semibold">{countLabel(demoActivity?.demo_resets)}</p>
+                <p className="mt-1 text-sm text-muted-foreground">People exploring a workspace again</p>
+              </section>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Where interest is landing</CardTitle>
+              <CardDescription>These counts are unique demo visitors, not customer accounts or subscriptions.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-5 border-t pt-5 sm:grid-cols-3">
+              <StatusLine tone="info">{countLabel(demoActivity?.couple_demo_visitors)} explored the couple workspace</StatusLine>
+              <StatusLine tone="info">{countLabel(demoActivity?.planner_demo_visitors)} explored the planner workspace</StatusLine>
+              <StatusLine tone="info">{countLabel(demoActivity?.vendor_demo_visitors)} explored the vendor workspace</StatusLine>
             </CardContent>
           </Card>
         </TabsContent>
@@ -2164,6 +2334,11 @@ export default function AdminPortal() {
               </Table>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="payouts" className="space-y-4">
+          <AdminZaniaPayQueue />
+          <AdminZaniaPayLedger />
         </TabsContent>
 
         <TabsContent value="pricing" className="space-y-4">
@@ -2689,10 +2864,10 @@ export default function AdminPortal() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>User</TableHead>
-                    <TableHead>Current Role</TableHead>
-                    <TableHead>New Role</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead>Access & Plan</TableHead>
+                    <TableHead>Verification</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead className="text-right">Update</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2707,15 +2882,41 @@ export default function AdminPortal() {
                     const nextRole = roleDrafts[item.user_id] ?? item.role;
                     const roleChanged = nextRole !== item.role;
                     const isCurrentAdmin = item.user_id === user?.id;
+                    const accessHealth = getSubscriptionHealth(item.subscription_status, item.subscription_expires_at);
 
                     return (
                       <TableRow key={item.user_id}>
-                        <TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
                           <p className="font-medium">{item.full_name || item.company_name || "Unnamed User"}</p>
-                          <p className="text-xs text-muted-foreground">{item.email || item.user_id}</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            {item.is_demo ? "Demo account" : item.role}
+                          </p>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{item.email || item.user_id}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Joined {item.created_at ? new Date(item.created_at).toLocaleDateString() : "on an unknown date"}
+                        </p>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{item.role}</Badge>
+                          {accessHealth === "not_applicable" ? (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <div className="space-y-1">
+                              <StatusLine tone={accessHealthTone(accessHealth)}>{subscriptionHealthLabel(accessHealth)}</StatusLine>
+                              <p className="pl-4 text-xs text-muted-foreground">{accessPlanLabel(item.access_plan)}</p>
+                              <p className="pl-4 text-xs text-muted-foreground">{formatExpiry(item.subscription_expires_at)}</p>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {item.verification_status === "not_applicable" ? (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <StatusLine tone={item.verification_status === "verified" ? "success" : item.verification_status === "requested" ? "warning" : "neutral"}>
+                              {verificationLabel(item.verification_status)}
+                            </StatusLine>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Select
@@ -2735,12 +2936,9 @@ export default function AdminPortal() {
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {item.created_at ? new Date(item.created_at).toLocaleDateString() : "Unknown"}
-                        </TableCell>
                         <TableCell className="text-right">
                           {isCurrentAdmin ? (
-                            <Badge variant="secondary">Current Admin</Badge>
+                            <span className="text-sm text-muted-foreground">Current admin</span>
                           ) : (
                             <Button
                               size="sm"
@@ -2798,24 +2996,27 @@ export default function AdminPortal() {
                   <TableRow>
                     <TableHead>Couple</TableHead>
                     <TableHead>Wedding</TableHead>
-                    <TableHead>Wedding Plan</TableHead>
+                    <TableHead>Plan & Renewal</TableHead>
                     <TableHead>Last Updated</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {couples.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
                         No couples matched your filters.
                       </TableCell>
                     </TableRow>
                   )}
-                  {couples.map((item) => (
+                  {couples.map((item) => {
+                    const accessHealth = getSubscriptionHealth(item.planning_pass_status, item.planning_pass_expires_at);
+
+                    return (
                     <TableRow key={item.user_id}>
                       <TableCell>
                         <p className="font-medium">{item.full_name || "Unnamed Couple"}</p>
                         <p className="text-xs text-muted-foreground">{item.email || item.user_id}</p>
+                        {item.is_demo && <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Demo workspace</p>}
                       </TableCell>
                       <TableCell>
                         <p className="text-sm">{item.wedding_location || "Location not set"}</p>
@@ -2825,6 +3026,10 @@ export default function AdminPortal() {
                       </TableCell>
                       <TableCell>
                         <div className="space-y-2">
+                          <div>
+                            <StatusLine tone={accessHealthTone(accessHealth)}>{subscriptionHealthLabel(accessHealth)}</StatusLine>
+                            <p className="mt-1 pl-4 text-xs text-muted-foreground">Collaborative plan · {formatExpiry(item.planning_pass_expires_at)}</p>
+                          </div>
                           <Select
                             value={planningPassDrafts[item.user_id] ?? item.planning_pass_status}
                             onValueChange={(value) =>
@@ -2868,13 +3073,9 @@ export default function AdminPortal() {
                       <TableCell className="text-xs text-muted-foreground">
                         {new Date(item.updated_at).toLocaleDateString()}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant={item.planning_pass_status === "active" ? "success" : "outline"}>
-                          {item.planning_pass_status}
-                        </Badge>
-                      </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -3272,7 +3473,7 @@ export default function AdminPortal() {
                   <TableRow>
                     <TableHead>Suggested Vendor</TableHead>
                     <TableHead>Recommended By</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Review</TableHead>
                     <TableHead>Why They Matter</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
@@ -3399,22 +3600,24 @@ export default function AdminPortal() {
                       </TableCell>
                     </TableRow>
                   )}
-                  {vendors.map((item) => (
+                  {vendors.map((item) => {
+                    const accessHealth = getSubscriptionHealth(item.subscription_status, item.subscription_expires_at);
+
+                    return (
                     <TableRow key={item.listing_id}>
                       <TableCell>
                         <p className="font-medium">{item.business_name}</p>
                         <p className="text-xs text-muted-foreground">{item.category}{item.location ? ` • ${item.location}` : ""}</p>
                       </TableCell>
-                      <TableCell className="space-x-2">
-                        <Badge variant={item.is_approved ? "secondary" : "outline"}>
-                          {item.is_approved ? "Approved" : "Pending"}
-                        </Badge>
-                        <Badge variant={item.is_verified ? "secondary" : "outline"}>
-                          {item.is_verified ? "Verified" : "Unverified"}
-                        </Badge>
-                        {item.verification_requested && !item.is_verified && (
-                          <Badge variant="outline">Verification requested</Badge>
-                        )}
+                      <TableCell>
+                        <div className="space-y-2">
+                          <StatusLine tone={item.is_approved ? "success" : "warning"}>
+                            {item.is_approved ? "Approved for the directory" : "Awaiting approval"}
+                          </StatusLine>
+                          <StatusLine tone={item.is_verified ? "success" : item.verification_requested ? "warning" : "neutral"}>
+                            {item.is_verified ? "Verified" : item.verification_requested ? "Verification requested" : "Not verified"}
+                          </StatusLine>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <p className="text-sm">{item.owner_name || (item.user_id ? "Unknown owner" : "Curated listing")}</p>
@@ -3427,7 +3630,8 @@ export default function AdminPortal() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Directory profile</p>
                           <Select
                             value={vendorProfileKindDrafts[item.listing_id] ?? item.profile_kind}
                             onValueChange={(value) =>
@@ -3446,7 +3650,9 @@ export default function AdminPortal() {
                               <SelectItem value="featured">featured</SelectItem>
                             </SelectContent>
                           </Select>
-                          <Input
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Featured rank</label>
+                            <Input
                             value={vendorFeaturedRankDrafts[item.listing_id] ?? "0"}
                             onChange={(e) =>
                               setVendorFeaturedRankDrafts((prev) => ({
@@ -3457,9 +3663,12 @@ export default function AdminPortal() {
                             placeholder="Featured rank"
                             type="number"
                             min="0"
-                            className="w-[150px]"
-                          />
-                          <Textarea
+                              className="w-[150px]"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">Public listing note</label>
+                            <Textarea
                             value={vendorProfileNoteDrafts[item.listing_id] ?? ""}
                             onChange={(e) =>
                               setVendorProfileNoteDrafts((prev) => ({
@@ -3469,8 +3678,9 @@ export default function AdminPortal() {
                             }
                             placeholder="Public listing note"
                             rows={3}
-                            className="min-w-[240px]"
-                          />
+                              className="min-w-[240px]"
+                            />
+                          </div>
                           <Button
                             size="sm"
                             variant="outline"
@@ -3530,7 +3740,13 @@ export default function AdminPortal() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <StatusLine tone={accessHealthTone(accessHealth)}>{subscriptionHealthLabel(accessHealth)}</StatusLine>
+                            <p className="pl-4 text-xs text-muted-foreground">Professional vendor plan · {formatExpiry(item.subscription_expires_at)}</p>
+                          </div>
+                          <div className="border-t border-border/70 pt-3">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Change access</p>
                           <Select
                             value={subscriptionDrafts[item.listing_id] ?? item.subscription_status}
                             onValueChange={(value) =>
@@ -3569,6 +3785,7 @@ export default function AdminPortal() {
                           >
                             Save subscription
                           </Button>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
@@ -3614,7 +3831,8 @@ export default function AdminPortal() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -3670,7 +3888,7 @@ export default function AdminPortal() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Planner</TableHead>
-                    <TableHead>Type / Status</TableHead>
+                    <TableHead>Profile</TableHead>
                     <TableHead>Subscription</TableHead>
                     <TableHead>Founding</TableHead>
                     <TableHead>Last Updated</TableHead>
@@ -3685,7 +3903,10 @@ export default function AdminPortal() {
                       </TableCell>
                     </TableRow>
                   )}
-                  {planners.map((item) => (
+                  {planners.map((item) => {
+                    const accessHealth = getSubscriptionHealth(item.planner_subscription_status, item.planner_subscription_expires_at);
+
+                    return (
                     <TableRow key={item.user_id}>
                       <TableCell>
                         <p className="font-medium">
@@ -3695,27 +3916,31 @@ export default function AdminPortal() {
                         </p>
                         <p className="text-xs text-muted-foreground">{item.company_email || item.user_id}</p>
                       </TableCell>
-                      <TableCell className="space-x-2">
-                        <Badge variant="outline">
-                          {item.planner_type === 'committee' ? 'Committee' : 'Professional'}
-                        </Badge>
-                        {item.planner_type === 'committee' && (
-                          <Badge variant={item.planner_subscription_status === "active" && item.planner_verified ? "success" : "outline"}>
-                            {item.planner_subscription_status === "active" && item.planner_verified ? 'Exports enabled' : 'Exports locked'}
-                          </Badge>
-                        )}
-                        <Badge variant={item.planner_verified ? "success" : "outline"}>
-                          {item.planner_verified ? "Verified" : "Unverified"}
-                        </Badge>
-                        {item.planner_verification_requested && !item.planner_verified && (
-                          <Badge variant="outline">Verification requested</Badge>
-                        )}
-                        {item.founding_planner_contributor && (
-                          <Badge className="border-0 bg-[#ead8a8] text-[#4c3528]">Founding contributor</Badge>
-                        )}
-                      </TableCell>
                       <TableCell>
                         <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                            {item.planner_type === 'committee' ? 'Committee workspace' : 'Professional planner'}
+                          </p>
+                          <StatusLine tone={item.planner_verified ? "success" : item.planner_verification_requested ? "warning" : "neutral"}>
+                            {item.planner_verified ? "Verified" : item.planner_verification_requested ? "Verification requested" : "Not verified"}
+                          </StatusLine>
+                          {item.planner_type === 'committee' && (
+                            <StatusLine tone={item.planner_subscription_status === "active" && item.planner_verified ? "success" : "neutral"}>
+                              {item.planner_subscription_status === "active" && item.planner_verified ? 'Exports enabled' : 'Exports locked'}
+                            </StatusLine>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <StatusLine tone={accessHealthTone(accessHealth)}>{subscriptionHealthLabel(accessHealth)}</StatusLine>
+                            <p className="pl-4 text-xs text-muted-foreground">
+                              {item.planner_type === "committee" ? "Committee pass" : "Professional planner plan"} · {formatExpiry(item.planner_subscription_expires_at)}
+                            </p>
+                          </div>
+                          <div className="border-t border-border/70 pt-3">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Change access</p>
                           <Select
                             value={plannerSubscriptionDrafts[item.user_id] ?? item.planner_subscription_status}
                             onValueChange={(value) =>
@@ -3759,10 +3984,14 @@ export default function AdminPortal() {
                             />
                             <span className="text-sm">Verified</span>
                           </div>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
+                          <p className="text-xs text-muted-foreground">
+                            {item.founding_planner_contributor ? "Founding contributor" : "Standard contributor"}
+                          </p>
                           <div className="flex items-center gap-2">
                             <input
                               type="checkbox"
@@ -3799,11 +4028,12 @@ export default function AdminPortal() {
                           onClick={() => handlePlannerAccessUpdate(item.user_id)}
                         >
                           {savingUserId === item.user_id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                          Save access
+                          Save subscription & verification
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>

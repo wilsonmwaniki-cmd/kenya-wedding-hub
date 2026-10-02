@@ -31,6 +31,8 @@ import AnimatedNumber from '@/components/AnimatedNumber';
 import { compareTasksByWeddingChecklistOrder, getNextWeddingChecklistTask } from '@/lib/weddingTaskTemplates';
 import { canonicalizeVendorCategory } from '@/lib/vendorCategories';
 import type { AttentionItem } from '@/lib/attention';
+import { hasPendingEstimatorPlanDraft, seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
+import ContextualAssistantAction from '@/components/ContextualAssistantAction';
 
 interface DashboardStats {
   totalBudget: number;
@@ -307,6 +309,7 @@ export default function Dashboard() {
   const spaceTablePlanEnabled = isSpaceTablePlanEnabled();
   const labsEnabled = isLabsEnabled();
   const [dashboardNudgeDismissed, setDashboardNudgeDismissed] = useState(false);
+  const [estimatorRecoveryAttempted, setEstimatorRecoveryAttempted] = useState(false);
 
   useEffect(() => {
     if (location.hash !== '#planner-change-requests' || isPlanner) return;
@@ -333,6 +336,49 @@ export default function Dashboard() {
     enabled: Boolean(user && !isPlanner && profile?.role === 'couple'),
     staleTime: 60_000,
   });
+
+  useEffect(() => {
+    if (
+      estimatorRecoveryAttempted
+      || !user
+      || profile?.role !== 'couple'
+      || !hasPendingEstimatorPlanDraft(user.user_metadata)
+    ) return;
+
+    let active = true;
+    setEstimatorRecoveryAttempted(true);
+
+    void seedPendingEstimatorPlanForUser({
+      userId: user.id,
+      role: profile.role,
+      plannerType: profile.planner_type,
+      userMetadata: user.user_metadata,
+    })
+      .then(async (seeded) => {
+        if (!active || !seeded) return;
+        await Promise.all([dashboardQuery.refetch(), ownershipSummaryQuery.refetch()]);
+        if (active) {
+          toast({
+            title: 'Your estimate is ready',
+            description: 'We added the estimate you made before creating your account to this wedding plan.',
+          });
+        }
+      })
+      .catch((error) => {
+        console.error('Could not recover pending estimator plan:', error);
+        if (active) {
+          toast({
+            title: 'We could not restore your estimate yet',
+            description: 'Your estimate is safe. Refresh the page and try again.',
+            variant: 'destructive',
+          });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [dashboardQuery, estimatorRecoveryAttempted, ownershipSummaryQuery, profile?.planner_type, profile?.role, toast, user]);
 
   useEffect(() => {
     if (isPlanner && !plannerClientHydrating && !selectedClient) {
@@ -956,9 +1002,17 @@ export default function Dashboard() {
                 <h2 className="mt-1.5 line-clamp-2 text-xl font-semibold text-foreground">{homePrimaryAction.label}</h2>
                 <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{homePrimaryAction.description}</p>
               </div>
-              <Button asChild size="sm" className="shrink-0 sm:min-w-32">
-                <Link to={homePrimaryAction.href}>{homePrimaryAction.cta ?? homePrimaryAction.label}</Link>
-              </Button>
+              <div className="flex shrink-0 flex-col gap-2 sm:min-w-44">
+                <ContextualAssistantAction
+                  label="Tell Zania what you need"
+                  prompt="What should we focus on next, and can you help us do it?"
+                  context={dashboardConciergeContext}
+                  className="w-full"
+                />
+                <Button asChild size="sm" variant="ghost" className="w-full">
+                  <Link to={homePrimaryAction.href}>{homePrimaryAction.cta ?? homePrimaryAction.label}</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -1089,6 +1143,11 @@ export default function Dashboard() {
             </div>
 
             <div className="flex flex-wrap gap-3">
+              <ContextualAssistantAction
+                label="Tell Zania what you need"
+                prompt="What should we focus on next, and can you help us do it?"
+                context={dashboardConciergeContext}
+              />
               <Button asChild>
                 <Link to={homePrimaryAction.href}>{homePrimaryAction.cta ?? homePrimaryAction.label}</Link>
               </Button>

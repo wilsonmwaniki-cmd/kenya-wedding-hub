@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createCorsHeaders } from "../_shared/cors.ts";
 import { assertActiveAuthSession, isAuthSessionError } from "../_shared/sessionGuard.ts";
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from "../_shared/demoGuard.ts";
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -57,6 +58,9 @@ serve(async (req) => {
 
   if (authError || !authData.user) {
     return jsonResponse(401, { error: 'Unauthorized' });
+  }
+  if (isTemporaryDemoUser(authData.user)) {
+    return jsonResponse(403, { error: DEMO_EXTERNAL_ACTION_MESSAGE, code: 'demo_action_blocked' });
   }
 
   try {

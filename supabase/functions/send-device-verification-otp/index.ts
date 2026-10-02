@@ -137,6 +137,7 @@ serve(async (req) => {
         expiresAt: challenge.expires_at,
         retryAfterSeconds: challenge.retry_after_seconds ?? 0,
         emailHint: challenge.email_hint ?? user.email,
+        deliveryStatus: 'already_sent',
       }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -169,10 +170,48 @@ serve(async (req) => {
     const resendPayload = await resendResponse.json();
     if (!resendResponse.ok) {
       console.error('send-device-verification-otp resend error:', resendPayload);
+      await Promise.all([
+        serviceClient
+          .from('device_verification_challenges')
+          .update({ status: 'failed' })
+          .eq('id', challenge.challenge_id)
+          .eq('status', 'pending'),
+        serviceClient
+          .from('otp_audit_events')
+          .update({
+            status: 'failed',
+            metadata: {
+              challenge_id: challenge.challenge_id,
+              device_id: deviceId,
+              delivery_status: 'failed',
+            },
+          })
+          .eq('user_id', user.id)
+          .eq('status', 'requested')
+          .contains('metadata', { challenge_id: challenge.challenge_id }),
+      ]);
       return new Response(JSON.stringify({ error: 'We could not send a verification code right now.' }), {
         status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    const { error: auditUpdateError } = await serviceClient
+      .from('otp_audit_events')
+      .update({
+        metadata: {
+          challenge_id: challenge.challenge_id,
+          device_id: deviceId,
+          delivery_status: 'sent',
+          resend_email_id: resendPayload.id,
+        },
+      })
+      .eq('user_id', user.id)
+      .eq('status', 'requested')
+      .contains('metadata', { challenge_id: challenge.challenge_id });
+
+    if (auditUpdateError) {
+      console.error('send-device-verification-otp audit update error:', auditUpdateError);
     }
 
     return new Response(JSON.stringify({
@@ -181,6 +220,7 @@ serve(async (req) => {
       retryAfterSeconds: challenge.retry_after_seconds ?? 0,
       emailHint: challenge.email_hint ?? user.email,
       emailId: resendPayload.id,
+      deliveryStatus: 'sent',
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

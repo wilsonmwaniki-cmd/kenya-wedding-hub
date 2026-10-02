@@ -24,6 +24,7 @@ import {
   type PendingWriteAction,
 } from '@/lib/aiAssistant';
 import { listAttentionItems } from '@/lib/attention';
+import { getAssistantAudience, loadLatestAssistantConversation } from '@/lib/assistantConversations';
 
 interface VendorListingAccess {
   id: string;
@@ -443,6 +444,8 @@ export default function AiChat() {
   const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
@@ -468,6 +471,10 @@ export default function AiChat() {
 
   const feature = useMemo(
     () => getAssistantFeature(profile?.role, profile?.planner_type),
+    [profile?.planner_type, profile?.role],
+  );
+  const assistantAudience = useMemo(
+    () => getAssistantAudience(profile?.role, profile?.planner_type),
     [profile?.planner_type, profile?.role],
   );
 
@@ -516,10 +523,31 @@ export default function AiChat() {
   );
 
   useEffect(() => {
-    if (profile && messages.length === 0 && experience.intro) {
+    if (!session?.user?.id || !decision?.allowed) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    void loadLatestAssistantConversation(assistantAudience)
+      .then((history) => {
+        if (cancelled) return;
+        setConversationId(history.conversationId);
+        setMessages(history.messages);
+      })
+      .catch((error) => {
+        if (!cancelled) console.error('Could not load Ask Zania history:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assistantAudience, decision?.allowed, session?.user?.id]);
+
+  useEffect(() => {
+    if (!historyLoading && profile && messages.length === 0 && experience.intro) {
       setMessages([{ role: 'assistant', content: experience.intro }]);
     }
-  }, [experience.intro, messages.length, profile]);
+  }, [experience.intro, historyLoading, messages.length, profile]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -552,7 +580,12 @@ export default function AiChat() {
 
   const sendMessage = async (
     nextInput: string,
-    options?: { allowWriteActions?: boolean; confirmedActions?: PendingWriteAction[]; skipUserEcho?: boolean },
+    options?: {
+      allowWriteActions?: boolean;
+      confirmedActions?: PendingWriteAction[];
+      revokedActions?: PendingWriteAction[];
+      skipUserEcho?: boolean;
+    },
   ) => {
     if (!nextInput.trim() || loading) return;
     setInputError(null);
@@ -612,16 +645,23 @@ export default function AiChat() {
         selectedClientId: isPlanner ? selectedClient?.id ?? null : null,
         allowWriteActions: options?.allowWriteActions ?? false,
         confirmedActions: options?.confirmedActions ?? [],
+        revokedActions: options?.revokedActions ?? [],
         page: 'ai-chat',
-        surface: options?.allowWriteActions ? 'full_chat_with_writes' : 'full_chat',
+        surface: options?.revokedActions?.length
+          ? 'full_chat_write_cancelled'
+          : options?.allowWriteActions
+            ? 'full_chat_with_writes'
+            : 'full_chat',
         contextSource: 'full_chat',
         starterPrompt: shouldEchoUser ? null : nextInput.trim(),
+        conversationId,
       });
 
       if (result.usage) {
         setUsage(result.usage);
         queryClient.setQueryData(usageQueryKey, result.usage);
       }
+      if (result.conversationId) setConversationId(result.conversationId);
       setPendingActions(result.pendingActions);
       setMessages((prev) => [...prev, { role: 'assistant', content: result.content }]);
       if (options?.allowWriteActions && options.confirmedActions?.length) {
@@ -699,15 +739,18 @@ export default function AiChat() {
     }
   };
 
-  const cancelPendingActions = () => {
-    setPendingActions([]);
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: '## No changes made\n\nI held off on those write actions. If you want, I can revise the plan first or prepare a smaller action set.',
-      },
-    ]);
+  const cancelPendingActions = async () => {
+    if (!pendingActions.length || loading) return;
+
+    setConfirmingWriteActions(true);
+    try {
+      await sendMessage(
+        'Cancel the pending write actions.',
+        { revokedActions: pendingActions, skipUserEcho: true },
+      );
+    } finally {
+      setConfirmingWriteActions(false);
+    }
   };
 
   const aiDisabledByAdmin = decision?.allowed && usage?.ai_enabled === false;

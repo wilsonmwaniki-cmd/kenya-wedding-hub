@@ -10,6 +10,7 @@ import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
 import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
 import { escapeHtml, sanitizeBasicHtml } from '../_shared/htmlSanitizer.ts';
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from '../_shared/demoGuard.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_ANON_KEY =
@@ -92,6 +93,12 @@ serve(async (req) => {
   }
 
   const user = authData.user;
+  if (isTemporaryDemoUser(user)) {
+    return new Response(JSON.stringify({ error: DEMO_EXTERNAL_ACTION_MESSAGE, code: 'demo_action_blocked' }), {
+      status: 403,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
   try {
     await assertActiveAuthSession(adminClient, authHeader, user.id);

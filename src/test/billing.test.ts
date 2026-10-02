@@ -5,6 +5,11 @@ import {
 } from '@/lib/billing';
 
 describe('billing callback routing', () => {
+  it('defaults every new or unlabelled checkout callback to Paystack', () => {
+    expect(getCheckoutProviderFromSearchParams(new URLSearchParams())).toBe('paystack');
+    expect(getCheckoutProviderFromSearchParams(new URLSearchParams('payment_provider=unknown'))).toBe('paystack');
+  });
+
   it('uses the Paystack reference and explicit provider from the callback', () => {
     const params = new URLSearchParams(
       'payment_provider=paystack&trxref=pzania-123&reference=pzania-123',
@@ -14,7 +19,7 @@ describe('billing callback routing', () => {
     expect(getCheckoutProviderFromSearchParams(params)).toBe('paystack');
   });
 
-  it('preserves Pesapal callback compatibility', () => {
+  it('preserves explicit Pesapal callback compatibility for historical payments', () => {
     const params = new URLSearchParams(
       'payment_provider=pesapal&OrderTrackingId=pesapal-order-123',
     );

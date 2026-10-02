@@ -10,6 +10,10 @@ describe('launch feature release controls', () => {
     expect(resolveReleaseChannel(undefined, false)).toBe('production');
   });
 
+  it('enables staging routes when served from a known staging hostname', () => {
+    expect(resolveReleaseChannel(undefined, false, true)).toBe('staging');
+  });
+
   it('keeps the planning experiment off unless it is explicitly enabled', () => {
     expect(resolvePlanningExperimentEnabled()).toBe(false);
     expect(resolvePlanningExperimentEnabled('false')).toBe(false);
@@ -17,7 +21,7 @@ describe('launch feature release controls', () => {
   });
 
   it('keeps the couple workspace and safe professional entry routes active in production', () => {
-    ['/clients', '/dashboard', '/start-plan', '/budget', '/tasks', '/vendors', '/vendor-dashboard', '/vendor-settings', '/settings'].forEach((path) => {
+    ['/clients', '/dashboard', '/start-plan', '/plan', '/budget', '/tasks', '/vendors', '/vendor-dashboard', '/vendor-settings', '/settings'].forEach((path) => {
       expect(isPathEnabledForRelease(path, 'production')).toBe(true);
     });
 

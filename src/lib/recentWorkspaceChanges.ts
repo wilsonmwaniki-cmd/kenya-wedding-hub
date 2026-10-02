@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { supabase } from '@/integrations/supabase/client';
+import { retryTransientRequest } from '@/lib/requestRetry';
 
 export interface RecentWorkspaceChange {
   id: string;
@@ -12,6 +13,21 @@ export interface RecentWorkspaceChange {
   actionLabel: string | null;
   actionPath: string | null;
   metadata: Record<string, unknown>;
+}
+
+export function hideChangesAlreadyNeedingAttention(
+  changes: RecentWorkspaceChange[],
+  attentionItems: Array<{ sourceType: string; sourceId: string | null }>,
+) {
+  const activeSources = new Set(
+    attentionItems
+      .filter((item) => item.sourceId)
+      .map((item) => `${item.sourceType}:${item.sourceId}`),
+  );
+
+  return changes.filter(
+    (change) => !change.subjectId || !activeSources.has(`${change.subjectType}:${change.subjectId}`),
+  );
 }
 
 function nullableString(value: unknown) {
@@ -37,9 +53,9 @@ export function resolveRecentWorkspaceChangeActionPath(
 }
 
 export async function listRecentWorkspaceChanges(limit = 5): Promise<RecentWorkspaceChange[]> {
-  const { data, error } = await (supabase.rpc as any)('list_my_recent_workspace_events', {
+  const { data, error } = await retryTransientRequest(() => (supabase.rpc as any)('list_my_recent_workspace_events', {
     limit_input: limit,
-  });
+  }));
 
   if (error) throw error;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRecoverableBundleError } from '@/lib/bundleRecovery';
+import { isRecoverableBundleError, resetBundleRecoveryAttempt } from '@/lib/bundleRecovery';
 
 describe('isRecoverableBundleError', () => {
   it.each([
@@ -13,5 +13,13 @@ describe('isRecoverableBundleError', () => {
 
   it('does not reload for ordinary render failures', () => {
     expect(isRecoverableBundleError(new Error('Cannot read properties of undefined'))).toBe(false);
+  });
+
+  it('clears a previous recovery marker before an intentional navigation', () => {
+    window.sessionStorage.setItem('zania:bundle-recovery-attempted', 'previous-attempt');
+
+    resetBundleRecoveryAttempt();
+
+    expect(window.sessionStorage.getItem('zania:bundle-recovery-attempted')).toBeNull();
   });
 });

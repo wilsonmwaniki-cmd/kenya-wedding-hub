@@ -95,11 +95,11 @@ function ZaniaDateInput({
           aria-required={required}
           aria-haspopup="dialog"
           aria-label={props["aria-label"] || (displayValue ? `Selected date ${displayValue}` : placeholder || "Choose date")}
-          className={cn(inputClassName, "justify-between text-left font-normal", !displayValue && "text-muted-foreground", className)}
+          className={cn(inputClassName, "min-w-0 gap-1.5 justify-between text-left text-sm font-normal tabular-nums sm:gap-2", !displayValue && "text-muted-foreground", className)}
         >
-          <span className="flex min-w-0 items-center gap-2.5">
+          <span className="flex min-w-0 flex-1 items-center gap-2">
             <CalendarDays className="h-4 w-4 shrink-0 text-primary/80" aria-hidden="true" />
-            <span>{displayValue || placeholder || "dd/mm/yyyy"}</span>
+            <span className="truncate whitespace-nowrap">{displayValue || placeholder || "dd/mm/yyyy"}</span>
           </span>
           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </button>

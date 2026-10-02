@@ -11,6 +11,7 @@ import { loadPricingCheckoutConfig, loadPricingPaymentCatalog } from '../_shared
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
 import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from '../_shared/demoGuard.ts';
 
 function callbackUrlWithProvider(value: string) {
   const url = new URL(value);
@@ -80,6 +81,12 @@ serve(async (req) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: 'You must be signed in before checkout can start.' }), {
         status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (isTemporaryDemoUser(user)) {
+      return new Response(JSON.stringify({ error: DEMO_EXTERNAL_ACTION_MESSAGE, code: 'demo_action_blocked' }), {
+        status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

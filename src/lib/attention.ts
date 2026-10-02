@@ -126,7 +126,10 @@ export function buildAttentionBrief(items: AttentionItem[]) {
         ? ` · ${item.metadata.wedding_name}`
         : '';
       const due = item.dueAt ? ` · due ${item.dueAt.slice(0, 10)}` : '';
-      return `- ${item.priority.toUpperCase()}: ${item.title}${weddingName}${due}${item.summary ? ` — ${item.summary}` : ''}`;
+      const action = item.actionLabel && item.actionPath
+        ? ` · available action: ${item.actionLabel} (${item.actionPath})`
+        : '';
+      return `- ${item.priority.toUpperCase()}: ${item.title}${weddingName}${due}${item.summary ? ` — ${item.summary}` : ''}${action}`;
     })
     .join('\n');
 }

@@ -70,6 +70,7 @@ import {
   vendorCategoriesMatch,
 } from '@/lib/vendorCategories';
 import { recalibrateBudgetAllocations } from '@/lib/budgetRecalibration';
+import { summarizeWeddingBudget } from '@/lib/budgetAllocation';
 
 interface BudgetCategory {
   id: string;
@@ -205,6 +206,10 @@ function formatCurrency(value: number | null | undefined) {
 function formatIntegerDraft(value: string) {
   const digits = value.replace(/\D/g, '');
   return digits ? Number(digits).toLocaleString('en-KE') : '';
+}
+
+function sanitizeIntegerDraft(value: string) {
+  return value.replace(/\D/g, '');
 }
 
 function normalizeCategoryName(value: string) {
@@ -363,8 +368,10 @@ export default function Budget() {
   const [savingSpentId, setSavingSpentId] = useState<string | null>(null);
   const [savingWorkflowId, setSavingWorkflowId] = useState<string | null>(null);
   const [budgetGoalDraft, setBudgetGoalDraft] = useState('');
+  const editingBudgetGoalRef = useRef(false);
   const [savingBudgetGoal, setSavingBudgetGoal] = useState(false);
   const [expectedGuestCountDraft, setExpectedGuestCountDraft] = useState('');
+  const editingExpectedGuestCountRef = useRef(false);
   const [savingExpectedGuestCount, setSavingExpectedGuestCount] = useState(false);
   const [benchmarksLoading, setBenchmarksLoading] = useState(false);
   const [categoryBenchmarks, setCategoryBenchmarks] = useState<Record<string, VendorPriceBenchmark>>({});
@@ -399,6 +406,7 @@ export default function Budget() {
     notes: '',
   });
   const [processedCheckoutSessionId, setProcessedCheckoutSessionId] = useState<string | null>(null);
+  const budgetItemsRef = useRef<HTMLDivElement>(null);
   const upgradeState = searchParams.get('upgrade');
   const checkoutReference = getCheckoutReferenceFromSearchParams(searchParams);
   const checkoutProvider = getCheckoutProviderFromSearchParams(searchParams);
@@ -580,7 +588,9 @@ export default function Budget() {
           changeType: vendorEditorRecord ? 'update' : 'create',
           targetId: vendorEditorRecord?.id,
           currentPayload: vendorEditorRecord ? vendorEditorRecord as unknown as Record<string, unknown> : undefined,
-          proposedPayload: updates,
+          proposedPayload: vendorEditorRecord
+            ? updates
+            : { ...updates, wedding_id: activeWeddingId },
         });
         toast({ title: vendorEditorRecord ? 'Vendor update sent for approval' : 'Vendor sent for approval', description: 'The couple will review these details.' });
       } else if (vendorEditorRecord) {
@@ -604,6 +614,7 @@ export default function Budget() {
         const { data: insertedVendor, error } = await supabase.from('vendors').insert({
           user_id: user.id,
           client_id: isPlanner && selectedClient ? selectedClient.id : null,
+          wedding_id: activeWeddingId,
           ...newVendorDetails,
           selection_status: 'shortlisted',
         }).select('id').single();
@@ -714,6 +725,7 @@ export default function Budget() {
       vendor_listing_id: suggestion?.id ?? null,
     };
     if (isPlanner && selectedClient) insert.client_id = selectedClient.id;
+    if (activeWeddingId) insert.wedding_id = activeWeddingId;
 
     try {
       if (plannerNeedsApproval && selectedClient?.linked_user_id) {
@@ -732,6 +744,7 @@ export default function Budget() {
             status: insert.status,
             selection_status: insert.selection_status,
             vendor_listing_id: insert.vendor_listing_id,
+            wedding_id: insert.wedding_id ?? null,
           },
         });
         toast({ title: 'Vendor sent for approval', description: `${vendorName} will appear after the couple approves it.` });
@@ -1297,17 +1310,19 @@ export default function Budget() {
     }
   };
 
-  const totalAllocated = categories.reduce((sum, category) => sum + category.allocated, 0);
-  const totalSpent = categories.reduce((sum, category) => sum + category.spent, 0);
   const weddingCategories = categories.filter((category) => category.budget_scope === 'wedding');
   const personalCategories = categories.filter((category) => category.budget_scope === 'personal');
-  const visibleCategories = showPersonalBudget ? categories : weddingCategories;
+  const visibleCategories = activeBudgetScope === 'personal' ? personalCategories : weddingCategories;
   const visibleAllocated = visibleCategories.reduce((sum, category) => sum + category.allocated, 0);
   const visibleSpent = visibleCategories.reduce((sum, category) => sum + category.spent, 0);
-  const weddingAllocated = totalAllocated;
   const storedWeddingBudgetGoal = Number(isPlanner ? selectedClient?.wedding_budget_goal : profile?.wedding_budget_goal);
-  const weddingBudgetGoal = storedWeddingBudgetGoal > 0 ? storedWeddingBudgetGoal : totalAllocated;
-  const visibleBudgetGoal = weddingBudgetGoal;
+  const weddingAllocated = weddingCategories.reduce((sum, category) => sum + category.allocated, 0);
+  const weddingBudgetGoal = storedWeddingBudgetGoal > 0 ? storedWeddingBudgetGoal : weddingAllocated;
+  const visibleBudgetGoal = activeBudgetScope === 'wedding' ? weddingBudgetGoal : visibleAllocated;
+  const weddingBudgetSummary = useMemo(
+    () => summarizeWeddingBudget(categories, weddingBudgetGoal),
+    [categories, weddingBudgetGoal],
+  );
   const visibleAllocationPercentage = visibleBudgetGoal > 0
     ? (visibleAllocated / visibleBudgetGoal) * 100
     : 0;
@@ -1333,11 +1348,15 @@ export default function Budget() {
   }, 0);
 
   useEffect(() => {
-    setBudgetGoalDraft(Math.round(weddingBudgetGoal).toLocaleString('en-KE'));
+    if (!editingBudgetGoalRef.current) {
+      setBudgetGoalDraft(Math.round(weddingBudgetGoal).toLocaleString('en-KE'));
+    }
   }, [weddingBudgetGoal]);
 
   useEffect(() => {
-    setExpectedGuestCountDraft(Math.round(expectedGuestCount).toLocaleString('en-KE'));
+    if (!editingExpectedGuestCountRef.current) {
+      setExpectedGuestCountDraft(Math.round(expectedGuestCount).toLocaleString('en-KE'));
+    }
   }, [expectedGuestCount]);
 
   const saveBudgetGoal = async () => {
@@ -1366,9 +1385,9 @@ export default function Budget() {
     setSavingBudgetGoal(true);
     const shouldRecalibrate = normalizedBudgetGoal !== Math.round(weddingAllocated) && !plannerNeedsApproval;
     const recalibration = shouldRecalibrate
-      ? recalibrateBudgetAllocations(categories, normalizedBudgetGoal)
+      ? recalibrateBudgetAllocations(weddingCategories, normalizedBudgetGoal)
       : null;
-    const previousAllocations = categories.map((category) => ({
+    const previousAllocations = weddingCategories.map((category) => ({
       id: category.id,
       allocated: category.allocated,
       suggested_allocated: category.suggested_allocated,
@@ -1548,9 +1567,9 @@ export default function Budget() {
   const selectedPaymentCategoryOption = paymentCategoryOptions.find(
     (option) => option.value === paymentLog.categorySelection,
   );
-  const currentScopePayments = showPersonalBudget
-    ? paymentRecords
-    : paymentRecords.filter((payment) => payment.budget_scope === 'wedding');
+  const currentScopePayments = paymentRecords.filter(
+    (payment) => payment.budget_scope === activeBudgetScope,
+  );
   const currentScopePaymentTotal = currentScopePayments.reduce((sum, payment) => sum + payment.amount, 0);
   const invoiceTotal = activeBudgetScope === 'wedding' ? totalFinalVendorContract : visibleAllocated;
   const totalBalance = Math.max(invoiceTotal - currentScopePaymentTotal, 0);
@@ -1928,6 +1947,15 @@ export default function Budget() {
       });
   }, [categorySearch, visibleCategories]);
 
+  const openBudgetCategory = (categoryId: string) => {
+    setCategorySearch('');
+    setSelectedCategoryId(categoryId);
+    setInlineModule(null);
+    window.requestAnimationFrame(() => {
+      budgetItemsRef.current?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
+    });
+  };
+
   const selectedBudgetCategory = useMemo(
     () => filteredVisibleCategories.find((category) => category.id === selectedCategoryId) ?? null,
     [filteredVisibleCategories, selectedCategoryId],
@@ -2098,75 +2126,116 @@ export default function Budget() {
         </div>
       </header>
 
+      {showPersonalBudget ? (
+        <div className="flex w-fit items-center rounded-xl border border-border bg-card p-1 shadow-sm" aria-label="Budget type">
+          <Button
+            type="button"
+            size="sm"
+            variant={activeBudgetScope === 'wedding' ? 'default' : 'ghost'}
+            onClick={() => setActiveBudgetScope('wedding')}
+          >
+            Wedding budget
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={activeBudgetScope === 'personal' ? 'default' : 'ghost'}
+            onClick={() => setActiveBudgetScope('personal')}
+          >
+            Personal costs
+          </Button>
+        </div>
+      ) : null}
+
       <section
         className="grid overflow-hidden rounded-[1.35rem] border border-border bg-card shadow-card lg:grid-cols-[1fr_2fr_1fr]"
         aria-label="Wedding budget summary"
       >
         <div className="border-b border-border p-4 sm:p-5 lg:border-b-0 lg:border-r">
-          <Label
-            htmlFor="workspace-total-budget"
-            className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]"
-          >
-            Intended wedding budget
-          </Label>
-          <div className="relative mt-2">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
-            <Input
-              id="workspace-total-budget"
-              aria-label="Adjust wedding budget"
-              type="text"
-              inputMode="numeric"
-              value={budgetGoalDraft}
-              onChange={(event) => setBudgetGoalDraft(formatIntegerDraft(event.target.value))}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  void saveBudgetGoal();
-                }
-              }}
-              disabled={savingBudgetGoal}
-              className="h-10 bg-background pl-12 text-sm font-semibold sm:h-11 sm:text-base"
-            />
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            className="mt-3 w-full"
-            disabled={savingBudgetGoal || !budgetGoalDraft}
-            onClick={() => void saveBudgetGoal()}
-          >
-            {savingBudgetGoal ? 'Saving…' : 'Save and rebalance'}
-          </Button>
+          {activeBudgetScope === 'wedding' ? (
+            <>
+              <Label
+                htmlFor="workspace-total-budget"
+                className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]"
+              >
+                Intended wedding budget
+              </Label>
+              <div className="relative mt-2">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">KES</span>
+                <Input
+                  id="workspace-total-budget"
+                  aria-label="Adjust wedding budget"
+                  type="text"
+                  inputMode="numeric"
+                  value={budgetGoalDraft}
+                  onFocus={() => {
+                    editingBudgetGoalRef.current = true;
+                    setBudgetGoalDraft((current) => sanitizeIntegerDraft(current));
+                  }}
+                  onChange={(event) => setBudgetGoalDraft(sanitizeIntegerDraft(event.target.value))}
+                  onBlur={() => {
+                    editingBudgetGoalRef.current = false;
+                    setBudgetGoalDraft((current) => formatIntegerDraft(current));
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void saveBudgetGoal();
+                    }
+                  }}
+                  disabled={savingBudgetGoal}
+                  className="h-10 bg-background pl-12 text-sm font-semibold sm:h-11 sm:text-base"
+                />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                className="mt-3 w-full"
+                disabled={savingBudgetGoal || !budgetGoalDraft}
+                onClick={() => void saveBudgetGoal()}
+              >
+                {savingBudgetGoal ? 'Saving…' : 'Save and rebalance'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Personal costs</p>
+              <p className="mt-3 text-xl font-bold text-foreground">{formatCurrency(visibleAllocated)}</p>
+              <p className="mt-2 text-xs text-muted-foreground">Private costs are kept separate from the wedding budget.</p>
+            </>
+          )}
         </div>
 
         <div className="border-b border-border lg:border-b-0 lg:border-r">
           <div className="grid grid-cols-2">
             <div className="border-r border-border p-4 sm:p-5">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">Allocated</p>
-              <p className="mt-3 text-base font-bold sm:text-xl">{formatCurrency(weddingAllocated)}</p>
-              <p className={`mt-1 text-xs sm:text-sm ${weddingAllocationPercentage > 100 ? 'font-semibold text-destructive' : 'text-muted-foreground'}`}>
-                {weddingAllocationPercentage.toFixed(1)}% of budget
+              <p className="mt-3 text-base font-bold sm:text-xl">{formatCurrency(visibleAllocated)}</p>
+              <p className={`mt-1 text-xs sm:text-sm ${activeBudgetScope === 'wedding' && weddingAllocationPercentage > 100 ? 'font-semibold text-destructive' : 'text-muted-foreground'}`}>
+                {activeBudgetScope === 'wedding' ? `${weddingAllocationPercentage.toFixed(1)}% of budget` : 'Private plan total'}
               </p>
             </div>
             <div className="p-4 sm:p-5">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-sm sm:tracking-[0.16em]">
-                {weddingRemainingBudget >= 0 ? 'Remaining' : 'Over budget'}
+                {activeBudgetScope === 'wedding' ? (weddingRemainingBudget >= 0 ? 'Remaining' : 'Over budget') : 'Paid so far'}
               </p>
-              <p className={`mt-3 text-base font-bold sm:text-xl ${weddingRemainingBudget < 0 ? 'text-destructive' : ''}`}>
-                {formatCurrency(Math.abs(weddingRemainingBudget))}
+              <p className={`mt-3 text-base font-bold sm:text-xl ${activeBudgetScope === 'wedding' && weddingRemainingBudget < 0 ? 'text-destructive' : ''}`}>
+                {formatCurrency(activeBudgetScope === 'wedding' ? Math.abs(weddingRemainingBudget) : visibleSpent)}
               </p>
               <div
                 className={`mt-2 inline-flex items-center gap-2 text-xs font-semibold ${
-                  weddingRemainingBudget < 0
+                  activeBudgetScope === 'wedding' && weddingRemainingBudget < 0
                     ? 'text-destructive'
-                    : weddingRemainingBudget === 0
+                    : activeBudgetScope === 'wedding' && weddingRemainingBudget === 0
                       ? 'text-success'
                       : 'text-foreground'
                 }`}
                 aria-live="polite"
               >
                 <span aria-hidden="true" className="h-px w-4 shrink-0 bg-current opacity-55" />
-                {weddingRemainingBudget < 0
+                {activeBudgetScope === 'personal'
+                  ? `${formatCurrency(Math.max(visibleAllocated - visibleSpent, 0))} not yet paid`
+                  : weddingRemainingBudget < 0
                   ? 'Reduce allocations'
                   : weddingRemainingBudget === 0
                     ? 'Budget fully allocated'
@@ -2189,8 +2258,16 @@ export default function Budget() {
             type="text"
             inputMode="numeric"
             value={expectedGuestCountDraft}
-            onChange={(event) => setExpectedGuestCountDraft(formatIntegerDraft(event.target.value))}
-            onBlur={() => void saveExpectedGuestCount()}
+            onFocus={() => {
+              editingExpectedGuestCountRef.current = true;
+              setExpectedGuestCountDraft((current) => sanitizeIntegerDraft(current));
+            }}
+            onChange={(event) => setExpectedGuestCountDraft(sanitizeIntegerDraft(event.target.value))}
+            onBlur={() => {
+              editingExpectedGuestCountRef.current = false;
+              setExpectedGuestCountDraft((current) => formatIntegerDraft(current));
+              void saveExpectedGuestCount();
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Enter') event.currentTarget.blur();
             }}
@@ -2221,6 +2298,53 @@ export default function Budget() {
               <p className="text-xs text-muted-foreground">Balance</p>
               <p className="mt-1 break-words text-sm font-semibold text-primary sm:text-lg">{formatCurrency(totalFinalVendorOutstanding)}</p>
             </div>
+          </div>
+        </section>
+      ) : null}
+
+      {activeBudgetScope === 'wedding' && (weddingBudgetSummary.overage > 0 || weddingBudgetSummary.overspentCategories.length > 0) ? (
+        <section className="rounded-xl border border-destructive/30 bg-destructive/[0.045] p-4 sm:p-5" aria-labelledby="budget-fixes-title">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-destructive">Budget needs attention</p>
+              <h2 id="budget-fixes-title" className="mt-1 text-lg font-semibold text-foreground">Here is where to fix the plan</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {weddingBudgetSummary.overage > 0
+                  ? `${formatCurrency(weddingBudgetSummary.overage)} has been allocated beyond the wedding budget. Review a category below to lower its planned amount.`
+                  : 'One or more categories have already spent more than their planned amount.'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => budgetItemsRef.current?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' })}
+            >
+              Review budget items
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-2 lg:grid-cols-3">
+            {(weddingBudgetSummary.overspentCategories.length > 0
+              ? weddingBudgetSummary.overspentCategories
+              : weddingBudgetSummary.reductionCandidates
+            ).slice(0, 3).map((category) => {
+              const amount = category.spent > category.allocated
+                ? category.spent - category.allocated
+                : category.reducibleAmount;
+              const label = category.spent > category.allocated ? 'over its plan' : 'can be reduced before affecting paid spend';
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => openBudgetCategory(category.id)}
+                  className="rounded-lg border border-destructive/20 bg-background px-3 py-3 text-left transition-colors hover:border-destructive/45 hover:bg-destructive/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="block text-sm font-semibold text-foreground">{category.name}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground"><strong className="font-semibold text-destructive">{formatCurrency(amount)}</strong> {label}</span>
+                  <span className="mt-2 inline-flex text-xs font-semibold text-primary">Review allocation →</span>
+                </button>
+              );
+            })}
           </div>
         </section>
       ) : null}
@@ -2500,7 +2624,7 @@ export default function Budget() {
         </div>
       </section>
 
-      <Card className="overflow-hidden border-border bg-card shadow-none">
+      <Card ref={budgetItemsRef} className="scroll-mt-6 overflow-hidden border-border bg-card shadow-none">
         <CardContent className="p-0">
           <div>
             <div>

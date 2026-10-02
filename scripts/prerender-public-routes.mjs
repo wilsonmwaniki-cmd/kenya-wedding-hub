@@ -18,6 +18,18 @@ const routes = [
     ],
   },
   {
+    path: '/explore',
+    title: 'Explore Zania | A Wedding Planning Workspace Preview',
+    description: 'Explore a sample Zania wedding workspace for tasks, vendors, documents, and budgeting before creating an account.',
+    heading: 'See what planning with Zania feels like',
+    intro: 'Explore a sample wedding workspace with clear next steps, organised vendors, connected documents, and an optional budget—all before creating your own workspace.',
+    sections: [
+      ['Start with clarity', 'See the most important next steps without being asked to complete a long setup first.'],
+      ['Explore at your pace', 'Move through sample tasks, vendors, documents, and a budget without saving anything or creating an account.'],
+      ['Make it yours later', 'Create a free workspace only when you are ready to personalise and save your wedding plan.'],
+    ],
+  },
+  {
     path: '/pricing',
     title: 'Zania Pricing | Plans for Couples, Planners & Vendors',
     description: 'Compare Zania wedding planning plans for couples, professional planners, committees, and Kenyan wedding vendors.',

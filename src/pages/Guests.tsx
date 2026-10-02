@@ -15,7 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import {
   Plus, Trash2, Users, Upload, Download, Mail, Send, Loader2, Eye, EyeOff,
-  Link2, Copy, UserCheck, BarChart3, Search, RotateCw, ShieldOff,
+  Link2, Copy, UserCheck, BarChart3, Search, RotateCw, ShieldOff, ChevronDown,
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
@@ -927,8 +927,9 @@ export default function Guests() {
                                 )}
                               </div>
                             </div>
-                            <span className={`shrink-0 text-xs font-semibold ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
+                            <span className={`inline-flex shrink-0 items-center gap-1 text-xs font-semibold ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
                               {isSelected ? 'Hide details' : 'View details'}
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 motion-reduce:transition-none ${isSelected ? 'rotate-180' : ''}`} aria-hidden="true" />
                             </span>
                           </div>
                           <p className="mt-3 truncate text-xs text-muted-foreground">

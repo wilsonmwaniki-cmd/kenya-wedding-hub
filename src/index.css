@@ -157,6 +157,36 @@
     font-family: var(--font-display);
     letter-spacing: -0.025em;
   }
+
+  /* Native disclosures should always look expandable, not like static labels. */
+  details > summary {
+    position: relative;
+    list-style: none;
+    padding-right: 2.75rem !important;
+  }
+
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  details > summary::after {
+    content: '';
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    opacity: 0.6;
+    transform: translateY(-65%) rotate(45deg);
+    transition: transform var(--motion-standard) var(--motion-ease), opacity var(--motion-fast) ease;
+  }
+
+  details[open] > summary::after {
+    opacity: 0.85;
+    transform: translateY(-30%) rotate(225deg);
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -371,7 +401,7 @@
 
 @media print {
   /* Hide app chrome */
-  aside, header, .print\:hidden { display: none !important; }
+  aside, main > header, .print\:hidden { display: none !important; }
   
   /* Full width content */
   main { padding: 0 !important; }

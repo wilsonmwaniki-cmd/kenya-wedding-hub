@@ -42,6 +42,8 @@ import {
   TonalCardTitle,
 } from '@/components/ui/tonal-card';
 import ProfessionalLeadInbox from '@/components/leads/ProfessionalLeadInbox';
+import ProfessionalClientNextSteps from '@/components/ProfessionalClientNextSteps';
+import ContextualAssistantAction from '@/components/ContextualAssistantAction';
 
 interface PlannerTaskPulse {
   id: string;
@@ -430,7 +432,25 @@ export default function PlannerDashboard() {
         </Card>
       )}
 
+      <section className="border-y border-border/70 bg-card px-4 py-5 sm:px-6" aria-labelledby="planner-zania-title">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Start with intent</p>
+            <h1 id="planner-zania-title" className="mt-1 font-display text-2xl font-semibold text-foreground">Tell Zania what you need across your weddings.</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Ask about priorities, choose a client, or describe the work you want handled.</p>
+          </div>
+          <ContextualAssistantAction
+            label="Tell Zania what you need"
+            prompt="Which client wedding needs my attention first today, and why?"
+            context={`This planner workspace has ${clients.length} client weddings, ${totalOpen} open tasks, ${totalOverdue} overdue tasks, and ${totalDueSoon} tasks due within 14 days.`}
+            className="shrink-0"
+          />
+        </div>
+      </section>
+
       <ProfessionalLeadInbox />
+
+      <ProfessionalClientNextSteps role="planner" />
 
       {/* Pending Link Requests */}
       {(plannerPreviewMode || plannerCanCollaborate(profile)) && incomingLinkRequests.length > 0 && (
@@ -619,8 +639,6 @@ export default function PlannerDashboard() {
         />
 
         {clients.length > 0 && (
-          <details className="rounded-2xl border border-border/70 bg-card">
-            <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-foreground marker:content-none">Recent changes</summary>
           <TonalCard tone="oat" className="rounded-t-none border-x-0 border-b-0 shadow-none">
             <TonalCardHeader>
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-current/50">Client activity</p>
@@ -653,7 +671,6 @@ export default function PlannerDashboard() {
               )}
             </TonalCardBody>
           </TonalCard>
-          </details>
         )}
       </div>
 

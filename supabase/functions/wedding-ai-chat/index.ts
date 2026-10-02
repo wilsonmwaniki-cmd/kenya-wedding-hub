@@ -9,11 +9,135 @@ import {
   assertRecentFunctionEventLimit,
 } from "../_shared/abuseProtection.ts";
 import { logFunctionEvent } from "../_shared/runtimeLogger.ts";
+import { withoutUnansweredHistoricalRequests } from "../_shared/assistantMessages.ts";
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from "../_shared/demoGuard.ts";
+import { WeddingBriefingError, type BriefingDatabase } from "../_shared/weddingBriefing.ts";
+import {
+  createFirstPartyGatewayRequest,
+  executeGatewayRead,
+  getGatewayReadIntent,
+  parseNegotiationBriefPrompt,
+  parseVendorSearchPrompt,
+} from "../_shared/intelligenceGateway.ts";
+import { searchExternalVendorsWithOpenAi } from "../_shared/externalVendorDiscovery.ts";
+import {
+  executeConfirmedAddGuest,
+  executeConfirmedApplyVendorResponse,
+  executeConfirmedAssignVendorCandidate,
+  executeConfirmedPromoteVendorCandidate,
+  executeConfirmedRequestFormalVendorQuote,
+  executeConfirmedRequestFormalQuoteChanges,
+  executeConfirmedSaveNegotiationPlan,
+  executeConfirmedSendVendorEnquiry,
+  executeConfirmedCreateTask,
+  executeConfirmedCreateVendorFollowUp,
+  executeConfirmedRecordExpense,
+  executeConfirmedRecordPayment,
+  executeConfirmedSaveVendorCandidate,
+  executeConfirmedUpdateTask,
+  previewAddGuest,
+  previewApplyVendorResponse,
+  previewAssignVendorCandidate,
+  previewPromoteVendorCandidate,
+  previewRequestFormalVendorQuote,
+  previewRequestFormalQuoteChanges,
+  previewSaveNegotiationPlan,
+  previewSendVendorEnquiry,
+  previewCreateTask,
+  previewCreateVendorFollowUp,
+  previewRecordExpense,
+  previewRecordPayment,
+  previewSaveVendorCandidate,
+  previewUpdateTask,
+  revokeAddGuestPreview,
+  revokeApplyVendorResponsePreview,
+  revokeAssignVendorCandidatePreview,
+  revokePromoteVendorCandidatePreview,
+  revokeRequestFormalVendorQuotePreview,
+  revokeRequestFormalQuoteChangesPreview,
+  revokeSaveNegotiationPlanPreview,
+  revokeSendVendorEnquiryPreview,
+  revokeCreateTaskPreview,
+  revokeCreateVendorFollowUpPreview,
+  revokeRecordExpensePreview,
+  revokeRecordPaymentPreview,
+  revokeSaveVendorCandidatePreview,
+  revokeUpdateTaskPreview,
+  type GatewayWriteDatabase,
+} from "../_shared/intelligenceGatewayWrites.ts";
+import { deliverVendorEnquiryWithResend } from "../_shared/vendorEnquiryDelivery.ts";
 import {
   getDefaultModelPricing,
   selectAiModelRoute,
   type AiModelCatalog,
 } from "../_shared/aiModelRouting.ts";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function ensureAssistantConversation(
+  adminClient: ReturnType<typeof createClient>,
+  userId: string,
+  audience: string,
+  requestedConversationId?: unknown,
+) {
+  if (typeof requestedConversationId === "string" && UUID_PATTERN.test(requestedConversationId)) {
+    const { data, error } = await adminClient
+      .from("assistant_conversations")
+      .select("id")
+      .eq("id", requestedConversationId)
+      .eq("user_id", userId)
+      .eq("audience", audience)
+      .eq("status", "active")
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.id) return data.id as string;
+  }
+
+  const { data: existing, error: existingError } = await adminClient
+    .from("assistant_conversations")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("audience", audience)
+    .eq("status", "active")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing?.id) return existing.id as string;
+
+  const { data: created, error: createError } = await adminClient
+    .from("assistant_conversations")
+    .insert({ user_id: userId, audience })
+    .select("id")
+    .single();
+  if (createError) throw createError;
+  return created.id as string;
+}
+
+async function persistAssistantMessage(
+  adminClient: ReturnType<typeof createClient>,
+  values: {
+    conversationId: string;
+    requestId: string;
+    role: "user" | "assistant";
+    content: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const { error } = await adminClient.from("assistant_messages").upsert({
+    conversation_id: values.conversationId,
+    request_id: values.requestId,
+    role: values.role,
+    content: values.content.slice(0, 20000),
+    metadata: values.metadata ?? {},
+  }, { onConflict: "conversation_id,request_id,role", ignoreDuplicates: true });
+  if (error) throw error;
+
+  await adminClient
+    .from("assistant_conversations")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", values.conversationId);
+}
 
 const tools = [
   {
@@ -34,6 +158,29 @@ const tools = [
           source_vendor_name: { type: "string", description: "Vendor name to link the task to, if relevant (optional)" },
         },
         required: ["title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_task",
+      description: "Update an existing wedding planning task in the active workspace by its exact current title",
+      parameters: {
+        type: "object",
+        properties: {
+          current_title: { type: "string", description: "Exact current task title" },
+          new_title: { type: "string", description: "Replacement task title (optional)" },
+          due_date: { type: "string", description: "New due date in YYYY-MM-DD format (optional)" },
+          assigned_to: { type: "string", description: "New assignee (optional)" },
+          description: { type: "string", description: "New task description (optional)" },
+          category: { type: "string", description: "New task category (optional)" },
+          priority_level: { type: "integer", description: "New priority from 1 (highest) to 5 (lowest) (optional)" },
+          visibility: { type: "string", enum: ["public", "private"], description: "New visibility (optional)" },
+          completed: { type: "boolean", description: "Whether the task should be completed (optional)" },
+        },
+        required: ["current_title"],
         additionalProperties: false,
       },
     },
@@ -105,8 +252,27 @@ const tools = [
   {
     type: "function",
     function: {
+      name: "record_expense",
+      description: "Record actual spending against an existing wedding budget category without creating a payment entry or changing a vendor balance",
+      parameters: {
+        type: "object",
+        properties: {
+          category_name: { type: "string", description: "Existing wedding budget category name or clear category wording; Zania must resolve it to one category before confirmation" },
+          payee_name: { type: "string", description: "Vendor or payee associated with the expense" },
+          amount: { type: "number", description: "Expense amount in KES" },
+          expense_date: { type: "string", description: "Expense date in YYYY-MM-DD format (optional; defaults to today in Kenya)" },
+          notes: { type: "string", description: "Extra expense notes (optional)" },
+        },
+        required: ["category_name", "payee_name", "amount"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "record_budget_payment",
-      description: "Record a payment against a budget category and optionally a linked vendor",
+      description: "Record money that was already paid against a budget category and optionally a linked vendor. This only updates Zania's records; it never moves money or initiates Zania Pay. Do not use this for a general expense or spending adjustment.",
       parameters: {
         type: "object",
         properties: {
@@ -138,6 +304,8 @@ const tools = [
           plus_one: { type: "boolean", description: "Whether the guest has a plus one" },
           meal_preference: { type: "string", description: "Meal preference (optional)" },
           table_number: { type: "integer", description: "Assigned table number (optional)" },
+          group_name: { type: "string", description: "Guest group, such as Bride's Guests (optional)" },
+          category: { type: "string", enum: ["general", "vip", "family", "friends", "kids", "vendor"], description: "Guest category (optional)" },
         },
         required: ["name"],
         additionalProperties: false,
@@ -200,12 +368,12 @@ const tools = [
     type: "function",
     function: {
       name: "update_vendor_status",
-      description: "Update a vendor's status by name",
+      description: "Update a vendor's tracker status by name after confirmation. Use rejected when an enquiry recipient says they are unavailable.",
       parameters: {
         type: "object",
         properties: {
           name: { type: "string", description: "Vendor name or partial vendor name" },
-          status: { type: "string", enum: ["contacted", "confirmed", "declined", "pending"], description: "New vendor status" },
+          status: { type: "string", enum: ["contacted", "quoted", "booked", "completed", "rejected"], description: "New tracker status" },
         },
         required: ["name", "status"],
         additionalProperties: false,
@@ -216,12 +384,12 @@ const tools = [
     type: "function",
     function: {
       name: "update_vendor_price",
-      description: "Update a vendor's quoted price by name",
+      description: "Record a vendor amount in the tracker after confirmation. An amount taken from an enquiry response remains indicative and is not a formal quote, contract, or booking.",
       parameters: {
         type: "object",
         properties: {
           name: { type: "string", description: "Vendor name or partial vendor name" },
-          price: { type: "number", description: "Quoted price in KES" },
+          price: { type: "number", description: "Tracker amount in KES" },
         },
         required: ["name", "price"],
         additionalProperties: false,
@@ -297,6 +465,174 @@ const tools = [
           notes: { type: "string", description: "Reminder notes (optional)" },
         },
         required: ["couple_name", "title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "save_vendor_candidate",
+      description: "Save one vendor from the most recent discovery results as a private candidate for the current couple or planner workspace. A professional planner may do this without selecting a client; the candidate is then private to the planner and can be assigned later. This never contacts the vendor or creates a public profile.",
+      parameters: {
+        type: "object",
+        properties: {
+          business_name: { type: "string", description: "Exact vendor business name from the discovery result" },
+          category: { type: "string", description: "Vendor category from the discovery result" },
+          location: { type: "string", description: "Vendor location if known" },
+          website: { type: "string", description: "Vendor website if cited" },
+          vendor_listing_id: { type: "string", description: "Zania listing ID for an internal directory result" },
+          source_kind: { type: "string", enum: ["zania_listing", "official_website", "search_result", "directory", "social"] },
+          source_record_id: { type: "string", description: "Stable source record ID or cited source URL" },
+          source_url: { type: "string", description: "One cited URL from the discovery result" },
+          summary: { type: "string", description: "Short source-backed summary from the result" },
+          match_reasons: { type: "array", items: { type: "string" }, description: "Reasons Zania said this vendor may fit" },
+          unknowns: { type: "array", items: { type: "string" }, description: "Items still requiring confirmation" },
+          sources: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { url: { type: "string" }, title: { type: "string" } },
+              required: ["url"],
+              additionalProperties: false,
+            },
+            description: "Cited sources shown in the discovery result",
+          },
+        },
+        required: ["business_name", "category"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "assign_vendor_candidate",
+      description: "Assign one unassigned private vendor candidate to one active planner client. This is available only to professional planners and requires confirmation. It does not add the candidate to the vendor tracker, contact the vendor, or create a booking.",
+      parameters: {
+        type: "object",
+        properties: {
+          candidate_id: { type: "string", description: "Exact saved candidate ID when known" },
+          business_name: { type: "string", description: "Exact saved vendor candidate business name" },
+          client_id: { type: "string", description: "Exact active planner client ID when known" },
+          client_name: { type: "string", description: "Exact client, partner, or combined couple name" },
+        },
+        required: ["business_name", "client_name"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "promote_vendor_candidate",
+      description: "Add one scoped private vendor candidate to the wedding vendor tracker after confirmation. The candidate must already belong to the couple's wedding or be assigned to the planner's client. This records a shortlist or backup option only; it never contacts the vendor or confirms a booking.",
+      parameters: {
+        type: "object",
+        properties: {
+          candidate_id: { type: "string", description: "Exact saved candidate ID when known" },
+          business_name: { type: "string", description: "Exact saved vendor candidate business name" },
+          quote_amount: { type: "number", description: "Known quoted amount in KES; omit when no quote has been received" },
+          selection_status: { type: "string", enum: ["shortlisted", "backup"], description: "Initial tracker state" },
+        },
+        required: ["business_name"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_vendor_enquiry",
+      description: "Prepare an email enquiry to one vendor already in the active wedding tracker. This always requires confirmation of the exact recipient, subject, and message. It does not book the vendor, accept a quote, or invite them into the workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          vendor_id: { type: "string", description: "Exact tracker vendor ID when known" },
+          vendor_name: { type: "string", description: "Exact vendor name in the active wedding tracker" },
+          recipient_name: { type: "string", description: "Recipient name if different from the tracker vendor name" },
+          recipient_email: { type: "string", description: "Exact recipient email when the tracker does not already contain one; never infer this from web research" },
+          subject: { type: "string", description: "Exact email subject" },
+          message: { type: "string", description: "Exact enquiry message to send" },
+        },
+        required: ["vendor_name", "message"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "apply_vendor_response",
+      description: "Prepare a tracker update from one recorded vendor enquiry response. Use record_indicative_price only when the response includes an indicative amount, or mark_unavailable only when the vendor replied unavailable. This always requires explicit confirmation and never creates a formal quote or booking.",
+      parameters: {
+        type: "object",
+        properties: {
+          enquiry_id: { type: "string", description: "Exact enquiry ID from get_vendor_summary when available" },
+          vendor_name: { type: "string", description: "Exact tracked vendor name" },
+          action: { type: "string", enum: ["record_indicative_price", "mark_unavailable"] },
+        },
+        required: ["vendor_name", "action"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "request_formal_vendor_quote",
+      description: "Prepare a tracked in-app formal quote request for one connected vendor in the active wedding tracker. This requires explicit confirmation, keeps any earlier indicative amount separate, and sends linked-planner requests to the couple for approval. If the vendor is not connected, use send_vendor_enquiry instead.",
+      parameters: {
+        type: "object",
+        properties: {
+          vendor_id: { type: "string", description: "Exact tracker vendor ID when known" },
+          vendor_name: { type: "string", description: "Exact vendor name in the active wedding tracker" },
+          enquiry_id: { type: "string", description: "Optional exact available-response enquiry ID" },
+          message: { type: "string", description: "Exact formal quote request; omit to use Zania's standard itemized quote request" },
+        },
+        required: ["vendor_name"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "request_formal_quote_changes",
+      description: "Prepare exact requested changes for one returned formal quote. This requires explicit confirmation, rechecks that the quote is still awaiting a response, and sends linked-planner requests to the couple for approval first.",
+      parameters: {
+        type: "object",
+        properties: {
+          quote_request_id: { type: "string", description: "Exact formal quote request ID from get_formal_quote_summary when known" },
+          quote_document_id: { type: "string", description: "Exact returned quote document ID when known" },
+          vendor_name: { type: "string", description: "Exact vendor name when it identifies one returned formal quote" },
+          message: { type: "string", description: "Exact changes to request from the vendor" },
+        },
+        required: ["vendor_name", "message"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "save_negotiation_plan",
+      description: "Save a private negotiation profile and one unsent draft proposal for a returned KES formal quote. This requires explicit confirmation and never contacts the vendor or records an agreement.",
+      parameters: {
+        type: "object",
+        properties: {
+          quote_request_id: { type: "string", description: "Exact formal quote request ID when known" },
+          quote_document_id: { type: "string", description: "Exact returned quote document ID when known" },
+          vendor_name: { type: "string", description: "Exact vendor name when it identifies one returned formal quote" },
+          target_budget_kes: { type: "number", description: "Preferred negotiated total in KES" },
+          absolute_ceiling_kes: { type: "number", description: "Highest acceptable total in KES, if the user supplied one" },
+          must_have: { type: "array", items: { type: "string" }, description: "Deliverables or terms that must remain" },
+          willing_to_trade: { type: "array", items: { type: "string" }, description: "Items, timing or terms the user is willing to exchange" },
+          tone: { type: "string", enum: ["gentle", "commercial", "planner"], description: "Tone for the saved draft" },
+          draft_message: { type: "string", description: "Exact unsent proposal draft" },
+          proposed_total_kes: { type: "number", description: "Exact total proposed in the draft, when present" },
+        },
+        required: ["vendor_name", "target_budget_kes", "draft_message"],
         additionalProperties: false,
       },
     },
@@ -466,10 +802,12 @@ type PendingWriteAction = {
 
 const WRITE_TOOL_NAMES = new Set([
   "create_task",
+  "update_task",
   "complete_task",
   "delete_task",
   "add_budget_category",
   "update_budget_spent",
+  "record_expense",
   "record_budget_payment",
   "add_guest",
   "update_guest_rsvp",
@@ -481,6 +819,14 @@ const WRITE_TOOL_NAMES = new Set([
   "create_timeline_event",
   "update_vendor_internal_notes",
   "create_vendor_follow_up_reminder",
+  "save_vendor_candidate",
+  "assign_vendor_candidate",
+  "promote_vendor_candidate",
+  "send_vendor_enquiry",
+  "apply_vendor_response",
+  "request_formal_vendor_quote",
+  "request_formal_quote_changes",
+  "save_negotiation_plan",
   "update_vendor_follow_up_reminder_status",
   "update_vendor_booking_status",
 ]);
@@ -493,6 +839,18 @@ function summarizePendingAction(name: string, args: Record<string, any>) {
   switch (name) {
     case "create_task":
       return `Create task "${args.title}"${args.due_date ? ` due ${args.due_date}` : ""}${args.category ? ` in ${args.category}` : ""}`;
+    case "update_task": {
+      const changes = [
+        args.new_title ? `rename to "${args.new_title}"` : null,
+        args.due_date ? `due ${args.due_date}` : null,
+        args.assigned_to ? `assign to ${args.assigned_to}` : null,
+        args.category ? `category ${args.category}` : null,
+        typeof args.priority_level === "number" ? `priority ${args.priority_level}` : null,
+        args.visibility ? `${args.visibility} visibility` : null,
+        typeof args.completed === "boolean" ? (args.completed ? "mark completed" : "mark open") : null,
+      ].filter(Boolean).join(", ");
+      return `Update task "${args.current_title}": ${changes || "change its details"}`;
+    }
     case "complete_task":
       return `Mark task "${args.title}" as completed`;
     case "delete_task":
@@ -501,8 +859,10 @@ function summarizePendingAction(name: string, args: Record<string, any>) {
       return `Add budget category "${args.name}" with ${formatCurrency(args.allocated)}`;
     case "update_budget_spent":
       return `Update budget spent for "${args.name}" to ${formatCurrency(args.spent)}`;
+    case "record_expense":
+      return `Record ${formatCurrency(args.amount)} of spending in "${args.category_name}" for ${args.payee_name}${args.expense_date ? ` on ${args.expense_date}` : ""} (no payment entry or vendor balance change)`;
     case "record_budget_payment":
-      return `Record ${formatCurrency(args.amount)} against "${args.category_name}"${args.vendor_name ? ` for ${args.vendor_name}` : ""}`;
+      return `Record ${formatCurrency(args.amount)} already paid${args.vendor_name ? ` to ${args.vendor_name}` : args.payee_name ? ` to ${args.payee_name}` : ""} against "${args.category_name}"${args.payment_date ? ` on ${args.payment_date}` : ""} (updates records only; does not move money or initiate Zania Pay)`;
     case "add_guest":
       return `Add guest "${args.name}"`;
     case "update_guest_rsvp":
@@ -514,7 +874,7 @@ function summarizePendingAction(name: string, args: Record<string, any>) {
     case "update_vendor_status":
       return `Update vendor "${args.name}" to ${args.status}`;
     case "update_vendor_price":
-      return `Update vendor "${args.name}" quote to ${formatCurrency(args.price)}`;
+      return `Record ${formatCurrency(args.price)} as the tracker amount for vendor "${args.name}" (does not create or accept a formal quote)`;
     case "remove_vendor":
       return `Remove vendor "${args.name}"`;
     case "create_timeline_event":
@@ -523,6 +883,24 @@ function summarizePendingAction(name: string, args: Record<string, any>) {
       return `Save private internal notes for ${args.couple_name}`;
     case "create_vendor_follow_up_reminder":
       return `Create follow-up reminder "${args.title}" for ${args.couple_name}${args.due_date ? ` due ${args.due_date}` : ""}`;
+    case "save_vendor_candidate":
+      return `Save “${args.business_name ?? args.businessName}” as a private vendor candidate (does not contact the vendor or publish a profile)`;
+    case "assign_vendor_candidate":
+      return `Assign “${args.business_name ?? args.candidate_name ?? args.candidateName}” to ${args.client_name ?? args.clientName} as a private candidate (does not change the vendor tracker, create a booking, or contact the vendor)`;
+    case "promote_vendor_candidate":
+      return `Add “${args.business_name ?? args.candidate_name ?? args.candidateName}” to the vendor tracker as ${args.selection_status ?? "shortlisted"}${typeof args.quote_amount === "number" ? ` with a ${formatCurrency(args.quote_amount)} quote` : " with no quote recorded"} (does not contact the vendor or confirm a booking)`;
+    case "send_vendor_enquiry":
+      return `Send an email enquiry to “${args.vendor_name ?? args.vendorName}”${args.recipient_email ? ` at ${args.recipient_email}` : " using the verified tracker contact"}. Subject: “${args.subject ?? "Zania enquiry"}”. Message: “${args.message}” (does not create a booking, accept a quote, or invite the vendor into the workspace)`;
+    case "apply_vendor_response":
+      return args.action === "mark_unavailable"
+        ? `Mark “${args.vendor_name ?? args.vendorName}” rejected and declined from its recorded unavailable response`
+        : `Record the indicative amount from “${args.vendor_name ?? args.vendorName}”'s recorded response (does not create or accept a formal quote)`;
+    case "request_formal_vendor_quote":
+      return `Request a tracked formal quote from “${args.vendor_name ?? args.vendorName}”${args.message ? `. Message: “${args.message}”` : " using Zania's standard itemized quote request"} (keeps indicative response amounts separate)`;
+    case "request_formal_quote_changes":
+      return `Request changes to the formal quote from “${args.vendor_name ?? args.vendorName}”: “${args.message}”`;
+    case "save_negotiation_plan":
+      return `Save a private negotiation plan for “${args.vendor_name ?? args.vendorName}” with a ${formatCurrency(args.target_budget_kes ?? args.targetBudgetKes)} target and one unsent draft proposal (does not contact the vendor or record an agreement)`;
     case "update_vendor_follow_up_reminder_status":
       return `Mark follow-up reminder "${args.title}" as ${args.status} for ${args.couple_name}`;
     case "update_vendor_booking_status":
@@ -802,7 +1180,7 @@ async function executeTool(name: string, args: Record<string, any>, context: Too
         if (!vendor) return `Could not find a vendor matching "${args.name}".`;
         const { error } = await supabase.from("vendors").update({ price: args.price }).eq("id", vendor.id);
         if (error) return `Error updating vendor price: ${error.message}`;
-        return `✅ Updated ${vendor.name}'s price to ${formatCurrency(args.price)}.`;
+        return `✅ Recorded ${formatCurrency(args.price)} as ${vendor.name}'s tracker amount. This does not create or accept a formal quote.`;
       }
 
       case "remove_vendor": {
@@ -969,7 +1347,6 @@ serve(async (req) => {
 
   try {
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
 
     const routingModels: AiModelCatalog = {
       routine: Deno.env.get("OPENAI_ROUTINE_MODEL") ?? "gpt-5.6-luna",
@@ -1021,6 +1398,12 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if (isTemporaryDemoUser(user)) {
+      return new Response(JSON.stringify({ error: DEMO_EXTERNAL_ACTION_MESSAGE, code: "demo_action_blocked" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const supabase = createClient(supabaseUrl, userScopedKey, {
       global: { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -1034,23 +1417,16 @@ serve(async (req) => {
       selectedClientId,
       allowWriteActions = false,
       confirmedActions = [],
+      revokedActions = [],
       surface,
+      conversationId,
+      clientRequestId,
     } = await req.json();
     const usageFeature = typeof surface === "string" && /^[a-z0-9_-]{1,64}$/i.test(surface)
       ? surface
       : "ai_assistant";
-    assertMessageCount(messages, 24);
-    for (const message of messages) {
-      if (!message || typeof message !== "object") {
-        throw new AbuseProtectionError("Each AI message must be an object.", 400);
-      }
-      if (message.role !== "user" && message.role !== "assistant") {
-        throw new AbuseProtectionError("Invalid AI message role.", 400);
-      }
-      if (typeof message.content !== "string" || !message.content.trim()) {
-        throw new AbuseProtectionError("Each AI message must include text content.", 400);
-      }
-      assertMaxLength(message.content, 6000, "AI message");
+    if (Array.isArray(revokedActions) && revokedActions.length > 10) {
+      throw new AbuseProtectionError("Too many write actions were included in this cancellation request.", 400);
     }
 
     const today = new Date().toISOString().slice(0, 10);
@@ -1071,6 +1447,10 @@ serve(async (req) => {
           : role === "vendor"
             ? "vendor"
             : "couple";
+
+    const persistenceRequestId = typeof clientRequestId === "string" && UUID_PATTERN.test(clientRequestId)
+      ? clientRequestId
+      : UUID_PATTERN.test(requestId) ? requestId : crypto.randomUUID();
 
     await assertRecentFunctionEventLimit(adminClient, {
       functionName: "wedding-ai-chat",
@@ -1093,7 +1473,7 @@ serve(async (req) => {
       audience: aiAudience,
       requestId,
       details: {
-        messageCount: messages.length,
+        messageCount: Array.isArray(messages) ? messages.length : 0,
         allowWriteActions,
       },
     });
@@ -1125,6 +1505,32 @@ serve(async (req) => {
       vendorListing = data;
     }
 
+    let coupleHasAiEntitlement = false;
+    if (role === "couple") {
+      const { data: memberships, error: membershipsError } = await supabase
+        .from("wedding_memberships")
+        .select("wedding_id")
+        .eq("user_id", user.id)
+        .eq("membership_status", "active")
+        .is("revoked_at", null);
+      if (membershipsError) throw membershipsError;
+      const weddingIds = (memberships ?? []).map((membership: any) => membership.wedding_id);
+      if (weddingIds.length) {
+        const { data: entitlementRows, error: entitlementError } = await supabase
+          .from("wedding_entitlements")
+          .select("effective_from,effective_to")
+          .in("wedding_id", weddingIds)
+          .eq("feature_key", "ai_wedding_assistant")
+          .eq("status", "active");
+        if (entitlementError) throw entitlementError;
+        const now = Date.now();
+        coupleHasAiEntitlement = (entitlementRows ?? []).some((row: any) => (
+          new Date(row.effective_from).getTime() <= now
+          && (!row.effective_to || new Date(row.effective_to).getTime() > now)
+        ));
+      }
+    }
+
     const hasPremiumAccess =
       role === "admin"
         ? true
@@ -1132,7 +1538,9 @@ serve(async (req) => {
           ? isActiveStatus(vendorListing?.subscription_status, vendorListing?.subscription_expires_at) || hasActiveBetaTrial(profile)
           : role === "planner"
             ? isActiveStatus(profile?.planner_subscription_status, profile?.planner_subscription_expires_at) || hasActiveBetaTrial(profile)
-            : isActiveStatus(profile?.planning_pass_status, profile?.planning_pass_expires_at) || hasActiveBetaTrial(profile);
+            : coupleHasAiEntitlement
+              || isActiveStatus(profile?.planning_pass_status, profile?.planning_pass_expires_at)
+              || hasActiveBetaTrial(profile);
 
     if (!hasPremiumAccess) {
       return new Response(JSON.stringify({
@@ -1187,6 +1595,327 @@ serve(async (req) => {
       });
     }
 
+    const assistantConversationId = await ensureAssistantConversation(
+      adminClient,
+      user.id,
+      aiAudience,
+      conversationId,
+    );
+
+    if (Array.isArray(revokedActions) && revokedActions.length > 0) {
+      if (allowWriteActions || (Array.isArray(confirmedActions) && confirmedActions.length > 0)) {
+        throw new WeddingBriefingError("Confirm or cancel write actions in a separate request.", 400);
+      }
+      const results: string[] = [];
+      for (const action of revokedActions) {
+        const toolName = String(action?.toolName || "");
+        if (toolName !== "create_task" && toolName !== "update_task" && toolName !== "add_guest" && toolName !== "record_expense" && toolName !== "record_budget_payment" && toolName !== "create_vendor_follow_up_reminder" && toolName !== "save_vendor_candidate" && toolName !== "assign_vendor_candidate" && toolName !== "promote_vendor_candidate" && toolName !== "send_vendor_enquiry" && toolName !== "apply_vendor_response" && toolName !== "request_formal_vendor_quote" && toolName !== "request_formal_quote_changes" && toolName !== "save_negotiation_plan") {
+          throw new WeddingBriefingError("This write action cannot be cancelled through the Gateway confirmation flow.", 400);
+        }
+        const args = action && typeof action.args === "object" && action.args ? action.args : {};
+        const confirmationId = typeof args.gatewayConfirmationId === "string" ? args.gatewayConfirmationId : "";
+        const idempotencyKey = typeof args.gatewayIdempotencyKey === "string" ? args.gatewayIdempotencyKey : "";
+        const receipt = toolName === "update_task"
+          ? await revokeUpdateTaskPreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "add_guest"
+          ? await revokeAddGuestPreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "record_expense"
+          ? await revokeRecordExpensePreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "create_vendor_follow_up_reminder"
+          ? await revokeCreateVendorFollowUpPreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "save_vendor_candidate"
+          ? await revokeSaveVendorCandidatePreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "assign_vendor_candidate"
+          ? await revokeAssignVendorCandidatePreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "promote_vendor_candidate"
+          ? await revokePromoteVendorCandidatePreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "send_vendor_enquiry"
+          ? await revokeSendVendorEnquiryPreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "apply_vendor_response"
+          ? await revokeApplyVendorResponsePreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "request_formal_vendor_quote"
+          ? await revokeRequestFormalVendorQuotePreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "request_formal_quote_changes"
+          ? await revokeRequestFormalQuoteChangesPreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "save_negotiation_plan"
+          ? await revokeSaveNegotiationPlanPreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : toolName === "record_budget_payment"
+          ? await revokeRecordPaymentPreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          )
+          : await revokeCreateTaskPreview(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+        await logFunctionEvent({
+          functionName: "wedding-ai-chat", severity: "info", status: "success",
+          eventType: "intelligence_gateway_write_revoked",
+          message: `Revoked a pending ${toolName} confirmation.`,
+          userId: user.id, audience: aiAudience, requestId,
+          details: {
+            capability: toolName, riskClass: "B", clientType: "zania_web",
+            authorizationDecision: "allowed", confirmationStatus: receipt.confirmationStatus,
+            confirmationId, idempotencyKey,
+          },
+        });
+        results.push(receipt.userSummary);
+      }
+      const cancellationContent = `## No changes made\n\n${results.join("\n\n")} If you want, I can revise the plan first or prepare a smaller action set.`;
+      await persistAssistantMessage(adminClient, {
+        conversationId: assistantConversationId,
+        requestId: persistenceRequestId,
+        role: "assistant",
+        content: cancellationContent,
+        metadata: { kind: "gateway_write_revoked", actionCount: results.length },
+      });
+      return new Response(JSON.stringify({
+        content: cancellationContent,
+        usage: usageStatus,
+        pendingActions: [],
+        assistantRole: "wedding planning assistant",
+        conversationId: assistantConversationId,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    assertMessageCount(messages, 24);
+    for (const message of messages) {
+      if (!message || typeof message !== "object") {
+        throw new AbuseProtectionError("Each AI message must be an object.", 400);
+      }
+      if (message.role !== "user" && message.role !== "assistant") {
+        throw new AbuseProtectionError("Invalid AI message role.", 400);
+      }
+      if (typeof message.content !== "string" || !message.content.trim()) {
+        throw new AbuseProtectionError("Each AI message must include text content.", 400);
+      }
+      assertMaxLength(message.content, 6000, "AI message");
+    }
+    const modelMessages = withoutUnansweredHistoricalRequests(messages);
+
+    const lastMessage = messages[messages.length - 1];
+    await persistAssistantMessage(adminClient, {
+      conversationId: assistantConversationId,
+      requestId: persistenceRequestId,
+      role: "user",
+      content: lastMessage.content,
+      metadata: { surface: usageFeature },
+    });
+
+    const gatewayReadCapability = lastMessage?.role === "user" ? getGatewayReadIntent(lastMessage.content) : null;
+    if (gatewayReadCapability) {
+      // This capability is strictly read-only, even if a caller also supplies confirmed actions.
+      if (allowWriteActions || (Array.isArray(confirmedActions) && confirmedActions.length > 0)) {
+        throw new WeddingBriefingError("Ask for the wedding summary separately from changes to your records.", 400);
+      }
+      const gatewayRequest = createFirstPartyGatewayRequest({
+        actor: { userId: user.id, tenantId: null, role, plannerType },
+        capability: gatewayReadCapability,
+        selectedClientId: typeof selectedClientId === "string" ? selectedClientId : null,
+        requestId: persistenceRequestId,
+        correlationId: requestId,
+        sessionId: assistantConversationId,
+        arguments: gatewayReadCapability === "search_zania_vendors" || gatewayReadCapability === "discover_vendors"
+          ? parseVendorSearchPrompt(lastMessage.content) ?? {}
+          : gatewayReadCapability === "get_negotiation_brief"
+          ? parseNegotiationBriefPrompt(lastMessage.content)
+          : {},
+      });
+      // The Gateway receives a caller-scoped client. It never receives service-role database access.
+      let gatewayResult;
+      try {
+        gatewayResult = await executeGatewayRead(
+          supabase as unknown as BriefingDatabase,
+          gatewayRequest,
+          new Date(),
+          {
+            externalVendorSearch: gatewayReadCapability === "discover_vendors"
+              && Deno.env.get("EXTERNAL_VENDOR_DISCOVERY_ENABLED") === "true"
+              && OPENAI_API_KEY
+              ? (intent) => searchExternalVendorsWithOpenAi({
+                apiKey: OPENAI_API_KEY,
+                model: Deno.env.get("OPENAI_VENDOR_DISCOVERY_MODEL") ?? "gpt-5.5",
+                intent,
+              })
+              : undefined,
+          },
+        );
+      } catch (error) {
+        const hasRoleSpecificRefusal = gatewayReadCapability === "get_planner_portfolio_briefing"
+          || gatewayReadCapability === "get_vendor_business_briefing"
+          || gatewayReadCapability === "get_vendor_candidates"
+          || gatewayReadCapability === "get_negotiation_brief"
+          || gatewayReadCapability === "get_negotiation_state"
+          || gatewayReadCapability === "get_agreement_review";
+        if (!(error instanceof WeddingBriefingError) || error.status !== 403 || !hasRoleSpecificRefusal) {
+          throw error;
+        }
+
+        const refusal = gatewayReadCapability === "get_planner_portfolio_briefing"
+          ? "Planner portfolio briefings are available only in a professional planner workspace. I can review your vendor workspace instead."
+          : gatewayReadCapability === "get_vendor_business_briefing"
+            ? "Vendor business briefings are available only in a vendor workspace. I can review your planner portfolio instead."
+            : gatewayReadCapability === "get_negotiation_brief" || gatewayReadCapability === "get_negotiation_state" || gatewayReadCapability === "get_agreement_review"
+              ? "Negotiation and agreement reviews are available to couples and professional planners working from formal documents. In a vendor workspace, I can help review your enquiries and document follow-ups instead."
+              : "Saved vendor candidates are available to couples and planners. In a vendor workspace, I can review your enquiries, bookings and follow-ups instead.";
+        await logFunctionEvent({
+          functionName: "wedding-ai-chat", severity: "warn", status: "failure",
+          eventType: "intelligence_gateway_capability_denied", message: "Denied a cross-role Intelligence Gateway capability.",
+          userId: user.id, audience: aiAudience, requestId,
+          details: {
+            gatewayVersion: 1,
+            capability: gatewayReadCapability,
+            capabilityVersion: 1,
+            riskClass: "A",
+            clientType: gatewayRequest.client.type,
+            clientAppId: gatewayRequest.client.appId,
+            authorizationDecision: "denied",
+            confirmationStatus: gatewayRequest.confirmation.status,
+          },
+        });
+        await persistAssistantMessage(adminClient, {
+          conversationId: assistantConversationId,
+          requestId: persistenceRequestId,
+          role: "assistant",
+          content: refusal,
+          metadata: { kind: "gateway_denial", capability: gatewayReadCapability },
+        });
+        return new Response(JSON.stringify({
+          content: refusal,
+          conversationId: assistantConversationId,
+          usage: usageStatus,
+          pendingActions: [],
+          assistantRole: "wedding planning assistant",
+          gateway: { version: 1, capability: gatewayReadCapability, authorizationDecision: "denied" },
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const weddingState = gatewayResult.data.weddingState ?? null;
+      let gatewayUsage = usageStatus;
+      const externalUsage = gatewayResult.data.vendorDiscovery?.external?.usage;
+      if (externalUsage) {
+        const { data: loggedUsageResult, error: loggedUsageError } = await (supabase.rpc as any)("log_ai_assistant_message", {
+          feature_input: "vendor_discovery",
+          model_input: externalUsage.model,
+          provider_request_count_input: externalUsage.providerRequestCount,
+          input_tokens_input: externalUsage.inputTokens,
+          cached_input_tokens_input: externalUsage.cachedInputTokens,
+          output_tokens_input: externalUsage.outputTokens,
+          estimated_cost_usd_input: externalUsage.estimatedCostUsd,
+        });
+        if (loggedUsageError) {
+          console.error("Failed to log external vendor discovery usage:", loggedUsageError);
+          throw new Error("Could not record external vendor discovery usage.");
+        }
+        gatewayUsage = Array.isArray(loggedUsageResult) ? loggedUsageResult[0] : loggedUsageResult;
+      }
+      await logFunctionEvent({
+        functionName: "wedding-ai-chat", severity: "info", status: "success",
+        eventType: "intelligence_gateway_capability_succeeded", message: "Executed an authorized Intelligence Gateway capability.",
+        userId: user.id, audience: aiAudience, requestId,
+        details: {
+          gatewayVersion: gatewayResult.version,
+          capability: gatewayResult.capability,
+          capabilityVersion: 1,
+          riskClass: "A",
+          clientType: gatewayRequest.client.type,
+          clientAppId: gatewayRequest.client.appId,
+          weddingId: gatewayResult.data.wedding?.id ?? null,
+          authorizationDecision: "allowed",
+          confirmationStatus: gatewayRequest.confirmation.status,
+          sources: weddingState?.sources ?? null,
+          auditId: gatewayResult.auditId,
+        },
+      });
+      const briefingContent = gatewayResult.userSummary;
+      await persistAssistantMessage(adminClient, {
+        conversationId: assistantConversationId,
+        requestId: persistenceRequestId,
+        role: "assistant",
+        content: briefingContent,
+        metadata: { kind: "gateway_read", capability: gatewayResult.capability },
+      });
+      return new Response(JSON.stringify({
+        content: briefingContent,
+        briefing: weddingState,
+        gatewayData: gatewayResult.data,
+        conversationId: assistantConversationId,
+        gateway: {
+          version: gatewayResult.version,
+          capability: gatewayResult.capability,
+          auditId: gatewayResult.auditId,
+          warnings: gatewayResult.warnings,
+          nextActions: gatewayResult.nextActions,
+        },
+        usage: gatewayUsage, pendingActions: [], assistantRole: "wedding planning assistant",
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
+
     let workspaceOrFilter: string | null = null;
     let writeClientId: string | null = null;
     let workspaceLabel = "";
@@ -1208,7 +1937,7 @@ serve(async (req) => {
           ? `client_id.eq.${activeClient.id},user_id.eq.${activeClient.linked_user_id}`
           : `client_id.eq.${activeClient.id}`;
       } else {
-        workspaceNotice = "No active client is selected, so the assistant should stay advisory and ask the planner to choose a client before making changes.";
+        workspaceNotice = "No active client is selected. Stay advisory for client-wedding changes, but a vendor discovered in this conversation may still be saved as a private planner-owned candidate.";
       }
     } else if (role === "couple") {
       workspaceLabel = profile?.full_name || "Couple workspace";
@@ -1435,7 +2164,7 @@ Timelines: ${timelines.length}, events: ${timelineEventCount}`;
     const assistantWritePolicy =
       role === "vendor"
         ? `Vendor write tools can save internal notes, create private follow-up reminders, mark reminders complete, and update booking status for real bookings matched by the couple's name. Never claim to edit public listing fields, pricing plans, or external calendars unless a real tool exists.`
-        : `Use write tools when the user clearly asks for a concrete action. If a planner has not selected a client, stay advisory until they do.`;
+        : `Use write tools when the user clearly asks for a concrete action. If a professional planner has not selected a client, client-wedding writes must wait, but save_vendor_candidate and assign_vendor_candidate remain available because they resolve their private candidate and target client explicitly. Use promote_vendor_candidate only for a candidate already scoped to the couple's wedding or assigned planner client; it records a shortlist or backup and never means the vendor was contacted or booked. Use send_vendor_enquiry only for a vendor already in the active tracker. It must show the exact recipient, subject, and message for confirmation, and must never infer an email address from web research. An enquiry never means booked or quoted. When get_vendor_summary includes a vendor response, present the response and any amount as indicative. Never change tracker price or status from that response automatically. If the user asks to record the response amount or mark an unavailable respondent, use apply_vendor_response so the Gateway rechecks the exact response and requires confirmation; never use the generic vendor update tools for those response-driven changes. Use get_formal_quote_summary when the user asks which formal quote requests are waiting, viewed, responded to or overdue, or asks to compare returned formal quotes. Use get_negotiation_brief to prepare truthful, evidence-backed tradeoffs and a draft before any vendor contact; never invent a competing offer, urgency, price effect or vendor commitment. If the user explicitly asks to save that strategy and draft, use save_negotiation_plan. It stores a private profile plus an unsent draft after confirmation; it never contacts the vendor or records an agreement. Use get_agreement_review when the user asks whether a received or externally uploaded contract matches what was agreed. Present factual differences and unknowns, distinguish an unconfirmed AI extraction from user-confirmed facts, retain the accepted quote and contract as evidence, and never frame the result as legal advice. If the user asks to upload a contract, direct them to Received documents; file selection remains a deliberate UI action. Structured payment dates returned as proposed obligations are not tasks yet; use create_task for each obligation only after showing the exact title, amount and due date and receiving explicit confirmation. Keep formal document totals separate from indicative enquiry amounts and never imply that comparison accepts a quote. If they ask for a formal quote, use request_formal_vendor_quote for a connected tracker vendor. It creates a tracked in-app request and keeps indicative amounts separate. If they ask for exact changes to one returned formal quote, use request_formal_quote_changes and include their exact message; it rechecks the quote state and requires confirmation. If the Gateway reports that the vendor has no connected receiving account, use send_vendor_enquiry to prepare an exact reviewed email request instead.`;
 
     const stableSystemPrompt = `You are Zania AI, an assistant inside the Zania wedding planning app.
 
@@ -1519,9 +2248,9 @@ Timeline shares:
 ${timelineShares.slice(0, 12).map((share: any) => `- ${share.assignee_name}${share.vendor_role ? ` (${share.vendor_role})` : ""}`).join("\n") || "No share links yet."}`}
 
 Role-specific write policy: ${assistantWritePolicy}
-${role === "planner" ? "If no active client is selected, stay advisory and ask the planner to select a client before writing workspace data." : ""}`;
+${role === "planner" ? "If no active client is selected, stay advisory for ordinary client-wedding writes. You may still use save_vendor_candidate, assign_vendor_candidate, and promote_vendor_candidate when the saved candidate itself resolves the exact owned client. Assignment and promotion always require confirmation. Sending a vendor enquiry requires an active client and exact reviewed recipient; linked-couple clients cannot send until the couple-approval delivery path is enabled." : ""}`;
 
-    const modelRoute = selectAiModelRoute(messages, routingModels);
+    const modelRoute = selectAiModelRoute(modelMessages, routingModels);
     const OPENAI_MODEL = modelRoute.model;
     const defaultModelPricing = getDefaultModelPricing(OPENAI_MODEL);
     const pricePrefix = `OPENAI_${modelRoute.tier.toUpperCase()}`;
@@ -1543,11 +2272,10 @@ ${role === "planner" ? "If no active client is selected, stay advisory and ask t
     );
 
     const promptCacheKey = `zania-wedding-assistant-v2:${OPENAI_MODEL}`;
-    const reasoningEffort = modelRoute.tier === "complex"
-      ? "high"
-      : modelRoute.tier === "balanced"
-        ? "medium"
-        : "low";
+    // Chat Completions rejects function tools combined with nonzero reasoning
+    // effort for the routed GPT-5 models. Keep the existing tool loop on this
+    // endpoint compatible until it is migrated to the Responses API.
+    const reasoningEffort = "none";
     const maxCompletionTokens = modelRoute.tier === "complex"
       ? 4000
       : modelRoute.tier === "balanced"
@@ -1563,7 +2291,7 @@ ${role === "planner" ? "If no active client is selected, stay advisory and ask t
         }],
       },
       { role: "system", content: dynamicSystemPrompt },
-      ...messages,
+      ...modelMessages,
     ];
 
     const toolContext: ToolContext = {
@@ -1593,6 +2321,353 @@ ${role === "planner" ? "If no active client is selected, stay advisory and ask t
         const toolName = String(action?.toolName || "");
         const toolArgs = action && typeof action.args === "object" && action.args ? action.args : {};
         if (!toolName || !isWriteTool(toolName)) continue;
+        if (toolName === "create_task") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedCreateTask(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: "Created a task through a confirmed first-party Gateway action.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.task.id,
+            details: {
+              capability: "create_task", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open tasks](/tasks).`);
+          continue;
+        }
+        if (toolName === "update_task") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedUpdateTask(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: "Updated a task through a confirmed first-party Gateway action.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.task.id,
+            details: {
+              capability: "update_task", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open tasks](/tasks).`);
+          continue;
+        }
+        if (toolName === "add_guest") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedAddGuest(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: receipt.outcome === "approval_requested"
+              ? "Submitted a guest addition for couple approval through a confirmed first-party Gateway action."
+              : "Added a guest through a confirmed first-party Gateway action.",
+            userId: user.id, audience: aiAudience, requestId,
+            entityId: receipt.guest.id ?? receipt.approvalRequestId,
+            details: {
+              capability: "add_guest", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, outcome: receipt.outcome,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open guests](/guests).`);
+          continue;
+        }
+        if (toolName === "record_expense") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedRecordExpense(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: receipt.outcome === "approval_requested"
+              ? "Submitted an expense update for couple approval through a confirmed first-party Gateway action."
+              : "Recorded an expense through a confirmed first-party Gateway action.",
+            userId: user.id, audience: aiAudience, requestId,
+            entityId: receipt.expense.id ?? receipt.approvalRequestId,
+            details: {
+              capability: "record_expense", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, outcome: receipt.outcome,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open budget](/budget).`);
+          continue;
+        }
+        if (toolName === "create_vendor_follow_up_reminder") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedCreateVendorFollowUp(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: "Created a private vendor follow-up through a confirmed first-party Gateway action.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.reminder.id,
+            details: {
+              capability: "create_vendor_follow_up_reminder", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open Today](/vendor-dashboard).`);
+          continue;
+        }
+        if (toolName === "save_vendor_candidate") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedSaveVendorCandidate(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: "Saved a private vendor candidate through a confirmed first-party Gateway action.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.candidate.id,
+            details: {
+              capability: "save_vendor_candidate", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open saved candidates](/vendor-candidates).`);
+          continue;
+        }
+        if (toolName === "assign_vendor_candidate") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedAssignVendorCandidate(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: "Assigned a private vendor candidate through a confirmed first-party Gateway action.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.assignment.candidateId,
+            details: {
+              capability: "assign_vendor_candidate", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, plannerClientId: receipt.assignment.clientId,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open saved candidates](/vendor-candidates).`);
+          continue;
+        }
+        if (toolName === "promote_vendor_candidate") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedPromoteVendorCandidate(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: receipt.outcome === "approval_requested"
+              ? "Submitted a private candidate promotion for couple approval through a confirmed first-party Gateway action."
+              : "Added a private candidate to the vendor tracker through a confirmed first-party Gateway action.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.vendor.id,
+            details: {
+              capability: "promote_vendor_candidate", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, outcome: receipt.outcome,
+              candidateId: receipt.vendor.candidateId,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open vendors](/vendors).`);
+          continue;
+        }
+        if (toolName === "send_vendor_enquiry") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedSendVendorEnquiry(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+            deliverVendorEnquiryWithResend,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat",
+            severity: receipt.deliveryStatus === "failed" ? "warning" : "info",
+            status: receipt.deliveryStatus === "failed" ? "failure" : "success",
+            eventType: receipt.deliveryStatus === "failed" ? "intelligence_gateway_delivery_failed" : "intelligence_gateway_write_succeeded",
+            message: receipt.deliveryStatus === "sent"
+              ? "Sent a confirmed vendor enquiry email."
+              : receipt.deliveryStatus === "pending_approval"
+              ? "Submitted a confirmed vendor enquiry for couple approval."
+              : "A confirmed vendor enquiry email failed delivery.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.enquiry.id,
+            details: {
+              capability: "send_vendor_enquiry", riskClass: "C", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, deliveryStatus: receipt.deliveryStatus,
+            },
+          });
+          results.push(`- ${receipt.deliveryStatus === "failed" ? "⚠️" : "✅"} ${receipt.userSummary} [Open vendors](/vendors).`);
+          continue;
+        }
+        if (toolName === "apply_vendor_response") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedApplyVendorResponse(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: receipt.outcome === "approval_requested"
+              ? "Submitted a vendor response tracker action for couple approval."
+              : "Applied a confirmed vendor response action to the tracker.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.vendor.id,
+            details: {
+              capability: "apply_vendor_response", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, outcome: receipt.outcome,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open vendors](/vendors).`);
+          continue;
+        }
+        if (toolName === "request_formal_vendor_quote") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedRequestFormalVendorQuote(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: receipt.outcome === "approval_requested"
+              ? "Submitted a formal vendor quote request for couple approval."
+              : "Created a confirmed formal vendor quote request.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.quoteRequest.id,
+            details: {
+              capability: "request_formal_vendor_quote", riskClass: "C", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, outcome: receipt.outcome,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open received documents](/received-documents).`);
+          continue;
+        }
+        if (toolName === "request_formal_quote_changes") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedRequestFormalQuoteChanges(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: receipt.outcome === "approval_requested"
+              ? "Submitted formal quote changes for couple approval."
+              : "Sent confirmed formal quote changes.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.quoteResponse.id,
+            details: {
+              capability: "request_formal_quote_changes", riskClass: "C", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, outcome: receipt.outcome,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open received documents](/received-documents).`);
+          continue;
+        }
+        if (toolName === "save_negotiation_plan") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedSaveNegotiationPlan(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: "Saved a confirmed negotiation profile and unsent draft proposal.",
+            userId: user.id, audience: aiAudience, requestId, entityId: receipt.proposal.id,
+            details: {
+              capability: "save_negotiation_plan", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, contactStatus: receipt.proposal.contactStatus,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open received documents](/received-documents).`);
+          continue;
+        }
+        if (toolName === "record_budget_payment") {
+          const confirmationId = typeof toolArgs.gatewayConfirmationId === "string" ? toolArgs.gatewayConfirmationId : "";
+          const idempotencyKey = typeof toolArgs.gatewayIdempotencyKey === "string" ? toolArgs.gatewayIdempotencyKey : "";
+          const receipt = await executeConfirmedRecordPayment(
+            supabase as unknown as GatewayWriteDatabase,
+            { userId: user.id, role, plannerType },
+            confirmationId,
+            idempotencyKey,
+          );
+          await logFunctionEvent({
+            functionName: "wedding-ai-chat", severity: "info", status: "success",
+            eventType: "intelligence_gateway_write_succeeded",
+            message: receipt.outcome === "approval_requested"
+              ? "Submitted a payment entry for couple approval through a confirmed first-party Gateway action."
+              : "Recorded a payment through a confirmed first-party Gateway action.",
+            userId: user.id, audience: aiAudience, requestId,
+            entityId: receipt.payment.id ?? receipt.approvalRequestId,
+            details: {
+              capability: "record_payment", riskClass: "B", clientType: "zania_web",
+              authorizationDecision: "allowed", confirmationStatus: "confirmed",
+              confirmationId, idempotencyKey, outcome: receipt.outcome,
+            },
+          });
+          results.push(`- ✅ ${receipt.userSummary} [Open budget](/budget).`);
+          continue;
+        }
         const result = await executeTool(toolName, toolArgs, toolContext);
         results.push(`- ${result}`);
       }
@@ -1699,7 +2774,7 @@ ${role === "planner" ? "If no active client is selected, stay advisory and ask t
           };
         });
 
-        const writeActions = toolCalls
+        let writeActions = toolCalls
           .filter((toolCall: any) => isWriteTool(toolCall.functionName))
           .map((toolCall: any) => ({
             toolName: toolCall.functionName,
@@ -1709,6 +2784,144 @@ ${role === "planner" ? "If no active client is selected, stay advisory and ask t
           }));
 
         if (writeActions.length > 0 && !allowWriteActions) {
+          writeActions = await Promise.all(writeActions.map(async (action) => {
+            if (action.toolName !== "create_task" && action.toolName !== "update_task" && action.toolName !== "add_guest" && action.toolName !== "record_expense" && action.toolName !== "record_budget_payment" && action.toolName !== "create_vendor_follow_up_reminder" && action.toolName !== "save_vendor_candidate" && action.toolName !== "assign_vendor_candidate" && action.toolName !== "promote_vendor_candidate" && action.toolName !== "send_vendor_enquiry" && action.toolName !== "apply_vendor_response" && action.toolName !== "request_formal_vendor_quote" && action.toolName !== "request_formal_quote_changes" && action.toolName !== "save_negotiation_plan") return action;
+            const preview = action.toolName === "update_task"
+              ? await previewUpdateTask(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : action.toolName === "add_guest"
+              ? await previewAddGuest(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : action.toolName === "record_expense"
+              ? await previewRecordExpense(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : action.toolName === "create_vendor_follow_up_reminder"
+              ? await previewCreateVendorFollowUp(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                action.args,
+              )
+              : action.toolName === "save_vendor_candidate"
+              ? await previewSaveVendorCandidate(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : action.toolName === "assign_vendor_candidate"
+              ? await previewAssignVendorCandidate(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                action.args,
+              )
+              : action.toolName === "promote_vendor_candidate"
+              ? await previewPromoteVendorCandidate(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                action.args,
+              )
+              : action.toolName === "send_vendor_enquiry"
+              ? await previewSendVendorEnquiry(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : action.toolName === "apply_vendor_response"
+              ? await previewApplyVendorResponse(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : action.toolName === "request_formal_vendor_quote"
+              ? await previewRequestFormalVendorQuote(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : action.toolName === "request_formal_quote_changes"
+              ? await previewRequestFormalQuoteChanges(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : action.toolName === "save_negotiation_plan"
+              ? await previewSaveNegotiationPlan(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : action.toolName === "record_budget_payment"
+              ? await previewRecordPayment(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              )
+              : await previewCreateTask(
+                supabase as unknown as GatewayWriteDatabase,
+                { userId: user.id, role, plannerType },
+                typeof selectedClientId === "string" ? selectedClientId : null,
+                action.args,
+              );
+            await logFunctionEvent({
+              functionName: "wedding-ai-chat", severity: "info", status: "success",
+              eventType: "intelligence_gateway_write_previewed",
+              message: `Prepared an ${action.toolName} action for explicit first-party confirmation.`,
+              userId: user.id, audience: aiAudience, requestId, entityId: preview.wedding?.id ?? null,
+              details: {
+                capability: action.toolName, riskClass: "B", clientType: "zania_web",
+                confirmationStatus: "pending", confirmationId: preview.confirmationId,
+                idempotencyKey: preview.idempotencyKey,
+              },
+            });
+            return {
+              ...action,
+              summary: action.toolName === "record_expense" && "interpretedExpense" in preview
+                ? summarizePendingAction("record_expense", {
+                  category_name: preview.interpretedExpense.categoryName,
+                  payee_name: preview.interpretedExpense.payeeName,
+                  amount: preview.interpretedExpense.amount,
+                  expense_date: preview.interpretedExpense.expenseDate,
+                })
+                : action.toolName === "create_vendor_follow_up_reminder" && "interpretedReminder" in preview
+                ? summarizePendingAction("create_vendor_follow_up_reminder", {
+                  couple_name: preview.interpretedReminder.coupleName,
+                  title: preview.interpretedReminder.title,
+                  due_date: preview.interpretedReminder.dueDate,
+                })
+                : action.toolName === "record_budget_payment" && "interpretedPayment" in preview
+                ? summarizePendingAction("record_budget_payment", {
+                  category_name: preview.interpretedPayment.categoryName,
+                  payee_name: preview.interpretedPayment.payeeName,
+                  vendor_name: preview.interpretedPayment.vendorName,
+                  amount: preview.interpretedPayment.amount,
+                  payment_date: preview.interpretedPayment.paymentDate,
+                })
+                : action.summary,
+              args: {
+                ...action.args,
+                gatewayConfirmationId: preview.confirmationId,
+                gatewayIdempotencyKey: preview.idempotencyKey,
+              },
+            };
+          }));
           pendingActions = writeActions;
           finalContent = `## Ready to run ${writeActions.length === 1 ? "this action" : "these actions"}\n\n${writeActions.map((action) => `- ${action.summary}`).join("\n")}\n\nUse **Run this action** to apply the change${writeActions.length > 1 ? "s" : ""}.`;
           break;
@@ -1763,7 +2976,23 @@ ${role === "planner" ? "If no active client is selected, stay advisory and ask t
       }
     }
 
-    return new Response(JSON.stringify({ content: finalContent, usage: finalUsage, assistantRole: assistantRoleLabel, pendingActions }), {
+    if (finalContent.trim()) {
+      await persistAssistantMessage(adminClient, {
+        conversationId: assistantConversationId,
+        requestId: persistenceRequestId,
+        role: "assistant",
+        content: finalContent,
+        metadata: {
+          model: OPENAI_MODEL,
+          inputTokens,
+          cachedInputTokens,
+          outputTokens,
+          pendingActionCount: pendingActions.length,
+        },
+      });
+    }
+
+    return new Response(JSON.stringify({ content: finalContent, usage: finalUsage, assistantRole: assistantRoleLabel, pendingActions, conversationId: assistantConversationId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
@@ -1790,7 +3019,7 @@ ${role === "planner" ? "If no active client is selected, stay advisory and ask t
       });
     }
 
-    if (isAuthSessionError(error)) {
+    if (error instanceof WeddingBriefingError || isAuthSessionError(error)) {
       return new Response(JSON.stringify({ error: error.message }), {
         status: error.status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

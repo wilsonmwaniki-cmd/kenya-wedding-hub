@@ -1,6 +1,47 @@
 project_id = "csrrnirpgkqjhvqcyxjp"
 
+[auth]
+site_url = "https://www.planwithzania.com"
+additional_redirect_urls = [
+  "https://kenya-wedding-hub.vercel.app",
+  "https://kenya-wedding-hub.vercel.app/auth/callback",
+  "https://zaniaweddings.com",
+  "https://zaniaweddings.com/auth/callback",
+  "https://www.zaniaweddings.com/auth/callback",
+  "https://www.zaniaweddings.com",
+  "https://www.planwithzania.com",
+  "https://planwithzania.com",
+  "https://www.planwithzania.com/reset-password?type=recovery",
+]
+enable_anonymous_sign_ins = true
+password_requirements = "lower_upper_letters_digits"
+
+# Production CAPTCHA is enabled only after the matching Cloudflare Turnstile
+# site key has been added to Vercel as VITE_TURNSTILE_SITE_KEY. Keep the secret
+# outside source control, then configure the same provider in Supabase Auth:
+# [auth.captcha]
+# enabled = true
+# provider = "turnstile"
+# secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"
+
+[auth.email]
+enable_confirmations = true
+secure_password_change = true
+otp_length = 8
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
 [functions.wedding-ai-chat]
+verify_jwt = false
+
+[functions.intelligence-gateway-mcp]
+# OAuth discovery and token verification run inside the function middleware.
+verify_jwt = false
+
+[functions.analyze-external-contract]
+# The function validates the bearer token and trusted active session itself.
 verify_jwt = false
 
 [functions.handle-connection-response]
@@ -19,4 +60,25 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.professional-reviews]
+verify_jwt = false
+
+[functions.send-professional-contract]
+verify_jwt = true
+
+[functions.send-commercial-document]
+verify_jwt = true
+
+[functions.create-zania-pay-order]
+verify_jwt = true
+
+[functions.setup-zania-pay-account]
+verify_jwt = true
+
+[functions.zania-pay-paystack-webhook]
+verify_jwt = false
+
+[functions.zania-pay-operations]
+verify_jwt = false
+
+[functions.send-subscription-renewal-reminders]
 verify_jwt = false

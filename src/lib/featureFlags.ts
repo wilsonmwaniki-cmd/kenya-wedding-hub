@@ -1,3 +1,5 @@
+import { isStagingHostname } from '@/lib/appDomain';
+
 export function isProfessionalNetworkEnabled() {
   return import.meta.env.VITE_ENABLE_PROFESSIONAL_NETWORK === 'true';
 }
@@ -32,12 +34,15 @@ const productionLaunchPaths = new Set([
   '/clients',
   '/dashboard',
   '/start-plan',
+  '/plan',
   '/budget',
   '/tasks',
   '/vendors',
   '/vendor-dashboard',
   '/vendor-documents',
+  '/received-documents',
   '/planner-documents',
+  '/contacts',
   '/vendor-settings',
   '/settings',
 ]);
@@ -45,13 +50,15 @@ const productionLaunchPaths = new Set([
 export function resolveReleaseChannel(
   configuredChannel?: string,
   isDevelopment = false,
+  isStagingHost = false,
 ): ReleaseChannel {
-  if (configuredChannel === 'staging' || isDevelopment) return 'staging';
+  if (configuredChannel === 'staging' || isDevelopment || isStagingHost) return 'staging';
   return 'production';
 }
 
 export function getReleaseChannel(): ReleaseChannel {
-  return resolveReleaseChannel(import.meta.env.VITE_RELEASE_CHANNEL, import.meta.env.DEV);
+  const stagingHost = typeof window !== 'undefined' && isStagingHostname(window.location.hostname);
+  return resolveReleaseChannel(import.meta.env.VITE_RELEASE_CHANNEL, import.meta.env.DEV, stagingHost);
 }
 
 export function isPathEnabledForRelease(path: string, channel: ReleaseChannel) {

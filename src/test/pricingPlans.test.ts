@@ -26,12 +26,17 @@ describe('couple pricing model', () => {
       'wedding_collaboration',
       'planner_collaboration',
       'vendor_collaboration',
+      'ai_wedding_assistant',
+      'payments_send',
     ]);
   });
 });
 
 describe('professional pricing model', () => {
-  it.each(['planner', 'vendor'] as const)('offers Free and Professional to %s accounts', (audience) => {
+  it.each([
+    { audience: 'planner' as const, monthlyPriceKes: 1500 },
+    { audience: 'vendor' as const, monthlyPriceKes: 850 },
+  ])('offers Free and Professional to $audience accounts', ({ audience, monthlyPriceKes }) => {
     const free = getProfessionalPlanDefinitionWithContent(audience, 'free');
     const professional = getProfessionalPlanDefinitionWithContent(audience, 'premium');
 
@@ -39,8 +44,8 @@ describe('professional pricing model', () => {
     expect(free.includedFeatures).toContain('Standalone quotes, invoices, receipts, and contracts');
     expect(professional).toMatchObject({
       title: 'Professional',
-      monthlyPriceKes: 1000,
-      annualPriceKes: 9000,
+      monthlyPriceKes,
+      annualPriceKes: audience === 'planner' ? 15000 : 9000,
     });
     expect(professional.includedFeatures.some((feature) => feature.startsWith('Connect documents'))).toBe(true);
   });
@@ -50,6 +55,7 @@ describe('professional pricing model', () => {
       'booking_management',
       'document_collaboration',
       'media_portfolio',
+      'payments_accept',
     ]);
   });
 });

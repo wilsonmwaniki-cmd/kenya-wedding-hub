@@ -18,6 +18,7 @@ export type SegmentedNavItem = {
   disabled?: boolean;
   badge?: string | number;
   badgeLabel?: string;
+  badgeClassName?: string;
 };
 
 type IndicatorPosition = {
@@ -242,6 +243,7 @@ export function SegmentedNav({
                   className={cn(
                     'absolute right-0.5 top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground/[0.06] px-1 text-[8px] font-semibold leading-none text-muted-foreground sm:static sm:h-[18px] sm:min-w-[18px] sm:px-[5px] sm:text-[10px]',
                     active && 'bg-foreground/[0.075] text-foreground/75',
+                    item.badgeClassName,
                   )}
                 >
                   {item.badge}

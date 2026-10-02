@@ -1,8 +1,21 @@
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { seedPendingEstimatorPlanForUser } from '@/lib/estimatorPlanSeed';
 import { getHomeRouteForRole, type AppRole, type PlannerType } from '@/lib/roles';
 
 const PENDING_WEDDING_SETUP_STORAGE_KEY = 'zania-pending-wedding-setup';
+
+async function seedEstimatorPlanAfterWeddingSetup(user: User) {
+  // The estimator draft travels with the authenticated account. Seed it only
+  // after the wedding workspace exists so every category belongs to that
+  // workspace from the outset.
+  await seedPendingEstimatorPlanForUser({
+    userId: user.id,
+    role: 'couple',
+    plannerType: null,
+    userMetadata: user.user_metadata,
+  });
+}
 
 export type WeddingSignupIntent = 'create_wedding' | 'join_wedding' | 'professional';
 export type WeddingOwnerRole = 'bride' | 'groom';
@@ -627,6 +640,7 @@ export async function reconcilePendingWeddingSetupForExistingWorkspace(user: Use
     planner_type: null,
     partner_email: pendingSetup.partnerEmail ?? null,
   });
+  await seedEstimatorPlanAfterWeddingSetup(user);
   clearPendingWeddingSetup();
 
   return {
@@ -723,6 +737,7 @@ export async function completePendingWeddingSetup(user: User): Promise<{
         planner_type: null,
         partner_email: pendingSetup.partnerEmail ?? null,
       });
+      await seedEstimatorPlanAfterWeddingSetup(user);
 
       clearPendingWeddingSetup();
       return {
@@ -750,6 +765,7 @@ export async function completePendingWeddingSetup(user: User): Promise<{
       planner_type: null,
       partner_email: pendingSetup.partnerEmail ?? null,
     });
+    await seedEstimatorPlanAfterWeddingSetup(user);
     clearPendingWeddingSetup();
     return {
       handled: true,

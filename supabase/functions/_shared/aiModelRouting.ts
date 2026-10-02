@@ -98,6 +98,7 @@ export type ModelPricing = {
 };
 
 const DEFAULT_PRICING_PER_MILLION: Record<string, ModelPricing> = {
+  "gpt-5.5": { input: 5, cachedInput: 0.5, cacheWrite: 5, output: 30 },
   "gpt-5.6-luna": { input: 0.2, cachedInput: 0.02, cacheWrite: 0.25, output: 1.2 },
   "gpt-5.6-terra": { input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 12 },
   "gpt-5.6-sol": { input: 5, cachedInput: 0.5, cacheWrite: 6.25, output: 30 },
@@ -111,4 +112,24 @@ export function getDefaultModelPricing(model: string): ModelPricing {
     cacheWrite: 0,
     output: 0,
   };
+}
+
+export function estimateModelCostUsd(input: {
+  model: string;
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteTokens?: number;
+  outputTokens: number;
+  additionalCostUsd?: number;
+}) {
+  const pricing = getDefaultModelPricing(input.model);
+  const cacheWriteTokens = Math.max(input.cacheWriteTokens ?? 0, 0);
+  const cachedInputTokens = Math.max(input.cachedInputTokens, 0);
+  const nonCachedInputTokens = Math.max(input.inputTokens - cachedInputTokens - cacheWriteTokens, 0);
+  return (
+    (nonCachedInputTokens * pricing.input) +
+    (cachedInputTokens * pricing.cachedInput) +
+    (cacheWriteTokens * pricing.cacheWrite) +
+    (Math.max(input.outputTokens, 0) * pricing.output)
+  ) / 1_000_000 + Math.max(input.additionalCostUsd ?? 0, 0);
 }

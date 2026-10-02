@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { retryTransientRequest } from '@/lib/requestRetry';
 
 export type LeadProviderType = 'vendor' | 'planner';
 export type LeadRequestStatus = 'open' | 'matched' | 'no_match' | 'selected' | 'closed' | 'cancelled' | 'expired';
@@ -82,11 +83,13 @@ export async function listWeddingLeadRequests(weddingId: string) {
 
 export async function listLeadMatches(requestIds?: string[]) {
   if (requestIds && requestIds.length === 0) return [] as LeadMatch[];
-  let query = leadTable('lead_matches')
-    .select('id, lead_request_id, provider_type, provider_user_id, provider_name, provider_category, match_reasons, status, invited_at, responded_at')
-    .order('invited_at', { ascending: false });
-  if (requestIds?.length) query = query.in('lead_request_id', requestIds);
-  const { data, error } = await query;
+  const { data, error } = await retryTransientRequest(() => {
+    let query = leadTable('lead_matches')
+      .select('id, lead_request_id, provider_type, provider_user_id, provider_name, provider_category, match_reasons, status, invited_at, responded_at')
+      .order('invited_at', { ascending: false });
+    if (requestIds?.length) query = query.in('lead_request_id', requestIds);
+    return query;
+  });
   if (error) throw error;
   return (data ?? []) as LeadMatch[];
 }

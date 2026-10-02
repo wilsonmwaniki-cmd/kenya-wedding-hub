@@ -10,7 +10,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(({ className, interacti
   <div
     ref={ref}
     className={cn(
-      "rounded-[1.5rem] border border-[rgba(217,193,164,0.34)] bg-[rgba(255,251,246,0.96)] text-card-foreground shadow-[0_24px_60px_-34px_rgba(58,34,28,0.22),0_1px_0_rgba(255,255,255,0.7)_inset] backdrop-blur-sm",
+      "min-w-0 max-w-full rounded-[1.5rem] border border-[rgba(217,193,164,0.34)] bg-[rgba(255,251,246,0.96)] text-card-foreground shadow-[0_24px_60px_-34px_rgba(58,34,28,0.22),0_1px_0_rgba(255,255,255,0.7)_inset] backdrop-blur-sm",
       interactive && "ease-zania cursor-pointer transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_28px_64px_-34px_rgba(58,34,28,0.28)] active:translate-y-0 active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transform-none motion-reduce:transition-none",
       className,
     )}

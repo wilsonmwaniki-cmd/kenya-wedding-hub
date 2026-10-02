@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const EFFECTIVE_DATE = "June 18, 2026";
-const LAST_UPDATED = "August 23, 2026";
+const LAST_UPDATED = "September 2, 2026";
 
 const sections = [
   {
@@ -103,8 +103,9 @@ const sections = [
       {
         title: "Payment and Transaction Data",
         body: [
-          "If payments, subscriptions, vendor bookings, commissions, or other financial transactions are enabled on Zania, we may collect billing details, transaction references, subscription status, payment confirmation details, and invoice or receipt information.",
-          "We do not intentionally store full card details or mobile money PINs. Payments may be processed by third-party payment providers, who handle payment data under their own privacy and security terms.",
+          "If payments, subscriptions, vendor bookings, commissions, or other financial transactions are enabled on Zania, we may collect billing details, transaction references, subscription status, payment confirmation details, invoice or receipt information, masked payout destination details, verification status, fees, settlement status, refunds, reversals, and disputes.",
+          "Zania Pay is processed by Paystack Payments Kenya Limited or another provider identified at checkout. We share the information needed to create and verify a professional payout account, process a payment, settle funds, prevent fraud, issue refunds, and resolve disputes. This may include names, contact details, business information, invoice details, payment method, mobile number, and bank or mobile-money payout details.",
+          "We do not intentionally store full card details, mobile money PINs, or the full payout account number submitted during Zania Pay setup. Zania stores a masked destination, provider reference, and verification status; the payment provider handles the full payment or payout details under its own privacy and security terms.",
         ],
       },
       {

@@ -1617,7 +1617,10 @@ export function buildSeededTasksFromTemplates(input: {
       category: template.category,
       assigned_to: template.recommendedRole,
       due_date: resolvedDueDate,
-      completed: false,
+      completed: Boolean(
+        input.weddingDate
+        && template.key === 'couples-tasks-decide-on-a-wedding-date'
+      ),
       phase: template.phase,
       visibility: template.visibility,
       delegatable: template.delegatable,

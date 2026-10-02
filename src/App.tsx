@@ -14,8 +14,10 @@ import LaunchFeature from "@/components/LaunchFeature";
 import { isLeadMarketplaceEnabled, isPlanningExperimentEnabled } from "@/lib/featureFlags";
 
 const Landing = lazy(() => import("./pages/Landing"));
+const ExploreZania = lazy(() => import("./pages/ExploreZania"));
 const Auth = lazy(() => import("./pages/Auth"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
+const OAuthConsent = lazy(() => import("./pages/OAuthConsent"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const PlannerDashboard = lazy(() => import("./pages/PlannerDashboard"));
 const Budget = lazy(() => import("./pages/Budget"));
@@ -25,15 +27,19 @@ const Contributions = lazy(() => import("./pages/Contributions"));
 const ContributionsShare = lazy(() => import("./pages/ContributionsShare"));
 const GiftRegistry = lazy(() => import("./pages/GiftRegistry"));
 const Vendors = lazy(() => import("./pages/Vendors"));
+const VendorCandidates = lazy(() => import("./pages/VendorCandidates"));
 const VendorDirectory = lazy(() => import("./pages/VendorDirectory"));
 const VendorClaim = lazy(() => import("./pages/VendorClaim"));
 const VendorProfile = lazy(() => import("./pages/VendorProfile"));
+const VendorEnquiryResponse = lazy(() => import("./pages/VendorEnquiryResponse"));
 const VendorSettings = lazy(() => import("./pages/VendorSettings"));
 const VendorDashboard = lazy(() => import("./pages/VendorDashboard"));
 const VendorDocuments = lazy(() => import("./pages/VendorDocuments"));
 const PlannerDocuments = lazy(() => import("./pages/PlannerDocuments"));
+const ProfessionalContacts = lazy(() => import("./pages/ProfessionalContacts"));
 const CommercialDocumentPrint = lazy(() => import("./pages/CommercialDocumentPrint"));
 const CommercialDocumentShare = lazy(() => import("./pages/CommercialDocumentShare"));
+const ReceivedDocuments = lazy(() => import("./pages/ReceivedDocuments"));
 const ProfessionalContractShare = lazy(() => import("./pages/ProfessionalContractShare"));
 const ProfessionalContractPreview = lazy(() => import("./pages/ProfessionalContractPreview"));
 const AiChat = lazy(() => import("./pages/AiChat"));
@@ -138,11 +144,13 @@ const App = () => (
             <Routes>
               <Route path="/" element={<PublicPage><Landing /></PublicPage>} />
               <Route path="/start-plan" element={<PublicPage><Landing /></PublicPage>} />
+              <Route path="/explore" element={<PublicPage><ExploreZania /></PublicPage>} />
               <Route path="/auth" element={<PublicPage><Auth /></PublicPage>} />
               <Route path="/sign-in" element={<PublicPage><Auth /></PublicPage>} />
               <Route path="/forgot-password" element={<PublicPage><Auth /></PublicPage>} />
               <Route path="/admin/login" element={<PublicPage><Auth /></PublicPage>} />
               <Route path="/auth/callback" element={<PublicPage><AuthCallback /></PublicPage>} />
+              <Route path="/oauth/consent" element={<PublicPage><OAuthConsent /></PublicPage>} />
               <Route path="/reset-password" element={<PublicPage><ResetPassword /></PublicPage>} />
               <Route path="/pricing" element={<PublicPage><Pricing /></PublicPage>} />
               <Route path="/privacy" element={<PublicPage><PrivacyPolicy /></PublicPage>} />
@@ -151,6 +159,7 @@ const App = () => (
               <Route path="/vendors-directory" element={<PublicPage><VendorDirectory /></PublicPage>} />
               <Route path="/vendors-directory/collections/:slug" element={<PublicPage><VendorDirectory /></PublicPage>} />
               <Route path="/vendor/:id" element={<PublicPage><VendorProfile /></PublicPage>} />
+              <Route path="/vendor-enquiry/respond/:token" element={<PublicPage><VendorEnquiryResponse /></PublicPage>} />
               <Route path="/vendor-claim" element={<PublicPage><VendorClaim /></PublicPage>} />
               <Route path="/planner/:id" element={<PublicPage><PlannerProfile /></PublicPage>} />
               <Route path="/contributions/share/:token" element={<PublicPage><ContributionsShare /></PublicPage>} />
@@ -173,12 +182,14 @@ const App = () => (
               <Route path="/labs/network" element={<ProtectedPage allowedRoles={['planner', 'vendor']}><ProfessionalNetwork /></ProtectedPage>} />
               <Route path="/clients" element={<ProtectedPage allowedRoles={['planner']}><PlannerDashboard /></ProtectedPage>} />
               <Route path="/dashboard" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Dashboard /></ProtectedPage>} />
+              <Route path="/received-documents" element={<ProtectedPage allowedRoles={['couple', 'planner']}><ReceivedDocuments /></ProtectedPage>} />
               <Route path="/budget" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Budget /></ProtectedPage>} />
               <Route path="/tasks" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Tasks /></ProtectedPage>} />
               <Route path="/guests" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/guests"><Guests /></LaunchFeature></ProtectedPage>} />
               <Route path="/contributions" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/contributions"><Contributions /></LaunchFeature></ProtectedPage>} />
               <Route path="/gift-registry" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/gift-registry"><GiftRegistry /></LaunchFeature></ProtectedPage>} />
               <Route path="/vendors" element={<ProtectedPage allowedRoles={['couple', 'planner']}><Vendors /></ProtectedPage>} />
+              <Route path="/vendor-candidates" element={<ProtectedPage allowedRoles={['couple', 'planner']}><VendorCandidates /></ProtectedPage>} />
               <Route path="/space-plan" element={<ProtectedPage allowedRoles={['couple', 'planner']}><LaunchFeature path="/space-plan"><SpaceTablePlan /></LaunchFeature></ProtectedPage>} />
               <Route path="/vendor-dashboard" element={<ProtectedPage allowedRoles={['vendor']}><VendorDashboard /></ProtectedPage>} />
               <Route
@@ -191,6 +202,7 @@ const App = () => (
               <Route path="/vendor-documents/:section" element={<ProtectedPage allowedRoles={['vendor']}><VendorDocuments /></ProtectedPage>} />
               <Route path="/planner-documents" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
               <Route path="/planner-documents/:section" element={<ProtectedPage allowedRoles={['planner']}><PlannerDocuments /></ProtectedPage>} />
+              <Route path="/contacts" element={<ProtectedPage allowedRoles={['vendor', 'planner']}><ProfessionalContacts /></ProtectedPage>} />
               <Route path="/reviews" element={<ProtectedPage allowedRoles={['vendor', 'planner']}><ReviewInvitations /></ProtectedPage>} />
               <Route path="/vendor-settings" element={<ProtectedPage allowedRoles={['vendor']}><VendorSettings /></ProtectedPage>} />
               <Route path="/ai-chat" element={<ProtectedPage allowedRoles={['couple', 'planner', 'vendor']}><LaunchFeature path="/ai-chat"><AiChat /></LaunchFeature></ProtectedPage>} />

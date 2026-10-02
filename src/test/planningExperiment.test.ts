@@ -19,6 +19,25 @@ describe('planning experiment recommendations', () => {
     expect(result.budgetRows.every((row) => row.allocated >= 0)).toBe(true);
   });
 
+  it('only generates categories accepted by the planning catalog', () => {
+    const result = buildPlanningRecommendations(baseInput);
+    const acceptedCategoryAliases = new Set([
+      'Venue',
+      'Catering',
+      'Photography',
+      'Attire',
+      'Décor',
+      'Entertainment',
+      'Planning',
+      'Transport',
+      'Beauty',
+      'Invitations',
+    ]);
+
+    expect(result.budgetRows.every((row) => acceptedCategoryAliases.has(row.name))).toBe(true);
+    expect(result.budgetRows.some((row) => row.name === 'Contingency')).toBe(false);
+  });
+
   it('creates no more than ten tasks and removes tasks for booked categories', () => {
     const result = buildPlanningRecommendations({
       ...baseInput,

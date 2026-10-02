@@ -11,6 +11,7 @@ import {
 import { loadPricingCheckoutConfig } from '../_shared/pricingCatalog.ts';
 import { logFunctionEvent } from '../_shared/runtimeLogger.ts';
 import { assertActiveAuthSession, isAuthSessionError } from '../_shared/sessionGuard.ts';
+import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from '../_shared/demoGuard.ts';
 
 serve(async (req) => {
   const corsHeaders = createCorsHeaders(req);
@@ -35,6 +36,7 @@ serve(async (req) => {
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
     const { data: { user }, error: userError } = await authClient.auth.getUser();
     if (userError || !user) throw Object.assign(new Error('You must be signed in before checkout sync can run.'), { status: 401 });
+    if (isTemporaryDemoUser(user)) throw Object.assign(new Error(DEMO_EXTERNAL_ACTION_MESSAGE), { status: 403, code: 'demo_action_blocked' });
     await assertActiveAuthSession(serviceClient, authHeader, user.id);
 
     const { data: transaction, error: transactionError } = await serviceClient

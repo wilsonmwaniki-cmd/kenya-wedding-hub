@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowRight, Loader2, Send, X } from 'lucide-react';
@@ -11,6 +11,7 @@ import type { AiAssistantMessage } from '@/lib/aiAssistant';
 import type { EntitlementFeature } from '@/lib/entitlements';
 import type { PlannerType } from '@/lib/roles';
 import { useAssistantPanel } from '@/contexts/AssistantPanelContext';
+import { getAssistantAudience, loadLatestAssistantConversation } from '@/lib/assistantConversations';
 
 function ZaniaMonogram({
   className = '',
@@ -157,16 +158,32 @@ function getAssistantSurface(pathname: string, role?: string | null) {
   }
 
   return {
-    label: role === 'vendor' ? 'Vendor workspace' : 'Dashboard',
-    page: role === 'vendor' ? 'vendor_workspace' : 'dashboard',
+    label: role === 'vendor' ? 'Vendor workspace' : role === 'planner' ? 'Planner workspace' : 'Wedding home',
+    page: role === 'vendor' ? 'vendor_workspace' : role === 'planner' ? 'planner_dashboard' : 'dashboard',
     contextSource: 'assistant_panel_dashboard',
-    title: role === 'vendor' ? 'Vendor assistant' : 'Wedding assistant',
-    description: 'Get one clear recommendation based on the page you are already on.',
-    prompts: [
-      'Give me the next best move from this workspace.',
-      'Tell me what needs attention first right now.',
-      'Summarize the most important action to take next.',
-    ],
+    title: role === 'vendor' ? 'Vendor assistant' : role === 'planner' ? 'Planner assistant' : 'Wedding assistant',
+    description: role === 'planner'
+      ? 'Ask about priorities across your client weddings, then choose the client before Zania makes a change.'
+      : role === 'vendor'
+        ? 'Ask about leads, bookings, documents, payments, or the next client follow-up.'
+        : 'Ask about your wedding plan or tell Zania what you want to update.',
+    prompts: role === 'planner'
+      ? [
+        'Which client wedding needs my attention first today?',
+        'Summarize the overdue work across my client weddings.',
+        'Help me decide the next planner action, then ask before changing anything.',
+      ]
+      : role === 'vendor'
+        ? [
+          'Which lead or booking needs my attention first?',
+          'Summarize the client follow-ups and payment attention in this workspace.',
+          'Help me move the next client step forward.',
+        ]
+        : [
+          'What should we focus on this week?',
+          'How is our wedding plan doing?',
+          'Help me complete the next planning action.',
+        ],
   };
 }
 
@@ -182,14 +199,23 @@ export default function AssistantPanel({
   const [promptIndex, setPromptIndex] = useState(0);
   const [animatedPrompt, setAnimatedPrompt] = useState('');
   const [activeRequestPrompt, setActiveRequestPrompt] = useState('');
+  const [completedBriefingRequestId, setCompletedBriefingRequestId] = useState<number | null>(null);
   const [conversation, setConversation] = useState<AiAssistantMessage[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const handledLaunchRequestIdRef = useRef<number | null>(null);
+  const requestSequenceRef = useRef(0);
   const assistantPanel = useAssistantPanel();
+  const launchRequest = assistantPanel?.launchRequest ?? null;
+  const launchRequestId = launchRequest?.id ?? null;
+  const launchPrompt = launchRequest?.prompt ?? null;
+  const launchAutoSubmit = launchRequest?.autoSubmit ?? false;
   const feature = useMemo(() => getAssistantFeature(role, plannerType), [plannerType, role]);
   const surface = useMemo(() => getAssistantSurface(location.pathname, role), [location.pathname, role]);
   const compactDesktopLauncher = surface.page === 'settings';
-  const activeConciergeContext = assistantPanel?.launchRequest?.conciergeContext ?? null;
+  const activeConciergeContext = launchRequest?.conciergeContext ?? null;
 
   const assistant = useInlineAssistant({
     feature: feature ?? 'couple.ai_assistant',
@@ -198,10 +224,17 @@ export default function AssistantPanel({
     contextSource: surface.contextSource,
     initialMessages: conversation,
     conciergeContext: activeConciergeContext,
+    conversationId,
   });
   const starterPrompt = surface.prompts[0] ?? '';
+  const suggestedPrompts = !conversation.length
+    && (role === 'couple' || (role === 'planner' && plannerType !== 'committee'))
+    ? ['How is my wedding doing?', 'What should I focus on this week?']
+    : surface.prompts;
   const activePrompt = surface.prompts[promptIndex % Math.max(surface.prompts.length, 1)] ?? starterPrompt;
-  const assistantBusy = assistant.loading || assistant.usageLoading || assistant.accessLoading;
+  const assistantBusy = assistant.loading || assistant.usageLoading || assistant.accessLoading || historyLoading;
+  const assistantDecisionReady = assistant.decision !== null;
+  const runInlineAssistantPrompt = assistant.runPrompt;
   const launcherPrompt = animatedPrompt || 'Ask Zania what needs attention...';
   const composerPlaceholder = surface.page === 'planner_dashboard'
     ? 'Ask about your client weddings...'
@@ -209,13 +242,65 @@ export default function AssistantPanel({
       ? 'Ask about your vendor workspace...'
       : 'Ask about this wedding...';
 
+  const runAssistantPrompt = useCallback(async (
+    promptValue: string,
+    surfaceName = 'assistant_panel_custom',
+    showPrompt = true,
+  ) => {
+    const prompt = promptValue.trim();
+    if (!prompt) return null;
+    const requestSequence = ++requestSequenceRef.current;
+    setActiveRequestPrompt(showPrompt ? prompt : '');
+    setCustomPrompt('');
+    const result = await runInlineAssistantPrompt(prompt, {
+      contextSource: surface.contextSource,
+      surface: surfaceName,
+      conciergeContext: activeConciergeContext,
+    });
+    if (requestSequence !== requestSequenceRef.current) return null;
+    if (result) {
+      setConversation((current) => [
+        ...current,
+        ...(showPrompt ? [{ role: 'user' as const, content: prompt }] : []),
+        { role: 'assistant', content: result },
+      ]);
+    }
+    setActiveRequestPrompt('');
+    return result;
+  }, [activeConciergeContext, runInlineAssistantPrompt, surface.contextSource]);
+
   useEffect(() => {
+    requestSequenceRef.current += 1;
     assistant.clearResponse();
     setCustomPrompt('');
     setActiveRequestPrompt('');
-    setConversation([]);
     setPromptIndex(0);
-  }, [location.pathname, starterPrompt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.pathname, starterPrompt, assistant.workspaceKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!assistantPanel?.open || !feature || !assistant.canUseAssistant) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    void loadLatestAssistantConversation(getAssistantAudience(role, plannerType))
+      .then((history) => {
+        if (cancelled) return;
+        setConversationId(history.conversationId);
+        setConversation(history.messages);
+      })
+      .catch((error) => {
+        if (!cancelled) console.error('Could not load Ask Zania history:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assistant.canUseAssistant, assistantPanel?.open, feature, plannerType, role]);
+
+  useEffect(() => {
+    if (assistant.conversationId) setConversationId(assistant.conversationId);
+  }, [assistant.conversationId]);
 
   useEffect(() => {
     if (!surface.prompts.length) return undefined;
@@ -258,9 +343,41 @@ export default function AssistantPanel({
   }, [activePrompt, surface.prompts]);
 
   useEffect(() => {
-    if (!assistantPanel?.launchRequest) return;
-    setCustomPrompt(assistantPanel.launchRequest.prompt ?? '');
-  }, [assistantPanel?.launchRequest?.id, assistantPanel?.launchRequest?.prompt]);
+    if (!launchRequestId) return;
+    if (!launchAutoSubmit) {
+      setCustomPrompt(launchPrompt ?? '');
+    }
+    setCompletedBriefingRequestId(null);
+  }, [launchAutoSubmit, launchPrompt, launchRequestId]);
+
+  useEffect(() => {
+    if (
+      !assistantPanel?.open
+      || !launchAutoSubmit
+      || !launchPrompt
+      || !launchRequestId
+      || handledLaunchRequestIdRef.current === launchRequestId
+      || assistantBusy
+      || !assistantDecisionReady
+    ) {
+      return;
+    }
+
+    handledLaunchRequestIdRef.current = launchRequestId;
+    if (!assistant.canUseAssistant) return;
+    void runAssistantPrompt(launchPrompt, 'assistant_panel_briefing', false).then((result) => {
+      if (result) setCompletedBriefingRequestId(launchRequestId);
+    });
+  }, [
+    assistant.canUseAssistant,
+    assistantDecisionReady,
+    assistantBusy,
+    assistantPanel?.open,
+    launchAutoSubmit,
+    launchPrompt,
+    launchRequestId,
+    runAssistantPrompt,
+  ]);
 
   useEffect(() => {
     if (!assistantPanel?.open) return;
@@ -305,26 +422,6 @@ export default function AssistantPanel({
 
   if (!assistantPanel || !feature || location.pathname === '/ai-chat') return null;
 
-  const runAssistantPrompt = async (promptValue: string, surfaceName = 'assistant_panel_custom') => {
-    const prompt = promptValue.trim();
-    if (!prompt) return;
-    setActiveRequestPrompt(prompt);
-    setCustomPrompt('');
-    const result = await assistant.runPrompt(prompt, {
-      contextSource: surface.contextSource,
-      surface: surfaceName,
-      conciergeContext: activeConciergeContext,
-    });
-    if (result) {
-      setConversation((current) => [
-        ...current,
-        { role: 'user', content: prompt },
-        { role: 'assistant', content: result },
-      ]);
-      setActiveRequestPrompt('');
-    }
-  };
-
   const submitCustomPrompt = async () => {
     if (!customPrompt.trim()) return;
     await runAssistantPrompt(customPrompt.trim());
@@ -336,7 +433,7 @@ export default function AssistantPanel({
         {!assistantPanel.open ? (
           <motion.button
             type="button"
-            onClick={() => assistantPanel.setOpen(true)}
+            onClick={() => assistantPanel.openAssistant()}
             initial={{ opacity: 0, y: 18, scale: 0.97, filter: 'blur(8px)' }}
             animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
             exit={{ opacity: 0, y: 16, scale: 0.97, filter: 'blur(8px)' }}
@@ -498,6 +595,39 @@ export default function AssistantPanel({
                         </motion.div>
                       ) : null}
 
+                      {!assistantBusy
+                        && completedBriefingRequestId === assistantPanel.launchRequest?.id
+                        && assistantPanel.launchRequest.actions.length ? (
+                        <motion.section
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="max-w-[94%] rounded-2xl border border-border bg-card p-3.5 shadow-card sm:max-w-[92%] sm:p-4"
+                          aria-labelledby="briefing-actions-title"
+                        >
+                          <p
+                            id="briefing-actions-title"
+                            className="text-[0.62rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+                          >
+                            Recommended actions
+                          </p>
+                          <div className="mt-2 grid gap-2">
+                            {assistantPanel.launchRequest.actions.map((action) => (
+                              <Button
+                                key={`${action.label}-${action.path}`}
+                                asChild
+                                variant="outline"
+                                className="h-auto min-h-11 justify-between gap-3 whitespace-normal px-3 py-2.5 text-left"
+                              >
+                                <Link to={action.path} onClick={() => assistantPanel.setOpen(false)}>
+                                  <span>{action.label}</span>
+                                  <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                </Link>
+                              </Button>
+                            ))}
+                          </div>
+                        </motion.section>
+                      ) : null}
+
                       <AnimatePresence mode="wait">
                         {assistantBusy ? (
                           <motion.div
@@ -528,7 +658,7 @@ export default function AssistantPanel({
                   )}
                 </div>
 
-                {!(assistant.decision && !assistant.canUseAssistant) && !assistantBusy && !assistant.error ? (
+                {!conversation.length && !activeRequestPrompt && !(assistant.decision && !assistant.canUseAssistant) && !assistantBusy && !assistant.error ? (
                   <section className="relative border-t border-border bg-card/40 px-3.5 py-3 sm:px-5 sm:py-4" aria-labelledby="assistant-suggestions-title">
                     <p
                       id="assistant-suggestions-title"
@@ -537,10 +667,12 @@ export default function AssistantPanel({
                       Try asking
                     </p>
                     <div className="border-y border-border/75">
-                      {surface.prompts.map((prompt, index) => (
+                      {suggestedPrompts.map((prompt, index) => (
                         <button
                           key={prompt}
                           type="button"
+                          aria-label={prompt}
+                          disabled={!assistant.canUseAssistant}
                           onClick={() => void runAssistantPrompt(prompt, 'assistant_panel_suggestion')}
                           className="group grid w-full grid-cols-[1.5rem_minmax(0,1fr)_1.25rem] items-center gap-2 border-b border-border/75 py-2.5 text-left text-foreground transition-colors last:border-b-0 hover:bg-primary/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:py-3"
                         >

@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   BadgeCheck,
   CircleDollarSign,
+  CopyPlus,
+  Download,
   Eye,
+  FilePlus2,
+  History,
   Link2,
   Loader2,
   Mail,
@@ -16,6 +20,7 @@ import {
   ShieldOff,
   Trash2,
   Wallet,
+  XCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ToastAction } from '@/components/ui/toast';
 import {
   Select,
   SelectContent,
@@ -37,21 +43,38 @@ import ContractsWorkspace from '@/components/documents/ContractsWorkspace';
 import DocumentActionOverview from '@/components/documents/DocumentActionOverview';
 import DocumentCollaborationUpgrade from '@/components/documents/DocumentCollaborationUpgrade';
 import DocumentWorkspaceHeader from '@/components/documents/DocumentWorkspaceHeader';
+import ZaniaPaySetupCard from '@/components/documents/ZaniaPaySetupCard';
 import TemplatesWorkspace from '@/components/documents/TemplatesWorkspace';
+import DocumentActionMenus, { type DocumentMenuAction } from '@/components/documents/DocumentActionMenus';
+import DocumentEmailHistoryDialog from '@/components/documents/DocumentEmailHistoryDialog';
 import CommercialDocumentEditor, {
   type CommercialDocumentHeaderDraft,
 } from '@/components/documents/CommercialDocumentEditor';
+import CurrencyInput from '@/components/documents/CurrencyInput';
+import QuantityInput from '@/components/documents/QuantityInput';
+import QuoteResponseNotice from '@/components/documents/QuoteResponseNotice';
+import ExternalPaymentReportsPanel from '@/components/documents/ExternalPaymentReportsPanel';
+import MobileDetailBackButton from '@/components/documents/MobileDetailBackButton';
+import { useMobileDetailNavigation } from '@/hooks/useMobileDetailNavigation';
+import { useDocumentAutosave } from '@/hooks/useDocumentAutosave';
 import {
-  buildCommercialDocumentShareEmailDraft,
+  buildCommercialDocumentAutosaveSnapshot,
+  calculateCommercialDocumentDraftTotals,
+  type CommercialDocumentAutosaveSnapshot,
+} from '@/lib/commercialDocumentAutosave';
+import {
   buildCommercialDocumentShareUrl,
   commercialDocumentPaymentMethodLabel,
   commercialDocumentPaymentMethodOptions,
   commercialDocumentStatusLabel,
   commercialDocumentStatusOptionsFor,
   commercialDocumentTypeLabel,
+  additionalRecipientEmailsFromMetadata,
   createCommercialDocument,
+  createTemplateFromCommercialDocument,
   convertQuoteToInvoice,
   deleteCommercialDocument,
+  duplicateCommercialDocument,
   ensureCommercialDocumentShareToken,
   getCommercialDocumentShareState,
   getCommercialDocument,
@@ -64,6 +87,7 @@ import {
   refreshCommercialDocumentShareToken,
   revokeCommercialDocumentShareToken,
   saveCommercialDocumentItems,
+  sendCommercialDocumentEmail,
   updateCommercialDocument,
   updateDocumentTemplate,
   type CommercialDocumentDetail,
@@ -84,6 +108,9 @@ import {
   type DocumentRequestRecord,
 } from '@/lib/documentRequests';
 import { buildPricingHref } from '@/lib/pricingPlans';
+import { commercialDocumentActionPolicy } from '@/lib/documentActionPolicy';
+import { clearDocumentSetupDraft, readDocumentSetupDraft, writeDocumentSetupDraft } from '@/lib/documentSetupDraft';
+import { deleteProfessionalContact, saveDocumentRecipientAsContact } from '@/lib/professionalContacts';
 
 type CreateDocumentDraft = {
   documentType: CommercialDocumentType;
@@ -119,6 +146,11 @@ type VendorDocumentsPrefillState = {
   createDocumentRecipientPhone?: string | null;
   createDocumentWeddingName?: string | null;
   createDocumentBookingLabel?: string | null;
+  openDocumentId?: string;
+  openContractId?: string;
+  focus?: 'payment' | 'email';
+  focusedPaymentId?: string;
+  focusedEmailEventId?: string;
 };
 
 function formatCurrency(amount: number) {
@@ -152,8 +184,8 @@ export default function VendorDocuments() {
   const { toast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
-  const { isSuperAdmin, rolePreview } = useAuth();
-  const { entitlements, loading: entitlementsLoading } = useProfessionalEntitlements('vendor');
+  const { user, isSuperAdmin, rolePreview } = useAuth();
+  const { entitlements, loading: entitlementsLoading, unavailable: entitlementsUnavailable } = useProfessionalEntitlements('vendor');
   const canConnectDocuments = Boolean(entitlements.document_collaboration || entitlements.invoicing) || (isSuperAdmin && rolePreview === 'vendor');
   const routePrefill = (location.state as VendorDocumentsPrefillState | null) ?? null;
   const [loading, setLoading] = useState(true);
@@ -177,6 +209,7 @@ export default function VendorDocuments() {
   const [issuingReceiptId, setIssuingReceiptId] = useState<string | null>(null);
   const [sharingDocumentId, setSharingDocumentId] = useState<string | null>(null);
   const [shareState, setShareState] = useState<CommercialDocumentShareState | null>(null);
+  const [emailHistoryOpen, setEmailHistoryOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<CreateDocumentDraft>({
     documentType: 'quote',
     title: '',
@@ -202,6 +235,14 @@ export default function VendorDocuments() {
   const [headerDraft, setHeaderDraft] = useState<CommercialDocumentHeaderDraft | null>(null);
   const [itemDrafts, setItemDrafts] = useState<SaveCommercialDocumentItemInput[]>([]);
   const [hasAppliedRoutePrefill, setHasAppliedRoutePrefill] = useState(false);
+  const documentsLoadedRef = useRef(false);
+  const handledDeepLinkRef = useRef<string | null>(null);
+  const { mobileDetailOpen, openMobileDetail, closeMobileDetail, resetMobileDetail } = useMobileDetailNavigation();
+
+  useEffect(() => {
+    if (!user || !createOpen || activeRequestId || createDraft.documentType === 'receipt') return;
+    writeDocumentSetupDraft(user.id, 'vendor', createDraft.documentType, createDraft);
+  }, [activeRequestId, createDraft, createOpen, user]);
 
   const activeSection: DocumentsSection = useMemo(() => {
     if (location.pathname.endsWith('/quotes')) return 'quotes';
@@ -219,6 +260,29 @@ export default function VendorDocuments() {
     return 'all';
   }, [activeSection]);
 
+  const showDocumentWorkspace =
+    activeSection === 'overview' ||
+    activeSection === 'quotes' ||
+    activeSection === 'invoices' ||
+    activeSection === 'receipts';
+
+  useEffect(() => {
+    resetMobileDetail();
+  }, [activeSection, resetMobileDetail]);
+
+  const openDocumentDetail = (documentId: string) => {
+    openMobileDetail(() => setSelectedDocumentId(documentId));
+  };
+
+  useEffect(() => {
+    const documentId = routePrefill?.openDocumentId;
+    if (!documentId || !documents.some((document) => document.id === documentId)) return;
+    const key = `${documentId}:${routePrefill.focus ?? ''}:${routePrefill.focusedPaymentId ?? ''}:${routePrefill.focusedEmailEventId ?? ''}`;
+    if (handledDeepLinkRef.current === key) return;
+    handledDeepLinkRef.current = key;
+    openMobileDetail(() => setSelectedDocumentId(documentId));
+  }, [documents, openMobileDetail, routePrefill]);
+
   const loadDocuments = async (preferredId?: string | null) => {
     const next = await listCommercialDocuments({
       role: 'vendor',
@@ -232,6 +296,63 @@ export default function VendorDocuments() {
       return next[0]?.id ?? null;
     });
   };
+
+  useEffect(() => {
+    if (!showDocumentWorkspace) {
+      if (!documentsLoadedRef.current) setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const firstLoad = !documentsLoadedRef.current;
+    if (firstLoad) setLoading(true);
+    else setRefreshing(true);
+
+    const handle = window.setTimeout(async () => {
+      const startedAt = performance.now();
+      try {
+        const next = await listCommercialDocuments({
+          role: 'vendor',
+          documentType: activeType === 'all' ? undefined : activeType,
+          search: search.trim() || undefined,
+        });
+        if (cancelled) return;
+
+        setDocuments(next);
+        setSelectedDocumentId((current) => {
+          if (current && next.some((document) => document.id === current)) return current;
+          return next[0]?.id ?? null;
+        });
+        documentsLoadedRef.current = true;
+        console.info('[documents] list loaded', {
+          role: 'vendor',
+          section: activeSection,
+          count: next.length,
+          durationMs: Math.round(performance.now() - startedAt),
+          firstLoad,
+        });
+      } catch (error) {
+        console.error('Could not load vendor documents:', error);
+        if (firstLoad) {
+          toast({
+            title: 'Could not load documents',
+            description: 'We could not open your commercial documents workspace.',
+            variant: 'destructive',
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    }, firstLoad ? 0 : 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [activeSection, activeType, search, showDocumentWorkspace, toast]);
 
   useEffect(() => {
     if (entitlementsLoading) return;
@@ -274,17 +395,8 @@ export default function VendorDocuments() {
         if (requestsResult.status === 'rejected') {
           console.error('Could not load vendor document requests:', requestsResult.reason);
         }
-
-        await loadDocuments();
       } catch (error) {
-        console.error('Could not load vendor documents workspace:', error);
-        toast({
-          title: 'Could not load documents',
-          description: 'We could not open your commercial documents workspace.',
-          variant: 'destructive',
-        });
-      } finally {
-        if (!cancelled) setLoading(false);
+        console.error('Could not load vendor document controls:', error);
       }
     };
 
@@ -294,28 +406,6 @@ export default function VendorDocuments() {
       cancelled = true;
     };
   }, [canConnectDocuments, entitlementsLoading]);
-
-  useEffect(() => {
-    if (loading) return;
-    let cancelled = false;
-
-    const refresh = async () => {
-      setRefreshing(true);
-      try {
-        await loadDocuments(selectedDocumentId);
-      } catch (error) {
-        console.error('Could not refresh vendor documents:', error);
-      } finally {
-        if (!cancelled) setRefreshing(false);
-      }
-    };
-
-    const handle = window.setTimeout(refresh, 180);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [search, activeType]);
 
   useEffect(() => {
     if (!selectedDocumentId) {
@@ -339,6 +429,7 @@ export default function VendorDocuments() {
             status: detail.status,
             recipientName: detail.recipientName,
             recipientEmail: detail.recipientEmail ?? '',
+            additionalRecipientEmails: additionalRecipientEmailsFromMetadata(detail.metadata, detail.recipientEmail),
             recipientPhone: detail.recipientPhone ?? '',
             weddingName: detail.weddingName ?? '',
             issueDate: detail.issueDate,
@@ -377,6 +468,16 @@ export default function VendorDocuments() {
       cancelled = true;
     };
   }, [selectedDocumentId]);
+
+  useEffect(() => {
+    if (!selectedDetail || selectedDetail.id !== routePrefill?.openDocumentId) return;
+    if (routePrefill.focus === 'payment' && routePrefill.focusedPaymentId) {
+      const timer = window.setTimeout(() => {
+        document.getElementById(`document-payment-${routePrefill.focusedPaymentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [routePrefill, selectedDetail]);
 
   const stats = useMemo(() => {
     const invoices = documents.filter((document) => document.documentType === 'invoice');
@@ -418,8 +519,8 @@ export default function VendorDocuments() {
   );
 
   const selectedTemplate = useMemo(
-    () => documentTemplates.find((template) => template.id === createDraft.templateId) ?? null,
-    [documentTemplates, createDraft.templateId],
+    () => documentTemplates.find((template) => template.id === createDraft.templateId && template.templateType === createDraft.documentType) ?? null,
+    [documentTemplates, createDraft.templateId, createDraft.documentType],
   );
 
   useEffect(() => {
@@ -468,7 +569,6 @@ export default function VendorDocuments() {
     setCreateDraft((current) => ({
       ...current,
       templateId: selectedTemplate.id,
-      documentType: selectedTemplate.templateType === 'contract' ? current.documentType : selectedTemplate.templateType,
       title: selectedTemplate.defaultTitle || current.title || `${commercialDocumentTypeLabel(selectedTemplate.templateType)} for ${selectedBooking?.coupleName ?? 'this wedding'}`,
       notes: selectedTemplate.defaultNotes || current.notes,
       terms: selectedTemplate.defaultTerms || current.terms,
@@ -552,6 +652,10 @@ export default function VendorDocuments() {
       }
 
       await loadDocuments(created.id);
+      openMobileDetail(() => setSelectedDocumentId(created.id));
+      if (user && createDraft.documentType !== 'receipt') {
+        clearDocumentSetupDraft(user.id, 'vendor', createDraft.documentType);
+      }
       setCreateOpen(false);
       setActiveRequestId(null);
       setCreateDraft((current) => ({
@@ -597,7 +701,7 @@ export default function VendorDocuments() {
     }
 
     if (request.responseDocumentId) {
-      setSelectedDocumentId(request.responseDocumentId);
+      openDocumentDetail(request.responseDocumentId);
       return;
     }
 
@@ -641,7 +745,7 @@ export default function VendorDocuments() {
       }))
       .filter((item) => item.description.length > 0);
 
-    if (!sanitized.length) {
+    if (selectedDetail.documentType !== 'receipt' && !sanitized.length) {
       toast({
         title: 'Add at least one item',
         description: 'Add the service or deliverable before saving this document.',
@@ -663,16 +767,19 @@ export default function VendorDocuments() {
         issueDate: headerDraft.issueDate,
         dueDate: selectedDetail.documentType === 'receipt' ? null : headerDraft.dueDate || null,
         notes: headerDraft.notes.trim() || null,
-        terms: headerDraft.terms.trim() || null,
+        terms: selectedDetail.documentType === 'receipt' ? null : headerDraft.terms.trim() || null,
         discountAmount: selectedDetail.documentType === 'receipt' ? 0 : Number(headerDraft.discountAmount || 0),
         taxAmount: selectedDetail.documentType === 'receipt' ? 0 : Number(headerDraft.taxAmount || 0),
         metadata: {
           ...selectedDetail.metadata,
-          paymentInstructions: headerDraft.paymentInstructions.trim(),
+          additionalRecipientEmails: headerDraft.additionalRecipientEmails,
+          ...(selectedDetail.documentType === 'receipt' ? {} : { paymentInstructions: headerDraft.paymentInstructions.trim() }),
           authorisedBy: headerDraft.authorisedBy.trim(),
         },
       });
-      await saveCommercialDocumentItems(selectedDetail.id, sanitized);
+      if (selectedDetail.documentType !== 'receipt') {
+        await saveCommercialDocumentItems(selectedDetail.id, sanitized);
+      }
       await loadDocuments(selectedDetail.id);
       setSelectedDetail(await getCommercialDocument(selectedDetail.id));
       toast({
@@ -734,6 +841,84 @@ export default function VendorDocuments() {
       setSavingItems(false);
     }
   };
+
+  const autosaveSnapshot = useMemo(() => {
+    if (!selectedDetail || !headerDraft) return null;
+    return buildCommercialDocumentAutosaveSnapshot({
+      title: headerDraft.title,
+      recipientName: headerDraft.recipientName,
+      recipientEmail: headerDraft.recipientEmail,
+      additionalRecipientEmails: headerDraft.additionalRecipientEmails,
+      recipientPhone: headerDraft.recipientPhone,
+      weddingName: headerDraft.weddingName,
+      issueDate: headerDraft.issueDate,
+      dueDate: headerDraft.dueDate,
+      notes: headerDraft.notes,
+      terms: headerDraft.terms,
+      discountAmount: headerDraft.discountAmount,
+      taxAmount: headerDraft.taxAmount,
+      paymentInstructions: headerDraft.paymentInstructions,
+      authorisedBy: headerDraft.authorisedBy,
+    }, itemDrafts);
+  }, [headerDraft, itemDrafts, selectedDetail]);
+
+  const persistAutosave = useCallback(async (snapshot: CommercialDocumentAutosaveSnapshot) => {
+    if (!selectedDetail || selectedDetail.status === 'void') return;
+    const isReceipt = selectedDetail.documentType === 'receipt';
+
+    await updateCommercialDocument(selectedDetail.id, {
+      title: snapshot.title.trim(),
+      recipientName: snapshot.recipientName.trim(),
+      recipientEmail: snapshot.recipientEmail.trim() || null,
+      recipientPhone: snapshot.recipientPhone.trim() || null,
+      weddingName: snapshot.weddingName.trim() || null,
+      issueDate: snapshot.issueDate || selectedDetail.issueDate,
+      dueDate: isReceipt ? null : snapshot.dueDate || null,
+      notes: snapshot.notes.trim() || null,
+      terms: isReceipt ? null : snapshot.terms.trim() || null,
+      discountAmount: isReceipt ? 0 : Number(snapshot.discountAmount || 0),
+      taxAmount: isReceipt ? 0 : Number(snapshot.taxAmount || 0),
+      metadata: {
+        ...selectedDetail.metadata,
+        additionalRecipientEmails: snapshot.additionalRecipientEmails,
+        ...(isReceipt ? {} : { paymentInstructions: snapshot.paymentInstructions.trim() }),
+        authorisedBy: snapshot.authorisedBy.trim(),
+        autosavedAt: new Date().toISOString(),
+      },
+    });
+    if (isReceipt) {
+      setDocuments((current) => current.map((document) => document.id === selectedDetail.id
+        ? {
+          ...document,
+          title: snapshot.title.trim(),
+          recipientName: snapshot.recipientName.trim(),
+          weddingName: snapshot.weddingName.trim() || null,
+        }
+        : document));
+      return;
+    }
+
+    await saveCommercialDocumentItems(selectedDetail.id, snapshot.items);
+    const { subtotal, totalAmount } = calculateCommercialDocumentDraftTotals(snapshot);
+    setDocuments((current) => current.map((document) => document.id === selectedDetail.id
+      ? {
+        ...document,
+        title: snapshot.title.trim(),
+        recipientName: snapshot.recipientName.trim(),
+        weddingName: snapshot.weddingName.trim() || null,
+        subtotal,
+        totalAmount,
+        balanceDue: Math.max(0, totalAmount - document.amountPaid),
+      }
+      : document));
+  }, [selectedDetail]);
+
+  const documentAutosave = useDocumentAutosave({
+    documentId: selectedDetail?.id ?? null,
+    enabled: Boolean(selectedDetail && headerDraft && selectedDetail.status !== 'void'),
+    value: autosaveSnapshot,
+    save: persistAutosave,
+  });
 
   const handleRecordPayment = async () => {
     if (!selectedDetail) return;
@@ -813,8 +998,8 @@ export default function VendorDocuments() {
     setIssuingReceiptId(paymentId);
     try {
       const receipt = await issueReceiptFromPayment(selectedDetail.id, paymentId);
-      await loadDocuments(receipt.id);
       setSelectedDocumentId(receipt.id);
+      navigate('/vendor-documents/receipts');
       toast({
         title: 'Receipt issued',
         description: `${receipt.documentNumber} has been added to your document library.`,
@@ -876,22 +1061,90 @@ export default function VendorDocuments() {
     }
   };
 
+  const handleDuplicateSelected = async () => {
+    if (!selectedDetail) return;
+    try {
+      const copy = await duplicateCommercialDocument(selectedDetail);
+      await loadDocuments(copy.id);
+      setSelectedDocumentId(copy.id);
+      toast({ title: `${commercialDocumentTypeLabel(copy.documentType)} duplicated`, description: 'A new draft is ready to edit.' });
+    } catch (error) {
+      toast({ title: 'Could not duplicate document', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    }
+  };
+
+  const handleCreateTemplateSelected = async () => {
+    if (!selectedDetail) return;
+    try {
+      await createTemplateFromCommercialDocument(selectedDetail);
+      toast({ title: 'Template created', description: 'This document is now available as a reusable starter.' });
+    } catch (error) {
+      toast({ title: 'Could not create template', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    }
+  };
+
+  const handleLifecycleAction = async () => {
+    if (!selectedDetail) return;
+    const policy = commercialDocumentActionPolicy(selectedDetail);
+    const nextStatus = policy.lifecycleStatus;
+    const label = selectedDetail.documentType === 'quote' ? 'mark this quote as expired' : `void this ${selectedDetail.documentType}`;
+    if (!window.confirm(`Are you sure you want to ${label}? The record will remain available.`)) return;
+    try {
+      await updateCommercialDocument(selectedDetail.id, { status: nextStatus });
+      await loadDocuments(selectedDetail.id);
+      toast({ title: selectedDetail.documentType === 'quote' ? 'Quote marked expired' : `${commercialDocumentTypeLabel(selectedDetail.documentType)} voided` });
+    } catch (error) {
+      toast({ title: 'Could not update document', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    }
+  };
+
   const handleEmailShare = async () => {
     if (!selectedDetail) return;
+    if (!selectedDetail.recipientEmail?.trim()) {
+      toast({
+        title: 'Add the client email',
+        description: 'Save a recipient email before sending this document.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setSharingDocumentId(selectedDetail.id);
     try {
-      const token = await ensureCommercialDocumentShareToken(selectedDetail.id);
-      const url = buildCommercialDocumentShareUrl(token, window.location.origin);
-      setShareState(await getCommercialDocumentShareState(selectedDetail.id));
-      const draft = buildCommercialDocumentShareEmailDraft({
-        document: selectedDetail,
-        shareUrl: url,
-      });
-      window.location.href = draft.href;
-    } catch (error) {
-      console.error('Could not prepare share email:', error);
+      const result = await sendCommercialDocumentEmail(selectedDetail.id);
+      const [nextShareState, refreshed] = await Promise.all([
+        getCommercialDocumentShareState(selectedDetail.id),
+        getCommercialDocument(selectedDetail.id),
+        loadDocuments(selectedDetail.id),
+      ]);
+      setShareState(nextShareState);
+      setSelectedDetail(refreshed);
+      if (refreshed) setHeaderDraft((current) => current ? { ...current, status: refreshed.status } : current);
+      const recipient = refreshed ?? selectedDetail;
+      let savedContact: Awaited<ReturnType<typeof saveDocumentRecipientAsContact>> = null;
+      if (user?.id) {
+        try {
+          savedContact = await saveDocumentRecipientAsContact(user.id, {
+            contactType: 'client',
+            displayName: recipient.recipientName,
+            primaryEmail: recipient.recipientEmail,
+            phone: recipient.recipientPhone,
+            additionalEmails: additionalRecipientEmailsFromMetadata(recipient.metadata, recipient.recipientEmail),
+          });
+        } catch (contactError) {
+          console.error('Could not save document recipient as a contact:', contactError);
+        }
+      }
       toast({
-        title: 'Could not prepare share email',
+        title: `${commercialDocumentTypeLabel(selectedDetail.documentType)} sent`,
+        description: result.recipientEmails.length > 1
+          ? `Emailed to ${result.recipientEmail} and ${result.recipientEmails.length - 1} other ${result.recipientEmails.length === 2 ? 'recipient' : 'recipients'}.`
+          : `Emailed to ${result.recipientEmail}.`,
+        action: savedContact?.created ? <ToastAction altText="Undo saving this contact" onClick={() => void deleteProfessionalContact(savedContact!.contact.id)}>Undo save</ToastAction> : undefined,
+      });
+    } catch (error) {
+      console.error('Could not send document email:', error);
+      toast({
+        title: `Could not send ${commercialDocumentTypeLabel(selectedDetail.documentType).toLocaleLowerCase()}`,
         description: error instanceof Error ? error.message : 'Please try again.',
         variant: 'destructive',
       });
@@ -955,7 +1208,7 @@ export default function VendorDocuments() {
       .catch(() => setShareState(null));
   }, [selectedDetail]);
 
-  if (loading) {
+  if (showDocumentWorkspace && loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 text-sm text-muted-foreground shadow-card">
@@ -993,12 +1246,6 @@ export default function VendorDocuments() {
               ? 'Reuse your standard documents.'
               : '';
 
-  const showDocumentWorkspace =
-    activeSection === 'overview' ||
-    activeSection === 'quotes' ||
-    activeSection === 'invoices' ||
-    activeSection === 'receipts';
-
   const emptyStateCopy =
     activeSection === 'quotes'
       ? 'Create a quote when a couple asks for pricing.'
@@ -1017,18 +1264,22 @@ export default function VendorDocuments() {
   const handleOpenCreateDocument = () => {
     const documentType: CommercialDocumentType = activeType === 'all' ? 'quote' : activeType;
     const template = documentTemplates.find((item) => item.templateType === documentType);
+    const recovered = user && documentType !== 'receipt'
+      ? readDocumentSetupDraft<CreateDocumentDraft>(user.id, 'vendor', documentType)
+      : null;
 
     setActiveRequestId(null);
     setCreateDraft((current) => ({
       ...current,
+      ...recovered,
       documentType,
-      title: '',
-      templateId: template?.id ?? '',
-      vendorListingId: current.vendorListingId || vendorListings[0]?.id || '',
-      issueDate: todayIso(),
-      dueDate: nextDueDateValue(documentType),
-      notes: '',
-      terms: '',
+      title: recovered?.title ?? '',
+      templateId: recovered?.templateId ?? template?.id ?? '',
+      vendorListingId: recovered?.vendorListingId || current.vendorListingId || vendorListings[0]?.id || '',
+      issueDate: recovered?.issueDate || todayIso(),
+      dueDate: recovered?.dueDate ?? nextDueDateValue(documentType),
+      notes: recovered?.notes ?? '',
+      terms: recovered?.terms ?? '',
     }));
     setCreateOpen(true);
   };
@@ -1036,6 +1287,24 @@ export default function VendorDocuments() {
   const selectedShareUrl = shareState
     ? buildCommercialDocumentShareUrl(shareState.shareToken, window.location.origin)
     : '';
+  const actionPolicy = selectedDetail ? commercialDocumentActionPolicy(selectedDetail) : null;
+  const documentActions: DocumentMenuAction[] = selectedDetail ? [
+    { label: 'Edit document', icon: NotebookPen, onSelect: () => document.getElementById('commercial-document-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+    { label: 'Print or save PDF', icon: Download, onSelect: () => window.open(`/documents/${selectedDetail.id}/print`, '_blank', 'noopener,noreferrer') },
+    { label: 'Create template', icon: FilePlus2, onSelect: handleCreateTemplateSelected },
+    ...(actionPolicy?.canDuplicate ? [{ label: 'Duplicate', icon: CopyPlus, onSelect: handleDuplicateSelected }] : []),
+    ...(actionPolicy?.canChangeLifecycle
+      ? [{ label: actionPolicy.lifecycleLabel, icon: XCircle, onSelect: handleLifecycleAction, destructive: true, separated: true }]
+      : []),
+    ...(actionPolicy?.canDelete ? [{ label: 'Delete', icon: Trash2, onSelect: handleDeleteSelected, destructive: true, separated: true }] : []),
+  ] : [];
+  const documentShareActions: DocumentMenuAction[] = selectedDetail ? [
+    { label: `Email ${commercialDocumentTypeLabel(selectedDetail.documentType).toLocaleLowerCase()}`, icon: Mail, onSelect: handleEmailShare, disabled: sharingDocumentId === selectedDetail.id },
+    { label: 'Get share link', icon: Link2, onSelect: handleCopyShareLink, disabled: sharingDocumentId === selectedDetail.id },
+    { label: 'Email history', icon: History, onSelect: () => setEmailHistoryOpen(true) },
+    ...(shareState ? [{ label: 'Refresh link', icon: RotateCw, onSelect: handleRefreshShareLink, disabled: sharingDocumentId === selectedDetail.id }] : []),
+    ...(selectedShareActive ? [{ label: 'Revoke link', icon: ShieldOff, onSelect: handleRevokeShareLink, destructive: true, separated: true }] : []),
+  ] : [];
   if (activeSection === 'contracts') {
     return (
       <ContractsWorkspace
@@ -1043,6 +1312,7 @@ export default function VendorDocuments() {
         vendorListings={vendorListings}
         vendorBookings={vendorBookings}
         canConnectDocuments={canConnectDocuments}
+        initialContractId={routePrefill?.openContractId}
       />
     );
   }
@@ -1052,7 +1322,8 @@ export default function VendorDocuments() {
   }
 
   return (
-    <div className="space-y-6 pb-24 sm:pb-28">
+    <div className="min-w-0 space-y-4 pb-20 sm:space-y-6 sm:pb-28">
+      <div className={mobileDetailOpen ? 'hidden md:block' : undefined}>
       <DocumentWorkspaceHeader
         title={pageTitle}
         description={pageDescription}
@@ -1065,22 +1336,30 @@ export default function VendorDocuments() {
           { label: 'Money still due', value: formatCurrency(stats.outstanding), tone: 'warning' },
         ]}
       />
+      </div>
 
-      {!canConnectDocuments && <DocumentCollaborationUpgrade audience="vendor" />}
+      {!entitlementsUnavailable && !canConnectDocuments && <div className={mobileDetailOpen ? 'hidden md:block' : undefined}><DocumentCollaborationUpgrade audience="vendor" /></div>}
 
       {activeSection === 'overview' && (
-        <DocumentActionOverview
-          requests={documentRequests}
-          documents={documents}
-          loading={loading}
-          onOpenRequest={(request) => void handleOpenDocumentRequest(request)}
-          onOpenDocument={setSelectedDocumentId}
-        />
+        <div className={`${mobileDetailOpen ? 'hidden md:grid' : 'grid'} items-start gap-4 sm:gap-6 ${!entitlementsUnavailable ? 'lg:grid-cols-2' : ''}`}>
+          {!entitlementsUnavailable ? <ZaniaPaySetupCard
+            audience="vendor"
+            canAcceptPayments={Boolean(entitlements.payments_accept)}
+            vendorListingId={vendorListings[0]?.id ?? null}
+          /> : null}
+          <DocumentActionOverview
+            requests={documentRequests}
+            documents={documents}
+            loading={loading}
+            onOpenRequest={(request) => void handleOpenDocumentRequest(request)}
+            onOpenDocument={openDocumentDetail}
+          />
+        </div>
       )}
 
-      <section className={documents.length === 0 ? 'block' : 'grid items-start gap-5 xl:grid-cols-[minmax(260px,0.34fr)_minmax(0,1.66fr)]'}>
-        <Card className="border-border/70 shadow-card xl:sticky xl:top-5">
-          <CardHeader className="space-y-3 pb-3">
+      <section className={documents.length === 0 ? 'block min-w-0' : 'grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(260px,0.34fr)_minmax(0,1.66fr)]'}>
+        <Card className={`${mobileDetailOpen ? 'hidden md:block' : ''} min-w-0 border-border/70 shadow-card xl:sticky xl:top-5`}>
+          <CardHeader className="space-y-2 px-4 pb-2 pt-4 sm:space-y-3 sm:px-6 sm:pb-3 sm:pt-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <CardTitle className="font-display text-lg">{pageTitle}</CardTitle>
@@ -1106,7 +1385,7 @@ export default function VendorDocuments() {
               </p>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3 px-3 pb-3">
+          <CardContent className="space-y-2 px-2 pb-2 sm:space-y-3 sm:px-3 sm:pb-3">
             {documents.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-8 text-center">
                 <p className="font-medium text-foreground">No {pageTitle.toLocaleLowerCase()} yet.</p>
@@ -1121,8 +1400,9 @@ export default function VendorDocuments() {
                       <button
                         key={document.id}
                         type="button"
-                        onClick={() => setSelectedDocumentId(document.id)}
-                        className={`w-full px-3 py-3 text-left transition ${
+                        aria-pressed={isActive}
+                        onClick={() => openDocumentDetail(document.id)}
+                        className={`w-full px-3 py-2.5 text-left transition sm:py-3 ${
                           isActive ? 'border-l-2 border-primary bg-primary/6' : 'border-l-2 border-transparent bg-card hover:bg-muted/10'
                         }`}
                       >
@@ -1133,7 +1413,7 @@ export default function VendorDocuments() {
                           </div>
                           <p className="shrink-0 text-sm font-semibold tabular-nums text-foreground">{formatCurrency(document.totalAmount)}</p>
                         </div>
-                        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                        <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-muted-foreground sm:mt-2">
                           <span className="truncate">{document.documentNumber}</span>
                           <span className="flex shrink-0 items-center gap-1.5 font-medium text-foreground">
                             <span
@@ -1156,8 +1436,9 @@ export default function VendorDocuments() {
           </CardContent>
         </Card>
 
-        <Card className={documents.length === 0 ? 'hidden' : 'min-w-0 border-border/70 shadow-card'}>
-          <CardHeader className="space-y-3 pb-3">
+        <Card className={documents.length === 0 ? 'hidden' : `${mobileDetailOpen ? 'block' : 'hidden md:block'} min-w-0 border-border/70 shadow-card`}>
+          <CardHeader className="space-y-2 px-4 pb-3 pt-4 sm:space-y-3 sm:px-6 sm:pt-6">
+            <MobileDetailBackButton onBack={closeMobileDetail} />
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0">
                 <CardTitle className="font-display text-xl">
@@ -1170,47 +1451,42 @@ export default function VendorDocuments() {
                 </CardDescription>
               </div>
               {selectedDetail && (
-                <div className="flex flex-wrap gap-2 xl:justify-end">
+                <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap xl:justify-end">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full gap-2 sm:w-auto"
+                    onClick={() => window.open(`/documents/${selectedDetail.id}/print`, '_blank', 'noopener,noreferrer')}
+                  >
+                    <Eye className="h-4 w-4" />
+                    Preview
+                  </Button>
                   {selectedDetail.documentType === 'quote' && (
                     <Button
                       size="sm"
                       variant="outline"
-                      className="gap-2"
+                      className="w-full gap-2 sm:w-auto"
                       onClick={handleConvertQuote}
-                      disabled={convertingQuote}
+                      disabled={convertingQuote || selectedDetail.status !== 'accepted'}
+                      title={selectedDetail.status === 'accepted' ? undefined : 'The recipient must accept this quote first.'}
                     >
                       {convertingQuote ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
                       Convert to invoice
                     </Button>
                   )}
                   {selectedDetail.documentType === 'invoice' && (
-                    <Button size="sm" variant="outline" className="gap-2" onClick={() => setPaymentOpen(true)}>
+                    <Button size="sm" variant="outline" className="w-full gap-2 sm:w-auto" onClick={() => setPaymentOpen(true)}>
                       <Wallet className="h-4 w-4" />
                       Record payment
                     </Button>
                   )}
-                  <details className="group relative">
-                    <summary className="flex h-9 cursor-pointer list-none items-center rounded-md border border-input bg-background px-3 text-sm font-medium marker:content-none">More</summary>
-                    <div className="absolute right-0 z-40 mt-2 grid min-w-52 gap-1 rounded-2xl border border-border bg-background p-2 shadow-lg">
-                      <Button asChild size="sm" variant="ghost" className="justify-start gap-2">
-                        <Link to={`/documents/${selectedDetail.id}/print`} target="_blank" rel="noreferrer">
-                          <Eye className="h-4 w-4" />Preview
-                        </Link>
-                      </Button>
-                      <Button size="sm" variant="ghost" className="justify-start gap-2" onClick={handleCopyShareLink} disabled={sharingDocumentId === selectedDetail.id || (!!shareState && !selectedShareActive)}>
-                        {sharingDocumentId === selectedDetail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}Share
-                      </Button>
-                      <Button size="sm" variant="ghost" className="justify-start gap-2 text-destructive hover:text-destructive" onClick={handleDeleteSelected}>
-                        <Trash2 className="h-4 w-4" />Delete
-                      </Button>
-                    </div>
-                  </details>
+                  <DocumentActionMenus className="col-span-2 sm:w-auto" actions={documentActions} shareActions={documentShareActions} />
                 </div>
               )}
             </div>
             {selectedDetail && shareState && (
               <details className="border-t border-border/70 pt-3">
-                <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <summary className="grid cursor-pointer list-none grid-cols-2 gap-x-3 gap-y-2 text-xs text-muted-foreground sm:flex sm:flex-wrap sm:items-center">
                   <span className="flex items-center gap-2 font-medium text-foreground">
                       <span
                         aria-hidden="true"
@@ -1228,7 +1504,7 @@ export default function VendorDocuments() {
                         {shareState.accessCount} public open{shareState.accessCount === 1 ? '' : 's'}
                       </span>
                     )}
-                  <span className="ml-auto text-primary">Manage sharing</span>
+                  <span className="text-right text-primary sm:ml-auto">Manage sharing</span>
                 </summary>
                 <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                   {selectedShareUrl ? (
@@ -1240,9 +1516,9 @@ export default function VendorDocuments() {
                   </Button>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" className="gap-2" onClick={handleEmailShare} disabled={!selectedShareActive}>
+                    <Button size="sm" variant="outline" className="gap-2" onClick={handleEmailShare} disabled={sharingDocumentId === selectedDetail.id}>
                       <Mail className="h-4 w-4" />
-                      Email link
+                      Send by email
                     </Button>
                     <Button size="sm" variant="outline" className="gap-2" onClick={handleRefreshShareLink} disabled={sharingDocumentId === selectedDetail.id}>
                       {sharingDocumentId === selectedDetail.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
@@ -1267,7 +1543,7 @@ export default function VendorDocuments() {
               </details>
             )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-3 pb-4 sm:px-6 sm:pb-6">
             {!selectedDocumentId ? (
               <div className="rounded-2xl border border-dashed border-border bg-muted/10 p-8 text-center text-sm text-muted-foreground">
                 Pick a quote, invoice, or receipt to continue.
@@ -1281,7 +1557,9 @@ export default function VendorDocuments() {
               </div>
             ) : (
               <div className="space-y-6">
-                <CommercialDocumentEditor
+              <QuoteResponseNotice document={selectedDetail} />
+              <div id="commercial-document-editor" className="scroll-mt-5">
+              <CommercialDocumentEditor
                   idPrefix="vendor-document"
                   document={selectedDetail}
                   draft={headerDraft}
@@ -1290,7 +1568,11 @@ export default function VendorDocuments() {
                   setItems={setItemDrafts}
                   saving={savingHeader || savingItems}
                   onSave={handleSaveDocument}
+                  autosaveStatus={documentAutosave.status}
+                  onRetryAutosave={documentAutosave.retry}
+                  onFlushAutosave={documentAutosave.flush}
                 />
+              </div>
                 <div className="hidden" aria-hidden="true">
                 <section className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
@@ -1469,15 +1751,13 @@ export default function VendorDocuments() {
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor={`vendor-line-item-quantity-${index}`}>Qty</Label>
-                              <Input
+                              <QuantityInput
                                 id={`vendor-line-item-quantity-${index}`}
-                                type="number"
-                                min="1"
-                                value={String(item.quantity ?? 1)}
-                                onChange={(event) =>
+                                value={Number(item.quantity ?? 1)}
+                                onValueChange={(quantity) =>
                                   setItemDrafts((current) =>
                                     current.map((row, rowIndex) =>
-                                      rowIndex === index ? { ...row, quantity: Number(event.target.value || 1) } : row,
+                                      rowIndex === index ? { ...row, quantity } : row,
                                     ),
                                   )
                                 }
@@ -1485,15 +1765,13 @@ export default function VendorDocuments() {
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor={`vendor-line-item-unit-price-${index}`}>Unit price</Label>
-                              <Input
+                              <CurrencyInput
                                 id={`vendor-line-item-unit-price-${index}`}
-                                type="number"
-                                min="0"
-                                value={String(item.unitPrice ?? 0)}
-                                onChange={(event) =>
+                                value={Number(item.unitPrice ?? 0)}
+                                onValueChange={(unitPrice) =>
                                   setItemDrafts((current) =>
                                     current.map((row, rowIndex) =>
-                                      rowIndex === index ? { ...row, unitPrice: Number(event.target.value || 0) } : row,
+                                      rowIndex === index ? { ...row, unitPrice } : row,
                                     ),
                                   )
                                 }
@@ -1540,6 +1818,17 @@ export default function VendorDocuments() {
                     )}
                   </div>
 
+                  {selectedDetail.documentType === 'invoice' && (
+                    <ExternalPaymentReportsPanel
+                      documentId={selectedDetail.id}
+                      currency={selectedDetail.currency}
+                      onConfirmed={async () => {
+                        await loadDocuments(selectedDetail.id);
+                        setSelectedDetail(await getCommercialDocument(selectedDetail.id));
+                      }}
+                    />
+                  )}
+
                   {selectedDetail.documentType === 'receipt' ? (
                     <div className="rounded-2xl border border-[hsl(var(--info-soft-border))] bg-[hsl(var(--info-soft))] p-4 text-sm text-info">
                       This receipt was generated from a recorded payment. You can keep it in the library as your acknowledgement record.
@@ -1551,7 +1840,7 @@ export default function VendorDocuments() {
                   ) : (
                     <div className="space-y-3">
                       {selectedDetail.payments.map((payment) => (
-                        <div key={payment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-muted/5 p-4">
+                        <div key={payment.id} id={`document-payment-${payment.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-muted/5 p-4">
                           <div>
                             <p className="font-medium text-foreground">{formatCurrency(payment.amount)}</p>
                             <p className="text-sm text-muted-foreground">
@@ -1598,6 +1887,9 @@ export default function VendorDocuments() {
           <DialogHeader>
             <DialogTitle>{activeRequestId ? 'Review quote request' : `New ${commercialDocumentTypeLabel(createDraft.documentType).toLocaleLowerCase()}`}</DialogTitle>
           </DialogHeader>
+          {!activeRequestId && createDraft.documentType !== 'receipt' && (
+            <p className="text-xs text-muted-foreground">Your unfinished setup is saved on this device for this account.</p>
+          )}
           <div className="grid gap-4 py-2 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
               <Label>Start from template</Label>
@@ -1615,7 +1907,7 @@ export default function VendorDocuments() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Start blank</SelectItem>
-                  {documentTemplates.map((template) => (
+                  {documentTemplates.filter((template) => template.templateType === createDraft.documentType).map((template) => (
                     <SelectItem key={template.id} value={template.id}>
                       {template.name}
                     </SelectItem>
@@ -1628,7 +1920,7 @@ export default function VendorDocuments() {
               <Input
                 value={createDraft.title}
                 onChange={(event) => setCreateDraft((current) => ({ ...current, title: event.target.value }))}
-                placeholder="e.g. Photography quote for Mary & James"
+                placeholder={`e.g. Photography ${createDraft.documentType} for Mary & James`}
               />
             </div>
             <div className="space-y-2">
@@ -1748,13 +2040,10 @@ export default function VendorDocuments() {
           <div className="grid gap-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="vendor-payment-amount">Amount</Label>
-              <Input
+              <CurrencyInput
                 id="vendor-payment-amount"
-                type="number"
-                min="0"
-                value={paymentDraft.amount}
-                onChange={(event) => setPaymentDraft((current) => ({ ...current, amount: event.target.value }))}
-                placeholder="0"
+                value={Number(paymentDraft.amount || 0)}
+                onValueChange={(amount) => setPaymentDraft((current) => ({ ...current, amount: String(amount) }))}
               />
             </div>
             <div className="space-y-2">
@@ -1819,6 +2108,13 @@ export default function VendorDocuments() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <DocumentEmailHistoryDialog
+        open={emailHistoryOpen}
+        onOpenChange={setEmailHistoryOpen}
+        documentId={selectedDetail?.id ?? null}
+        documentLabel={selectedDetail ? `${selectedDetail.documentNumber} · ${selectedDetail.title}` : 'Document'}
+      />
     </div>
   );
 }

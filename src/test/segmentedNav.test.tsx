@@ -82,4 +82,29 @@ describe('SegmentedNav', () => {
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveClass('flex-1');
     expect(screen.getByTestId('overview-icon')).toBeInTheDocument();
   });
+
+  it('supports an accessible coloured notification badge', () => {
+    render(
+      <MemoryRouter initialEntries={['/overview']}>
+        <SegmentedNav
+          items={[
+            {
+              id: 'overview',
+              label: 'Overview',
+              href: '/overview',
+              badge: 3,
+              badgeLabel: '3 new overview notifications',
+              badgeClassName: 'bg-primary text-primary-foreground',
+            },
+          ]}
+          value="overview"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByLabelText('3 new overview notifications')).toHaveClass(
+      'bg-primary',
+      'text-primary-foreground',
+    );
+  });
 });

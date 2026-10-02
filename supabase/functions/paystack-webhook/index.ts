@@ -2,9 +2,11 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { activateCoupleCheckout, activateProfessionalCheckout } from '../_shared/checkoutEntitlements.ts';
 import { loadPricingCheckoutConfig } from '../_shared/pricingCatalog.ts';
+import { paystackEventReference } from '../_shared/paystackEventReference.ts';
 import {
   assertPaystackPaymentMatches,
   loadPaystackConfig,
+  loadPaystackTestConfig,
   mapPaystackStatus,
   verifyPaystackTransaction,
   verifyPaystackWebhookSignature,
@@ -15,17 +17,33 @@ serve(async (req) => {
 
   try {
     const rawBody = await req.text();
+    const event = JSON.parse(rawBody) as { event?: unknown; data?: Record<string, unknown> };
+    const reference = paystackEventReference(event.data);
+    const isZaniaPay = reference.startsWith('zania-pay-');
+    const signature = req.headers.get('x-paystack-signature');
     const config = loadPaystackConfig();
-    const signatureValid = await verifyPaystackWebhookSignature(
-      rawBody,
-      req.headers.get('x-paystack-signature'),
-      config.secretKey,
-    );
+    const signatureValid = await verifyPaystackWebhookSignature(rawBody, signature, config.secretKey)
+      || (isZaniaPay && await verifyPaystackWebhookSignature(
+        rawBody,
+        signature,
+        loadPaystackTestConfig().secretKey,
+      ));
     if (!signatureValid) return new Response('Invalid signature', { status: 401 });
 
-    const event = JSON.parse(rawBody) as { event?: unknown; data?: { reference?: unknown } };
+    if (isZaniaPay) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      if (!supabaseUrl) throw new Error('Supabase service configuration is missing.');
+      return await fetch(`${supabaseUrl}/functions/v1/zania-pay-paystack-webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': req.headers.get('content-type') || 'application/json',
+          'x-paystack-signature': signature || '',
+        },
+        body: rawBody,
+      });
+    }
+
     if (event.event !== 'charge.success') return new Response('OK', { status: 200 });
-    const reference = typeof event.data?.reference === 'string' ? event.data.reference.trim() : '';
     if (!reference) return new Response('Missing reference', { status: 400 });
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');

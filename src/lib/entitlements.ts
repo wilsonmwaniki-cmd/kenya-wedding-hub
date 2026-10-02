@@ -25,6 +25,7 @@ export type EntitlementFeature =
   | 'couple.export_progress'
   | 'couple.gift_registry'
   | 'couple.guest_rsvp_management'
+  | 'couple.payments_send'
   | 'committee.ai_assistant'
   | 'committee.connect_vendors'
   | 'committee.connect_couples'
@@ -39,12 +40,14 @@ export type EntitlementFeature =
   | 'planner.media_portfolio'
   | 'planner.advertising'
   | 'planner.team_workspace'
+  | 'planner.payments_accept'
   | 'vendor.ai_assistant'
   | 'vendor.direct_leads'
   | 'vendor.analytics'
   | 'vendor.media_portfolio'
   | 'vendor.advertising'
-  | 'vendor.team_workspace';
+  | 'vendor.team_workspace'
+  | 'vendor.payments_accept';
 
 export interface EntitlementProfileLike {
   role?: string | null;
@@ -286,7 +289,18 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
 
   switch (feature) {
     case 'couple.ai_assistant':
-      return buildDecision(feature, 'couple', true);
+      return buildCoupleDecision(
+        feature,
+        getEffectiveCouplePlanTier(context, 'collaborative'),
+        hasWeddingEntitlement(context, 'ai_wedding_assistant'),
+        {
+          title: 'Upgrade to unlock Ask Zania',
+          description: 'Collaborative includes the persistent wedding planning assistant and its workspace-aware guidance.',
+          reasons: hasWeddingEntitlement(context, 'ai_wedding_assistant')
+            ? []
+            : ['Ask Zania is part of the Collaborative plan.'],
+        },
+      );
     case 'couple.connect_vendors':
       return buildCoupleDecision(feature, getEffectiveCouplePlanTier(context, 'collaborative'), hasWeddingEntitlement(context, 'vendor_collaboration'), {
         title: 'Upgrade to Collaborative',
@@ -310,6 +324,9 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
     case 'couple.gift_registry':
       return buildDecision(feature, 'couple', true);
     case 'couple.guest_rsvp_management':
+      return buildDecision(feature, 'couple', true);
+    case 'couple.payments_send':
+      // Invoice authorization and live-pilot eligibility are checked server-side.
       return buildDecision(feature, 'couple', true);
     case 'committee.connect_vendors':
     case 'committee.connect_couples':
@@ -369,12 +386,14 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
         description: 'Professional unlocks client exports, handoff reports, and the shareable planning documents that matter once you manage weddings professionally.',
         reasons: plannerHasActiveSubscription(context.profile) ? [] : ['Planner exports are part of Professional.'],
       });
-    case 'vendor.ai_assistant':
-      return buildDecision(feature, 'vendor', vendorHasActiveSubscription(context.vendorListing), {
+    case 'vendor.ai_assistant': {
+      const allowed = vendorHasActiveSubscription(context.vendorListing) || hasActiveBetaTrial(context.profile);
+      return buildDecision(feature, 'vendor', allowed, {
         title: 'Upgrade to unlock the AI vendor assistant',
         description: 'Professional unlocks an AI assistant that can help you improve your listing, understand bookings, review tasks, and manage client-facing work more efficiently.',
-        reasons: vendorHasActiveSubscription(context.vendorListing) ? [] : ['AI vendor support is part of Professional.'],
+        reasons: allowed ? [] : ['AI vendor support is part of Professional.'],
       });
+    }
     case 'vendor.direct_leads':
       return buildDecision(feature, 'vendor', vendorCanCollaborate(context.vendorListing), {
         title: 'Complete verification to receive inquiries',
@@ -407,6 +426,13 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
         ctaLabel: 'View Professional',
         reasons: hasProfessionalEntitlement(context, 'team_workspace') ? [] : ['Team workspace is still in development.'],
       });
+    case 'planner.payments_accept':
+      return buildDecision(feature, 'planner', hasProfessionalEntitlement(context, 'payments_accept'), {
+        title: 'Upgrade to activate Zania Pay',
+        description: 'Professional lets verified planners receive invoice payments through Zania.',
+        ctaLabel: 'Upgrade to Professional',
+        reasons: hasProfessionalEntitlement(context, 'payments_accept') ? [] : ['Receiving payments needs Professional access.'],
+      });
     case 'vendor.media_portfolio':
       return buildDecision(feature, 'vendor', vendorHasActiveSubscription(context.vendorListing) || hasProfessionalEntitlement(context, 'media_portfolio'), {
         title: 'Upgrade to Professional for an advanced portfolio',
@@ -426,6 +452,13 @@ export function getEntitlementDecision(feature: EntitlementFeature, context: Ent
         description: 'Team roles will be released as part of Professional rather than as a separate add-on.',
         ctaLabel: 'View Professional',
         reasons: hasProfessionalEntitlement(context, 'team_workspace') ? [] : ['Team workspace is still in development.'],
+      });
+    case 'vendor.payments_accept':
+      return buildDecision(feature, 'vendor', hasProfessionalEntitlement(context, 'payments_accept'), {
+        title: 'Upgrade to activate Zania Pay',
+        description: 'Professional lets verified vendors receive invoice payments through Zania.',
+        ctaLabel: 'Upgrade to Professional',
+        reasons: hasProfessionalEntitlement(context, 'payments_accept') ? [] : ['Receiving payments needs Professional access.'],
       });
     default:
       return buildDecision(feature, audience, false);

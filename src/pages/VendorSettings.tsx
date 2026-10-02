@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, CheckCircle2, Clock, X, Instagram, Facebook, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, CreditCard, X, Instagram, Facebook, Eye, Globe, Mail, MapPin, Phone, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { vendorAccessMessage, vendorHasActiveSubscription, vendorHasFullAccess } from '@/lib/vendorAccess';
 import KenyaLocationFields from '@/components/KenyaLocationFields';
 import { kenyaCounties, travelScopeOptions, formatBudgetBand, buildKenyaLocationLabel } from '@/lib/kenyaLocations';
@@ -626,9 +626,9 @@ export default function VendorSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div>
-        <h1 className="font-display text-3xl font-bold text-foreground">Listing</h1>
+        <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">Listing</h1>
       </div>
 
       {vendorPreviewMode && !listing && (
@@ -643,7 +643,7 @@ export default function VendorSettings() {
       {/* Status banner */}
       {listing && (
         <Card className={listing.is_approved ? 'semantic-surface-success' : 'semantic-surface-warning'}>
-          <CardContent className="flex items-center gap-3 py-4">
+          <CardContent className="flex items-center gap-3 py-3 sm:py-4">
             {listing.is_approved ? (
               <>
                 <CheckCircle2 aria-hidden="true" className="h-5 w-5 text-success" strokeWidth={1.8} />
@@ -702,6 +702,9 @@ export default function VendorSettings() {
                   Subscription expiry: {new Date(listing.subscription_expires_at).toLocaleDateString()}
                 </p>
               )}
+              {listing.subscription_status === 'active' && !listing.subscription_expires_at && (
+                <p className="mt-1 text-xs">No renewal date has been set for this legacy subscription.</p>
+              )}
               {listing.verification_requested_at && !listing.is_verified && (
                 <p className="mt-1 text-xs">
                   Verification requested on {new Date(listing.verification_requested_at).toLocaleDateString()}
@@ -718,6 +721,14 @@ export default function VendorSettings() {
                 {requestingVerification ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {listing.is_verified ? 'Already Verified' : verificationRequestOpen ? 'Verification Requested' : 'Request Verification'}
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate('/pricing?audience=vendor&plan=vendor_premium&feature=booking_management')}
+              >
+                <CreditCard className="mr-2 h-4 w-4" aria-hidden="true" />
+                Renew with Paystack
+              </Button>
               {!subscriptionActive && (
                 <div className="semantic-surface-warning flex w-full items-start rounded-md border px-3 py-2 text-sm leading-5 text-warning sm:w-auto">
                   Subscription must be activated by admin before verification can be requested.
@@ -730,11 +741,11 @@ export default function VendorSettings() {
       )}
 
       <Card className="shadow-card">
-        <CardHeader>
+        <CardHeader className="px-4 py-4 sm:p-6">
           <CardTitle>Business details</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSave} className="space-y-4">
+        <CardContent className="px-4 pb-4 sm:px-6 sm:pb-6">
+          <form onSubmit={handleSave} className="space-y-3 sm:space-y-4">
             <FormSubmitError message={submitError} />
             <details className="rounded-2xl border border-border/70">
               <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:content-none">Account email</summary>
@@ -1140,19 +1151,19 @@ export default function VendorSettings() {
                     Preview listing
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-                  <DialogHeader>
-                    <DialogTitle className="font-display">Directory Listing Preview</DialogTitle>
-                    <DialogDescription>
+                <DialogContent className="max-h-[calc(100dvh-1rem)] min-w-0 overflow-y-auto px-3 pb-4 pt-5 sm:max-h-[90vh] sm:max-w-3xl sm:p-6">
+                  <DialogHeader className="min-w-0 pr-8 text-left">
+                    <DialogTitle className="break-words font-display leading-tight">Directory Listing Preview</DialogTitle>
+                    <DialogDescription className="break-words leading-5">
                       This preview uses your current draft so you can see how couples will experience your listing before you save it.
                     </DialogDescription>
                   </DialogHeader>
 
-                  <div className="space-y-6">
-                    <div>
+                  <div className="min-w-0 space-y-6">
+                    <div className="min-w-0">
                       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Directory card</p>
-                      <Card className="shadow-card">
-                        <CardContent className="flex flex-col items-center p-6 text-center">
+                      <Card className="min-w-0 overflow-hidden shadow-card">
+                        <CardContent className="flex min-w-0 flex-col items-center px-4 py-6 text-center sm:p-6">
                           <div className="relative">
                             <Avatar className="h-16 w-16 border-2 border-border">
                               <AvatarImage src={listing?.logo_url ?? undefined} alt={form.business_name || 'Vendor preview'} />
@@ -1164,25 +1175,25 @@ export default function VendorSettings() {
                               <CheckCircle2 className="absolute -bottom-1 -right-1 h-5 w-5 fill-background text-success" />
                             )}
                           </div>
-                          <h3 className="mt-4 font-display text-lg font-semibold text-card-foreground">
+                          <h3 className="mt-4 max-w-full break-words font-display text-lg font-semibold text-card-foreground">
                             {form.business_name || 'Your business name'}
                           </h3>
                           <p className="mt-1 text-xs font-medium text-muted-foreground">{form.category}</p>
                           {previewLocation && (
-                            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                              <MapPin className="h-3 w-3" /> {previewLocation}
+                            <p className="mt-1 flex max-w-full items-start justify-center gap-1 break-words text-xs text-muted-foreground">
+                              <MapPin className="mt-0.5 h-3 w-3 shrink-0" /> <span className="min-w-0">{previewLocation}</span>
                             </p>
                           )}
                           {previewBudgetBand && (
-                            <p className="mt-2 text-xs text-muted-foreground">
+                            <p className="mt-2 max-w-full break-words text-xs text-muted-foreground">
                               Typical budget: {previewBudgetBand}
                             </p>
                           )}
                           {form.description && (
-                            <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{form.description}</p>
+                            <p className="mt-2 line-clamp-3 max-w-full break-words text-sm text-muted-foreground">{form.description}</p>
                           )}
                           {form.services.length > 0 && (
-                            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                            <p className="mt-3 max-w-full break-words text-xs leading-5 text-muted-foreground">
                               {form.services.slice(0, 3).join(' · ')}
                               {form.services.length > 3 ? ` · +${form.services.length - 3} more` : ''}
                             </p>
@@ -1196,16 +1207,16 @@ export default function VendorSettings() {
                       </Card>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">Expanded details</p>
-                      <Card className="shadow-card">
-                        <CardHeader>
-                          <CardTitle className="font-display text-2xl">{form.business_name || 'Your business name'}</CardTitle>
-                          <CardDescription>
+                      <Card className="min-w-0 overflow-hidden shadow-card">
+                        <CardHeader className="min-w-0 px-4 sm:p-6">
+                          <CardTitle className="break-words font-display text-2xl leading-tight">{form.business_name || 'Your business name'}</CardTitle>
+                          <CardDescription className="break-words">
                             {form.category} {previewLocation ? `· ${previewLocation}` : ''}
                           </CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-5">
+                        <CardContent className="min-w-0 space-y-5 px-4 sm:p-6 sm:pt-0">
                           <div className="grid gap-3 sm:grid-cols-2">
                             {form.phone && (
                               <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
@@ -1248,7 +1259,7 @@ export default function VendorSettings() {
                           </div>
 
                           {form.description && (
-                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                            <div className="min-w-0 rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">About this vendor</p>
                               <p className="mt-2 text-sm leading-7 text-foreground/85">{form.description}</p>
                             </div>
@@ -1305,18 +1316,18 @@ export default function VendorSettings() {
                           )}
 
                           {previewSocialLinks.length > 0 && (
-                            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                            <div className="min-w-0 rounded-xl border border-border/70 bg-muted/20 p-4">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Social media</p>
-                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
                                 {previewSocialLinks.map((link) => (
                                   <a
                                     key={link.label}
                                     href={link.href}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className={`group flex items-center gap-3 rounded-xl border border-border/70 bg-gradient-to-r ${link.theme} p-3 text-sm text-foreground transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm`}
+                                    className={`group flex min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-xl border border-border/70 bg-gradient-to-r ${link.theme} p-3 text-sm text-foreground transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm`}
                                   >
-                                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-background/90 text-primary shadow-sm">
+                                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-background/90 text-primary shadow-sm">
                                       {link.icon === 'instagram' && <Instagram className="h-4 w-4" />}
                                       {link.icon === 'facebook' && <Facebook className="h-4 w-4" />}
                                       {link.icon === 'tiktok' && <TikTokSocialIcon className="h-4 w-4" />}
@@ -1328,7 +1339,7 @@ export default function VendorSettings() {
                                         {displayUrl(link.href)}
                                       </span>
                                     </span>
-                                    <ExternalLink className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+                                    <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
                                   </a>
                                 ))}
                               </div>

@@ -3,10 +3,13 @@ import {
   buildEstimatorRowsFromDraft,
   canSeedEstimatorPlan,
   getEstimatorPlanDraftFromUserMetadata,
+  getPendingEstimatorPlanDraft,
   parseEstimatorPlanDraft,
+  saveEstimatorPlanDraft,
 } from '@/lib/estimatorPlanSeed';
 import { buildInteractiveBudgetPlan, updateInteractiveBudgetAllocation } from '@/lib/interactiveBudgetPlan';
 import { isEstimatorCoupleSignupEntry } from '@/lib/authEntryFlows';
+import { buildSeededTasksFromTemplates } from '@/lib/weddingTaskTemplates';
 
 describe('estimator plan handoff', () => {
   it('locks estimator handoffs to the couple signup path', () => {
@@ -84,6 +87,35 @@ describe('estimator plan handoff', () => {
 
     expect(parseEstimatorPlanDraft(draft)).toEqual(draft);
     expect(getEstimatorPlanDraftFromUserMetadata({ estimator_plan_draft: draft })).toEqual(draft);
+  });
+
+  it('uses the signed-in account draft ahead of an older browser-only estimate', () => {
+    const accountDraft = {
+      guestCount: 60,
+      county: 'Nairobi',
+      weddingStyle: 'classic' as const,
+      venueTier: 'mid_tier' as const,
+      totalBudget: 500_000,
+    };
+    const olderBrowserDraft = {
+      ...accountDraft,
+      totalBudget: 900_000,
+    };
+
+    saveEstimatorPlanDraft(olderBrowserDraft);
+    expect(getPendingEstimatorPlanDraft({ estimator_plan_draft: accountDraft })).toEqual(accountDraft);
+    window.localStorage.clear();
+  });
+
+  it('does not leave the wedding date decision open when setup already has a date', () => {
+    const tasks = buildSeededTasksFromTemplates({
+      vendorCategories: [],
+      role: 'couple',
+      weddingDate: '2027-06-12',
+      planningStartDate: '2026-08-30',
+    });
+
+    expect(tasks.find((task) => task.template_key === 'couples-tasks-decide-on-a-wedding-date')?.completed).toBe(true);
   });
 
   it('rejects oversized or malformed account metadata drafts', () => {

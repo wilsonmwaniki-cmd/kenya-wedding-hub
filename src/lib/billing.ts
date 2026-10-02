@@ -23,7 +23,7 @@ type CheckoutResponse = {
 export type PaymentProvider = 'pesapal' | 'paystack';
 
 export function getConfiguredPaymentProvider(): PaymentProvider {
-  return import.meta.env.VITE_BILLING_PROVIDER === 'paystack' ? 'paystack' : 'pesapal';
+  return 'paystack';
 }
 
 export type CoupleCheckoutSyncResponse = {
@@ -70,7 +70,7 @@ export async function startCheckout({
   const origin = window.location.origin;
   const successUrl = new URL(successPath, 'https://zania.local');
   successUrl.searchParams.delete('checkout_session_id');
-  const provider = getConfiguredPaymentProvider();
+  const provider = 'paystack' satisfies PaymentProvider;
 
   const { data, error } = await supabase.functions.invoke<CheckoutResponse>(`create-${provider}-checkout`, {
     body: {

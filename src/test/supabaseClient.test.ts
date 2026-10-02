@@ -22,5 +22,6 @@ describe('Supabase browser client', () => {
       autoRefreshToken: true,
       detectSessionInUrl: false,
     });
+    expect(options?.global?.fetch).toEqual(expect.any(Function));
   });
 });
