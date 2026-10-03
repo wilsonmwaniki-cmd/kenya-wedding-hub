@@ -155,4 +155,21 @@ Pause the pilot immediately if any test reveals:
 
 ## Ownership and calendar conversion
 
-The schedule is relative to the production release so it remains valid if the release date changes. When a production release date is chosen, convert **Release day** and **Days 1–7** into calendar dates and name the couple, planner and vendor pilot accounts. Do not begin the external enquiry or formal quote windows until those participants have agreed to the test.
+Production release day is **3 October 2026**. The calendar is now:
+
+| Relative window | Calendar date |
+| --- | --- |
+| Release day | 3 October 2026 |
+| Day 1 | 4 October 2026 |
+| Days 2–3 | 5–6 October 2026 |
+| Days 3–4 | 6–7 October 2026 |
+| Days 4–5 | 7–8 October 2026 |
+| Days 5–6 | 8–9 October 2026 |
+| Days 6–7 / end of week 1 | 9–10 October 2026 |
+| Week 2 controlled pilot | 11–17 October 2026 |
+
+The designated owner account is the first professional-planner pilot and has
+one active linked production client. The couple and vendor pilots remain
+unnamed until they consent; a second unrelated planner and vendor are also
+required for the isolation checks. Do not begin the external enquiry or formal
+quote windows until those participants have agreed to the test.

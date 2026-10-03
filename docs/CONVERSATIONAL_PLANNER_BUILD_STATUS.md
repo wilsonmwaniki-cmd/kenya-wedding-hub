@@ -323,6 +323,15 @@ The fastest next build step is **production-evidence validation followed by proa
 - Stop conditions cover data exposure, unconfirmed writes, premature email delivery, duplicate mutations, financial side effects and any implicit quote acceptance, vendor selection or booking. Access cannot widen until the documented exit criteria pass.
 - This schedule does not authorize a production deployment or user contact. Calendar dates and named pilot accounts are added only when the production release date is chosen.
 
+### 3 October 2026 — production release-day validation in progress
+
+- The designated production account is confirmed in the database as a verified professional planner with an active planner subscription, six active professional entitlements and one active linked client/wedding. This resolves the earlier role-routing uncertainty at the data layer.
+- Anonymous access is absent from all seven new conversational-planner tables, and each table has RLS enabled. The temporary external-contract bucket is private and restricts object access to the authenticated user's own folder.
+- Policy inspection exposed unqualified correlated `wedding_id` references in the vendor-enquiry insert rule. The conversational Gateway already revalidated the active wedding and tracker vendor, but the table policy itself did not prove the intended planner-client/vendor wedding match for a crafted direct API insert.
+- Migration `20261003042739_harden_vendor_enquiry_wedding_scope.sql` is applied in production. The corrected policy explicitly compares both related records with `vendor_enquiries.wedding_id`; unused authenticated delete privileges on Gateway confirmations, vendor enquiries and negotiation profiles are revoked. A production dry run is current after the repair.
+- The complete automated suite still passes with **388 tests across 80 files**, and `git diff --check` passes.
+- Evidence and the next signed-in read-only checklist are recorded in `CONVERSATIONAL_PLANNER_PRODUCTION_VALIDATION_EVIDENCE.md`. The production sign-in page is open for the designated planner; no production write, external email or financial action has been attempted.
+
 ## Continue refining the current application
 
 Track both streams by completed user journeys, not a growing feature list:
