@@ -1574,6 +1574,7 @@ export default function Budget() {
   const invoiceTotal = activeBudgetScope === 'wedding' ? totalFinalVendorContract : visibleAllocated;
   const totalBalance = Math.max(invoiceTotal - currentScopePaymentTotal, 0);
   const remainingBudget = Math.max(visibleBudgetGoal - currentScopePaymentTotal, 0);
+  const remainingUnspentBudget = Math.max(visibleBudgetGoal - visibleSpent, 0);
   const visibleOverBudgetCategories = useMemo(
     () => visibleCategories.filter((category) => category.allocated > 0 && category.spent > category.allocated),
     [visibleCategories],
@@ -2056,7 +2057,7 @@ export default function Budget() {
     return {
       className: 'semantic-surface-success',
       label: 'On track',
-      message: `${visibleSpentPercentage}% of the budget is spent, with ${formatCurrency(remainingBudget)} left.`,
+      message: `${visibleSpentPercentage}% of the budget is recorded as spend, with ${formatCurrency(remainingUnspentBudget)} unspent.`,
     };
   })();
 
@@ -2662,7 +2663,7 @@ export default function Budget() {
                     const categoryInvoicedAmount = allRelevantVendors
                       .filter((vendor) => vendor.selection_status === 'final')
                       .reduce((sum, vendor) => sum + (vendor.price ?? 0), 0);
-                    const categoryBalance = categoryInvoicedAmount - category.spent;
+                    const categoryQuoteGap = categoryInvoicedAmount - category.spent;
                     const relevantVendors = allRelevantVendors
                       .sort((left, right) => Number(right.selection_status === 'final') - Number(left.selection_status === 'final'))
                       .slice(0, 2);
@@ -2675,7 +2676,7 @@ export default function Budget() {
                       ? 'danger'
                       : isNearLimit
                         ? 'warning'
-                        : categoryInvoicedAmount > 0 && categoryBalance <= 0
+                        : categoryInvoicedAmount > 0 && categoryQuoteGap <= 0
                           ? 'success'
                           : allRelevantVendors.length > 0
                             ? 'warning'
@@ -2684,8 +2685,8 @@ export default function Budget() {
                       ? 'Over budget'
                       : isNearLimit
                         ? 'Near limit'
-                        : categoryInvoicedAmount > 0 && categoryBalance <= 0
-                          ? 'Settled'
+                        : categoryInvoicedAmount > 0 && categoryQuoteGap <= 0
+                          ? 'Spend covers quote'
                           : confirmedVendor
                             ? 'Payment pending'
                             : allRelevantVendors.length > 0
@@ -2749,8 +2750,8 @@ export default function Budget() {
                               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground sm:text-sm">
                                 <span>{openRelevantTaskCount} task{openRelevantTaskCount === 1 ? '' : 's'} remaining</span>
                                 <span>{formatCurrency(categoryInvoicedAmount)} quoted</span>
-                                <span>{formatCurrency(category.spent)} paid</span>
-                                <span>{formatCurrency(categoryBalance)} balance</span>
+                                <span>{formatCurrency(category.spent)} recorded spend</span>
+                                <span>{formatCurrency(Math.max(categoryQuoteGap, 0))} quote gap</span>
                                 {category.visibility === 'private' ? <span>Private</span> : null}
                               </div>
                             </div>
@@ -2820,16 +2821,16 @@ export default function Budget() {
 
                             <div className="grid grid-cols-3 divide-x divide-border rounded-lg border border-border bg-card py-3 text-center">
                               <div className="px-2">
-                                <p className="text-xs text-muted-foreground">Payments Made</p>
+                                <p className="text-xs text-muted-foreground">Recorded spend</p>
                                 <p className="mt-1 text-sm font-semibold">{formatCurrency(category.spent)}</p>
                               </div>
                               <div className="px-2">
-                                <p className="text-xs text-muted-foreground">Invoiced Amount</p>
+                                <p className="text-xs text-muted-foreground">Confirmed quote</p>
                                 <p className="mt-1 text-sm font-semibold">{formatCurrency(categoryInvoicedAmount)}</p>
                               </div>
                               <div className="px-2">
-                                <p className="text-xs text-muted-foreground">Balance</p>
-                                <p className={`mt-1 text-sm font-semibold ${categoryBalance < 0 ? 'text-destructive' : ''}`}>{formatCurrency(categoryBalance)}</p>
+                                <p className="text-xs text-muted-foreground">Quote gap</p>
+                                <p className="mt-1 text-sm font-semibold">{formatCurrency(Math.max(categoryQuoteGap, 0))}</p>
                               </div>
                             </div>
 
