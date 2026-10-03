@@ -58,6 +58,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [selectedClient, setSelectedClient] = useState<PlannerClient | null>(null);
   const [linkedPlanner, setLinkedPlanner] = useState<LinkedPlannerInfo | null>(null);
   const [plannerClientHydrating, setPlannerClientHydrating] = useState(isPlanner);
+  const [plannerClientsHydratedForUserId, setPlannerClientsHydratedForUserId] = useState<string | null>(null);
 
   const loadClients = async () => {
     if (!user || !isPlanner) return;
@@ -87,6 +88,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         window.sessionStorage.removeItem(storageKey);
       }
     } finally {
+      setPlannerClientsHydratedForUserId(user.id);
       setPlannerClientHydrating(false);
     }
   };
@@ -124,6 +126,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     } else {
       setClients([]);
       setSelectedClient(null);
+      setPlannerClientsHydratedForUserId(null);
       setPlannerClientHydrating(false);
     }
   }, [isPlanner, user]);
@@ -192,9 +195,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const plannerWorkspaceHydrating = Boolean(
+    isPlanner && user && (plannerClientHydrating || plannerClientsHydratedForUserId !== user.id),
+  );
+
   return (
     <PlannerContext.Provider value={{
-      clients, selectedClient, selectClient, loadClients, isPlanner, plannerClientHydrating,
+      clients, selectedClient, selectClient, loadClients, isPlanner, plannerClientHydrating: plannerWorkspaceHydrating,
       dataFilterKey, dataFilterValue, dataOrFilter,
       linkedPlanner, loadLinkedPlanner, unlinkPlanner,
     }}>

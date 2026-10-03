@@ -441,7 +441,7 @@ export default function AiChat() {
   const { session, profile, baseProfile, isSuperAdmin } = useAuth();
   const { entitlements: weddingEntitlements, couplePlanTier } = useWeddingEntitlements();
   const { toast } = useToast();
-  const { isPlanner, selectedClient, dataOrFilter } = usePlanner();
+  const { isPlanner, selectedClient, dataOrFilter, plannerClientHydrating } = usePlanner();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -590,6 +590,11 @@ export default function AiChat() {
     if (!nextInput.trim() || loading) return;
     setInputError(null);
     setSubmitError(null);
+
+    if (isPlanner && plannerClientHydrating) {
+      setSubmitError('The selected client workspace is still loading. Please try again in a moment.');
+      return;
+    }
 
     if (!session?.access_token) {
       setSubmitError('Your session is missing or expired for this workspace. Please sign out and sign back in.');
@@ -755,7 +760,7 @@ export default function AiChat() {
 
   const aiDisabledByAdmin = decision?.allowed && usage?.ai_enabled === false;
   const aiCapReached = Boolean(usage && usage.remaining_messages <= 0);
-  const inputBlocked = loading || aiDisabledByAdmin || aiCapReached;
+  const inputBlocked = loading || aiDisabledByAdmin || aiCapReached || (isPlanner && plannerClientHydrating);
 
   return (
     <>
