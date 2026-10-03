@@ -21,11 +21,11 @@ describe('launch feature release controls', () => {
   });
 
   it('keeps the couple workspace and safe professional entry routes active in production', () => {
-    ['/clients', '/dashboard', '/start-plan', '/plan', '/budget', '/tasks', '/vendors', '/vendor-dashboard', '/vendor-settings', '/settings'].forEach((path) => {
+    ['/clients', '/dashboard', '/start-plan', '/plan', '/budget', '/tasks', '/vendors', '/vendor-dashboard', '/vendor-settings', '/settings', '/ai-chat'].forEach((path) => {
       expect(isPathEnabledForRelease(path, 'production')).toBe(true);
     });
 
-    ['/guests', '/contributions', '/gift-registry', '/timeline', '/portfolio', '/ai-chat'].forEach((path) => {
+    ['/guests', '/contributions', '/gift-registry', '/timeline', '/portfolio'].forEach((path) => {
       expect(isPathEnabledForRelease(path, 'production')).toBe(false);
     });
 

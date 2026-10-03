@@ -45,6 +45,7 @@ const productionLaunchPaths = new Set([
   '/contacts',
   '/vendor-settings',
   '/settings',
+  '/ai-chat',
 ]);
 
 export function resolveReleaseChannel(
