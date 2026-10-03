@@ -310,8 +310,9 @@ async function loadWorkspaceSnapshot(args: {
   profileRole: string;
   dataOrFilter: string | null | undefined;
   vendorListingId?: string | null;
+  weddingId?: string | null;
 }): Promise<WorkspaceSnapshot | null> {
-  const { profileRole, dataOrFilter, vendorListingId } = args;
+  const { profileRole, dataOrFilter, vendorListingId, weddingId } = args;
 
   if (profileRole === 'vendor' && vendorListingId) {
     const [bookingsRes, followUpsRes, attentionItems] = await Promise.all([
@@ -390,7 +391,7 @@ async function loadWorkspaceSnapshot(args: {
       .select('category, selection_status')
       .or(dataOrFilter)
       .limit(1000),
-    listAttentionItems(),
+    listAttentionItems(100, weddingId),
   ]);
 
   if (tasksRes.error) throw tasksRes.error;
@@ -502,6 +503,7 @@ export default function AiChat() {
     selectedClient?.id ?? null,
     dataOrFilter ?? null,
     vendorListing?.id ?? null,
+    weddingEntitlements.weddingId ?? null,
   ] as const;
   const workspaceSnapshotQuery = useQuery({
     queryKey: workspaceSnapshotQueryKey,
@@ -511,6 +513,7 @@ export default function AiChat() {
         profileRole: profile.role,
         dataOrFilter,
         vendorListingId: vendorListing?.id ?? null,
+        weddingId: weddingEntitlements.weddingId,
       });
     },
     enabled: Boolean(session && decision?.allowed && profile?.role),

@@ -1,8 +1,13 @@
 # Zania Conversational Planner — Production Validation Plan
 
-Status: ready to run when the conversational-planner release is authorized for production.
+Status: controlled production rollout in progress from 3 October 2026.
 
 This plan uses production because that environment contains the representative couples, planner clients, vendors, document requests and commercial documents needed to prove the complete journeys. It is a controlled pilot plan, not permission to deploy to production or contact users. Production deployment remains a separate release decision.
+
+Participant selection, consent questions, invitation drafts and the guided
+seven-day session sequence are in
+`CONVERSATIONAL_PLANNER_PILOT_RECRUITMENT_GUIDE.md`. The owner contacts and
+enrols participants; Zania and Codex must not contact them automatically.
 
 ## Release rule
 
@@ -61,12 +66,17 @@ For one representative wedding, compare the assistant's response with the existi
 - wedding summary and weekly priorities;
 - task totals, overdue tasks and due dates;
 - budget allocation, recorded spending and upcoming payments;
-- guest and RSVP counts;
+- guest and RSVP counts once the Guests route is released;
 - vendor tracker states, recorded payments and enquiry replies;
-- timeline milestones;
+- timeline milestones once the Timeline route is released;
 - received documents and formal quote request states.
 
 Amounts, dates, names and counts must match the source records. Unknown or missing values must remain unknown. Indicative enquiry amounts must never appear as formal quote totals.
+
+Guests and Timeline remain intentionally outside the current production
+allowlist. Their conversational capabilities may stay implemented behind the
+Gateway, but their screen-to-assistant release checks are deferred until those
+application routes are refined and separately released.
 
 ### 4. Controlled internal writes — days 2–3
 

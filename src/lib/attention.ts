@@ -89,15 +89,17 @@ function mapAttentionItem(row: Record<string, unknown>): AttentionItem {
   };
 }
 
-export async function listAttentionItems(limit = 20) {
-  const { data, error } = await (supabase as any)
+export async function listAttentionItems(limit = 100, weddingId?: string | null) {
+  let query = (supabase as any)
     .from('attention_items')
     .select(
       'id, created_at, updated_at, recipient_role, wedding_id, source_type, source_id, attention_kind, priority, status, title, summary, action_label, action_path, due_at, metadata',
     )
     .in('status', ['unread', 'read'])
-    .order('created_at', { ascending: false })
-    .limit(limit);
+    .order('created_at', { ascending: false });
+
+  if (weddingId) query = query.eq('wedding_id', weddingId);
+  const { data, error } = await query.limit(limit);
 
   if (error) throw error;
   return sortAttentionItems(

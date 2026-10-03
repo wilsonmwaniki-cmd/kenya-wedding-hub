@@ -339,6 +339,15 @@ The fastest next build step is **production-evidence validation followed by proa
 - The production Received Documents page exposed a database authorization regression: migration `20260923154236_separate_demo_activity.sql` closed the private schema, while `list_received_documents` and `get_document_organiser` still used security-invoker public wrappers. Migration `20261003093615_repair_received_document_rpc_wrappers.sql` changes only those narrow public wrappers to security definer, preserves their internal `auth.uid()` membership and recipient checks, and leaves the private schema inaccessible. A signed-in production reload now returns the expected plan-gated organiser state and an empty document inbox instead of RPC errors.
 - `/guests` and `/timeline` are still intentionally excluded by the production release allowlist, so their real screen-to-assistant comparisons remain pending a separate route-release decision. The remaining role, isolation, approval, vendor-response, formal-quote and OAuth tests still require the consenting pilot accounts listed in the validation plan.
 
+### 3 October 2026 — controlled pilot recruitment and proactive monitoring
+
+- `CONVERSATIONAL_PLANNER_PILOT_RECRUITMENT_GUIDE.md` defines the minimum five-participant pilot, selection criteria, consent fields, owner-sent invitation drafts, seven-day sequence and session evidence format. The linked couple and one connected vendor are the first recruitment priority because they unlock the approval, formal quote and contract journeys.
+- Migration `20261003095716_proactive_agreement_payment_attention.sql` adds the first proactive Agreement Intelligence signal. Only confirmed structured payment dates from a linked internal contract or user-confirmed external contract enter Zania Attention. The migration creates no task, payment, invoice, message or money movement; changed evidence closes stale signals and stable fingerprints prevent duplicates.
+- Assistant starter context now reads up to 100 active attention items and filters couple/planner attention to the selected wedding, preventing another planner client's signal from shaping the current client's suggested prompt.
+- The migration compiles on the dedicated staging Supabase project. The existing standalone external-contract pilot correctly creates no agreement obligation alert because it was not linked to accepted-quote evidence. A consenting linked agreement with confirmed payment dates is still required for the positive production-role test.
+- All **392 tests across 80 files**, TypeScript, the production build and `git diff --check` pass. Dedicated staging deployment `dpl_C3e2BSuq4YTPRSa68TWk83ShrwYs` is `READY` and aliased to `https://staging.planwithzania.com`; its served bundle contains the staging Supabase project and no production or obsolete project reference. The signed-in planner workspace reloads without browser warnings or errors.
+- Architecture reference `ZANIA_INTELLIGENCE_GATEWAY_ARCHITECTURE.md` is now version 1.9.
+
 ## Continue refining the current application
 
 Track both streams by completed user journeys, not a growing feature list:
