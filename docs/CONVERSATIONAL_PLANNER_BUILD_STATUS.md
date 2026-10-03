@@ -295,7 +295,7 @@ The fastest next build step is **production-evidence validation followed by proa
 - On the integrated candidate, all 388 tests pass and exit normally, TypeScript passes, the production build passes, and `git diff --check` passes. The repository-wide ESLint baseline still reports legacy issues and remains a separate cleanup track.
 - The production migration ledger now aligns with the two already-applied device-OTP migrations. A linked production dry run succeeds and identifies 28 pending conversational-planner migrations; none has been applied to production.
 - The production Supabase advisor baseline is non-empty: 303 security findings and 245 performance findings. Most are existing broad security-definer/auth-policy and policy-efficiency warnings rather than failures introduced by this release, but they must remain visible in the controlled-rollout checklist instead of being treated as a clean baseline.
-- Review-only Vercel deployment `dpl_28H1sTBRYwkLEy3Ya66bPF7nzpG9` is `READY` at `https://kenya-wedding-5xsrwwcvd-mwaniki.vercel.app`. Its authenticated served bundle contains production Supabase project `csrrnirpgkqjhvqcyxjp` and contains neither the staging project nor the obsolete project reference. The production alias has not been changed.
+- Review-only Vercel deployment `dpl_28H1sTBRYwkLEy3Ya66bPF7nzpG9` is `READY` at `https://kenya-wedding-5xsrwwcvd-mwaniki.vercel.app`. Its authenticated served bundle contains production Supabase project `csrrnirpgkqjhvqcyxjp` and contains neither the staging project nor the obsolete project reference. This verified build was later promoted in the production release recorded below.
 
 ### External contract end-to-end validation — passed in staging
 
@@ -305,6 +305,16 @@ The fastest next build step is **production-evidence validation followed by proa
 - The first conversational retest exposed two real routing gaps: read-only prompts that began with “Review…” were not recognized when the word `contract` appeared later, and a “Do not create…” safety clause was incorrectly treated as a write request. Both cases now have regression coverage.
 - Confirmed external-contract guidance now includes payment dates, service obligations, deliverables, cancellation, postponement, overtime, travel, force-majeure, termination and dispute-resolution terms. The live staging response states that it is factual guidance rather than legal advice and confirms that no task or payment was created.
 - Staging `wedding-ai-chat` was redeployed with the fixes and the complete signed-in planner journey now passes. The synthetic staging workspace remains clearly labelled for release evidence; production remains unchanged.
+
+### 3 October 2026 — production release completed
+
+- The user explicitly authorized the production release after reviewing the integrated branch, validation evidence and review-only Vercel preview.
+- All 28 reviewed migrations were applied to production Supabase project `csrrnirpgkqjhvqcyxjp`. A post-release dry run reports the remote database is fully up to date with no pending migrations.
+- Production schema checks confirm assistant conversations, Gateway confirmations, vendor candidates and enquiries, negotiation profiles, Agreement Intelligence records, external contract ingestions and the private external-contract bucket are present.
+- `wedding-ai-chat` version 91, `intelligence-gateway-mcp` version 1, `analyze-external-contract` version 1 and `review-planner-vendor-enquiry` version 1 are active in production. Unauthenticated POST smoke tests return `401` for all four endpoints.
+- The verified preview was promoted as production deployment `dpl_4WEuDUgQyGdVjwLYbpX5CprScyEG`. It is `READY` and serves `planwithzania.com`, `www.planwithzania.com`, `www.zaniaweddings.com` and the existing Vercel aliases.
+- The live browser bundle contains only production Supabase project `csrrnirpgkqjhvqcyxjp`. It includes the premium Planner Operations Copilot and external-contract upload, analysis and confirmed-facts UI. The homepage and protected `/ai-chat` redirect were verified without browser console errors.
+- Post-migration advisors remain non-empty: 327 security and 303 performance findings. Release-related security-definer warnings correspond to intentionally authenticated or token-gated RPCs; missing foreign-key indexes and RLS init-plan warnings are tracked as performance hardening. The production validation schedule and stop conditions remain active for controlled rollout.
 
 ### Production validation schedule — prepared
 
