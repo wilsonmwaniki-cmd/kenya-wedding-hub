@@ -132,6 +132,8 @@ describe('Intelligence Gateway read foundation', () => {
     expect(getGatewayReadIntent('Which client wedding needs my attention first today, and why?')).toBe('get_planner_portfolio_briefing');
     expect(getGatewayReadIntent('Show me my planner portfolio briefing.')).toBe('get_planner_portfolio_briefing');
     expect(getGatewayReadIntent('Look at my vendor workspace and tell me the one thing I should do next.')).toBe('get_vendor_business_briefing');
+    expect(getGatewayReadIntent('Review my leads, bookings, payments and documents.')).toBe('get_vendor_business_briefing');
+    expect(getGatewayReadIntent("Review the active wedding's budget and payment records. Tell me the invoice total and any vendor-tracker amounts marked paid.")).toBeNull();
     expect(getGatewayReadIntent('Find me a photographer in Nairobi under KES 150,000.')).toBe('discover_vendors');
     expect(getGatewayReadIntent('Show my saved vendor candidates.')).toBe('get_vendor_candidates');
     expect(getGatewayReadIntent('Compare my saved vendors.')).toBe('get_vendor_candidates');

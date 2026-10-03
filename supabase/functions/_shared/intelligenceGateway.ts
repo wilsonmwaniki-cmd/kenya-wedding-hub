@@ -434,7 +434,9 @@ export function getGatewayReadIntent(prompt: string): GatewayReadCapability | nu
   if (/^(give me|show me) (my |a )?(planner )?(portfolio )?briefing/.test(normalized)) return "get_planner_portfolio_briefing";
   if (/which (lead|client|booking) needs my attention first/.test(normalized)) return "get_vendor_business_briefing";
   if (/vendor workspace/.test(normalized) && /(next|attention|summarize|review)/.test(normalized)) return "get_vendor_business_briefing";
-  if (/(summarize|review).*(lead|booking|payment|document)/.test(normalized)) return "get_vendor_business_briefing";
+  if (/^(summarize|review) (my )?(vendor )?(leads?|bookings?)(?:,| and).*(payments?|documents?)/.test(normalized)) {
+    return "get_vendor_business_briefing";
+  }
   return null;
 }
 
