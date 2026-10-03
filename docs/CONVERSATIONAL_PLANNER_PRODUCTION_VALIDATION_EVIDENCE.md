@@ -55,6 +55,9 @@ device session; that check moves to the signed-in browser test.
 | Usage accounting | The failed request did not consume allowance; the two successful requests produced 2/300 usage | Passed |
 | Persistence | Reloading `/ai-chat` restored the selected client, prior long briefing and corrected task-count response | Passed |
 | Browser errors | The post-fix request and reload produced no new browser error; the captured console retains only the earlier reproduced length failure | Passed |
+| Planner context restoration | The assistant waits for the persisted active client to finish hydrating before it accepts a prompt, preventing a valid planner session from being read as clientless after navigation or reload | Repaired and passed |
+| Budget definitions | The assistant and Budget page now distinguish intended/allocated budget, recorded spend, confirmed vendor quotes, payment-log payments and vendor-tracker payments; the signed-in response matched the visible production records | Repaired and passed |
+| Received documents | A later private-schema hardening migration had broken both public RPC wrappers. Migration `20261003093615_repair_received_document_rpc_wrappers.sql` keeps the private schema closed and runs the narrow public wrappers as definer functions; production now resolves the organiser entitlement and document list successfully | Repaired and passed |
 
 The route correction was deployed as `dpl_Dz5x5V6Xg5z2VkRPHQbfDW73qXMP`, the
 complete-row correction as `dpl_ev6mN4Gti2hVy8egWNUeoY54J7vr`, and the final
@@ -67,3 +70,8 @@ No task, payment, vendor message, email or other write was previewed or
 confirmed. Unrelated same-role isolation, a second planner or client, couple and
 vendor role checks, and external-contact journeys still require separately
 named consenting pilot accounts.
+
+The later signed-in checks also confirmed that `/guests` and `/timeline` remain
+intentionally outside the production route allowlist. Their page-to-assistant
+comparisons therefore remain release decisions rather than failures in this
+validation run.
