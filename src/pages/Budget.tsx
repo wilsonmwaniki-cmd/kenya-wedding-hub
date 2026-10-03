@@ -2287,7 +2287,7 @@ export default function Budget() {
           </div>
           <div className="grid grid-cols-3">
             <div className="border-r border-border p-3 sm:p-4">
-              <p className="text-xs text-muted-foreground">Invoices</p>
+              <p className="text-xs text-muted-foreground">Confirmed vendor total</p>
               <p className="mt-1 break-words text-sm font-semibold text-foreground sm:text-lg">{formatCurrency(totalFinalVendorContract)}</p>
             </div>
             <div className="border-r border-border p-3 sm:p-4">
@@ -2748,7 +2748,7 @@ export default function Budget() {
                               </div>
                               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground sm:text-sm">
                                 <span>{openRelevantTaskCount} task{openRelevantTaskCount === 1 ? '' : 's'} remaining</span>
-                                <span>{formatCurrency(categoryInvoicedAmount)} invoiced</span>
+                                <span>{formatCurrency(categoryInvoicedAmount)} quoted</span>
                                 <span>{formatCurrency(category.spent)} paid</span>
                                 <span>{formatCurrency(categoryBalance)} balance</span>
                                 {category.visibility === 'private' ? <span>Private</span> : null}
@@ -3297,7 +3297,7 @@ export default function Budget() {
                 </div>
                 <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                    {activeBudgetScope === 'wedding' ? 'Total vendor invoices' : 'Total planned costs'}
+                    {activeBudgetScope === 'wedding' ? 'Total confirmed vendor cost' : 'Total planned costs'}
                   </p>
                   <p className="mt-2 text-2xl font-semibold text-foreground">{formatCurrency(invoiceTotal)}</p>
                 </div>

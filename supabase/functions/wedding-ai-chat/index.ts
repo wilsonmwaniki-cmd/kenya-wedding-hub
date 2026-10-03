@@ -1920,22 +1920,23 @@ serve(async (req) => {
     let writeClientId: string | null = null;
     let workspaceLabel = "";
     let workspaceNotice = "";
+    let activePlannerClient: any = null;
 
     if (role === "planner" && plannerType !== "committee") {
       if (selectedClientId) {
-        const activeClient = (plannerClients || []).find((client: any) => client.id === selectedClientId) || null;
-        if (!activeClient) {
+        activePlannerClient = (plannerClients || []).find((client: any) => client.id === selectedClientId) || null;
+        if (!activePlannerClient) {
           return new Response(JSON.stringify({ error: "Selected client not found for this planner." }), {
             status: 403,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
-        writeClientId = activeClient.id;
-        workspaceLabel = `${activeClient.client_name}${activeClient.partner_name ? ` & ${activeClient.partner_name}` : ""}`;
-        workspaceOrFilter = activeClient.linked_user_id
-          ? `client_id.eq.${activeClient.id},user_id.eq.${activeClient.linked_user_id}`
-          : `client_id.eq.${activeClient.id}`;
+        writeClientId = activePlannerClient.id;
+        workspaceLabel = `${activePlannerClient.client_name}${activePlannerClient.partner_name ? ` & ${activePlannerClient.partner_name}` : ""}`;
+        workspaceOrFilter = activePlannerClient.linked_user_id
+          ? `client_id.eq.${activePlannerClient.id},user_id.eq.${activePlannerClient.linked_user_id}`
+          : `client_id.eq.${activePlannerClient.id}`;
       } else {
         workspaceNotice = "No active client is selected. Stay advisory for client-wedding changes, but a vendor discovered in this conversation may still be saved as a private planner-owned candidate.";
       }
@@ -2086,9 +2087,21 @@ serve(async (req) => {
     const totalAllocated = budgetCategories.reduce((sum: number, category: any) => sum + Number(category.allocated || 0), 0);
     const totalSpent = budgetCategories.reduce((sum: number, category: any) => sum + Number(category.spent || 0), 0);
     const totalPayments = budgetPayments.reduce((sum: number, payment: any) => sum + Number(payment.amount || 0), 0);
+    const storedBudgetGoal = Number(
+      role === "planner" ? activePlannerClient?.wedding_budget_goal : profile?.wedding_budget_goal,
+    );
+    const intendedBudget = storedBudgetGoal > 0 ? storedBudgetGoal : totalAllocated;
     const confirmedGuests = guests.filter((guest: any) => guest.rsvp_status === "confirmed").length;
     const pendingGuests = guests.filter((guest: any) => guest.rsvp_status === "pending").length;
     const finalVendors = vendors.filter((vendor: any) => vendor.selection_status === "final");
+    const finalVendorQuotedTotal = finalVendors.reduce(
+      (sum: number, vendor: any) => sum + Number(vendor.price || 0),
+      0,
+    );
+    const vendorTrackerPaidTotal = vendors.reduce(
+      (sum: number, vendor: any) => sum + Number(vendor.amount_paid || 0),
+      0,
+    );
     const timelineEventCount = timelineEvents.length;
     const upcomingTimelineEvents = timelineEvents
       .slice()
@@ -2136,11 +2149,14 @@ Paid total: ${formatCurrency(vendorTotalPaid)}`
       : `Workspace: ${workspaceLabel || (role === "planner" ? "Planner advisory mode" : "Wedding workspace")}
 Tasks: ${pendingTasks.length} pending, ${completedTasks.length} completed${overdueTasks.length ? `, ${overdueTasks.length} overdue` : ""}
 Attention items: ${attentionItems.length} open, ${attentionItems.filter((item: any) => item.priority === "urgent").length} urgent
+Intended wedding budget: ${formatCurrency(intendedBudget)}
 Budget allocated: ${formatCurrency(totalAllocated)}
 Budget spent: ${formatCurrency(totalSpent)}
 Payments recorded: ${formatCurrency(totalPayments)}
 Guests: ${guests.length} total, ${confirmedGuests} confirmed, ${pendingGuests} pending
 Vendors: ${vendors.length} tracked, ${finalVendors.length} final
+Final-vendor quoted total (shown as confirmed vendor total in Budget): ${formatCurrency(finalVendorQuotedTotal)}
+Vendor tracker marked paid: ${formatCurrency(vendorTrackerPaidTotal)}
 Timelines: ${timelines.length}, events: ${timelineEventCount}`;
 
     const assistantRoleLabel =
