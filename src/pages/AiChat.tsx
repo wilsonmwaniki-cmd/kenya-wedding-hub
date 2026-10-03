@@ -369,27 +369,27 @@ async function loadWorkspaceSnapshot(args: {
       .select('title, due_date, completed, category')
       .or(dataOrFilter)
       .order('due_date', { ascending: true, nullsFirst: false })
-      .limit(100),
+      .limit(1000),
     supabase
       .from('budget_categories')
       .select('name, allocated, spent')
       .or(dataOrFilter)
-      .limit(100),
+      .limit(1000),
     supabase
       .from('budget_payments')
       .select('id')
       .or(dataOrFilter)
-      .limit(100),
+      .limit(1000),
     supabase
       .from('guests')
       .select('rsvp_status')
       .or(dataOrFilter)
-      .limit(200),
+      .limit(1000),
     supabase
       .from('vendors')
       .select('category, selection_status')
       .or(dataOrFilter)
-      .limit(100),
+      .limit(1000),
     listAttentionItems(),
   ]);
 

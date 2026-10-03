@@ -2031,17 +2031,17 @@ serve(async (req) => {
       ] = await Promise.all([
         scopedSelect(supabase, "tasks", "*", workspaceOrFilter)
           .order("due_date", { ascending: true, nullsFirst: false })
-          .limit(100),
+          .limit(1000),
         scopedSelect(supabase, "budget_categories", "*", workspaceOrFilter)
           .order("name"),
         scopedSelect(supabase, "budget_payments", "*", workspaceOrFilter)
           .order("payment_date", { ascending: false })
-          .limit(100),
+          .limit(1000),
         scopedSelect(supabase, "guests", "*", workspaceOrFilter)
-          .limit(200),
+          .limit(1000),
         scopedSelect(supabase, "vendors", "*", workspaceOrFilter)
           .order("name")
-          .limit(100),
+          .limit(1000),
         scopedSelect(supabase, "timelines", "*", workspaceOrFilter)
           .order("timeline_date", { ascending: true, nullsFirst: false })
           .limit(10),
