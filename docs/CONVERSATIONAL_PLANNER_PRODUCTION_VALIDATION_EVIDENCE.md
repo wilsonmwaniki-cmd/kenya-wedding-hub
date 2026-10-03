@@ -1,7 +1,8 @@
 # Zania Conversational Planner — Production Validation Evidence
 
-This log records the controlled production validation for deployment
-`dpl_4WEuDUgQyGdVjwLYbpX5CprScyEG`. It deliberately omits personal data and
+This log records the controlled production validation that began from deployment
+`dpl_4WEuDUgQyGdVjwLYbpX5CprScyEG` and continued through the signed-in corrections
+listed below. It deliberately omits personal data and
 secrets. External contact and financial actions remain outside the release-day
 read-only checks.
 
@@ -16,7 +17,7 @@ read-only checks.
 | External contract files | Temporary contracts are private to the uploader | Bucket is private; object policies require the authenticated user's ID as the first folder segment | Passed |
 | Gateway functions | Trigger-only functions are not directly callable; authenticated and token-gated functions have deliberate grants | Trigger functions reject `PUBLIC`, `anon` and `authenticated`; authenticated RPCs and token response functions match their intended caller | Passed |
 | Designated planner identity | Production routes the designated owner account as a premium professional planner | One profile found: `planner`, `professional`, verified, active planner subscription, six active professional entitlements, one active linked client/wedding | Passed |
-| Automated regression suite | Existing release behavior remains intact | 388 tests across 80 files pass; `git diff --check` passes | Passed |
+| Automated regression suite | Existing release behavior remains intact | 391 tests across 80 files pass; TypeScript, the production build and `git diff --check` pass | Passed |
 
 ### Authorization defect found and repaired
 
@@ -40,23 +41,29 @@ migration ledger is current. A database-only impersonation could not be used
 for the final negative insert because Zania correctly requires a live trusted
 device session; that check moves to the signed-in browser test.
 
-## Pending signed-in release-day checks
+## Signed-in planner release-day checks
 
-The production sign-in page is open for the designated planner. Once that user
-signs in, run these read-only checks in order:
+| Check | Evidence | Status |
+| --- | --- | --- |
+| Planner identity and client context | The designated account landed in the professional planner workspace and exposed its single active linked wedding | Passed |
+| Premium assistant availability | The full Planner Operations Copilot and the persistent in-workspace assistant are available; allowance started at 0/300 | Passed |
+| Production route exposure | `/ai-chat` had been omitted from the production launch-path allowlist; the route was added, tested and deployed | Repaired and passed |
+| Workspace coverage | The page originally read only the first 100 task rows. Bounded reads were raised to 1,000 in the page and assistant function; the live workspace signal now matches the application at 133 open and 68 overdue tasks | Repaired and passed |
+| Grounded read response | A read-only weekly-blocker prompt used the selected wedding's tasks, budget, vendors, payments, guests and timeline without proposing or performing a write | Passed |
+| Follow-up after a long response | A persisted assistant answer over 6,000 characters originally caused the next request to fail. Historical messages are now shortened and total model history is bounded on both client and server | Repaired and passed |
+| Exact task-count comparison | The corrected follow-up returned 140 total, 7 completed, 133 open and 68 overdue tasks, matching the live workspace records | Passed |
+| Usage accounting | The failed request did not consume allowance; the two successful requests produced 2/300 usage | Passed |
+| Persistence | Reloading `/ai-chat` restored the selected client, prior long briefing and corrected task-count response | Passed |
+| Browser errors | The post-fix request and reload produced no new browser error; the captured console retains only the earlier reproduced length failure | Passed |
 
-1. Confirm the account lands in the professional planner workspace and the
-   conversational assistant is available as a premium feature.
-2. Confirm the selected client is the single active linked client and ask for a
-   wedding summary, weekly priorities, tasks, budget, guests, vendors, payments
-   and received documents.
-3. Compare every amount, date and count with the corresponding production
-   screens. Preserve missing values as unknown.
-4. Reload the assistant and confirm the conversation persists for the same
-   planner and selected client.
-5. Attempt a read with an unrelated record ID through the normal UI/API path;
-   expect an authorization failure with no private data.
+The route correction was deployed as `dpl_Dz5x5V6Xg5z2VkRPHQbfDW73qXMP`, the
+complete-row correction as `dpl_ev6mN4Gti2hVy8egWNUeoY54J7vr`, and the final
+persistent-history correction as production deployment
+`dpl_D2f8X8QpP6eRm1Az6Qz7et5vAHw5`. The final deployment is `READY` and aliased
+to `www.planwithzania.com`. The production `wedding-ai-chat` Edge Function was
+redeployed with the matching server-side compaction.
 
-Do not preview or confirm a write during this window. Couple, vendor,
-multi-client and external-email tests require separately named consenting pilot
-accounts.
+No task, payment, vendor message, email or other write was previewed or
+confirmed. Unrelated same-role isolation, a second planner or client, couple and
+vendor role checks, and external-contact journeys still require separately
+named consenting pilot accounts.
