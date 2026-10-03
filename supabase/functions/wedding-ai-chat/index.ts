@@ -9,7 +9,7 @@ import {
   assertRecentFunctionEventLimit,
 } from "../_shared/abuseProtection.ts";
 import { logFunctionEvent } from "../_shared/runtimeLogger.ts";
-import { withoutUnansweredHistoricalRequests } from "../_shared/assistantMessages.ts";
+import { compactAssistantMessagesForModel } from "../_shared/assistantMessages.ts";
 import { DEMO_EXTERNAL_ACTION_MESSAGE, isTemporaryDemoUser } from "../_shared/demoGuard.ts";
 import { WeddingBriefingError, type BriefingDatabase } from "../_shared/weddingBriefing.ts";
 import {
@@ -1743,7 +1743,7 @@ serve(async (req) => {
     }
 
     assertMessageCount(messages, 24);
-    for (const message of messages) {
+    for (const [index, message] of messages.entries()) {
       if (!message || typeof message !== "object") {
         throw new AbuseProtectionError("Each AI message must be an object.", 400);
       }
@@ -1753,9 +1753,9 @@ serve(async (req) => {
       if (typeof message.content !== "string" || !message.content.trim()) {
         throw new AbuseProtectionError("Each AI message must include text content.", 400);
       }
-      assertMaxLength(message.content, 6000, "AI message");
+      assertMaxLength(message.content, index === messages.length - 1 ? 6000 : 50_000, "AI message");
     }
-    const modelMessages = withoutUnansweredHistoricalRequests(messages);
+    const modelMessages = compactAssistantMessagesForModel(messages);
 
     const lastMessage = messages[messages.length - 1];
     await persistAssistantMessage(adminClient, {

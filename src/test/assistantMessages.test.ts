@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { withoutUnansweredHistoricalRequests } from "../../supabase/functions/_shared/assistantMessages";
+import {
+  MODEL_HISTORY_MESSAGE_LIMIT,
+  MODEL_HISTORY_TOTAL_LIMIT,
+  compactAssistantMessagesForModel,
+  withoutUnansweredHistoricalRequests,
+} from "../../supabase/functions/_shared/assistantMessages";
 
 describe("withoutUnansweredHistoricalRequests", () => {
   it("keeps completed exchanges and the current request", () => {
@@ -25,5 +30,24 @@ describe("withoutUnansweredHistoricalRequests", () => {
     ];
 
     expect(withoutUnansweredHistoricalRequests(messages)).toEqual(messages);
+  });
+});
+
+describe("compactAssistantMessagesForModel", () => {
+  it("shortens a long historical response while preserving the current request", () => {
+    const currentRequest = { role: "user" as const, content: "Refresh the task counts." };
+    const messages = [
+      { role: "user" as const, content: "Create a detailed plan." },
+      { role: "assistant" as const, content: "A".repeat(12_000) },
+      currentRequest,
+    ];
+
+    const result = compactAssistantMessagesForModel(messages);
+
+    expect(result.at(-1)).toBe(currentRequest);
+    expect(result[1].content.length).toBe(MODEL_HISTORY_MESSAGE_LIMIT);
+    expect(result.reduce((total, message) => total + message.content.length, 0)).toBeLessThanOrEqual(
+      MODEL_HISTORY_TOTAL_LIMIT,
+    );
   });
 });
