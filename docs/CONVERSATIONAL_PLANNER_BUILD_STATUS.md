@@ -348,6 +348,27 @@ The fastest next build step is **production-evidence validation followed by proa
 - All **392 tests across 80 files**, TypeScript, the production build and `git diff --check` pass. Dedicated staging deployment `dpl_C3e2BSuq4YTPRSa68TWk83ShrwYs` is `READY` and aliased to `https://staging.planwithzania.com`; its served bundle contains the staging Supabase project and no production or obsolete project reference. The signed-in planner workspace reloads without browser warnings or errors.
 - Architecture reference `ZANIA_INTELLIGENCE_GATEWAY_ARCHITECTURE.md` is now version 1.9.
 
+### 4 October 2026 — production monitoring enabled
+
+- The first proactive Agreement Intelligence migration is now applied in
+  production. The initial backfill correctly produced no signal because there
+  is not yet a production linked agreement with a confirmed structured payment
+  schedule. The positive couple/planner role test remains pending that
+  consenting evidence.
+- A 24-hour production scan found no Vercel runtime errors or HTTP 500s, no
+  Supabase Edge Function error/fatal events, and no Auth or PostgREST 5xx
+  responses. It did expose a separate hourly expired-demo cleanup failure.
+- Migration `20261004070013_repair_demo_planner_cleanup.sql` repairs that narrow
+  cascade boundary without weakening live free-tier planner deletion rules. It
+  compiled on staging, passed a rollback-only trigger exercise, and is now
+  applied in production. The next scheduled purge is the remaining log check.
+- Planner Network Ingestion is deliberately deferred until the role-validation
+  and first proactive-monitoring exit criteria pass. Its product and architecture
+  direction are preserved in
+  `PLANNER_NETWORK_INGESTION_DEFERRED_DIRECTION.md`.
+- Architecture reference `ZANIA_INTELLIGENCE_GATEWAY_ARCHITECTURE.md` is now
+  version 1.10.
+
 ## Continue refining the current application
 
 Track both streams by completed user journeys, not a growing feature list:

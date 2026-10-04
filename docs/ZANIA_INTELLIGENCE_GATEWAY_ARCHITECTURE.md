@@ -1,6 +1,6 @@
 # Zania Intelligence Gateway
 
-**Architecture & Product Reference — Version 1.9 (3 October 2026)**
+**Architecture & Product Reference — Version 1.10 (4 October 2026)**
 
 > **North star:** You don’t learn Zania. You tell Zania what you need.
 
@@ -223,6 +223,7 @@ The first external release is read-only: search one approved external source plu
 12. **Deal State:** record the agreed commercial outcome separately from the quote, tracker and contract.
 13. **Agreement Intelligence:** extract, validate and compare external contracts before converting obligations into wedding state.
 14. **Proactive intelligence:** surface missing categories, deadlines, agreement conflicts and risks when evidence supports it.
+15. **Planner Network Ingestion (deferred):** after production role validation and the first proactive-monitoring milestone pass, let professional planners import and immediately use a private existing vendor network without requiring vendor signup. Follow `PLANNER_NETWORK_INGESTION_DEFERRED_DIRECTION.md`; start with manual, paste and CSV ingestion before enrichment, claiming or a cross-planner graph.
 
 Minimal provenance, source policy and prompt-injection boundaries are prerequisites for phase 4, even though deeper entity resolution continues afterward.
 
@@ -248,6 +249,7 @@ Update this table when behavior is implemented or verified. `TESTED` requires au
 | Agreement Intelligence | PARTIAL | An accepted formal quote creates an RLS-protected Agreement Record. Internal Zania contracts and confirmed external PDF extractions use the same review path. External files are private and temporary, their extracted facts remain visibly untrusted until user confirmation, and the source PDF is deleted before confirmation. Linked uploads compare confirmed amount, currency and event date with accepted-quote evidence; standalone uploads support factual clause review without claiming alignment. Structured payment rows remain proposed obligations and can enter `create_task` only through exact preview/confirmation. The first read-only obligation deadline signal is staged; broader monitoring and file formats remain future milestones. |
 | Proactive agreement monitoring | PARTIAL | Confirmed structured payment dates from linked internal contracts and user-confirmed external contracts create role-scoped Zania Attention items for active couple and planner members. Stable evidence fingerprints prevent duplicates, changed or removed obligations close stale signals, closed items do not reopen, and due dates escalate deterministically. Signals link to agreement review and never create tasks, payments, messages, invoices or money movement. Staging compilation and the standalone-contract negative boundary are verified; representative linked-agreement evidence remains part of the controlled pilot. |
 | Claim, correction and opt-out for discovered vendors | PARTIAL | Existing listing claim/opt-out fields exist; externally discovered profile workflow is not built. |
+| Planner Network Ingestion | DEFERRED | Product direction is preserved in `PLANNER_NETWORK_INGESTION_DEFERRED_DIRECTION.md`. Reuse professional contacts, private candidates, discovery, tracker and vendor-claim foundations. Begin only after production role/isolation testing and the first proactive agreement-monitoring evidence pass. |
 
 ## Standing instructions for Codex
 - Never create unrestricted SQL/query tools for agents.

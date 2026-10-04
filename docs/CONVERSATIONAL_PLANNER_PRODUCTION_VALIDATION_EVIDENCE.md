@@ -19,6 +19,44 @@ read-only checks.
 | Designated planner identity | Production routes the designated owner account as a premium professional planner | One profile found: `planner`, `professional`, verified, active planner subscription, six active professional entitlements, one active linked client/wedding | Passed |
 | Automated regression suite | Existing release behavior remains intact | 391 tests across 80 files pass; TypeScript, the production build and `git diff --check` pass | Passed |
 
+## 4 October 2026 — product sequencing decision
+
+Planner Network Ingestion is recorded as a deferred productivity direction in
+`PLANNER_NETWORK_INGESTION_DEFERRED_DIRECTION.md` and the Intelligence Gateway
+roadmap. It does not change the current production-validation scope. Production
+role isolation, planner-to-couple approvals, one consenting vendor journey,
+agreement evidence and the first positive proactive-monitoring signal remain the
+release priority. No contact import, enrichment or claim invitation was enabled.
+
+## 4 October 2026 — production monitoring baseline and repair
+
+- Production deployment `dpl_91YVcdaGMpecFvEHosodpfToaEVE` remains `READY`
+  on the production aliases. The preceding 24-hour scan returned no Vercel
+  runtime errors or HTTP 500 responses.
+- Supabase showed no Edge Function error/fatal events and no Auth or PostgREST
+  5xx responses in the same window. The active production Gateway functions
+  remained available.
+- Database monitoring found one recurring hourly error in the expired-demo-user
+  purge. Profile deletion could update a demo planner-client row before the row
+  was removed, causing the free-tier guard to attempt an entitlement insert with
+  a null business identity. Migration
+  `20261004070013_repair_demo_planner_cleanup.sql` now skips entitlement
+  enforcement after the owner profile has disappeared, permits deletion of only
+  ownerless planner-client rows, and removes planner-client rows belonging to
+  the demo users deleted by that purge.
+- The repair compiled on staging and passed a rollback-only trigger exercise.
+  The migration is applied in production and the production migration dry run
+  is current. The next scheduled purge supplies the final no-regression log
+  check; this has been added to the monitoring follow-up.
+- Migration `20261003095716_proactive_agreement_payment_attention.sql` is now
+  applied in production. Its trigger and private refresh boundary are present.
+  The initial backfill produced no agreement-obligation attention items, which
+  is consistent with the absence of a production agreement containing the
+  required confirmed linked payment schedule. A consenting representative
+  agreement remains necessary for the positive role test.
+- The focused entitlement suite passes all 12 tests. No task, payment, invoice,
+  message, invitation or money movement was created by these checks.
+
 ### Authorization defect found and repaired
 
 Inspection of the production `vendor_enquiries` insert policy found two
