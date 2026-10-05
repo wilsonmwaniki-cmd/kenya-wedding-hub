@@ -46,8 +46,9 @@ release priority. No contact import, enrichment or claim invitation was enabled.
   the demo users deleted by that purge.
 - The repair compiled on staging and passed a rollback-only trigger exercise.
   The migration is applied in production and the production migration dry run
-  is current. The next scheduled purge supplies the final no-regression log
-  check; this has been added to the monitoring follow-up.
+  is current. A 23-hour post-migration log scan spanning every scheduled hourly
+  purge found no further SQLSTATE `23502` event, completing the no-regression
+  check.
 - Migration `20261003095716_proactive_agreement_payment_attention.sql` is now
   applied in production. Its trigger and private refresh boundary are present.
   The initial backfill produced no agreement-obligation attention items, which

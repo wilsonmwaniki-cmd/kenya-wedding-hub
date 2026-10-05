@@ -361,7 +361,8 @@ The fastest next build step is **production-evidence validation followed by proa
 - Migration `20261004070013_repair_demo_planner_cleanup.sql` repairs that narrow
   cascade boundary without weakening live free-tier planner deletion rules. It
   compiled on staging, passed a rollback-only trigger exercise, and is now
-  applied in production. The next scheduled purge is the remaining log check.
+  applied in production. A 23-hour post-migration scan found no recurrence of
+  SQLSTATE `23502` across the scheduled hourly purge runs.
 - Planner Network Ingestion is deliberately deferred until the role-validation
   and first proactive-monitoring exit criteria pass. Its product and architecture
   direction are preserved in
